@@ -7,6 +7,7 @@ import {
   add,
   eachDayOfInterval,
   endOfMonth,
+  endOfWeek,
   format,
   getDay,
   isEqual,
@@ -14,7 +15,9 @@ import {
   isToday,
   parse,
   startOfToday,
+  startOfWeek,
 } from "date-fns-jalali";
+
 import { useState } from "react";
 
 export default function Calendar() {
@@ -24,8 +27,8 @@ export default function Calendar() {
   const firstDayCurrentMonth = parse(currentMonth, "MMM-yyyy", new Date());
 
   const days = eachDayOfInterval({
-    start: firstDayCurrentMonth,
-    end: endOfMonth(firstDayCurrentMonth),
+    start: startOfWeek(firstDayCurrentMonth),
+    end: endOfWeek(endOfMonth(firstDayCurrentMonth)),
   });
 
   function previousMonth() {
@@ -39,7 +42,7 @@ export default function Calendar() {
   }
 
   return (
-    <div className="mx-auto mt-8 h-full w-full px-4 sm:px-7  md:px-6">
+    <div className="mx-auto flex h-full w-full flex-col px-4 pt-8 font-vazir sm:px-7  md:px-6">
       <div className="flex items-center">
         <h2 className="flex-auto font-semibold text-gray-900">
           {format(firstDayCurrentMonth, "MMMM yyyy")}
@@ -59,23 +62,27 @@ export default function Calendar() {
           <ChevronLeftIcon className="h-5 w-5" />
         </button>
       </div>
-      <div className="mt-10 grid grid-cols-7 text-center text-lg leading-6 text-gray-500">
-        <div>شنبه</div>
-        <div>یکشنبه</div>
-        <div>دوشنبه</div>
-        <div>سه‌شنبه</div>
-        <div>چهارشنبه</div>
-        <div>پنجشنبه</div>
-        <div>جمعه</div>
+      <div className="mt-10 grid grid-cols-7 border-b text-center text-lg leading-6 text-gray-500">
+        <div className="pb-2 font-semibold">شنبه</div>
+        <div className="pb-2 font-semibold">یکشنبه</div>
+        <div className="pb-2 font-semibold">دوشنبه</div>
+        <div className="pb-2 font-semibold">سه‌شنبه</div>
+        <div className="pb-2 font-semibold">چهارشنبه</div>
+        <div className="pb-2 font-semibold">پنجشنبه</div>
+        <div className="pb-2 font-semibold">جمعه</div>
       </div>
-      <div className="mt-2 grid grid-cols-7 gap-1 text-sm">
+      <div className="grid flex-grow grid-cols-7 gap-0 border text-sm">
         {days.map((day, dayIdx) => (
           <div
             key={day.toString()}
             onClick={() => setSelectedDay(day)}
             className={cn(
               dayIdx === 0 && colStartClasses[getDay(day)],
-              "group flex min-h-[100px] max-w-fit gap-1 rounded-md border p-1",
+              !isEqual(day, selectedDay) &&
+                !isToday(day) &&
+                !isSameMonth(day, firstDayCurrentMonth) &&
+                "opacity-30",
+              "group flex h-full flex-col items-start gap-1 border p-1",
             )}
           >
             <div
@@ -91,15 +98,14 @@ export default function Calendar() {
                 isEqual(day, selectedDay) && !isToday(day) && "bg-gray-900",
                 !isEqual(day, selectedDay) && "group-hover:bg-gray-200",
                 (isEqual(day, selectedDay) || isToday(day)) && "font-semibold",
-                "flex h-full w-8 items-center justify-center rounded-md px-4",
+                "flex h-6 w-6 items-center justify-center rounded-full text-sm",
               )}
             >
               <time dateTime={format(day, "yyyy-MM-dd")}>
                 {format(day, "d")}
               </time>
             </div>
-            <div className="flex flex-col gap-1">
-              <Task />
+            <div className="flex w-full flex-col gap-1">
               <Task />
               <Task />
             </div>
