@@ -1,6 +1,6 @@
 "use client";
 
-import Task from "@/components/Task";
+import Day from "@/components/Day";
 import { cn } from "@/lib/utils";
 import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/20/solid";
 import {
@@ -42,9 +42,9 @@ export default function Calendar() {
   }
 
   return (
-    <div className="mx-auto flex h-full w-full flex-col px-4 pt-8 font-vazir sm:px-7  md:px-6">
+    <div className="mx-auto flex h-full w-full flex-col px-8 pt-8 font-vazir">
       <div className="flex items-center">
-        <h2 className="flex-auto font-semibold text-gray-900">
+        <h2 className="fle flex-auto px-8 font-semibold text-gray-900">
           {format(firstDayCurrentMonth, "MMMM yyyy")}
         </h2>
         <button
@@ -63,15 +63,15 @@ export default function Calendar() {
         </button>
       </div>
       <div className="mt-10 grid grid-cols-7 border-b text-center text-lg leading-6 text-gray-500">
-        <div className="pb-2 font-semibold">شنبه</div>
-        <div className="pb-2 font-semibold">یکشنبه</div>
-        <div className="pb-2 font-semibold">دوشنبه</div>
-        <div className="pb-2 font-semibold">سه‌شنبه</div>
-        <div className="pb-2 font-semibold">چهارشنبه</div>
-        <div className="pb-2 font-semibold">پنجشنبه</div>
-        <div className="pb-2 font-semibold">جمعه</div>
+        <div className="pb-2 font-semibold">Sat</div>
+        <div className="pb-2 font-semibold">Sun</div>
+        <div className="pb-2 font-semibold">Mon</div>
+        <div className="pb-2 font-semibold">Tue</div>
+        <div className="pb-2 font-semibold">Wed</div>
+        <div className="pb-2 font-semibold">Thu</div>
+        <div className="pb-2 font-semibold">Fri</div>
       </div>
-      <div className="grid flex-grow grid-cols-7 gap-0 border text-sm">
+      <div className="grid flex-grow grid-cols-7 gap-0 text-sm">
         {days.map((day, dayIdx) => (
           <div
             key={day.toString()}
@@ -82,33 +82,14 @@ export default function Calendar() {
                 !isToday(day) &&
                 !isSameMonth(day, firstDayCurrentMonth) &&
                 "opacity-30",
-              "group flex h-full flex-col items-start gap-1 border p-1",
+              "group flex h-full flex-col items-start gap-1 border-b p-1",
             )}
           >
-            <div
-              className={cn(
-                isEqual(day, selectedDay) && "text-white",
-                !isEqual(day, selectedDay) && isToday(day) && "text-red-500",
-                !isEqual(day, selectedDay) && !isToday(day) && "text-gray-900",
-                !isEqual(day, selectedDay) &&
-                  !isToday(day) &&
-                  !isSameMonth(day, firstDayCurrentMonth) &&
-                  "text-gray-400",
-                isEqual(day, selectedDay) && isToday(day) && "bg-red-500",
-                isEqual(day, selectedDay) && !isToday(day) && "bg-gray-900",
-                !isEqual(day, selectedDay) && "group-hover:bg-gray-200",
-                (isEqual(day, selectedDay) || isToday(day)) && "font-semibold",
-                "flex h-6 w-6 items-center justify-center rounded-full text-sm",
-              )}
-            >
-              <time dateTime={format(day, "yyyy-MM-dd")}>
-                {format(day, "d")}
-              </time>
-            </div>
-            <div className="flex w-full flex-col gap-1">
-              <Task />
-              <Task />
-            </div>
+            <Day
+              day={day}
+              selectedDay={selectedDay}
+              firstDayCurrentMonth={firstDayCurrentMonth}
+            />
           </div>
         ))}
       </div>
