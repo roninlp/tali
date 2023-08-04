@@ -10,6 +10,10 @@
   },
   "dependencies": {
     "@heroicons/react": "^2.0.18",
+    "@supabase/auth-helpers-nextjs": "^0.7.3",
+    "@supabase/auth-ui-react": "^0.4.2",
+    "@supabase/auth-ui-shared": "^0.1.6",
+    "@supabase/supabase-js": "^2.31.0",
     "@types/node": "20.4.5",
     "@types/react": "18.2.16",
     "@types/react-dom": "18.2.7",
@@ -30,6 +34,7 @@
     "eslint-config-prettier": "^8.8.0",
     "prettier": "^3.0.0",
     "prettier-plugin-tailwindcss": "^0.4.1",
+    "supabase": ">=1.8.1",
     "tailwindcss-debug-screens": "^2.2.1"
   }
 }

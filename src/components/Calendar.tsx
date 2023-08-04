@@ -2,7 +2,13 @@
 
 import Day from "@/components/Day";
 import { cn } from "@/lib/utils";
+import { Database } from "@/types/supabase";
 import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/20/solid";
+import {
+  Session,
+  createClientComponentClient,
+} from "@supabase/auth-helpers-nextjs";
+import { error } from "console";
 import {
   add,
   eachDayOfInterval,
@@ -18,10 +24,14 @@ import {
   startOfWeek,
 } from "date-fns-jalali";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-export default function Calendar() {
+export default function Calendar({ session }: { session: Session | null }) {
+  const supabase = createClientComponentClient<Database>();
+  const user = session?.user;
   const today = startOfToday();
+  const [newProject, setNewProject] = useState("");
+  const [projectsList, setProjectsList] = useState<{ name: string | null }[]>();
   const [selectedDay, setSelectedDay] = useState(today);
   const [currentMonth, setCurrentMonth] = useState(format(today, "MMM-yyyy"));
   const firstDayCurrentMonth = parse(currentMonth, "MMM-yyyy", new Date());
@@ -41,26 +51,88 @@ export default function Calendar() {
     setCurrentMonth(format(firstDayNextMonth, "MMM-yyyy"));
   }
 
+  const getProjects = useCallback(async () => {
+    try {
+      const { data, error, status } = await supabase
+        .from("projects")
+        .select("name")
+        .eq("user_id", user?.id);
+
+      if (error && status !== 406) {
+        throw error;
+      }
+
+      if (data) {
+        setProjectsList(data);
+      }
+    } catch (error) {
+      alert("error Loading user data");
+    }
+  }, [user, supabase]);
+
+  async function addNewProject() {
+    try {
+      if (user) {
+        const { error } = await supabase
+          .from("projects")
+          .insert({ name: newProject, user_id: user.id });
+        if (error) throw error;
+        setNewProject("");
+      }
+    } catch (error) {
+      console.error(error);
+      alert("error adding new project");
+    }
+  }
+
+  useEffect(() => {
+    getProjects();
+  }, [user, getProjects]);
+
   return (
     <div className="mx-auto flex h-full w-full flex-col px-8 pt-8 font-vazir">
-      <div className="flex items-center">
+      <div className="flex items-center gap-2">
         <h2 className="fle flex-auto px-8 font-semibold text-gray-900">
           {format(firstDayCurrentMonth, "MMMM yyyy")}
         </h2>
-        <button
-          onClick={previousMonth}
-          className="-my-1.5 flex flex-none items-center justify-center p-1.5 text-gray-400 hover:text-gray-500"
-        >
-          <span className="sr-only">ماه قبل</span>
-          <ChevronRightIcon className="h-5 w-5" />
-        </button>
-        <button
-          onClick={nextMonth}
-          className="-my-1.5 flex flex-none items-center justify-center p-1.5 text-gray-400 hover:text-gray-500"
-        >
-          <span className="sr-only">ماه بعد</span>
-          <ChevronLeftIcon className="h-5 w-5" />
-        </button>
+        <div className="flex">
+          <div className="flex">
+            {projectsList?.map((project) => (
+              <div key={project.name}>{project.name}</div>
+            ))}
+          </div>
+          <button
+            onClick={addNewProject}
+            className="rounded-md bg-red-400 px-1 py-2 text-white"
+          >
+            Add Project
+          </button>
+          <input
+            type="text"
+            name="newProject"
+            id="newProject"
+            value={newProject}
+            onChange={(e) => setNewProject(e.target.value)}
+            className="border py-0"
+          />
+        </div>
+        <p>{user?.email}</p>
+        <div className="flex">
+          <button
+            onClick={previousMonth}
+            className="-my-1.5 flex flex-none items-center justify-center p-1.5 text-gray-400 hover:text-gray-500"
+          >
+            <span className="sr-only">ماه قبل</span>
+            <ChevronRightIcon className="h-5 w-5" />
+          </button>
+          <button
+            onClick={nextMonth}
+            className="-my-1.5 flex flex-none items-center justify-center p-1.5 text-gray-400 hover:text-gray-500"
+          >
+            <span className="sr-only">ماه بعد</span>
+            <ChevronLeftIcon className="h-5 w-5" />
+          </button>
+        </div>
       </div>
       <div className="mt-10 grid grid-cols-7 border-b text-center text-lg leading-6 text-gray-500">
         <div className="pb-2 font-semibold">Sat</div>

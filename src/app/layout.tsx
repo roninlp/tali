@@ -17,7 +17,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={Vazir.variable}>
-      <body className={`${inter.className} debug-screens`}>{children}</body>
+      <body dir="rtl" className={`${inter.className} debug-screens`}>
+        {children}
+      </body>
     </html>
   );
 }

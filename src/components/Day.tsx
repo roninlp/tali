@@ -31,10 +31,7 @@ export default function Day({
       >
         <time dateTime={format(day, "yyyy-MM-dd")}>{format(day, "d")}</time>
       </div>
-      <div className="flex w-full flex-col gap-1">
-        <Task />
-        <Task />
-      </div>
+      <div className="flex w-full flex-col gap-1"></div>
     </>
   );
 }
