@@ -1,3 +1,5 @@
+"use client";
+
 import Task from "@/components/Task";
 import { cn } from "@/lib/utils";
 import { format, isEqual, isSameMonth, isToday } from "date-fns-jalali";

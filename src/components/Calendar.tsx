@@ -8,7 +8,6 @@ import {
   Session,
   createClientComponentClient,
 } from "@supabase/auth-helpers-nextjs";
-import { error } from "console";
 import {
   add,
   eachDayOfInterval,
@@ -23,15 +22,20 @@ import {
   startOfToday,
   startOfWeek,
 } from "date-fns-jalali";
+import { useRouter } from "next/navigation";
 
 import { useCallback, useEffect, useState } from "react";
 
 export default function Calendar({ session }: { session: Session | null }) {
   const supabase = createClientComponentClient<Database>();
   const user = session?.user;
+
+  const router = useRouter();
+
   const today = startOfToday();
   const [newProject, setNewProject] = useState("");
-  const [projectsList, setProjectsList] = useState<{ name: string | null }[]>();
+  const [projectsList, setProjectsList] =
+    useState<{ id: number; name: string | null }[]>();
   const [selectedDay, setSelectedDay] = useState(today);
   const [currentMonth, setCurrentMonth] = useState(format(today, "MMM-yyyy"));
   const firstDayCurrentMonth = parse(currentMonth, "MMM-yyyy", new Date());
@@ -55,7 +59,7 @@ export default function Calendar({ session }: { session: Session | null }) {
     try {
       const { data, error, status } = await supabase
         .from("projects")
-        .select("name")
+        .select("name, id")
         .eq("user_id", user?.id);
 
       if (error && status !== 406) {
@@ -77,6 +81,7 @@ export default function Calendar({ session }: { session: Session | null }) {
           .from("projects")
           .insert({ name: newProject, user_id: user.id });
         if (error) throw error;
+        getProjects();
         setNewProject("");
       }
     } catch (error) {
@@ -87,18 +92,48 @@ export default function Calendar({ session }: { session: Session | null }) {
 
   useEffect(() => {
     getProjects();
+    console.log("get project ran");
   }, [user, getProjects]);
 
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    router.refresh();
+  }
+
+  async function deleteProject(id: number) {
+    try {
+      if (user) {
+        await supabase.from("projects").delete().eq("id", id);
+        getProjects();
+      }
+    } catch (error) {
+      console.log(error);
+      alert("error deleting project");
+    }
+  }
+
+  async function addTask() {}
   return (
-    <div className="mx-auto flex h-full w-full flex-col px-8 pt-8 font-vazir">
+    <div className="font-vazir mx-auto flex h-full w-full flex-col px-8 pt-8">
       <div className="flex items-center gap-2">
         <h2 className="fle flex-auto px-8 font-semibold text-gray-900">
           {format(firstDayCurrentMonth, "MMMM yyyy")}
         </h2>
         <div className="flex">
-          <div className="flex">
+          <div className="flex gap-2">
             {projectsList?.map((project) => (
-              <div key={project.name}>{project.name}</div>
+              <div
+                key={project.id}
+                className="group relative flex items-center rounded-md bg-slate-300 px-4"
+              >
+                <div>{project.name}</div>
+                <span
+                  onClick={() => deleteProject(project.id)}
+                  className="absolute -top-6 right-0 hidden h-6 w-6 cursor-pointer items-center justify-center  bg-red-600 text-center text-xs font-bold text-white group-hover:flex"
+                >
+                  x
+                </span>
+              </div>
             ))}
           </div>
           <button
@@ -117,6 +152,12 @@ export default function Calendar({ session }: { session: Session | null }) {
           />
         </div>
         <p>{user?.email}</p>
+        <button
+          className="bg-black px-2 py-1 text-white"
+          onClick={handleSignOut}
+        >
+          SignOut
+        </button>
         <div className="flex">
           <button
             onClick={previousMonth}
@@ -154,9 +195,15 @@ export default function Calendar({ session }: { session: Session | null }) {
                 !isToday(day) &&
                 !isSameMonth(day, firstDayCurrentMonth) &&
                 "opacity-30",
-              "group flex h-full flex-col items-start gap-1 border-b p-1",
+              "group relative flex h-full flex-col items-start gap-1 border-b p-1",
             )}
           >
+            <div
+              onClick={() => console.log("add clicked")}
+              className="absolute bottom-1 left-1 hidden h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-blue-600 text-xl text-white group-hover:flex"
+            >
+              +
+            </div>
             <Day
               day={day}
               selectedDay={selectedDay}
