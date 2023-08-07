@@ -2,17 +2,30 @@
 
 import Task from "@/components/Task";
 import { cn } from "@/lib/utils";
-import { format, isEqual, isSameMonth, isToday } from "date-fns-jalali";
+import { format, isEqual, isSameMonth, isToday, parse } from "date-fns-jalali";
+import type { TaskType, Project } from "./Calendar";
 
 export default function Day({
   day,
   selectedDay,
   firstDayCurrentMonth,
+  todayTasks,
+  projects,
 }: {
   day: Date;
   selectedDay: Date;
+  projects: Project[] | undefined;
   firstDayCurrentMonth: Date;
+  todayTasks: TaskType[] | null | undefined;
 }) {
+  if (isEqual(day, selectedDay)) {
+    console.log(todayTasks);
+
+    todayTasks?.map((task) => {
+      console.log(parse(task.date, "yyyy-mm-dd", new Date()));
+      console.log(task.created_at);
+    });
+  }
   return (
     <>
       <div
@@ -33,7 +46,11 @@ export default function Day({
       >
         <time dateTime={format(day, "yyyy-MM-dd")}>{format(day, "d")}</time>
       </div>
-      <div className="flex w-full flex-col gap-1"></div>
+      <div className="flex w-full flex-col gap-1">
+        {todayTasks?.map((task) => (
+          <Task key={task.id} task={task} projects={projects} />
+        ))}
+      </div>
     </>
   );
 }
