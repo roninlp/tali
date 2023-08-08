@@ -2,7 +2,14 @@
 
 import Task from "@/components/Task";
 import { cn } from "@/lib/utils";
-import { format, isEqual, isSameMonth, isToday, parse } from "date-fns-jalali";
+import {
+  format,
+  isEqual,
+  isSameMonth,
+  isToday,
+  parse,
+  parseISO,
+} from "date-fns-jalali";
 import type { TaskType, Project } from "./Calendar";
 
 export default function Day({
@@ -18,28 +25,22 @@ export default function Day({
   firstDayCurrentMonth: Date;
   todayTasks: TaskType[] | null | undefined;
 }) {
-  if (isEqual(day, selectedDay)) {
-    console.log(todayTasks);
-
-    todayTasks?.map((task) => {
-      console.log(parse(task.date, "yyyy-mm-dd", new Date()));
-      console.log(task.created_at);
-    });
-  }
   return (
     <>
       <div
         className={cn(
-          isEqual(day, selectedDay) && "text-white",
-          !isEqual(day, selectedDay) && isToday(day) && "text-red-500",
-          !isEqual(day, selectedDay) && !isToday(day) && "text-gray-900",
+          isEqual(day, selectedDay) && "text-secondary-foreground",
+          !isEqual(day, selectedDay) && isToday(day) && "text-primary",
+          !isEqual(day, selectedDay) && !isToday(day) && "text-foreground",
           !isEqual(day, selectedDay) &&
             !isToday(day) &&
             !isSameMonth(day, firstDayCurrentMonth) &&
-            "text-gray-400",
-          isEqual(day, selectedDay) && isToday(day) && "bg-red-500",
-          isEqual(day, selectedDay) && !isToday(day) && "bg-gray-900",
-          !isEqual(day, selectedDay) && "group-hover:bg-gray-200",
+            "text-foreground",
+          isEqual(day, selectedDay) &&
+            isToday(day) &&
+            "bg-primary text-primary-foreground",
+          isEqual(day, selectedDay) && !isToday(day) && "bg-accent",
+          !isEqual(day, selectedDay) && "group-hover:bg-muted",
           (isEqual(day, selectedDay) || isToday(day)) && "font-semibold",
           "flex h-6 w-6 items-center justify-center rounded-full text-sm",
         )}

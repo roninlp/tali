@@ -1,13 +1,23 @@
 "use client";
 
-import Day from "@/components/Day";
-import { cn } from "@/lib/utils";
+import {
+  Dispatch,
+  SetStateAction,
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
+
+import { useRouter } from "next/navigation";
+
 import { Database } from "@/types/supabase";
 import { Check, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import {
   Session,
   createClientComponentClient,
 } from "@supabase/auth-helpers-nextjs";
+
+// * date-fns stuff
 import {
   add,
   eachDayOfInterval,
@@ -22,37 +32,41 @@ import {
   startOfToday,
   startOfWeek,
 } from "date-fns-jalali";
-import { useRouter } from "next/navigation";
 
-import {
-  Dispatch,
-  SetStateAction,
-  useCallback,
-  useEffect,
-  useState,
-} from "react";
+// * componens
+import Day from "@/components/Day";
+
 import { ThemeToggle } from "./theme-toggle-button";
-import { Button } from "./ui/button";
-import { Input } from "./ui/input";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "./ui/dialog";
-import { Label } from "./ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Command,
   CommandEmpty,
   CommandGroup,
   CommandInput,
   CommandItem,
-} from "./ui/command";
+} from "@/components/ui/command";
 
+import { cn } from "@/lib/utils";
+
+// * types probably gotta refactor or sth
 export type Project = {
   id: number;
   name: string | null;
@@ -99,6 +113,7 @@ export default function Calendar({ session }: { session: Session | null }) {
     setCurrentMonth(format(firstDayNextMonth, "MMM-yyyy"));
   }
 
+  // TODO: Refactor and put all the db functions in a different file probably
   const getProjects = useCallback(async () => {
     try {
       const { data, error, status } = await supabase
@@ -160,7 +175,7 @@ export default function Calendar({ session }: { session: Session | null }) {
 
   useEffect(() => {
     getTasks();
-    console.log("tasks ran");
+    console.log("get tasks ran");
   }, [user, getTasks]);
 
   async function handleSignOut() {
@@ -185,7 +200,7 @@ export default function Calendar({ session }: { session: Session | null }) {
     name?: string;
     date: Date;
   }) {
-    const formattedDate = format(task.date, "yyyy-mm-dd");
+    const formattedDate = format(task.date, "yyyy-MM-dd");
     try {
       if (user) {
         await supabase.from("tasks").insert({
@@ -194,6 +209,7 @@ export default function Calendar({ session }: { session: Session | null }) {
           user_id: user?.id,
           title: task.name,
         });
+        getTasks();
       }
     } catch (error) {
       console.log(error);
@@ -207,14 +223,21 @@ export default function Calendar({ session }: { session: Session | null }) {
         <h2 className="flex-auto px-8 font-semibold text-gray-900 dark:text-white">
           {format(firstDayCurrentMonth, "MMMM yyyy")}
         </h2>
-        <div className="flex">
+        <div className="flex gap-4">
           <div className="flex gap-2">
             {projectsList?.map((project) => (
-              <Button variant="link" key={project.id}>
+              <Button
+                className="group relative"
+                variant="secondary"
+                key={project.id}
+              >
                 <div>{project.name}</div>
+                {/* 
+                  //TODO: temporary delete button, later add this feature to the project page 
+                */}
                 <span
                   onClick={() => deleteProject(project.id)}
-                  className="absolute -top-6 right-0 hidden h-6 w-6 cursor-pointer items-center justify-center  bg-red-600 text-center text-xs font-bold text-white group-hover:flex"
+                  className="absolute -top-6 right-0 hidden h-6 w-6 cursor-pointer items-center justify-center bg-destructive text-center text-xs font-bold text-destructive-foreground group-hover:flex"
                 >
                   x
                 </span>
@@ -222,7 +245,9 @@ export default function Calendar({ session }: { session: Session | null }) {
             ))}
           </div>
           <div className="flex gap-2">
-            <Button onClick={addNewProject}>Add Project</Button>
+            <Button className="" onClick={addNewProject}>
+              Add Project
+            </Button>
             <Input
               type="text"
               name="newProject"
@@ -250,13 +275,11 @@ export default function Calendar({ session }: { session: Session | null }) {
         </div>
       </div>
       <div className="mt-10 grid grid-cols-7 border-b text-center text-lg leading-6 text-gray-500">
-        <div className="pb-2 font-semibold">Sat</div>
-        <div className="pb-2 font-semibold">Sun</div>
-        <div className="pb-2 font-semibold">Mon</div>
-        <div className="pb-2 font-semibold">Tue</div>
-        <div className="pb-2 font-semibold">Wed</div>
-        <div className="pb-2 font-semibold">Thu</div>
-        <div className="pb-2 font-semibold">Fri</div>
+        {weekDays.map((weekDay) => (
+          <div key={weekDay} className="pb-2 font-semibold">
+            {weekDay}
+          </div>
+        ))}
       </div>
       <div className="grid flex-grow grid-cols-7 gap-0 text-sm">
         {days.map((day, dayIdx) => (
@@ -277,14 +300,19 @@ export default function Calendar({ session }: { session: Session | null }) {
               date={day}
               projectList={projectsList}
             >
-              <Plus
-                onClick={() => console.log("add clicked")}
-                className="absolute bottom-1 left-1 hidden h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-blue-600 text-xl text-white group-hover:flex"
-              />
+              <Button
+                size="icon"
+                variant="secondary"
+                className="absolute bottom-1 left-1 hidden h-6 w-6 cursor-pointer items-center justify-center rounded-full text-primary group-hover:flex"
+              >
+                <Plus className="absolute" />
+              </Button>
             </AddTaskDialog>
 
             <Day
-              todayTasks={tasks}
+              todayTasks={tasks?.filter(
+                (task) => format(day, "yyyy-MM-dd") === task.date,
+              )}
               day={day}
               projects={projectsList}
               selectedDay={selectedDay}
@@ -307,6 +335,10 @@ const colStartClasses = [
   "",
 ];
 
+const weekDays = ["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"];
+
+// * Dialog component stuff
+// TODO: refactor and move to another file later
 function AddTaskDialog({
   projectList,
   children,
@@ -329,11 +361,11 @@ function AddTaskDialog({
   );
 
   return (
-    <Dialog open={open}>
+    <Dialog>
       <DialogTrigger onClick={() => setOpen(true)} asChild>
         {children}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="font-vazir sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>تسک جدید</DialogTitle>
           <DialogDescription>تسک جدید رو اضافه کنید.</DialogDescription>
@@ -359,20 +391,21 @@ function AddTaskDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button
-            type="submit"
-            onClick={() => {
-              selectedProjectId &&
-                addTask({
-                  date: date,
-                  projectId: selectedProjectId,
-                  name: value,
-                });
-              setOpen(false);
-            }}
-          >
-            Add Task
-          </Button>
+          <DialogClose>
+            <Button
+              type="submit"
+              onClick={() => {
+                selectedProjectId &&
+                  addTask({
+                    date: date,
+                    projectId: selectedProjectId,
+                    name: value,
+                  });
+              }}
+            >
+              Add Task
+            </Button>
+          </DialogClose>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -396,15 +429,15 @@ function ComboBox({
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className="w-[200px] justify-between"
+          className=" w-full justify-between"
         >
           {value
             ? itemList &&
               itemList.find((project) => project.name === value)?.name
-            : "انتخاب پروژه"}
+            : "انتخاب پروژه..."}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[200px] p-0">
+      <PopoverContent className=" p-0">
         <Command>
           <CommandInput placeholder="جستجوی پروژه..." />
           <CommandEmpty>پروژه‌ای موجود نیست.</CommandEmpty>
