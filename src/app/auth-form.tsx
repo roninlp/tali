@@ -5,9 +5,20 @@ import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import { Auth } from "@supabase/auth-ui-react";
 import { ThemeMinimal } from "@supabase/auth-ui-shared";
 
+function getURL() {
+  let url =
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    process.env.NEXT_PUBLIC_VERCEL_URL ??
+    "http://localhost:3000/";
+  url = url.includes("http") ? url : `https://${url}`;
+
+  url = url.charAt(url.length - 1) === "/" ? url : `${url}/`;
+  return url;
+}
+
 export default function AuthForm() {
   const supabase = createClientComponentClient<Database>();
-
+  const siteURL = getURL();
   return (
     <Auth
       supabaseClient={supabase}
@@ -16,7 +27,7 @@ export default function AuthForm() {
       theme="dark"
       showLinks={false}
       providers={[]}
-      redirectTo="http://localhost:3000/auth/callback"
+      redirectTo={`${siteURL}auth/callback`}
     />
   );
 }
