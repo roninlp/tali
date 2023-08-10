@@ -2,14 +2,7 @@
 
 import Task from "@/components/Task";
 import { cn } from "@/lib/utils";
-import {
-  format,
-  isEqual,
-  isSameMonth,
-  isToday,
-  parse,
-  parseISO,
-} from "date-fns-jalali";
+import { format, isEqual, isSameMonth, isToday } from "date-fns-jalali";
 import type { TaskType, Project } from "./Calendar";
 
 export default function Day({

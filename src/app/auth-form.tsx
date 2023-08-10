@@ -7,7 +7,7 @@ import { ThemeMinimal } from "@supabase/auth-ui-shared";
 
 function getURL() {
   let url =
-    process.env.NEXT_PUBLIC_SITE_URL ??
+    process.env.SITE_URL ??
     process.env.NEXT_PUBLIC_VERCEL_URL ??
     "http://localhost:3000/";
   url = url.includes("http") ? url : `https://${url}`;
@@ -27,7 +27,7 @@ export default function AuthForm() {
       theme="dark"
       showLinks={false}
       providers={[]}
-      redirectTo={`${siteURL}auth/callback`}
+      redirectTo={`${location.origin}auth/callback`}
     />
   );
 }

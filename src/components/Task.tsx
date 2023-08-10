@@ -9,11 +9,13 @@ export default function Task({
   task: { is_complete, title, category_id, project_id },
   projects,
 }: {
+  // TODO: Probably use context or something to manage state instead of prop drilling
   task: TaskType;
   projects: Project[] | undefined;
 }) {
   const projectName = projects?.find((prj) => prj.id === project_id)?.name;
   const [isDone, setIsDone] = useState(false);
+
   return (
     <div
       className={cn(
