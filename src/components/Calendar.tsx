@@ -1,5 +1,6 @@
 "use client";
 
+// * React and Nextjs stuff
 import {
   Dispatch,
   SetStateAction,
@@ -10,8 +11,8 @@ import {
 
 import { useRouter } from "next/navigation";
 
+// * database stuff
 import { Database } from "@/types/supabase";
-import { Check, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import {
   Session,
   createClientComponentClient,
@@ -34,6 +35,8 @@ import {
 } from "date-fns-jalali";
 
 // * componens
+import { Check, ChevronLeft, ChevronRight, Plus } from "lucide-react";
+
 import Day from "@/components/Day";
 
 import { ThemeToggle } from "./theme-toggle-button";

@@ -27,7 +27,7 @@ export default function AuthForm() {
       theme="dark"
       showLinks={false}
       providers={[]}
-      redirectTo={`${location.origin}auth/callback`}
+      redirectTo={`${siteURL}auth/callback`}
     />
   );
 }

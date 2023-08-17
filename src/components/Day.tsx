@@ -4,6 +4,7 @@ import Task from "@/components/Task";
 import { cn } from "@/lib/utils";
 import { format, isEqual, isSameMonth, isToday } from "date-fns-jalali";
 import type { TaskType, Project } from "./Calendar";
+import { useState } from "react";
 
 export default function Day({
   day,
@@ -18,6 +19,7 @@ export default function Day({
   firstDayCurrentMonth: Date;
   todayTasks: TaskType[] | null | undefined;
 }) {
+  const [tasks, setTasks] = useState(todayTasks);
   return (
     <>
       <div

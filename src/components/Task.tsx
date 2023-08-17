@@ -5,8 +5,9 @@ import type { TaskType, Project } from "./Calendar";
 import { Checkbox } from "./ui/checkbox";
 import { Label } from "./ui/label";
 import { cn } from "@/lib/utils";
+
 export default function Task({
-  task: { is_complete, title, category_id, project_id },
+  task: { id, is_complete, title, category_id, project_id },
   projects,
 }: {
   // TODO: Probably use context or something to manage state instead of prop drilling
@@ -28,12 +29,12 @@ export default function Task({
       <div className="flex items-center justify-between gap-0 truncate px-1">
         <div className="flex items-center justify-center gap-1">
           <Checkbox
-            id="task"
+            id={id.toString()}
             checked={isDone}
             onClick={() => setIsDone((prevIsDone) => !prevIsDone)}
           />
           <Label
-            htmlFor="task"
+            htmlFor={id.toString()}
             className={cn(
               isDone && "line-through",
               "whitespace-nowrap p-1 leading-4",
