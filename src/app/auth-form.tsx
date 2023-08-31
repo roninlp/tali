@@ -2,8 +2,8 @@
 
 import { Database } from "@/types/supabase";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
-import { Auth } from "@supabase/auth-ui-react";
-import { ThemeMinimal } from "@supabase/auth-ui-shared";
+import { Auth, SignIn, SignUp } from "@supabase/auth-ui-react";
+import { ThemeSupa } from "@supabase/auth-ui-shared";
 
 function getURL() {
   let url =
@@ -19,15 +19,30 @@ function getURL() {
 export default function AuthForm() {
   const supabase = createClientComponentClient<Database>();
   const siteURL = getURL();
+  console.log(siteURL);
   return (
-    <Auth
-      supabaseClient={supabase}
-      view="magic_link"
-      appearance={{ theme: ThemeMinimal }}
-      theme="dark"
-      showLinks={false}
-      providers={[]}
-      redirectTo={`${siteURL}auth/callback`}
-    />
+    <div className="flex">
+      <Auth
+        supabaseClient={supabase}
+        view="sign_in"
+        appearance={{ theme: ThemeSupa }}
+        theme="dark"
+        showLinks={false}
+        providers={["github"]}
+        redirectTo={`${siteURL}auth/callback`}
+      />
+      {/* <SignIn
+        supabaseClient={supabase}
+        providers={[]}
+        theme="dark"
+        appearance={{ theme: ThemeSupa }}
+        redirectTo={`${siteURL}auth/callback`}
+      /> */}
+      {/* <SignUp
+        supabaseClient={supabase}
+        providers={[]}
+        redirectTo={`${siteURL}auth/callback`}
+      /> */}
+    </div>
   );
 }

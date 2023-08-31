@@ -254,7 +254,6 @@ export default function Calendar({ session }: { session: Session | null }) {
             <Input
               type="text"
               name="newProject"
-              id="newProject"
               placeholder="نام پروژه"
               value={newProject}
               onChange={(e) => setNewProject(e.target.value)}
@@ -301,12 +300,13 @@ export default function Calendar({ session }: { session: Session | null }) {
             <AddTaskDialog
               addTask={addTask}
               date={day}
+              key={dayIdx}
               projectList={projectsList}
             >
               <Button
                 size="icon"
                 variant="secondary"
-                className="absolute bottom-1 left-1 hidden h-6 w-6 cursor-pointer items-center justify-center rounded-full text-primary group-hover:flex"
+                className="absolute bottom-1 left-1 h-6 w-6 scale-0 cursor-pointer items-center justify-center rounded-full text-primary transition-all ease-in-out group-hover:flex group-hover:scale-100 "
               >
                 <Plus className="absolute" />
               </Button>
@@ -365,9 +365,7 @@ function AddTaskDialog({
 
   return (
     <Dialog>
-      <DialogTrigger onClick={() => setOpen(true)} asChild>
-        {children}
-      </DialogTrigger>
+      <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent className="font-vazir sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>تسک جدید</DialogTitle>
@@ -386,7 +384,7 @@ function AddTaskDialog({
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="taskName">تسک:</Label>
             <Input
-              id="taskName"
+              id={`taskName`}
               value={value}
               onChange={(e) => setValue(e.target.value)}
               className="col-span-3"
