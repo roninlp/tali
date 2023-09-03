@@ -10,5 +10,6 @@ export async function GET(req: NextRequest) {
   if (code) {
     await supabase.auth.exchangeCodeForSession(code);
   }
+  console.log("req.url", req.url);
   return NextResponse.redirect(new URL("/calendar", req.url));
 }

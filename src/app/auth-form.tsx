@@ -19,7 +19,6 @@ function getURL() {
 export default function AuthForm() {
   const supabase = createClientComponentClient<Database>();
   const siteURL = getURL();
-  console.log(siteURL);
   return (
     <div className="flex">
       <Auth

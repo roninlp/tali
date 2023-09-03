@@ -7,6 +7,7 @@ import {
   useCallback,
   useEffect,
   useState,
+  experimental_useOptimistic as useOptimistic,
 } from "react";
 
 import { useRouter } from "next/navigation";
@@ -68,6 +69,10 @@ import {
 } from "@/components/ui/command";
 
 import { cn } from "@/lib/utils";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { fetchProjects, useProjects } from "@/app/_hooks/useProjects";
+import { useAddTask, useTasks } from "@/app/_hooks/useTasks";
+import { userAgent } from "next/server";
 
 // * types probably gotta refactor or sth
 export type Project = {
@@ -86,16 +91,18 @@ export type TaskType = {
   user_id: string;
 };
 
-export default function Calendar({ session }: { session: Session | null }) {
+export default function Calendar({ session }: { session: Session }) {
   const supabase = createClientComponentClient<Database>();
-  const user = session?.user;
+  const user = session.user;
+
+  const queryClient = useQueryClient();
 
   const router = useRouter();
 
   const today = startOfToday();
   const [newProject, setNewProject] = useState("");
-  const [projectsList, setProjectsList] = useState<Project[]>();
-  const [tasks, setAllTasks] = useState<TaskType[] | null>();
+  //const [projectsList, setProjectsList] = useState<Project[]>();
+  //const [tasks, setAllTasks] = useState<TaskType[] | null>();
 
   const [selectedDay, setSelectedDay] = useState(today);
   const [currentMonth, setCurrentMonth] = useState(format(today, "MMM-yyyy"));
@@ -117,69 +124,78 @@ export default function Calendar({ session }: { session: Session | null }) {
   }
 
   // TODO: Refactor and put all the db functions in a different file probably
-  const getProjects = useCallback(async () => {
-    try {
-      const { data, error, status } = await supabase
+  // const getProjects = useCallback(async () => {
+  //   try {
+  //     const { data, error, status } = await supabase
+  //       .from("projects")
+  //       .select("name, id")
+  //       .eq("user_id", user?.id);
+
+  //     if (error && status !== 406) {
+  //       throw error;
+  //     }
+
+  //     if (data) {
+  //       setProjectsList(data);
+  //     }
+  //   } catch (error) {
+  //     alert("error Loading user data");
+  //   }
+  // }, [user, supabase]);
+
+  const { data: projectsList } = useProjects(user.id);
+
+  const { data: tasks } = useTasks(user.id);
+
+  // const getTasks = useCallback(async () => {
+  //   try {
+  //     const { data, error, status } = await supabase
+  //       .from("tasks")
+  //       .select("*")
+  //       .eq("user_id", user?.id);
+
+  //     if (error && status !== 406) {
+  //       throw error;
+  //     }
+
+  //     if (data) {
+  //       setAllTasks(data);
+  //     }
+  //   } catch (error) {
+  //     alert("error loading tasks");
+  //   }
+  // }, [user, supabase]);
+
+  const addNewProject = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
         .from("projects")
-        .select("name, id")
-        .eq("user_id", user?.id);
+        .insert({ name: newProject, user_id: user.id });
+      if (error) throw error;
+      setNewProject("");
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["projects"] }),
+  });
 
-      if (error && status !== 406) {
-        throw error;
-      }
+  // async function addNewProject() {
+  //   try {
+  //     if (user) {
+  //       const { error } = await supabase
+  //         .from("projects")
+  //         .insert({ name: newProject, user_id: user.id });
+  //       if (error) throw error;
+  //       setNewProject("");
+  //     }
+  //   } catch (error) {
+  //     console.error(error);
+  //     alert("error adding new project");
+  //   }
+  // }
 
-      if (data) {
-        setProjectsList(data);
-      }
-    } catch (error) {
-      alert("error Loading user data");
-    }
-  }, [user, supabase]);
-
-  const getTasks = useCallback(async () => {
-    try {
-      const { data, error, status } = await supabase
-        .from("tasks")
-        .select("*")
-        .eq("user_id", user?.id);
-
-      if (error && status !== 406) {
-        throw error;
-      }
-
-      if (data) {
-        setAllTasks(data);
-      }
-    } catch (error) {
-      alert("error loading tasks");
-    }
-  }, [user, supabase]);
-
-  async function addNewProject() {
-    try {
-      if (user) {
-        const { error } = await supabase
-          .from("projects")
-          .insert({ name: newProject, user_id: user.id });
-        if (error) throw error;
-        getProjects();
-        setNewProject("");
-      }
-    } catch (error) {
-      console.error(error);
-      alert("error adding new project");
-    }
-  }
-
-  useEffect(() => {
-    getProjects();
-    console.log("get project ran");
-  }, [user, getProjects]);
-
-  useEffect(() => {
-    getTasks();
-    console.log("get tasks ran");
-  }, [user, getTasks]);
+  // useEffect(() => {
+  //   getTasks();
+  //   console.log("get tasks ran");
+  // }, [user, getTasks]);
 
   async function handleSignOut() {
     await supabase.auth.signOut();
@@ -190,7 +206,6 @@ export default function Calendar({ session }: { session: Session | null }) {
     try {
       if (user) {
         await supabase.from("projects").delete().eq("id", id);
-        getProjects();
       }
     } catch (error) {
       console.log(error);
@@ -198,26 +213,26 @@ export default function Calendar({ session }: { session: Session | null }) {
     }
   }
 
-  async function addTask(task: {
-    projectId: number;
-    name?: string;
-    date: Date;
-  }) {
-    const formattedDate = format(task.date, "yyyy-MM-dd");
-    try {
-      if (user) {
-        await supabase.from("tasks").insert({
-          project_id: task.projectId,
-          date: formattedDate,
-          user_id: user?.id,
-          title: task.name,
-        });
-        getTasks();
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  }
+  // async function addTask(task: {
+  //   projectId: number;
+  //   name?: string;
+  //   date: Date;
+  // }) {
+  //   const formattedDate = format(task.date, "yyyy-MM-dd");
+  //   try {
+  //     if (user) {
+  //       await supabase.from("tasks").insert({
+  //         project_id: task.projectId,
+  //         date: formattedDate,
+  //         user_id: user?.id,
+  //         title: task.name,
+  //       });
+  //       queryClient.invalidateQueries({ queryKey: ["tasks"] });
+  //     }
+  //   } catch (error) {
+  //     console.log(error);
+  //   }
+  // }
 
   return (
     <div className="mx-auto flex h-full w-full flex-col px-8 pt-8 font-vazir">
@@ -247,8 +262,14 @@ export default function Calendar({ session }: { session: Session | null }) {
               </Button>
             ))}
           </div>
-          <div className="flex gap-2">
-            <Button className="" onClick={addNewProject}>
+          <form
+            className="flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              addNewProject.mutate();
+            }}
+          >
+            <Button className="" type="submit">
               Add Project
             </Button>
             <Input
@@ -259,7 +280,7 @@ export default function Calendar({ session }: { session: Session | null }) {
               onChange={(e) => setNewProject(e.target.value)}
               className="border py-0"
             />
-          </div>
+          </form>
         </div>
         <p>{user?.email}</p>
         <Button variant="outline" onClick={handleSignOut}>
@@ -298,9 +319,9 @@ export default function Calendar({ session }: { session: Session | null }) {
             )}
           >
             <AddTaskDialog
-              addTask={addTask}
               date={day}
               key={dayIdx}
+              userId={user.id}
               projectList={projectsList}
             >
               <Button
@@ -346,23 +367,19 @@ function AddTaskDialog({
   projectList,
   children,
   date,
-  addTask,
+  userId,
 }: {
   projectList: Project[] | undefined;
   date: Date;
-  addTask: (task: {
-    projectId: number;
-    name?: string;
-    date: Date;
-  }) => Promise<void>;
+  userId: string;
+
   children: React.ReactNode;
 }) {
   const [value, setValue] = useState("");
   const [open, setOpen] = useState(false);
-  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(
-    null,
-  );
+  const [selectedProjectId, setSelectedProjectId] = useState<number>(0);
 
+  const { mutate, isPending, submittedAt, isError, variables } = useAddTask();
   return (
     <Dialog>
       <DialogTrigger asChild>{children}</DialogTrigger>
@@ -393,19 +410,7 @@ function AddTaskDialog({
         </div>
         <DialogFooter>
           <DialogClose>
-            <Button
-              type="submit"
-              onClick={() => {
-                selectedProjectId &&
-                  addTask({
-                    date: date,
-                    projectId: selectedProjectId,
-                    name: value,
-                  });
-              }}
-            >
-              Add Task
-            </Button>
+            <Button type="submit">Add Task</Button>
           </DialogClose>
         </DialogFooter>
       </DialogContent>
@@ -418,7 +423,7 @@ function ComboBox({
   setSelectedProjectId,
 }: {
   itemList: Project[] | undefined;
-  setSelectedProjectId: Dispatch<SetStateAction<number | null>>;
+  setSelectedProjectId: Dispatch<SetStateAction<number>>;
 }) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");

@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { format, isEqual, isSameMonth, isToday } from "date-fns-jalali";
 import type { TaskType, Project } from "./Calendar";
 import { useState } from "react";
+import { useMutationState } from "@tanstack/react-query";
 
 export default function Day({
   day,
@@ -20,6 +21,15 @@ export default function Day({
   todayTasks: TaskType[] | null | undefined;
 }) {
   const [tasks, setTasks] = useState(todayTasks);
+  const variables = useMutationState<{
+    projectId: number;
+    date: Date;
+    userId: string;
+    name: string;
+  }>({
+    filters: { mutationKey: ["addTodo"], status: "pending" },
+    select: (mutation) => mutation.state.variables,
+  });
   return (
     <>
       <div
@@ -46,6 +56,7 @@ export default function Day({
         {todayTasks?.map((task) => (
           <Task key={task.id} task={task} projects={projects} />
         ))}
+        <Task key={variables[0].name} projects={projects} task={variables[0]}
       </div>
     </>
   );
