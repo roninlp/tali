@@ -1,6 +1,7 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { ProjectType } from "@/components/Calendar";
 import { Database } from "@/types/supabase";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { useQuery } from "@tanstack/react-query";
 
 const supabase = createClientComponentClient<Database>();
 
@@ -8,7 +9,7 @@ const fetchProjects = async (id: string) => {
   try {
     const { data, error, status } = await supabase
       .from("projects")
-      .select("name, id")
+      .select("*")
       .eq("user_id", id);
 
     if (error && status !== 406) {
@@ -23,10 +24,11 @@ const fetchProjects = async (id: string) => {
   }
 };
 
-const useProjects = (id: string) => {
+const useProjects = (id: string, initialProjects?: ProjectType[]) => {
   return useQuery({
     queryKey: ["projects"],
     queryFn: () => fetchProjects(id),
+    initialData: initialProjects,
   });
 };
 
@@ -35,4 +37,4 @@ const useProjects = (id: string) => {
 //     await supabase.from("projects").insert({ name: newPrj, user_id: user.id }),
 // });
 
-export { useProjects, fetchProjects };
+export { fetchProjects, useProjects };

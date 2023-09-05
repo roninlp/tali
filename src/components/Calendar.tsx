@@ -1,19 +1,12 @@
 "use client";
 
 // * React and Nextjs stuff
-import {
-  Dispatch,
-  SetStateAction,
-  useCallback,
-  useEffect,
-  useState,
-  experimental_useOptimistic as useOptimistic,
-} from "react";
+import { useState } from "react";
 
 import { useRouter } from "next/navigation";
 
 // * database stuff
-import { Database } from "@/types/supabase";
+import { Database, Tables } from "@/types/supabase";
 import {
   Session,
   createClientComponentClient,
@@ -36,7 +29,7 @@ import {
 } from "date-fns-jalali";
 
 // * componens
-import { Check, ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import Day from "@/components/Day";
 
@@ -44,54 +37,26 @@ import { ThemeToggle } from "./theme-toggle-button";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-} from "@/components/ui/command";
 
+import { useProjects } from "@/app/_hooks/useProjects";
+import { useTasks } from "@/app/_hooks/useTasks";
 import { cn } from "@/lib/utils";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchProjects, useProjects } from "@/app/_hooks/useProjects";
-import { useAddTask, useTasks } from "@/app/_hooks/useTasks";
-import { userAgent } from "next/server";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 // * types probably gotta refactor or sth
-export type Project = {
-  id: number;
-  name: string | null;
-};
 
-export type TaskType = {
-  category_id: number | null;
-  created_at: string;
-  date: string;
-  id: number;
-  is_complete: boolean;
-  project_id: number;
-  title: string | null;
-  user_id: string;
-};
+export type ProjectType = Tables<"projects">;
+export type TaskType = Tables<"tasks">;
 
-export default function Calendar({ session }: { session: Session }) {
+export default function Calendar({
+  session,
+  initialProjects,
+  initialTasks,
+}: {
+  session: Session;
+  initialProjects: ProjectType[];
+  initialTasks: TaskType[];
+}) {
   const supabase = createClientComponentClient<Database>();
   const user = session.user;
 
@@ -143,9 +108,9 @@ export default function Calendar({ session }: { session: Session }) {
   //   }
   // }, [user, supabase]);
 
-  const { data: projectsList } = useProjects(user.id);
+  const { data: projectsList } = useProjects(user.id, initialProjects);
 
-  const { data: tasks } = useTasks(user.id);
+  const { data: tasks } = useTasks(user.id, initialTasks);
 
   // const getTasks = useCallback(async () => {
   //   try {
@@ -318,25 +283,11 @@ export default function Calendar({ session }: { session: Session }) {
               "group relative flex h-full flex-col items-start gap-1 border-b p-1",
             )}
           >
-            <AddTaskDialog
-              date={day}
-              key={dayIdx}
-              userId={user.id}
-              projectList={projectsList}
-            >
-              <Button
-                size="icon"
-                variant="secondary"
-                className="absolute bottom-1 left-1 h-6 w-6 scale-0 cursor-pointer items-center justify-center rounded-full text-primary transition-all ease-in-out group-hover:flex group-hover:scale-100 "
-              >
-                <Plus className="absolute" />
-              </Button>
-            </AddTaskDialog>
-
             <Day
               todayTasks={tasks?.filter(
                 (task) => format(day, "yyyy-MM-dd") === task.date,
               )}
+              userId={user.id}
               day={day}
               projects={projectsList}
               selectedDay={selectedDay}
@@ -363,113 +314,3 @@ const weekDays = ["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"];
 
 // * Dialog component stuff
 // TODO: refactor and move to another file later
-function AddTaskDialog({
-  projectList,
-  children,
-  date,
-  userId,
-}: {
-  projectList: Project[] | undefined;
-  date: Date;
-  userId: string;
-
-  children: React.ReactNode;
-}) {
-  const [value, setValue] = useState("");
-  const [open, setOpen] = useState(false);
-  const [selectedProjectId, setSelectedProjectId] = useState<number>(0);
-
-  const { mutate, isPending, submittedAt, isError, variables } = useAddTask();
-  return (
-    <Dialog>
-      <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="font-vazir sm:max-w-[425px]">
-        <DialogHeader>
-          <DialogTitle>تسک جدید</DialogTitle>
-          <DialogDescription>تسک جدید رو اضافه کنید.</DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-4 py-4">
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="project">نام پروژه:</Label>
-            <div className="col-span-3">
-              <ComboBox
-                setSelectedProjectId={setSelectedProjectId}
-                itemList={projectList}
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="taskName">تسک:</Label>
-            <Input
-              id={`taskName`}
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              className="col-span-3"
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <DialogClose>
-            <Button type="submit">Add Task</Button>
-          </DialogClose>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ComboBox({
-  itemList,
-  setSelectedProjectId,
-}: {
-  itemList: Project[] | undefined;
-  setSelectedProjectId: Dispatch<SetStateAction<number>>;
-}) {
-  const [open, setOpen] = useState(false);
-  const [value, setValue] = useState("");
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className=" w-full justify-between"
-        >
-          {value
-            ? itemList &&
-              itemList.find((project) => project.name === value)?.name
-            : "انتخاب پروژه..."}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className=" p-0">
-        <Command>
-          <CommandInput placeholder="جستجوی پروژه..." />
-          <CommandEmpty>پروژه‌ای موجود نیست.</CommandEmpty>
-          <CommandGroup>
-            {itemList &&
-              itemList.map((item) => (
-                <CommandItem
-                  key={item.id}
-                  onSelect={(currentValue) => {
-                    setValue(currentValue === value ? "" : currentValue);
-                    setSelectedProjectId(item.id);
-                    setOpen(false);
-                  }}
-                >
-                  <Check
-                    className={cn(
-                      "mr-2 h-4 w-4",
-                      value === item.name ? "opacity-100" : "opacity-0",
-                    )}
-                  />
-                  {item.name}
-                </CommandItem>
-              ))}
-          </CommandGroup>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
-}

@@ -1,23 +1,27 @@
 "use client";
 
+import { cn } from "@/lib/utils";
 import { useState } from "react";
-import type { TaskType, Project } from "./Calendar";
+import type { ProjectType } from "./Calendar";
 import { Checkbox } from "./ui/checkbox";
 import { Label } from "./ui/label";
-import { cn } from "@/lib/utils";
+
+import { useDeleteTask, type InsertTask } from "@/app/_hooks/useTasks";
 
 export default function Task({
   task: { id, is_complete, title, category_id, project_id },
   projects,
 }: {
   // TODO: Probably use context or something to manage state instead of prop drilling
-  task: TaskType;
-  projects: Project[] | undefined;
+  task: InsertTask;
+  projects: ProjectType[] | undefined;
 }) {
   const projectName = projects?.find((prj) => prj.id === project_id)?.name;
   const [isDone, setIsDone] = useState(false);
 
-  return (
+  const { mutate, isPending } = useDeleteTask();
+
+  return id ? (
     <div
       className={cn(
         isDone
@@ -43,6 +47,34 @@ export default function Task({
             {projectName}
           </Label>
         </div>
+
+        <span>1/10</span>
+      </div>
+    </div>
+  ) : (
+    <div
+      className={cn(
+        "w-full rounded-md bg-primary px-1 text-lg text-primary-foreground opacity-50  transition-all sm:gap-1 md:text-sm lg:gap-8",
+      )}
+    >
+      <div className="flex items-center justify-between gap-0 truncate px-1">
+        <div className="flex items-center justify-center gap-1">
+          <Checkbox
+            id="temp"
+            checked={isDone}
+            onClick={() => setIsDone((prevIsDone) => !prevIsDone)}
+          />
+          <Label
+            htmlFor="temp"
+            className={cn(
+              isDone && "line-through",
+              "whitespace-nowrap p-1 leading-4",
+            )}
+          >
+            {projectName}
+          </Label>
+        </div>
+
         <span>1/10</span>
       </div>
     </div>

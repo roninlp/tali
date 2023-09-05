@@ -1,11 +1,12 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { TaskType } from "@/components/Calendar";
+import { Database, InsertTables } from "@/types/supabase";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
-import { Database } from "@/types/supabase";
-import { format } from "date-fns-jalali";
-import getQueryClient from "../getQueryClient";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+//import getQueryClient from "../getQueryClient";
 
 const supabase = createClientComponentClient<Database>();
-const queryClient = getQueryClient();
+
+export type InsertTask = InsertTables<"tasks">;
 
 const fetchTasks = async (id: string) => {
   try {
@@ -26,34 +27,45 @@ const fetchTasks = async (id: string) => {
   }
 };
 
-const useTasks = (id: string) => {
+const useTasks = (id: string, initialTasks?: TaskType[]) => {
   return useQuery({
     queryKey: ["tasks"],
     queryFn: () => fetchTasks(id),
+    initialData: initialTasks,
   });
 };
 
 const useAddTask = () => {
+  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (task: {
-      projectId: number;
-      date: Date;
-      userId: string;
-      name: string;
-    }) => {
-      const formattedDate = format(task.date, "yyyy-MM-dd");
+    mutationFn: async ({ project_id, date, user_id, title }: InsertTask) => {
       await supabase.from("tasks").insert({
-        project_id: task.projectId,
-        date: formattedDate,
-        user_id: task.userId,
-        title: task.name,
+        project_id: project_id,
+        date: date,
+        user_id: user_id,
+        title: title,
       });
     },
-    mutationKey: ["addTask"],
+    onSuccess: async () => {
+      return await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    },
     onSettled: async () => {
       return await queryClient.invalidateQueries({ queryKey: ["tasks"] });
     },
+    mutationKey: ["addTask"],
   });
 };
 
-export { useTasks, fetchTasks, useAddTask };
+const useDeleteTask = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (taskId: number) => {
+      await supabase.from("tasks").delete().eq("id", taskId);
+    },
+    onSettled: async () =>
+      await queryClient.invalidateQueries({ queryKey: ["tasks"] }),
+  });
+};
+
+export { fetchTasks, useAddTask, useDeleteTask, useTasks };
+
