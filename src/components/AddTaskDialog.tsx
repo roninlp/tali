@@ -1,3 +1,5 @@
+"use client";
+
 import { useAddTask } from "@/app/_hooks/useTasks";
 import {
   Dialog,
@@ -6,8 +8,8 @@ import {
   DialogDescription,
   DialogTitle,
   DialogTrigger,
-} from "@radix-ui/react-dialog";
-import { Label } from "@radix-ui/react-label";
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { format } from "date-fns-jalali";
 import { useState } from "react";
 import { ProjectType } from "./Calendar";
@@ -28,7 +30,6 @@ export default function AddTaskDialog({
 
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState<number>(0);
   const formattedDate = format(date, "yyyy-MM-dd");
@@ -45,7 +46,7 @@ export default function AddTaskDialog({
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="project">نام پروژه:</Label>
+            <Label>نام پروژه:</Label>
             <div className="col-span-3">
               <ComboBox
                 setSelectedProjectId={setSelectedProjectId}
@@ -56,7 +57,7 @@ export default function AddTaskDialog({
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="taskName">تسک:</Label>
             <Input
-              id={`taskName`}
+              id="taskName"
               value={value}
               onChange={(e) => setValue(e.target.value)}
               className="col-span-3"
@@ -75,6 +76,7 @@ export default function AddTaskDialog({
                 user_id: userId,
                 title: value,
               });
+              setValue("");
             }}
           >
             Add Task

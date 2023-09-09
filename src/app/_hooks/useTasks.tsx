@@ -46,13 +46,32 @@ const useAddTask = () => {
         title: title,
       });
     },
-    onSuccess: async () => {
-      return await queryClient.invalidateQueries({ queryKey: ["tasks"] });
-    },
+
     onSettled: async () => {
       return await queryClient.invalidateQueries({ queryKey: ["tasks"] });
     },
     mutationKey: ["addTask"],
+  });
+};
+
+const useToggleTasks = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      taskId,
+      isCompleted,
+    }: {
+      taskId: number;
+      isCompleted: boolean | undefined;
+    }) => {
+      await supabase
+        .from("tasks")
+        .update({ is_complete: !isCompleted })
+        .eq("id", taskId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    },
   });
 };
 
@@ -67,5 +86,4 @@ const useDeleteTask = () => {
   });
 };
 
-export { fetchTasks, useAddTask, useDeleteTask, useTasks };
-
+export { fetchTasks, useAddTask, useDeleteTask, useTasks, useToggleTasks };

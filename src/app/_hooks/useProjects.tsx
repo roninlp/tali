@@ -1,7 +1,7 @@
 import { ProjectType } from "@/components/Calendar";
 import { Database } from "@/types/supabase";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 const supabase = createClientComponentClient<Database>();
 
@@ -32,9 +32,22 @@ const useProjects = (id: string, initialProjects?: ProjectType[]) => {
   });
 };
 
+const useDeleteProject = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      await supabase.from("projects").delete().eq("id", id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+};
+
 // const addNewProjectMutation = useMutation({
 //   mutationFn: async (newPrj) =>
 //     await supabase.from("projects").insert({ name: newPrj, user_id: user.id }),
 // });
 
-export { fetchProjects, useProjects };
+export { fetchProjects, useDeleteProject, useProjects };

@@ -8,8 +8,7 @@ import { useState } from "react";
 import type { ProjectType } from "./Calendar";
 
 import { useDeleteTask, type InsertTask } from "@/app/_hooks/useTasks";
-import { Plus, X } from "lucide-react";
-import AddTaskDialog from "./AddTaskDialog";
+import { X } from "lucide-react";
 import { Button } from "./ui/button";
 
 export default function Day({
@@ -40,16 +39,6 @@ export default function Day({
 
   return (
     <>
-      <AddTaskDialog date={day} userId={userId} projectList={projects}>
-        <Button
-          size="icon"
-          variant="secondary"
-          className="absolute bottom-1 left-1 h-6 w-6 scale-0 cursor-pointer items-center justify-center rounded-full text-primary transition-all ease-in-out group-hover:flex group-hover:scale-100 "
-        >
-          <Plus className="absolute" />
-        </Button>
-      </AddTaskDialog>
-
       <div
         className={cn(
           isEqual(day, selectedDay) && "text-secondary-foreground",
@@ -70,19 +59,18 @@ export default function Day({
       >
         <time dateTime={format(day, "yyyy-MM-dd")}>{format(day, "d")}</time>
       </div>
-      <div className="relative flex w-full flex-col gap-1">
+      <div className="relative flex w-full shrink flex-col gap-1">
         {todayTasks?.map((task) => (
-          <div key={task.id} className="group/task">
-            {
-              <Button
-                className="absolute left-0 hidden group-hover/task:inline-block"
-                variant="destructive"
-                size={"sm"}
-                onClick={() => task.id && mutate(task.id)}
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            }
+          <div key={task.id} className="group/task relative">
+            <Button
+              className="absolute -top-4 left-0 hidden group-hover/task:inline-block"
+              variant="destructive"
+              size={"sm"}
+              onClick={() => task.id && mutate(task.id)}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+
             <Task task={task} projects={projects} />
           </div>
         ))}

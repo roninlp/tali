@@ -1,11 +1,19 @@
-import { cn } from "@/lib/utils";
+"use client";
+
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+} from "@/components/ui/command";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@radix-ui/react-popover";
-import { CommandEmpty, CommandGroup, CommandInput, CommandItem } from "cmdk";
-import { Check, Command } from "lucide-react";
+} from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { Check } from "lucide-react";
 import { Dispatch, SetStateAction, useState } from "react";
 import { ProjectType } from "./Calendar";
 import { Button } from "./ui/button";

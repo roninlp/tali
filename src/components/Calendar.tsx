@@ -29,7 +29,7 @@ import {
 } from "date-fns-jalali";
 
 // * componens
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 
 import Day from "@/components/Day";
 
@@ -38,13 +38,14 @@ import { ThemeToggle } from "./theme-toggle-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-import { useProjects } from "@/app/_hooks/useProjects";
+import { useDeleteProject, useProjects } from "@/app/_hooks/useProjects";
 import { useTasks } from "@/app/_hooks/useTasks";
 import { cn } from "@/lib/utils";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-// * types probably gotta refactor or sth
+import AddTaskDialog from "./AddTaskDialog";
 
+// * Types
 export type ProjectType = Tables<"projects">;
 export type TaskType = Tables<"tasks">;
 
@@ -66,8 +67,6 @@ export default function Calendar({
 
   const today = startOfToday();
   const [newProject, setNewProject] = useState("");
-  //const [projectsList, setProjectsList] = useState<Project[]>();
-  //const [tasks, setAllTasks] = useState<TaskType[] | null>();
 
   const [selectedDay, setSelectedDay] = useState(today);
   const [currentMonth, setCurrentMonth] = useState(format(today, "MMM-yyyy"));
@@ -88,48 +87,9 @@ export default function Calendar({
     setCurrentMonth(format(firstDayNextMonth, "MMM-yyyy"));
   }
 
-  // TODO: Refactor and put all the db functions in a different file probably
-  // const getProjects = useCallback(async () => {
-  //   try {
-  //     const { data, error, status } = await supabase
-  //       .from("projects")
-  //       .select("name, id")
-  //       .eq("user_id", user?.id);
-
-  //     if (error && status !== 406) {
-  //       throw error;
-  //     }
-
-  //     if (data) {
-  //       setProjectsList(data);
-  //     }
-  //   } catch (error) {
-  //     alert("error Loading user data");
-  //   }
-  // }, [user, supabase]);
-
   const { data: projectsList } = useProjects(user.id, initialProjects);
 
   const { data: tasks } = useTasks(user.id, initialTasks);
-
-  // const getTasks = useCallback(async () => {
-  //   try {
-  //     const { data, error, status } = await supabase
-  //       .from("tasks")
-  //       .select("*")
-  //       .eq("user_id", user?.id);
-
-  //     if (error && status !== 406) {
-  //       throw error;
-  //     }
-
-  //     if (data) {
-  //       setAllTasks(data);
-  //     }
-  //   } catch (error) {
-  //     alert("error loading tasks");
-  //   }
-  // }, [user, supabase]);
 
   const addNewProject = useMutation({
     mutationFn: async () => {
@@ -142,62 +102,21 @@ export default function Calendar({
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["projects"] }),
   });
 
-  // async function addNewProject() {
-  //   try {
-  //     if (user) {
-  //       const { error } = await supabase
-  //         .from("projects")
-  //         .insert({ name: newProject, user_id: user.id });
-  //       if (error) throw error;
-  //       setNewProject("");
-  //     }
-  //   } catch (error) {
-  //     console.error(error);
-  //     alert("error adding new project");
-  //   }
-  // }
-
-  // useEffect(() => {
-  //   getTasks();
-  //   console.log("get tasks ran");
-  // }, [user, getTasks]);
-
   async function handleSignOut() {
     await supabase.auth.signOut();
     router.refresh();
   }
 
+  const { mutate: deleteProjectMutation } = useDeleteProject();
+
   async function deleteProject(id: number) {
     try {
-      if (user) {
-        await supabase.from("projects").delete().eq("id", id);
-      }
+      deleteProjectMutation(id);
     } catch (error) {
       console.log(error);
       alert("error deleting project");
     }
   }
-
-  // async function addTask(task: {
-  //   projectId: number;
-  //   name?: string;
-  //   date: Date;
-  // }) {
-  //   const formattedDate = format(task.date, "yyyy-MM-dd");
-  //   try {
-  //     if (user) {
-  //       await supabase.from("tasks").insert({
-  //         project_id: task.projectId,
-  //         date: formattedDate,
-  //         user_id: user?.id,
-  //         title: task.name,
-  //       });
-  //       queryClient.invalidateQueries({ queryKey: ["tasks"] });
-  //     }
-  //   } catch (error) {
-  //     console.log(error);
-  //   }
-  // }
 
   return (
     <div className="mx-auto flex h-full w-full flex-col px-8 pt-8 font-vazir">
@@ -219,7 +138,7 @@ export default function Calendar({
                   //TODO: temporary delete button, later add this feature to the project page 
                 */}
                 <span
-                  onClick={() => deleteProject(project.id)}
+                  onClick={() => deleteProjectMutation(project.id)}
                   className="absolute -top-6 right-0 hidden h-6 w-6 cursor-pointer items-center justify-center bg-destructive text-center text-xs font-bold text-destructive-foreground group-hover:flex"
                 >
                   x
@@ -237,6 +156,7 @@ export default function Calendar({
             <Button className="" type="submit">
               Add Project
             </Button>
+
             <Input
               type="text"
               name="newProject"
@@ -269,7 +189,7 @@ export default function Calendar({
           </div>
         ))}
       </div>
-      <div className="grid flex-grow grid-cols-7 gap-0 text-sm">
+      <div className="grid h-full flex-grow grid-cols-7 gap-0 text-sm">
         {days.map((day, dayIdx) => (
           <div
             key={day.toString()}
@@ -283,6 +203,20 @@ export default function Calendar({
               "group relative flex h-full flex-col items-start gap-1 border-b p-1",
             )}
           >
+            <AddTaskDialog
+              date={day}
+              userId={user.id}
+              projectList={projectsList}
+              key={dayIdx}
+            >
+              <Button
+                size="icon"
+                variant="secondary"
+                className="absolute bottom-1 left-1 h-6 w-6 scale-0 cursor-pointer items-center justify-center rounded-full text-primary transition-all ease-in-out group-hover:flex group-hover:scale-100 "
+              >
+                <Plus className="absolute" />
+              </Button>
+            </AddTaskDialog>
             <Day
               todayTasks={tasks?.filter(
                 (task) => format(day, "yyyy-MM-dd") === task.date,
@@ -311,6 +245,3 @@ const colStartClasses = [
 ];
 
 const weekDays = ["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"];
-
-// * Dialog component stuff
-// TODO: refactor and move to another file later

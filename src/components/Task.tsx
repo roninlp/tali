@@ -1,12 +1,11 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { useState } from "react";
 import type { ProjectType } from "./Calendar";
 import { Checkbox } from "./ui/checkbox";
 import { Label } from "./ui/label";
 
-import { useDeleteTask, type InsertTask } from "@/app/_hooks/useTasks";
+import { useToggleTasks, type InsertTask } from "@/app/_hooks/useTasks";
 
 export default function Task({
   task: { id, is_complete, title, category_id, project_id },
@@ -17,14 +16,21 @@ export default function Task({
   projects: ProjectType[] | undefined;
 }) {
   const projectName = projects?.find((prj) => prj.id === project_id)?.name;
-  const [isDone, setIsDone] = useState(false);
+  //const [isDone, setIsDone] = useState(is_complete);
 
-  const { mutate, isPending } = useDeleteTask();
+  const { mutate } = useToggleTasks();
+
+  const handleToggleTask = () => {
+    //setIsDone((prevIsDone) => !prevIsDone);
+    if (id) {
+      mutate({ taskId: id, isCompleted: is_complete });
+    }
+  };
 
   return id ? (
     <div
       className={cn(
-        isDone
+        is_complete
           ? "bg-muted text-muted-foreground"
           : "bg-primary text-primary-foreground",
         "w-full rounded-md  px-1 text-lg  transition-all sm:gap-1 md:text-sm lg:gap-8",
@@ -34,17 +40,17 @@ export default function Task({
         <div className="flex items-center justify-center gap-1">
           <Checkbox
             id={id.toString()}
-            checked={isDone}
-            onClick={() => setIsDone((prevIsDone) => !prevIsDone)}
+            checked={is_complete}
+            onClick={handleToggleTask}
           />
           <Label
             htmlFor={id.toString()}
             className={cn(
-              isDone && "line-through",
-              "whitespace-nowrap p-1 leading-4",
+              is_complete && "line-through",
+              "truncate whitespace-nowrap p-1 leading-4",
             )}
           >
-            {projectName}
+            {title}
           </Label>
         </div>
 
@@ -59,15 +65,11 @@ export default function Task({
     >
       <div className="flex items-center justify-between gap-0 truncate px-1">
         <div className="flex items-center justify-center gap-1">
-          <Checkbox
-            id="temp"
-            checked={isDone}
-            onClick={() => setIsDone((prevIsDone) => !prevIsDone)}
-          />
+          <Checkbox id="temp" checked={is_complete} />
           <Label
             htmlFor="temp"
             className={cn(
-              isDone && "line-through",
+              is_complete && "line-through",
               "whitespace-nowrap p-1 leading-4",
             )}
           >
