@@ -122,8 +122,11 @@ export default function Calendar({
     <div className="mx-auto flex h-full w-full flex-col px-8 pt-8 font-vazir">
       <div className="flex items-center gap-2">
         <ThemeToggle />
-        <h2 className="flex-auto px-8 font-semibold text-gray-900 dark:text-white">
-          {format(firstDayCurrentMonth, "MMMM yyyy")}
+        <h2 className="flex-auto px-8 text-3xl text-gray-900 dark:text-white">
+          <span className="font-bold">
+            {format(firstDayCurrentMonth, "MMMM ")}
+          </span>
+          <span className="">{format(firstDayCurrentMonth, "yyyy")}</span>
         </h2>
         <div className="flex gap-4">
           <div className="flex gap-2">
@@ -189,7 +192,7 @@ export default function Calendar({
           </div>
         ))}
       </div>
-      <div className="grid h-full flex-grow grid-cols-7 gap-0 text-sm">
+      <div className="grid flex-grow auto-rows-fr grid-cols-7 gap-0 text-sm">
         {days.map((day, dayIdx) => (
           <div
             key={day.toString()}
@@ -200,7 +203,7 @@ export default function Calendar({
                 !isToday(day) &&
                 !isSameMonth(day, firstDayCurrentMonth) &&
                 "opacity-30",
-              "group relative flex h-full flex-col items-start gap-1 border-b p-1",
+              "group relative flex flex-col items-start gap-1 overflow-clip border-b p-1",
             )}
           >
             <AddTaskDialog
@@ -212,7 +215,7 @@ export default function Calendar({
               <Button
                 size="icon"
                 variant="secondary"
-                className="absolute bottom-1 left-1 h-6 w-6 scale-0 cursor-pointer items-center justify-center rounded-full text-primary transition-all ease-in-out group-hover:flex group-hover:scale-100 "
+                className="absolute bottom-1 left-1 z-50 h-6 w-6 scale-0 cursor-pointer items-center justify-center rounded-full text-primary transition-all ease-in-out group-hover:flex group-hover:scale-100 "
               >
                 <Plus className="absolute" />
               </Button>

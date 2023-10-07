@@ -70,7 +70,7 @@ export default function Task({
             htmlFor="temp"
             className={cn(
               is_complete && "line-through",
-              "whitespace-nowrap p-1 leading-4",
+              "cursor-pointer whitespace-nowrap p-1 leading-4",
             )}
           >
             {projectName}
