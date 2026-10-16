@@ -8,3 +8,17 @@ This project vendors external repositories under @repos/
 - Do not import from @repos/ - application code should continue importing from normal package dependencies
 
 When writing Effect code, inspect @repos/effect/ for examples of idiomatic usage, tests, module structure, and API design. Treat it as the source of truth for Effect patterns.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live as GitHub issues, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage roles, each mapped to a same-named label. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: a root `GLOSSARY.md` plus `docs/adr/`. See `docs/agents/domain.md`.

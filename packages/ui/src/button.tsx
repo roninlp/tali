@@ -1,4 +1,5 @@
-import { splitProps, type JSX } from "solid-js"
+import { omit } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { tokens } from "./tokens"
 
 export type ButtonProps = JSX.ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -10,8 +11,8 @@ export type ButtonProps = JSX.ButtonHTMLAttributes<HTMLButtonElement> & {
  * they only receive props and render. (See the map §3 boundary rule.)
  */
 export function Button(props: ButtonProps) {
-  const [local, rest] = splitProps(props, ["variant", "children"])
-  const variant = local.variant ?? "primary"
+  const rest = omit(props, "variant", "children")
+  const variant = () => props.variant ?? "primary"
 
   return (
     <button
@@ -22,12 +23,12 @@ export function Button(props: ButtonProps) {
         padding: `${tokens.space.sm} ${tokens.space.md}`,
         border: "1px solid transparent",
         cursor: "pointer",
-        "background-color": variant === "primary" ? tokens.color.brand : "transparent",
-        color: variant === "primary" ? "#fff" : tokens.color.ink,
-        "border-color": variant === "ghost" ? tokens.color.line : "transparent"
+        "background-color": variant() === "primary" ? tokens.color.brand : "transparent",
+        color: variant() === "primary" ? "#fff" : tokens.color.ink,
+        "border-color": variant() === "ghost" ? tokens.color.line : "transparent"
       }}
     >
-      {local.children}
+      {props.children}
     </button>
   )
 }
