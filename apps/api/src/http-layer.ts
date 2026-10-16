@@ -4,6 +4,8 @@ import { RpcServer, RpcSerialization } from "effect/rpc"
 import { ApiRpcs } from "@tali/rpc"
 import { ListItemRepoLive } from "@tali/sql"
 import { ListItemService, ListItemServiceLive } from "./list-item-service.js"
+import { AuthServiceLive } from "./auth-service.js"
+import { AuthRoutes } from "./auth-routes.js"
 import { SyncRoutes } from "./sync.js"
 
 /** Implement the RPC contract. Each handler yields the service, then delegates. */
@@ -35,8 +37,10 @@ const RpcLayer = RpcServer.layerHttp({
 export const AppLayer = Layer.mergeAll(
   HttpRouter.add("GET", "/health", HttpServerResponse.json({ ok: true })),
   SyncRoutes,
+  AuthRoutes,
   RpcLayer
 ).pipe(
+  Layer.provide(AuthServiceLive),
   Layer.provide(ListItemServiceLive),
   Layer.provide(ListItemRepoLive)
 )

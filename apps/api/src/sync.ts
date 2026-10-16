@@ -18,7 +18,7 @@ export const SyncRoutes = HttpRouter.use((router) =>
   Effect.gen(function*() {
     const repo = yield* ListItemRepo
 
-    router.add(
+    yield* router.add(
       "GET",
       "/sync/pull",
       Effect.gen(function*() {
