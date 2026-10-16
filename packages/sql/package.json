@@ -1,0 +1,21 @@
+{
+  "name": "@tali/sql",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@effect/sql-d1": "^4.0.5",
+    "@tali/domain": "workspace:*",
+    "effect": "^4.0.5"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}

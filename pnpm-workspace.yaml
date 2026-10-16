@@ -1,0 +1,18 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "infra"
+
+onlyBuiltDependencies:
+  - esbuild
+  - workerd
+  - "@cloudflare/workerd-linux-64"
+
+allowBuilds:
+  esbuild: true
+  workerd: true
+  "@cloudflare/workerd-linux-64": true
+
+minimumReleaseAgeExclude:
+  - miniflare@5.20261012.1-beta
+  - wrangler@4.151.1

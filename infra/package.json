@@ -1,0 +1,10 @@
+{
+  "name": "@tali/infra",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "alchemy": "2.0.0-beta.83",
+    "effect": "^4.0.5"
+  }
+}

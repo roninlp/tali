@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.turbo/
+.solid/
+.output/
+.vinxi/
+.wrangler/
+.dev.vars
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+.alchemy/
