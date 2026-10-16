@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Must-Have Feature Map &amp; Roadmap — Tali (Backend + Frontend)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f6f7fb; --surface:#ffffff; --ink:#1c2333; --ink-soft:#4a5568; --ink-faint:#7a8699;
+    --line:#e3e7f0; --brand:#2f5fe0; --brand-dark:#22449f; --brand-soft:#eaf0ff;
+    --accent:#0f9d8f; --accent-soft:#e4f6f4; --warn:#c2410c; --warn-soft:#fff1e7;
+    --violet:#6d4aff; --violet-soft:#efebff; --rose:#c2255c; --rose-soft:#ffe9f0;
+    --shadow:0 1px 2px rgba(20,30,60,.06), 0 8px 24px rgba(20,30,60,.06); --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Inter','Vazirmatn',sans-serif;font-size:16px;line-height:1.95;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 24px 96px;}
+  section{margin:56px 0;}
+  h2{font-size:1.75rem;font-weight:800;margin:0 0 6px;line-height:1.5;padding-left:18px;border-left:6px solid var(--brand);border-radius:8px 0 0 8px;}
+  h2 .num{color:var(--brand);font-size:1.15rem;font-weight:700;margin-right:10px;}
+  .section-lead{color:var(--ink-soft);margin:14px 0 26px;font-size:1.02rem;}
+  h3{font-size:1.3rem;font-weight:700;margin:38px 0 10px;color:var(--brand-dark);}
+  h4{font-size:1.08rem;font-weight:700;margin:26px 0 8px;}
+  p{margin:10px 0;}
+  ul,ol{margin:10px 0 18px;padding-left:26px;}
+  li{margin:6px 0;}
+  code{background:#eef1f8;border:1px solid var(--line);border-radius:6px;padding:1px 8px;font-size:.86em;font-family:'SF Mono','Fira Code',Consolas,monospace;}
+  .muted{color:var(--ink-faint);}
+  .small{font-size:.9rem;}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:22px 26px;box-shadow:var(--shadow);margin:18px 0;}
+  .grid{display:grid;gap:18px;}
+  .grid-2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr));}
+  .grid-3{grid-template-columns:repeat(auto-fit,minmax(250px,1fr));}
+  .tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;box-shadow:var(--shadow);}
+  .tile h4{margin:0 0 8px;}
+  .tile .icon{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.35rem;margin-bottom:12px;}
+  .bg-blue{background:var(--brand-soft);} .bg-green{background:var(--accent-soft);} .bg-violet{background:var(--violet-soft);} .bg-orange{background:var(--warn-soft);} .bg-rose{background:var(--rose-soft);}
+  .callout{border-radius:var(--radius);padding:18px 22px;margin:20px 0;border:1px solid;}
+  .callout .title{font-weight:700;margin-bottom:4px;}
+  .co-info{background:var(--brand-soft);border-color:#c9d8ff;} .co-good{background:var(--accent-soft);border-color:#b9e6e0;} .co-warn{background:var(--warn-soft);border-color:#ffd4b8;} .co-violet{background:var(--violet-soft);border-color:#d6ccff;}
+  table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;margin:18px 0;font-size:.95rem;box-shadow:var(--shadow);}
+  th{background:#eef2fb;text-align:left;padding:13px 16px;font-weight:700;border-bottom:2px solid var(--line);white-space:nowrap;}
+  td{padding:12px 16px;border-bottom:1px solid var(--line);vertical-align:top;}
+  tr:last-child td{border-bottom:none;} tbody tr:nth-child(even){background:#fafbff;}
+  .id-cell{font-weight:700;color:var(--brand-dark);white-space:nowrap;font-size:.88rem;}
+  .badge{display:inline-block;padding:2px 12px;border-radius:999px;font-size:.78rem;font-weight:700;white-space:nowrap;line-height:2;}
+  .b-must{background:#e6f6ec;color:#136c3a;border:1px solid #b7e3c6;}
+  .b-backend{background:#eaf0ff;color:#22449f;border:1px solid #c9d8ff;}
+  .b-frontend{background:#ffe9f0;color:#a01b46;border:1px solid #f6c6d5;}
+  .b-shared{background:#efebff;color:#4b3bbf;border:1px solid #d3ceff;}
+  .b-phase{background:var(--brand-soft);color:var(--brand-dark);border:1px solid #c9d8ff;}
+  .toc{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:26px 30px;box-shadow:var(--shadow);}
+  .toc h3{margin-top:0;} .toc ol{columns:2;column-gap:40px;padding-left:22px;}
+  .toc li{margin:7px 0;break-inside:avoid;} .toc a{color:var(--ink);text-decoration:none;border-bottom:1px dashed var(--line);}
+  .toc a:hover{color:var(--brand);border-bottom-color:var(--brand);}
+  @media (max-width:720px){.toc ol{columns:1;}}
+  .feature{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin:14px 0;box-shadow:0 1px 2px rgba(20,30,60,.05);}
+  .feature-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px;}
+  .feature-id{background:var(--brand-soft);color:var(--brand-dark);font-weight:700;font-size:.82rem;padding:2px 12px;border-radius:8px;}
+  .feature-title{font-weight:700;font-size:1.05rem;}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:10px;}
+  .split .col{background:#f7f9fd;border:1px dashed var(--line);border-radius:10px;padding:12px 16px;}
+  .split .col h5{margin:0 0 6px;font-size:.95rem;color:var(--brand-dark);}
+  .accept{margin-top:10px;padding:12px 16px;background:#f1faf7;border-radius:10px;border:1px dashed #b7e3c6;}
+  .accept .accept-title{font-weight:700;font-size:.85rem;color:var(--accent);margin-bottom:4px;}
+  .accept ul{margin:4px 0 0;}
+  .wire{background:#101828;color:#d7e0f5;border-radius:12px;padding:18px 20px;font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:.83rem;line-height:1.9;overflow-x:auto;white-space:pre;margin:14px 0;}
+  .wire .hl{color:#7ee0c2;} .wire .dim{color:#8392b5;}
+  .timeline{position:relative;padding-left:26px;margin:22px 0;}
+  .timeline::before{content:"";position:absolute;left:8px;top:6px;bottom:6px;width:3px;background:linear-gradient(180deg,var(--brand),var(--accent));border-radius:3px;}
+  .tl-item{position:relative;margin:0 0 22px;}
+  .tl-item::before{content:"";position:absolute;left:-24px;top:12px;width:15px;height:15px;border-radius:50%;background:#fff;border:4px solid var(--brand);}
+  .tl-item .tl-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 20px;box-shadow:var(--shadow);}
+  .tl-item h4{margin:0 0 6px;}
+  .stack-row{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 20px;margin:12px 0;box-shadow:0 1px 2px rgba(20,30,60,.05);}
+  .stack-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
+  .stack-cat{background:var(--brand-soft);color:var(--brand-dark);font-weight:700;font-size:.82rem;padding:2px 12px;border-radius:8px;}
+  .stack-name{font-weight:700;}
+  .stack-row p{margin:8px 0 0;color:var(--ink-soft);}
+  .why{margin-top:10px;padding:12px 16px;background:#f7f9fd;border-radius:10px;border:1px dashed var(--line);}
+  .why .why-title{font-weight:700;font-size:.85rem;color:var(--accent);margin-bottom:4px;}
+  .why ul{margin:4px 0 0;}
+  .pill-row{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0;}
+  .pill{background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:5px 16px;font-size:.88rem;}
+  .doc-footer{margin-top:70px;padding:26px;border-top:2px solid var(--line);color:var(--ink-faint);font-size:.9rem;text-align:center;}
+  @media (max-width:900px){.split{grid-template-columns:1fr;}}
+  @media (max-width:640px){body{font-size:15px;} .cover h1{font-size:1.85rem;} h2{font-size:1.4rem;} .wrap{padding:0 16px 70px;}}
+  @media print{body{background:#fff;} .cover{border-radius:0;} .card,.tile,.feature,table,.toc{box-shadow:none;} section{page-break-inside:avoid;}}
+</style>
+</head>
+<body>
+
+<header class="cover">
+  <div class="cover-inner">
+    <span class="kicker">Must-Have Only · Backend + Frontend Feature Map · v1.0</span>
+    <h1>Must-Have Feature Map &amp; Roadmap</h1>
+    <p class="subtitle">Tali — Personal &amp; Family Planner / Bullet Journal. Only MoSCoW “Must” items are included; every feature is split into backend and frontend work.</p>
+    <div class="cover-meta">
+      <div><span class="label">Source PRD</span><span class="value">docs/product-requirements-v2.html</span></div>
+      <div><span class="label">Included priority</span><span class="value">Must (باید) only</span></div>
+      <div><span class="label">Frontend</span><span class="value">SolidJS v2 (RC) + Vite/SolidStart</span></div>
+      <div><span class="label">Backend</span><span class="value">Effect Suite (typed, layered services)</span></div>
+      <div><span class="label">Infra</span><span class="value">Turborepo + Alchemy v2</span></div>
+      <div><span class="label">Scope intent</span><span class="value">A runnable MVP for two users, offline-capable</span></div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section id="toc">
+    <div class="toc">
+      <h3>Contents</h3>
+      <ol>
+        <li><a href="#summary">Executive summary</a></li>
+        <li><a href="#stack">Chosen robust stack</a></li>
+        <li><a href="#monorepo">Monorepo layout</a></li>
+        <li><a href="#boundary">Scope boundary (Must vs. later)</a></li>
+        <li><a href="#feature-map">Must-have feature map (by module)</a></li>
+        <li><a href="#cross-cutting">Cross-cutting Must features</a></li>
+        <li><a href="#backend">Backend catalog (services &amp; data)</a></li>
+        <li><a href="#frontend">Frontend catalog (routes &amp; screens)</a></li>
+        <li><a href="#slices">Delivery slices / roadmap</a></li>
+        <li><a href="#acceptance">Acceptance &amp; success metrics</a></li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="summary">
+    <h2><span class="num">1</span>Executive summary</h2>
+    <p class="section-lead">What “Must” means here: a complete, shippable product for two users where every daily planning action works end to end, including offline and two-device sync.</p>
+    <div class="grid grid-3">
+      <div class="tile"><div class="icon bg-blue">🧩</div><h4>27 must features</h4><p class="small muted">25 numbered FR items with the <span class="badge b-must">Must</span> badge, plus account/shared-space and offline sync as cross-cutting Must obligations.</p></div>
+      <div class="tile"><div class="icon bg-green">💡</div><h4>Two mirrors</h4><p class="small muted">Each feature is expressed as backend (data, services, jobs) and frontend (screens, interactions, state) work so neither side is forgotten.</p></div>
+      <div class="tile"><div class="icon bg-violet">⏳</div><h4>Five slices</h4><p class="small muted">Foundation → Core Planning → Time &amp; Reliability → Habits &amp; Notes → Hardening. Each slice leaves the app fully usable.</p></div>
+    </div>
+    <div class="callout co-good">
+      <div class="title">Release criterion for the Must version</div>
+      <p style="margin:6px 0 0;">Both users can plan, track, and review a full week using only this product: create account, see “Today”, manage tasks/lists/events/reminders/habits/notes, check off shared shopping lists live on two devices, receive medication reminders, and export nothing (export is “Should”, not Must).</p>
+    </div>
+  </section>
+
+
+<section id="stack">
+  <h2><span class="num">2</span>Chosen robust stack (non-negotiable for this visualization)</h2>
+  <p class="section-lead">As requested: Turborepo monorepo, the complete Effect suite on the backend, Alchemy v2 for infrastructure as code, SolidJS v2 (RC) on the frontend.</p>
+  <div class="stack-row">
+    <div class="stack-head"><span class="stack-cat">Monorepo</span><span class="stack-name">Turborepo + pnpm workspaces</span><span class="badge b-backend">Backend &amp; frontend shared</span></div>
+    <p>Pipeline-based task graph (build, test, lint, deploy), shared TypeScript config, shared domain package, content-addressed remote cache. One change to a domain schema type-checks every consumer.</p>
+    <div class="why"><div class="why-title">Must-have consequences</div><ul>
+      <li>One shared package defines every entity schema, ID, validation rule, and sync cursor used by both apps.</li>
+      <li>Feature flags and release slices are toggled at the package boundary, not by copying code.</li>
+    </ul></div>
+  </div>
+  <div class="stack-row">
+    <div class="stack-head"><span class="stack-cat">Backend</span><span class="stack-name">Effect — full suite</span><span class="badge b-backend">Robust by default</span></div>
+    <p>Effect as the runtime and effect system, with <code>@effect/schema</code> for all domain types, <code>@effect/platform</code> for HTTP/RPC and runtime config, <code>@effect/sql</code> for database access, <code>@effect/workflow</code> for long-running jobs, plus Effect’s observability, retry, and concurrency primitives. Typed errors, dependency injection via Layers, and deterministic resource cleanup are the robustness.</p>
+    <div class="why"><div class="why-title">Why this is “robust” here</div><ul>
+      <li>Schemas are the single source of truth for wire format, DB mapping, validation, and client types — no drift between frontend and backend.</li>
+      <li>Errors are part of the type signature of every service method, so reminder delivery and sync failure modes are handled explicitly.</li>
+      <li>Layers make the reminder scheduler, DB pool, auth service, push gateway, and sync engine composable and testable with fake implementations.</li>
+      <li>Structured concurrency prevents half-finished sync jobs and leaked DB connections under partial failures.</li>
+    </ul></div>
+  </div>
+  <div class="stack-row">
+    <div class="stack-head"><span class="stack-cat">Infrastructure</span><span class="stack-name">Alchemy v2 (IaC)</span><span class="badge b-backend">Reproducible cloud stacks</span></div>
+    <p>Alchemy v2 provisions the whole runtime: API worker/container, database (Postgres via Hyperdrive or the chosen managed DB), R2/S3 object storage, queues, cron triggers, and secrets. Every environment (dev, staging, prod) is declared in typed TypeScript and diffed on deploy.</p>
+    <div class="why"><div class="why-title">Must-have consequences</div><ul>
+      <li>Reminder scheduling (cron) and Web Push credentials are infrastructure, not ad-hoc server state.</li>
+      <li>Backup/export buckets and retention are declared alongside the app, not configured by hand.</li>
+      <li>Rollback is a deploy, which matters while iterating on sync and recurrence bugs.</li>
+    </ul></div>
+  </div>
+  <div class="stack-row">
+    <div class="stack-head"><span class="stack-cat">Frontend</span><span class="stack-name">SolidJS v2 (RC) + Vite-based SolidStart</span><span class="badge b-frontend">Fine-grained reactivity</span></div>
+    <p>Solid v2 RC components compile to fine-grained reactive DOM updates, with <code>@solidjs/router</code>, <code>@solidjs/meta</code>, and SolidStart for routing, SSR/streaming, and server functions. State lives in signals and stores; mutations are optimistic by construction.</p>
+    <div class="why"><div class<rfl:parameter name="hybrid">
+      <ul>
+        <li>Today dashboard re-renders only the changed habit/calendar item, which is what makes &lt;100ms interaction p95 realistic.</li>
+        <li>Complex screens (weekly view, month grid) stay cheap because list identity does not cause full re-render.</li>
+        <li>SolidStart server functions give a typed RPC surface alongside the Effect backend; both rely on the same shared schemas.</li>
+      </ul></div>
+  </div>
+  <div class="grid grid-3">
+    <div class="tile"><div class="icon bg-blue">🗄️</div><h4>Database</h4><p class="small muted">PostgreSQL (managed). Relational planning data + <code>jsonb</code> for note bodies and flexible attributes, with indexes tuned for sync pulls.</p></div>
+    <div class="tile"><div class="icon bg-green">📦</div><h4>Local-first</h4><p class="small muted">Client IndexedDB mirror + outbox queue. Solid stores hydrate from the local mirror first, then reconcile with the server.</p></div>
+    <div class="tile"><div class="icon bg-violet">🔔</div><h4>Push</h4><p class="small muted">Web Push (VAPID) delivered by Effect services on the backend and received by a service worker; Solid UI shows missed-reminder inbox on next open.</p></div>
+  </div>
+</section>
+
+<section id="monorepo">
+  <h2><span class="num">3</span>Monorepo layout (proposed)</h2>
+  <p class="section-lead">Structure that keeps the Effect backend, Solid frontend, and shared domain in one tree while preserving hard boundaries.</p>
+  <div class="wire"><span class="hl">tali/</span>
+├── <span class="hl">apps/</span>
+│   ├── <span class="hl">web/</span>                  <span class="dim"># SolidStart (SolidJS v2 RC) client + SSR shell</span>
+│   └── <span class="hl">api/</span>                  <span class="dim"># Effect HTTP/RPC server, jobs, push dispatch</span>
+├── <span class="hl">packages/</span>
+│   ├── <span class="hl">domain/</span>              <span class="dim"># Effect Schema entities, invariants, typed errors</span>
+│   ├── <span class="hl">sql/</span>                 <span class="dim"># @effect/sql tables, migrations, query helpers</span>
+│   ├── <span class="hl">rpc/</span>                 <span class="dim"># Effect RPC contracts consumed by web + api</span>
+│   ├── <span class="hl">config/</span>              <span class="dim"># typed env + Alchemy-bound configuration</span>
+│   └── <span class="hl">ui/</span>                  <span class="dim"># Solid design-system components + tokens</span>
+├── <span class="hl">infra/</span>                    <span class="dim"># Alchemy v2 stacks (per environment)</span>
+├── <span class="hl">turbo.json</span>
+└── <span class="hl">pnpm-workspace.yaml</span></div>
+  <div class="callout co-info">
+    <div class="title">Rule that keeps it maintainable</div>
+    <p style="margin:6px 0 0;">Solid components never import Effect services directly; they call RPC contracts from <code>packages/rpc</code>. Effect services never import Solid. The shared domain package is the only mutual dependency. This is what makes later frontend or backend swaps low-risk.</p>
+  </div>
+</section>
+
+<section id="boundary">
+  <h2><span class="num">4</span>Scope boundary — Must only</h2>
+  <p class="section-lead">Everything below is included only because the PRD labels it <span class="badge b-must">Must</span>. Items explicitly moved later are listed so no one plans for them accidentally.</p>
+  <div class="grid grid-2">
+    <div class="card" style="margin:0;">
+      <h4 style="margin-top:0;">Included (Must)</h4>
+      <ul>
+        <li>Habits: create/edit, daily logging, streak &amp; stats (FR-HAB-01/02/03).</li>
+        <li>Calendar: create/edit event, occasions, recurring events, views, Jalali/Gregorian (FR-CAL-01..05).</li>
+        <li>Tasks: create, organization, recurring, today/upcoming, complete/undo (FR-TASK-01/02/04/05/06).</li>
+        <li>Reminders: create, reliable delivery, respond (FR-REM-01/02/03).</li>
+        <li>Notes: quick create, tags/pin/archive/trash, full-text search in notes (FR-NOTE-01/03/04).</li>
+        <li>Lists: create list/item, check/uncheck, live sharing (FR-LIST-01/02/03).</li>
+        <li>Views: Today dashboard, weekly, monthly (FR-VIEW-01/02/03).</li>
+        <li>Cross-cutting: account + two-user shared space, offline/online sync, soft delete + trash, Jalali/RTL.</li>
+      </ul>
+    </div>
+    <div class="card" style="margin:0;">
+      <h4 style="margin-top:0;">Deliberately deferred (not Must)</h4>
+      <ul>
+        <li>Global cross-module search (FR-SEARCH-01) — Should.</li>
+        <li>Weekly/monthly reports (FR-VIEW-04) — Should.</li>
+        <li>Templates (lists &amp; habits) — Should/Could.</li>
+        <li>Attachments/images in notes — Could.</li>
+        <li>Focus mode, dark theme, PWA install polish — Could.</li>
+        <li>Export/backup tooling and full audit history — Should (keep simple nightly DB backup in infra).</li>
+        <li>Subtasks, task/event linking, shared assignment, natural-language parsing — Should.</li>
+        <li>AI suggestions and native mobile — Won't now.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+
+
+<section id="feature-map">
+  <h2><span class="num">5</span>Must-have feature map by module</h2>
+  <p class="section-lead">Each entry below is taken directly from the PRD’s <span class="badge b-must">Must</span> items. The split is an engineering interpretation suited to the chosen stack: Effect on the backend, SolidJS on the frontend.</p>
+
+  <h3>Habits (FR-HAB)</h3>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-HAB-01</span><span class="feature-title">Create and edit habit</span><span class="badge b-must">Must</span></div>
+    <p>Define a habit with title, optional description, color/icon, frequency (daily, selected weekdays, X times/week), and reminder time.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li><code>Habit</code> aggregate: id, ownerId, title, description, color, icon, frequency union, reminderTime (local), visibility, version, deletedAt.</li>
+        <li><code>HabitRepository</code> (<code>@effect/sql</code>) + migration; <code>HabitService.create/update/softDelete</code>.</li>
+        <li><code>@effect/schema</code> validation and typed <code>HabitError</code> variants.</li>
+        <li>Version bump + change-feed append on every mutation.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li><code>HabitForm</code> in quick-add drawer; single-page form, autosave draft.</li>
+        <li>Frequency segmented control (daily / weekdays / X weekly); color &amp; icon pickers.</li>
+        <li>Optimistic create and a delete-with-undo toast.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li>Create in &lt;30 seconds on one form page; edit all fields without losing history.</li>
+      <li>Delete requires confirmation and moves to trash.</li>
+    </ul></div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-HAB-02</span><span class="feature-title">Daily habit logging</span><span class="badge b-must">Must</span></div>
+    <p>Mark a habit Done / Partial / Missed for any day with one tap.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li><code>HabitEntry</code> upsert keyed by <code>(habitId, localDate)</code> (idempotent for duplicate taps).</li>
+        <li>Backdating window validated (≤7 days).</li>
+        <li>Query entries by date range for screens and stats.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li>One-tap toggles on Today and Habits screens; status cycle Done → Partial → Missed.</li>
+        <li>Backdate picker on habit detail.</li>
+        <li>Local-first write puts the tap in the outbox for later sync.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li>&lt;2 seconds, no full page reload.</li>
+      <li>Backfill up to 7 previous days.</li>
+    </ul></div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-HAB-03</span><span class="feature-title">Streak and statistics</span><span class="badge b-must">Must</span></div>
+    <p>Show consecutive success count, weekly/monthly success rate, trend and (optional) monthly heatmap, over 7/30/90-day windows.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li><code>StreakEngine</code> pure function aware of frequency (e.g. 3×/week).</li>
+        <li>Aggregate endpoints for each window; history stays immutable when frequency changes (versioned frequency effective dates).</li>
+        <li>Heatmap bucket query keyed by local month.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li>Streak badge + flame, trend chart, optional heatmap grid.</li>
+        <li>Window selector tabs (7 / 30 / 90 days).</li>
+        <li>Solid fine-grained updates when a single entry changes.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li>Correct streak for non-daily frequencies.</li>
+      <li>Stats shown in habit view and ready for weekly review screens.</li>
+    </ul></div>
+  </div>
+
+  <h3>Calendar, events and occasions (FR-CAL)</h3>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-CAL-01</span><span class="feature-title">Create and edit event</span><span class="badge b-must">Must</span></div>
+    <p>Event with title, start/end, location, description, color/category, people (optional), and reminder.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li><code>Event</code> aggregate: instants or all-day local date, location, body (jsonb), color, visibility, rrule, exception table.</li>
+        <li>Transactional create with optional reminder and preparation task.</li>
+        <li>Edit scope handling: exception rows for “this occurrence only”.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li<|message|>Event modal launched from month/week/day + quick-add.</li>
+        <li>All-day toggle, time pickers, color/category chips.</li>
+        <li>Recurrence edit prompt: “this event” / “this and following”.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li>Create from month, week, day, or quick-add.</li>
+      <li>All-day events supported; multi-occurrence edits keep scope choice.</li>
+    </ul></div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-CAL-02</span><span class="feature-title">Occasions and important dates</span><span class="badge b-must">Must</span></div>
+    <p>Personal occasions (birthdays, anniversaries) shown annually, with advance reminder (e.g. 7 days) and optional preparation task.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li><code>Occasion</code> aggregate with annual recurrence rule and origin local date + timezone.</li>
+        <li>Offset-based reminder expansion by date.</li>
+        <li>Optional linked preparation task on creation.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li>Occasion form with yearly marker.</li>
+        <li>Anniversary chips on month view.</li>
+        <li>“Prepare gift” one-tap task creation from the occasion.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li>Annual display without manual yearly repetition.</li>
+      <li>Preparation reminders supported.</li>
+    </ul></div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-CAL-03</span><span class="feature-title">Recurring events</span><span class="badge b-must">Must</span></div>
+    <p>Daily, weekly (selected weekdays), monthly (specific day or nth weekday), yearly, and custom recurrence with end date or count.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li<|message|>RRule expression validation in Effect; occurrence expansion cache.</li>
+        <li>Per-occurrence exceptions for deletions and overrides.</li>
+        <li>Recurrence engine shared for both events and tasks.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li>Human-friendly recurrence wizard.</li>
+        <li>Visual rule summary ("Every Tuesday, until Nov 19").</li>
+        <li>Series edit scope dialog.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li>Common patterns without complex rule entry.</li>
+      <li>End by date or occurrence count.</li>
+    </ul></div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-CAL-04</span><span class="feature-title">Calendar views (month / week / day / agenda)</span><span class="badge b-must">Must</span></div>
+    <p>Klemp view, detailed hour view, single day, and agenda; fast navigation and quick add.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li>Range queries expanding recurring items for day/week/month/agenda.</li>
+        <li>Filters by visibility and owner.</li>
+        <li<|message|>Week view payload includes tasks and reminders alongside events.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li<|message|>Four views with instant switching; horizontal week strip on mobile.</li>
+        <li>Default mobile view day/agenda, desktop week.</li>
+        <li>Quick add inline per day.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li<|message|>No horizontal scroll breakage at common breakpoints.</li>
+      <li<|message|>Week view shows tasks, reminders, and habits together.</li>
+    </ul></div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-CAL-05</span><span class="feature-title">Persian (Jalali) and Gregorian support</span><span class="badge b-must">Must</span></div>
+    <p>Enter and display dates in Jalali, with simultaneous Gregorian display.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li>Shared date package (jalaali-js) as the only date-math location.</li>
+        <li<|message|>Store instants as <code>timestamptz</code> and all-day values as <code>date</code> + IANA timezone.</li>
+        <li>User profile timezone captured once.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li>Jalali date picker; Gregorian shown in details.</li>
+        <li>Week start selector (Saturday default) persisted in profile.</li>
+        <li>Persian digits by default with opt-out to Latin.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li<|message|>Accurate conversion (leap years, month boundaries).</li>
+      <li<|start|>Configurable week start.</li>
+    </ul></div>
+  </div>
+
+  <h3>Tasks (FR-TASK)</h3>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-TASK-01</span><span class="feature-title">Create task</span><span class="badge b-must">Must</span></div>
+    <p>Title plus optional description, due date/time, priority, tags, project, status.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li><code>Task</code> aggregate with required title and all optional fields nullable.</li>
+        <li>Create endpoint accepts title-only and patch-style updates.</li>
+        <li<|message|>Status enum Todo/Doing/Done; server timestamps transitions.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li<|message|>One-field quick add; chips for due date, priority, tags, project.</li>
+        <li<|message|>Autosave with saving/saved indicator.</li>
+        <li<|message|>Undo on accidental create/delete.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li<|message|>Task can be created with title only.</li>
+      <li<|end|>Everything else is optional and editable later.</li>
+    </ul></div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-TASK-02</span><span class="feature-title">Organization (projects, tags, priority)</span><span class="badge b-must">Must</span></div>
+    <p>Group by project/category, multiple tags, filter and sort.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li><code>Project</code>, <code>Tag</code>, and <code>item_tags</code> tables.</li>
+        <li>Filter query by project/tags/priority/status/date; stable sorting.</li>
+        <li>Saved views are client preferences plus server filter params.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li<|message|>Project list sidebar (desktop), filter sheet (mobile).</li>
+        <li<|message|>Multi-tag chips with color.</li>
+        <li>Persistent filter bar with counts.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li<|message|>One task can have one project and many tags.</li>
+      <li<|message|>Filters and sorts are preserved.</li>
+    </ul></div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-TASK-04</span><span class="feature-title">Recurring tasks</span><span class="badge b-must">Must</span></div>
+    <p>Recurring tasks (bill payment, watering plants) with “on completion” and “on due date” modes.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li<|message|>Shared RRULE engine generates next instance.</li>
+        <li<|message|>Generate next on completion or due date, idempotently.</li>
+        <li<|end|>Do not break the rule when only the due date changes.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li<|message|>Reuse recurrence wizard from calendar.</li>
+        <li>Show next occurrence confirmation.</li>
+        <li<|message|>Optimistic completion then next-item refresh.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li<|start|>Next occurrence created automatically after completion.</li>
+      <li<|message|>Both scheduling modes supported.</li>
+    </ul></div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-TASK-05</span><span class="feature-title">Today and upcoming views</span><span class="badge b-must">Must</span></div>
+    <p>Lists of today, overdue, tomorrow, next week, and no-date tasks; move tasks between days.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li<|end|>Bucketed query endpoints (overdue/today/tomorrow/week/none).</li>
+        <li><code>moveTask</code> command changing due date.</li>
+        <li<|end|>No-date tasks excluded from Today.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li<|message|>Today board with calm overdue indication.</li>
+        <li>Drag or “move to day” touch action.</li>
+        <li<|message|>No-date inbox screen.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li<|message|>Overdue tasks shown subtly, not alarmingly.</li>
+      <li<|message|>Move with one action.</li>
+    </ul></div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-TASK-06</span><span class="feature-title">Complete and undo</span><span class="badge b-must">Must</span></div>
+    <p>Completion feedback, undo, and recent completion history.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li<|message|>Status transitions captured with timestamp.</li>
+        <li<|message|>Completed tasks retained 7 days then archived by job.</li>
+        <li<|message|>Restore command preserves original due date.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li>Satisfying animated checkbox.</li>
+        <li<|message|>Undo toast after completion.</li>
+        <li>History view with restore action.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li<|message|>Done items recoverable for 7 days.</li>
+      <li<|message|>Undo available from toast or history.</li>
+    </ul></div>
+  </div>
+
+  <h3>Reminders &amp; notifications (FR-REM)</h3>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-REM-01</span><span class="feature-title">Create reminder</span><span class="badge b-must">Must</span></div>
+    <p>Reminder with title, time, repeat pattern, type (medication/exercise/chore/general), and optional note.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li><code>Reminder</code> aggregate: fireAt, repeat rule, type, note, linked entity, tier.</li>
+        <li<|message|>Preset validation (e.g. “every 8 hours”).</li>
+        <li<|start|>Quiet-hours-aware next-fire calculation.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li<|message|>Time + repeat picker with medication presets.</li>
+        <li<|channel|>Type selector controlling tier and actions.</li>
+        <li<|message|>Link to habit/task/event.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li<|message|>Patterns like “medication every 8 hours” are simple to define.</li>
+      <li>Snooze/silence-until-date supported.</li>
+    </ul></div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-REM-02</span><span class="feature-title">Reliable notification delivery</span><span class="badge b-must">Must</span></div>
+    <p>Notify even when the browser is closed, with a documented fallback (in-app + missed-reminder inbox).</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li>Cron job every minute scans due undelivered reminders.</li>
+        <li<|message|>Web Push dispatch via typed gateway; retry/backoff.</li>
+        <li>Dispatch ledger + missed-reminder inbox query.</li>
+        <li<|end|>Quiet hours queue, never drop.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li<|message|>Service worker push handler shows notification.</li>
+        <li<|constrain|>Permission health panel and install-state guidance.</li>
+        <li<|message|>Missed-reminder list on app open.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li<|message|>“Browser closed” scenario explicitly tested.</li>
+      <li<|message|>Missed reminders appear in inbox instead of vanishing.</li>
+    </ul></div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-REM-03</span><span class="feature-title">Respond to reminder</span><span class="badge b-must">Must</span></div>
+    <p>Done / Snooze / Dismiss from the notification or the reminder list.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li<|message|>Response command writes dispatch ledger response.</li>
+        <li<|message|>Updates linked habit/task automatically.</li>
+        <li<|message|>Adherence metric source (on-time %) retained.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li>Notification action buttons wired to outbox.</li>
+        <li<|message|>In-app list mirrors the same actions.</li>
+        <li<|end|>Optimistic state update.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li>“Done” updates linked habit/task.</li>
+      <li<|message|>Response history kept for reports.</li>
+    </ul></div>
+  </div>
+
+  <h3>Notes (FR-NOTE)</h3>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-NOTE-01</span><span class="feature-title">Quick note creation</span><span class="badge b-must">Must</span></div>
+    <p>Create a note from any screen; autosave while typing.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li><code>Note</code> aggregate with structured content (TipTap JSON) and version.</li>
+        <li>Autosave is an idempotent update keyed by version.</li>
+        <li<|message|>Last committed version always recoverable.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li<|message|>Floating button opens editor in &lt;2 seconds.</li>
+        <li<|channel|>Autosave with saving/saved status.</li>
+        <li<|channel|>Draft persisted in local store survives crashes.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li>Open-to-type in &lt;2 seconds.</li>
+      <li<|end|>No text loss on sudden close (local draft).</li>
+    </ul></div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-NOTE-03</span><span class="feature-title">Tags, pin, archive, trash</span><span class="badge b-must">Must</span></div>
+    <p>Tag notes, pin important ones, archive old ones, and soft-delete.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li<|message|>Tag relations, <code>isPinned</code>, <code>isArchived</code>, <code>deletedAt</code>.</li>
+        <li<|start|>Trash restore and 30-day purge job.</li>
+        <li<|message|>Pinned notes query powers dashboard section.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li<|message|>Pinned section at top of list and dashboard.</li>
+        <li<|message|>Tag filter chips and archive view.</li>
+        <li>Trash view with restore.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li>Pinned notes always visible at top.</li>
+      <li<|message|>30-day trash retention.</li>
+    </ul></div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-NOTE-04</span><span class="feature-title">Full-text search in notes</span><span class="badge b-must">Must</span></div>
+    <p>Instant, Persian-aware full-text search with result highlighting.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li<|message|>Full-text index with Persian normalization; query duration &lt;300ms.</li>
+        <li<|message|>Scoped to owner and shared items.</li>
+        <li<|message|>Highlighted snippet generation.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li<|channel|>Instant search input updating results on keystroke.</li>
+        <li<|message|>Highlighted matches in snippets.</li>
+        <li<|end|>Keyboard shortcut for focus.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li<|message|>Results in &lt;300ms on typical data.</li>
+      <li>Resilient to Persian spelling variants.</li>
+    </ul></div>
+  </div>
+
+  <h3>Lists (FR-LIST)</h3>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-LIST-01</span><span class="feature-title">Create list and items</span><span class="badge b-must">Must</span></div>
+    <p>Lists with title, color/icon, and fast continuous item entry (type → Enter → next item).</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li><code>List</code> and <code>ListItem</code> aggregates with ordering integer.</li>
+        <li<|message|>Batch append endpoint for consecutive items.</li>
+        <li<|message|>Reorder command with version bump.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li<|message|>Create list form; color/icon.</li>
+        <li<|message|>Continuous input with Enter-to-add-next.</li>
+        <li<|start|>Manual drag reorder + sort by status/alphabet.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li<|message|>Add 5 items in a row without re-focusing input.</li>
+      <li<|end|>Manual and auto sort available.</li>
+    </ul></div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-LIST-02</span><span class="feature-title">Check and uncheck</span><span class="badge b-must">Must</span></div>
+    <p>Tick with strike-through feedback, move checked to bottom (configurable), and undo.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li<|start|>Idempotent check/uncheck command.</li>
+        <li<|channel|>Preference for checked item placement.</li>
+        <li>Audit of completion timestamp.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li>Strike-through animation and checked grouping.</li>
+        <li<|message|>Configurable placement toggle.</li>
+        <li<|message|>Undo on tick.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li<|message|>Checked state syncs live.</li>
+      <li<|message|>Undo available.</li>
+    </ul></div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-LIST-03</span><span class="feature-title">Live two-person sharing</span><span class="badge b-must">Must</span></div>
+    <p>Both users see and edit the same list; changes propagate without manual refresh.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li<|message|>Visibility “shared” + shared household authorization.</li>
+        <li<|channel|>Change notification via SSE (or cursor pull wake-up) within seconds.</li>
+        <li<|start|>Conflict rule: ticked wins; edits merge by field/version.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li>Auto-update list without manual refresh.</li>
+        <li<|message|>Offline edits sync with conflict resolution.</li>
+        <li<|message|>“Updated by spouse” subtle label.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li<|channel|>Change visible to other user in a few seconds.</li>
+      <li<|message|>No data loss on simultaneous edit.</li>
+    </ul></div>
+  </div>
+
+  <h3>Views &amp; dashboards (FR-VIEW)</h3>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-VIEW-01</span><span class="feature-title">Today dashboard</span><span class="badge b-must">Must</span></div>
+    <p>Main page: today’s tasks, today’s events, remaining reminders, today’s habits, pinned notes.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li<|channel|>Aggregated payload endpoint with ETag.</li>
+        <li<|message|>Empty-state flags and counts per section.</li>
+        <li>Authorization on shared items.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li<|message|>Sections with user-configurable order (persisted preference).</li>
+        <li>Inline actions on every item.</li>
+        <li>Empty state with suggested action.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li<|message|>Daily picture visible without scrolling.</li>
+      <li<|message|>All items actionable directly from dashboard.</li>
+      <li<|message|>Meaningful empty state.</li>
+    </ul></div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-VIEW-02</span><span class="feature-title">Weekly view</span><span class="badge b-must">Must</span></div>
+    <p>One week of events, tasks, reminders and habit status with fast navigation and quick add.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li<|message|>Week aggregate endpoint (Saturday-default week start, configurable).</li>
+        <li<|message|>Recurring expansion for the whole range.</li>
+        <li<|message|>Fast query focused on 7-day window.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li<|message|>Seven-day grid with horizontal scroll fallback on mobile.</li>
+        <li<|message|>Weekly planning mode (review + prioritize).</li>
+        <li<|message|>Quick add per day.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li>Mobile compressed/scrollable layout.</li>
+      <li<|message|>Planning workflow supported.</li>
+    </ul></div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">FR-VIEW-03</span><span class="feature-title">Monthly view</span><span class="badge b-must">Must</span></div>
+    <p>Overview month with occasions, events, workload, and habit trend; jump into any day.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li>Month aggregate with dots/workload counts.</li>
+        <li>Habit trend for the month.</li>
+        <li<|message|>Day drill-down payload.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li>Month grid with subtle busy-day marks.</li>
+        <li>Open a day to see details.</li>
+        <li<|message|>Habit trend strip below.</li>
+      </ul></div>
+    </div>
+    <div class="accept"><div class="accept-title">Acceptance</div><ul>
+      <li<|message|>Busy days visually marked.</li>
+      <li>Quick entry into day view.</li>
+    </ul></div>
+  </div>
+</section>
+
+<section id="cross-cutting">
+  <h2><span class="num">6</span>Cross-cutting Must features</h2>
+  <p class="section-lead">PRD marks shared user space, offline sync and soft-delete/trash as non-negotiable foundations. Localization is also non-negotiable per the PRD.</p>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">CC-01</span><span class="feature-title">Accounts and two-user shared space</span><span class="badge b-must">Must</span></div>
+    <p>Secure sign-in for two users, ownership, privacy zones, and controlled sharing.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li>Effect auth service: email+password with argon2, HTTP-only session cookies, renewal.</li>
+        <li<|message|>Household (shared space) with two memberships.</li>
+        <li<|message|>Per-item owner + visibility (private/shared), share command, authorization on every RPC.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li>Login/register/reset and session restore.</li>
+        <li<|start|>Owner indicators and private/shared toggle on create/edit.</li>
+        <li<|message|>Optional app PIN lock (client-only convenience).</li>
+      </ul></div>
+    </div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">CC-02</span><span class="feature-title">Offline-first sync</span><span class="badge b-must">Must</span></div>
+    <p>Create and view content offline; automatic sync on reconnect; live shared lists.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li<|message|>Cursor-based change feed (<code>version</code>/<code>updatedAt</code>) pull endpoint.</li>
+        <li>Push outbox endpoint validates, applies, bumps versions.</li>
+        <li>SSE (or cursor-wake) channel for shared-list updates.</li>
+        <li<|message|>Conflict rules: field-level LWW, checklist done-wins, recurrence single-writer.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li<|message|>IndexedDB mirror populated first; server then reconciles.</li>
+        <li<|end|>Outbox queue via <code>writeLocal()</code> in one transaction.</li>
+        <li<|end|>Offline badge, reconnect auto-sync, draft recovery.</li>
+      </ul></div>
+    </div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">CC-03</span><span class="feature-title">Soft delete, undo, and trash</span><span class="badge b-must">Must</span></div>
+    <p>No accidental data loss; deletion is reversible.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li<|end|>deletedAt on all syncable entities; restore + purge jobs (30 days).</li>
+        <li<|message|>Edit/delete conflict resolution favors delete with recovery.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li<|message|>Undo toast after every destructive action.</li>
+        <li<|message|>Global trash view with restore.</li>
+      </ul></div>
+    </div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-head"><span class="feature-id">CC-04</span><span class="feature-title">Persian, RTL, and tone</span><span class="badge b-must">Must</span></div>
+    <p>Jalali calendar, RTL layout, Persian digits by default, respectful Persian copy.</p>
+    <div class="split">
+      <div class="col"><h5>Backend · Effect</h5><ul>
+        <li<|message|>Locale-agnostic persistence: UTC instants + local dates + IANA timezone.</li>
+        <li<|end|>Shared date module tested for Jalali edge cases.</li>
+      </ul></div>
+      <div class="col"><h5>Frontend · SolidJS</h5><ul>
+        <li<|message|>Logical-property CSS tokens (ms/me/ps/pe) instead of left/right.</li>
+        <li<|message|>Vazirmatn self-hosted; Jalali date picker; RTL-correct icon directions.</li>
+        <li>Copy tone: calm, short, human, no blame.</li>
+      </ul></div>
+    </div>
+  </div>
+</section>
+
+
+<section id="backend">
+  <h2><span class="num">7</span>Backend catalog (Effect services &amp; data)</h2>
+  <p class="section-lead">The concrete backend surface required to support every Must item. All entities share the common item fields (id, type, title, owner, status, dates, tags, version, deletedAt) so sync, search and trash work uniformly.</p>
+  <div class="grid grid-2">
+    <div class="card" style="margin:0;">
+      <h4 style="margin-top:0;">Domain aggregates</h4>
+      <ul>
+        <li><code>User</code>, <code>Household</code>, <code>Membership</code> — auth and shared space.</li>
+        <li><code>Habit</code> + <code>HabitEntry</code> — definition and daily logging.</li>
+        <li><code>Event</code> (+ occurrence exceptions) and <code>Occasion</code>.</li>
+        <li><code>Task</code> (+ recurrence linkage).</li>
+        <li><code>Reminder</code> + <code>ReminderDispatch</code>.</li>
+        <li><code>Note</code> + <code>Tag</code> relations.</li>
+        <li><code>List</code> + <code>ListItem</code>.</li>
+        <li><code>Project</code>, shared across tasks and lists where useful.</li>
+      </ul>
+    </div>
+    <div class="card" style="margin:0;">
+      <h4 style="margin-top:0;">Effect services (Layers)</h4>
+      <ul>
+        <li><code>AuthService</code> — sessions, password hashing, authorization context.</li>
+        <li><code>HouseholdService</code> — shared-space membership and sharing.</li>
+        <li><code>HabitService</code>, <code>TaskService</code>, <code>EventService</code>, <code>ReminderService</code>, <code>NoteService</code>, <code>ListService</code>.</li>
+        <li><code>RecurrenceService</code> — RRule expansion shared by events/tasks.</li>
+        <li><code>CalendarService</code> — Jalali-safe expansion and range queries.</li>
+        <li><code>SyncService</code> — cursor pulls, outbox pushes, change feed, SSE wake-ups.</li>
+        <li><code>NotificationService</code> — Web Push dispatch + cron orchestration.</li>
+        <li><code>SearchService</code> — notes full-text and filtering.</li>
+        <li><code>TrashService</code> — soft delete, restore, purge.</li>
+      </ul>
+    </div>
+  </div>
+  <h3>Data &amp; sync contracts</h3>
+  <table>
+    <thead><tr><th style="width:26%;">Concern</th><th>Implementation in Effect terms</th></tr></thead>
+    <tbody>
+      <tr><td>Schema &amp; validation</td><td><code>@effect/schema</code> defines every entity, request and event; encoders/decoders are reused by <code>packages/rpc</code>, HTTP handlers and tests.</td></tr>
+      <tr><td>Persistence</td><td><code>@effect/sql</code> repositories with explicit migrations; time instants as <code>timestamptz</code>, all-day as <code>date</code> + IANA timezone.</td></tr>
+      <tr><td>Sync ordering</td><td>Monotonic per-row <code>version</code> plus <code>updatedAt</code>; cursor pulls by version; push applies atomically and appends a change-feed entry.</td></tr>
+      <tr><td>Realtime wake-up</td><td>SSE channel per household; clients pull whenever a wake-up (or reconnect) occurs.</td></tr>
+      <tr><td>Background work</td><td>Alchemy v2 cron triggers invoke reminder scan and trash purge through Effect workflow/runners.</td></tr>
+      <tr><td>Observability</td><td>Effect tracing/metrics around sync commits, push dispatch latency and reminder delivery.</td></tr>
+    </tbody>
+  </table>
+  <h3>Essential backend endpoints (conceptual)</h3>
+  <ul>
+    <li><code>POST /rpc/*</code> (or SolidStart-calling Effect service methods via shared RPC) for all aggregates.</li>
+    <li><code>GET /sync/pull?cursor</code> and <code>POST /sync/push</code> with batched outbox entries.</li>
+    <li><code>GET /sse/household</code> for wake-ups.</li>
+    <li><code>POST /push/register</code>, plus Web Push dispatch internal path.</li>
+    <li><code>GET /search/notes?q</code> with Persian-normalized FTS.</li>
+    <li><code>GET /today</code>, <code>GET /week</code>, <code>GET /month</code> aggregated read models.</li>
+  </ul>
+</section>
+
+<section id="frontend">
+  <h2><span class="num">8</span>Frontend catalog (SolidJS screens)</h2>
+  <p class="section-lead">Routes and state required to make every Must item feel instant, offline-aware and RTL-correct.</p>
+  <table>
+    <thead><tr><th style="width:24%;">Route / screen</th><th>Must responsibilities</th></tr></thead>
+    <tbody>
+      <tr><td><code>/login</code>, <code>/register</code></td><td>Account creation for two, session restore, household join.</td></tr>
+      <tr><td><code>/today</code> (home)</td><td>Dashboard sections; inline actions; quick-add; empty states.</td></tr>
+      <tr><td><code>/calendar</code></td><td>Month/week/day/agenda views; event/occasion forms; recurrence.</td></tr>
+      <tr><td><code>/tasks</code></td><td>Today/upcoming/no-date boards; projects and tags filters.</td></tr>
+      <tr><td><code>/lists</code>, <code>/lists/:id</code></td><td>List management, continuous entry, live shared updates.</td></tr>
+      <tr><td><code>/notes</code>, <code>/notes/:id</code></td><td>Quick note editor, pins/tags/archive/trash, note search.</td></tr>
+      <tr><td><code>/habits</code>, <code>/habits/:id</code></td><td>Definition, daily logging, streak/stats/heatmap.</td></tr>
+      <tr><td><code>/reminders</code></td><td>Reminder CRUD, missed inbox, permission health panel.</td></tr>
+      <tr><td><code>/trash</code></td><td>Restore deleted items.</td></tr>
+      <tr><td><code>/settings</code></td><td>Profile, timezone, week start, digits, notification status.</td></tr>
+    </tbody>
+  </table>
+  <h3>SolidJS implementation notes for Must features</h3>
+  <ul>
+    <li><strong>Reactivity:</strong> signals for section order, filters, and connection status; stores for cached task/habit/item collections with structural identity to avoid needless DOM churn.</li>
+    <li><strong>Data fetching:</strong> use a Solid-compatible server-state cache; hydrate from IndexedDB first, then RPC.</li>
+    <li><strong>Mutations:</strong> <code>writeLocal()</code> transaction first; UI already updated; sync runs in background and surfaces failures in a non-blocking banner.</li>
+    <li><strong>Resilience:</strong> local draft recovery for notes; pending-outbox indicator; replay on reconnect.</li>
+    <li><strong>Touch/keyboard:</strong> 44px targets; drag with touch and keyboard equivalents; reduced-motion respected.</li>
+    <li><strong>i18n/copy:</strong> Persian copy curated, not literal; bidirectional text handled for mixed Persian/English titles.</li>
+  </ul>
+</section>
+
+<section id="slices">
+  <h2><span class="num">9</span>Delivery slices (roadmap)</h2>
+  <p class="section-lead">Each slice is a usable product increment. These follow the PRD phase spirit but only carry Must items.</p>
+  <div class="timeline">
+    <div class="tl-item"><div class="tl-card">
+      <h4><span class="badge b-phase">Slice 1</span> Foundation</h4>
+      <p class="small">Turborepo setup; shared domain package with Effect Schema; Alchemy stacks; auth + household; Solid app shell; IndexedDB mirror + outbox; sync cursor; Jalali/RTL tokens; service worker push shell.</p>
+      <p class="small muted"><strong>Exit:</strong> two accounts in one shared space, offline write + sync works for a dummy item.</p>
+    </div></div>
+    <div class="tl-item"><div class="tl-card">
+      <h4><span class="badge b-phase">Slice 2</span> Core planning</h4>
+      <p class="small">Tasks (create/organization/recur/today/upcoming/complete-undo), Lists (create/check/live share), Notes (quick/pin/tags/trash/search), Today dashboard, weekly and monthly views.</p>
+      <p class="small muted"><strong>Exit:</strong> both users can plan and review a normal week without using another app.</p>
+    </div></div>
+    <div class="tl-item"><div class="tl-card">
+      <h4><span class="badge b-phase">Slice 3</span> Time &amp; reliability</h4>
+      <p class="small">Calendar events, occasions, recurrence; calendar views; timezones/Jalali; reminders create + reliable delivery + response + missed inbox; quiet hours; medication tier.</p>
+      <p class="small muted"><strong>Exit:</strong> medication and appointment reminders reach an installed PWA reliably, including missed-reminder recovery.</p>
+    </div></div>
+    <div class="tl-item"><div class="tl-card">
+      <h4><span class="badge b-phase">Slice 4</span> Habits</h4>
+      <p class="small">Habit definition, daily logging, backfill, streak/stats/heatmap; dashboard and weekly integration.</p>
+      <p class="small muted"><strong>Exit:</strong> daily habit tracking with trustworthy streaks.</p>
+    </div></div>
+    <div class="tl-item"><div class="tl-card">
+      <h4><span class="badge b-phase">Slice 5</span> Hardening</h4>
+      <p class="small">Conflict simulator tests; E2E critical flows; performance budgets; accessibility audit; trash purge + nightly backup; Persian spell-resilient search; docs of decisions.</p>
+      <p class="small muted"><strong>Exit:</strong> Must version considered shippable (matches PRD DoD).</p>
+    </div></div>
+  </div>
+</section>
+
+<section id="acceptance">
+  <h2><span class="num">10</span>Acceptance &amp; success metrics (Must scope)</h2>
+  <p class="section-lead">The Must version is done when both PRD acceptance criteria and these delivery checks pass.</p>
+  <table>
+    <thead><tr><th style="width:28%;">Metric</th><th>Must-scope target</th></tr></thead>
+    <tbody>
+      <tr><td>Daily usage (both users)</td><td>≥5 days/week within a month of release.</td></tr>
+      <tr><td>Quick-add time</td><td>&lt;10 seconds for a task/note/habit.</td></tr>
+      <tr><td>First full load</td><td>&lt;2 seconds on home internet/mobile.</td></tr>
+      <tr><td>Interaction latency</td><td>&lt;100ms for common mutations.</td></tr>
+      <tr><td>Offline core</td><td>Create/view tasks, notes, lists, habits without internet; sync on reconnect.</td></tr>
+      <tr><td>Shared list live sync</td><td>Change visible to the other user within a few seconds.</td></tr>
+      <tr><td>Medication reminder</td><td>≥90% on-time responses; missed reminders appear in inbox.</td></tr>
+      <tr><td>Data loss</td><td>Zero unintended loss; restore tested.</td></tr>
+      <tr><td>Habits retained</td><td>≥70% of habits still active after 30 days.</td></tr>
+      <tr><td>Accessibility / RTL</td><td>WCAG 2.1 AA reasonable, no horizontal scroll at common sizes, RTL correct icons.</td></tr>
+    </tbody>
+  </table>
+  <div class="callout co-warn">
+    <div class="title">Honest scope control</div>
+    <p style="margin:6px 0 0;">Anything not in Sections 5 and 6 is, by definition, not in the Must release. New ideas go to a “future” list; the sync + recurrence engines are the places complexity is allowed. Everything else should stay boring.</p>
+  </div>
+</section>
+
+
+</div>
+</body>
+</html>

@@ -1,0 +1,1402 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>سند نیازمندی‌های محصول — برنامه‌ریز و دفترچه یادداشت شخصی</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f6f7fb;
+    --surface:#ffffff;
+    --ink:#1c2333;
+    --ink-soft:#4a5568;
+    --ink-faint:#7a8699;
+    --line:#e3e7f0;
+    --brand:#2f5fe0;
+    --brand-dark:#22449f;
+    --brand-soft:#eaf0ff;
+    --accent:#0f9d8f;
+    --accent-soft:#e4f6f4;
+    --warn:#c2410c;
+    --warn-soft:#fff1e7;
+    --violet:#6d4aff;
+    --violet-soft:#efebff;
+    --rose:#c2255c;
+    --rose-soft:#ffe9f0;
+    --shadow:0 1px 2px rgba(20,30,60,.06), 0 8px 24px rgba(20,30,60,.06);
+    --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Vazirmatn', Tahoma, 'Segoe UI', sans-serif;
+    font-size:16px;
+    line-height:2;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px 96px;}
+
+  /* ---------- Cover ---------- */
+  .cover{
+    background:linear-gradient(135deg,#22449f 0%, #2f5fe0 45%, #0f9d8f 100%);
+    color:#fff;
+    border-radius:0 0 28px 28px;
+    padding:64px 24px 56px;
+    margin-bottom:40px;
+  }
+  .cover-inner{max-width:1080px;margin:0 auto;}
+  .cover .kicker{
+    display:inline-block;background:rgba(255,255,255,.16);
+    border:1px solid rgba(255,255,255,.28);
+    padding:6px 18px;border-radius:999px;font-size:.85rem;letter-spacing:.2px;margin-bottom:22px;
+  }
+  .cover h1{font-size:2.5rem;line-height:1.5;margin:0 0 10px;font-weight:800;}
+  .cover .subtitle{font-size:1.25rem;opacity:.92;font-weight:400;margin:0 0 30px;}
+  .cover-meta{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+    gap:14px;margin-top:30px;
+  }
+  .cover-meta div{
+    background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);
+    border-radius:12px;padding:14px 18px;
+  }
+  .cover-meta .label{font-size:.78rem;opacity:.8;display:block;line-height:1.8;}
+  .cover-meta .value{font-size:1rem;font-weight:600;}
+
+  /* ---------- Generic blocks ---------- */
+  section{margin:56px 0;}
+  h2{
+    font-size:1.75rem;font-weight:800;margin:0 0 6px;line-height:1.6;
+    padding-right:18px;border-right:6px solid var(--brand);border-radius:0 8px 8px 0;
+  }
+  h2 .num{color:var(--brand);font-size:1.15rem;font-weight:700;margin-left:10px;}
+  .section-lead{color:var(--ink-soft);margin:14px 0 26px;font-size:1.02rem;}
+  h3{font-size:1.3rem;font-weight:700;margin:38px 0 10px;color:var(--brand-dark);}
+  h4{font-size:1.08rem;font-weight:700;margin:26px 0 8px;}
+  p{margin:10px 0;}
+  ul,ol{margin:10px 0 18px;padding-right:26px;}
+  li{margin:6px 0;}
+  strong{font-weight:700;}
+  .muted{color:var(--ink-faint);}
+  .small{font-size:.9rem;}
+
+  .card{
+    background:var(--surface);border:1px solid var(--line);
+    border-radius:var(--radius);padding:22px 26px;box-shadow:var(--shadow);margin:18px 0;
+  }
+  .grid{display:grid;gap:18px;}
+  .grid-2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr));}
+  .grid-3{grid-template-columns:repeat(auto-fit,minmax(250px,1fr));}
+  .grid-4{grid-template-columns:repeat(auto-fit,minmax(200px,1fr));}
+  .tile{
+    background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+    padding:20px 22px;box-shadow:var(--shadow);
+  }
+  .tile h4{margin:0 0 8px;}
+  .tile .icon{
+    width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+    font-size:1.35rem;margin-bottom:12px;
+  }
+  .bg-blue{background:var(--brand-soft);}
+  .bg-green{background:var(--accent-soft);}
+  .bg-violet{background:var(--violet-soft);}
+  .bg-orange{background:var(--warn-soft);}
+  .bg-rose{background:var(--rose-soft);}
+
+  .callout{border-radius:var(--radius);padding:18px 22px;margin:20px 0;border:1px solid;}
+  .callout .title{font-weight:700;margin-bottom:4px;}
+  .co-info{background:var(--brand-soft);border-color:#c9d8ff;}
+  .co-good{background:var(--accent-soft);border-color:#b9e6e0;}
+  .co-warn{background:var(--warn-soft);border-color:#ffd4b8;}
+  .co-violet{background:var(--violet-soft);border-color:#d6ccff;}
+
+  /* ---------- Tables ---------- */
+  table{
+    width:100%;border-collapse:collapse;background:var(--surface);
+    border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;
+    margin:18px 0;font-size:.95rem;box-shadow:var(--shadow);
+  }
+  th{
+    background:#eef2fb;text-align:right;padding:13px 16px;font-weight:700;
+    border-bottom:2px solid var(--line);white-space:nowrap;
+  }
+  td{padding:12px 16px;border-bottom:1px solid var(--line);vertical-align:top;}
+  tr:last-child td{border-bottom:none;}
+  tbody tr:nth-child(even){background:#fafbff;}
+  .id-cell{font-weight:700;color:var(--brand-dark);white-space:nowrap;font-size:.88rem;}
+
+  /* ---------- Badges ---------- */
+  .badge{
+    display:inline-block;padding:2px 12px;border-radius:999px;font-size:.78rem;
+    font-weight:700;white-space:nowrap;line-height:2;
+  }
+  .b-must{background:#e6f6ec;color:#136c3a;border:1px solid #b7e3c6;}
+  .b-should{background:#fff6e2;color:#8a5a06;border:1px solid #f4ddb0;}
+  .b-could{background:#ecebff;color:#4b3bbf;border:1px solid #d3ceff;}
+  .b-wont{background:#f1f2f6;color:#5b6472;border:1px solid #dcdfe8;}
+  .b-phase{background:var(--brand-soft);color:var(--brand-dark);border:1px solid #c9d8ff;}
+
+  /* ---------- TOC ---------- */
+  .toc{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:26px 30px;box-shadow:var(--shadow);}
+  .toc h3{margin-top:0;}
+  .toc ol{columns:2;column-gap:40px;padding-right:22px;}
+  .toc li{margin:7px 0;break-inside:avoid;}
+  .toc a{color:var(--ink);text-decoration:none;border-bottom:1px dashed var(--line);}
+  .toc a:hover{color:var(--brand);border-bottom-color:var(--brand);}
+  @media (max-width:720px){.toc ol{columns:1;}}
+
+  /* ---------- Requirement rows ---------- */
+  .req{
+    background:var(--surface);border:1px solid var(--line);border-radius:12px;
+    padding:16px 20px;margin:12px 0;box-shadow:0 1px 2px rgba(20,30,60,.05);
+  }
+  .req-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
+  .req-id{
+    background:var(--brand-soft);color:var(--brand-dark);font-weight:700;font-size:.82rem;
+    padding:2px 12px;border-radius:8px;letter-spacing:.3px;
+  }
+  .req-title{font-weight:700;}
+  .req p{margin:8px 0 0;color:var(--ink-soft);}
+  .accept{margin-top:10px;padding:12px 16px;background:#f7f9fd;border-radius:10px;border:1px dashed var(--line);}
+  .accept .accept-title{font-weight:700;font-size:.85rem;color:var(--accent);margin-bottom:4px;}
+  .accept ul{margin:4px 0 0;}
+  .accept li{font-size:.92rem;}
+
+  /* ---------- Wireframe text boxes ---------- */
+  .wire{
+    background:#101828;color:#d7e0f5;border-radius:12px;padding:18px 20px;
+    font-family:'Vazirmatn',Tahoma,monospace;font-size:.88rem;line-height:2.1;
+    direction:rtl;overflow-x:auto;white-space:pre;margin:14px 0;
+  }
+  .wire .hl{color:#7ee0c2;}
+  .wire .dim{color:#8392b5;}
+
+  /* ---------- Timeline ---------- */
+  .timeline{position:relative;padding-right:26px;margin:22px 0;}
+  .timeline::before{
+    content:"";position:absolute;right:8px;top:6px;bottom:6px;width:3px;
+    background:linear-gradient(180deg,var(--brand),var(--accent));border-radius:3px;
+  }
+  .tl-item{position:relative;margin:0 0 22px;}
+  .tl-item::before{
+    content:"";position:absolute;right:-24px;top:12px;width:15px;height:15px;border-radius:50%;
+    background:#fff;border:4px solid var(--brand);
+  }
+  .tl-item .tl-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 20px;box-shadow:var(--shadow);}
+  .tl-item h4{margin:0 0 6px;}
+
+  /* ---------- Checklist ---------- */
+  .checklist{list-style:none;padding:0;}
+  .checklist li{
+    padding:9px 34px 9px 12px;position:relative;background:var(--surface);
+    border:1px solid var(--line);border-radius:10px;margin:8px 0;
+  }
+  .checklist li::before{
+    content:"";position:absolute;right:11px;top:15px;width:15px;height:15px;
+    border:2px solid var(--brand);border-radius:4px;
+  }
+
+  /* ---------- Footer ---------- */
+  .doc-footer{
+    margin-top:70px;padding:26px;border-top:2px solid var(--line);
+    color:var(--ink-faint);font-size:.9rem;text-align:center;
+  }
+
+  .pill-row{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0;}
+  .pill{background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:5px 16px;font-size:.88rem;}
+
+  .two-col-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:8px 28px;}
+
+  @media (max-width:640px){
+    body{font-size:15px;}
+    .cover h1{font-size:1.85rem;}
+    h2{font-size:1.4rem;}
+    .wrap{padding:0 16px 70px;}
+  }
+  @media print{
+    body{background:#fff;}
+    .cover{border-radius:0;}
+    .card,.tile,.req,table,.toc{box-shadow:none;}
+    section{page-break-inside:avoid;}
+  }
+</style>
+</head>
+<body>
+
+<!-- ==================== COVER ==================== -->
+<header class="cover">
+  <div class="cover-inner">
+    <span class="kicker">سند نیازمندی‌های محصول (PRD) — نسخه ۱.۰</span>
+    <h1>برنامه‌ریز و دفترچه یادداشت شخصی «همه‌کاره»</h1>
+    <p class="subtitle">یک اپلیکیشن وبِ همه‌کاره برای برنامه‌ریزی روزانه، عادت‌ها، تقویم، وظایف، یادآورها، یادداشت‌ها و فهرست‌ها</p>
+    <div class="cover-meta">
+      <div><span class="label">کارفرما / مالک محصول</span><span class="value">سفارش‌دهنده (صاحب ایده)</span></div>
+      <div><span class="label">پیمانکار / توسعه‌دهنده</span><span class="value">همسر (تیم فنی و توسعه)</span></div>
+      <div><span class="label">تاریخ انتشار</span><span class="value">اکتبر ۲۰۲۶</span></div>
+      <div><span class="label">وضعیت سند</span><span class="value">پیش‌نویس جهت مذاکره و تصویب</span></div>
+      <div><span class="label">دامنه محصول</span><span class="value">اپلیکیشن وب واکنش‌گرا (موبایل‌محور)</span></div>
+      <div><span class="label">مخاطبان سند</span><span class="value">تیم دو نفره‌ی محصول و توسعه</span></div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- ==================== HOW TO READ ==================== -->
+  <section id="how-to-read">
+    <div class="card">
+      <h3 style="margin-top:0;">راهنمای خواندن این سند</h3>
+      <p>این سند قرارداد مکتوبِ نیازهای محصول میان <strong>سفارش‌دهنده (مالک محصول)</strong> و <strong>پیمانکار (توسعه‌دهنده)</strong> است. هدف آن ایجاد درک مشترک، کاهش ابهام و تعیین معیار پذیرش کار است؛ نه تحمیل جزئیات فنی. انتخاب فناوری، معماری و ابزارها بر عهده‌ی توسعه‌دهنده است، مگر آن‌که در بخش «ملاحظات» صراحتاً ذکر شده باشد.</p>
+      <p>هر نیازمندی یک شناسه‌ی یکتا (مثلاً <span class="req-id">FR-TASK-03</span>) و یک اولویت دارد. معنای اولویت‌ها بر اساس روش <strong>MoSCoW</strong> به این صورت است:</p>
+      <div class="pill-row">
+        <span class="badge b-must">باید (Must)</span>
+        <span class="badge b-should">بهتر است (Should)</span>
+        <span class="badge b-could">می‌تواند (Could)</span>
+        <span class="badge b-wont">فعلاً نه (Won't now)</span>
+      </div>
+      <ul>
+        <li><strong>باید:</strong> بدون آن نسخه‌ی اولیه قابل انتشار نیست.</li>
+        <li><strong>بهتر است:</strong> مهم است اما انتشار اولیه بدون آن ممکن است؛ در اولویت بعد از MVP.</li>
+        <li><strong>می‌تواند:</strong> در صورت وجود وقت و انرژی اضافه شود.</li>
+        <li><strong>فعلاً نه:</strong> آگاهانه خارج از محدوده‌ی فعلی است و در نقشه‌ی راه آینده بررسی می‌شود.</li>
+      </ul>
+      <p class="small muted">پیشنهاد: این سند در جلسه‌ی اولیه با صدای بلند خوانده شود، پرسش‌های بخش ۱۲ پاسخ داده شود، سپس نسخه‌ی نهایی به عنوان مرجع مشترک تصویب گردد.</p>
+    </div>
+  </section>
+
+  <!-- ==================== TOC ==================== -->
+  <section id="toc">
+    <div class="toc">
+      <h3>فهرست مطالب</h3>
+      <ol>
+        <li><a href="#intro">مقدمه و خلاصه‌ی اجرایی</a></li>
+        <li><a href="#vision">چشم‌انداز، اهداف و اصول محصول</a></li>
+        <li><a href="#users">کاربران هدف و سناریوهای کاربردی</a></li>
+        <li><a href="#scope">محدوده‌ی محصول و نقشه‌ی ماژول‌ها</a></li>
+        <li><a href="#habits">نیازمندی‌ها: ردیاب عادت‌ها</a></li>
+        <li><a href="#calendar">نیازمندی‌ها: تقویم، قرارها و مناسبت‌ها</a></li>
+        <li><a href="#tasks">نیازمندی‌ها: مدیریت وظایف و کارها</a></li>
+        <li><a href="#reminders">نیازمندی‌ها: یادآورها و اعلان‌ها</a></li>
+        <li><a href="#notes">نیازمندی‌ها: یادداشت‌ها</a></li>
+        <li><a href="#lists">نیازمندی‌ها: فهرست‌ها و چک‌باکس‌ها</a></li>
+        <li><a href="#views">نیازمندی‌ها: نماهای هفتگی، ماهانه و داشبورد</a></li>
+        <li><a href="#cross">نیازمندی‌های فراگیر: جست‌وجو، همگام‌سازی، پشتیبان</a></li>
+        <li><a href="#nfr">نیازمندی‌های غیرعملکردی</a></li>
+        <li><a href="#ux">طراحی محصول و تجربه کاربری (UI/UX)</a></li>
+        <li><a href="#localization">فارسی‌سازی و طراحی راست‌به‌چپ (RTL)</a></li>
+        <li><a href="#content">ملاحظات محتوایی و محصول</a></li>
+        <li><a href="#roadmap">نقشه‌ی راه و مراحل تحویل</a></li>
+        <li><a href="#success">معیارهای موفقیت</a></li>
+        <li><a href="#risks">ریسک‌ها، وابستگی‌ها و محدودیت‌ها</a></li>
+        <li><a href="#open">پرسش‌های باز برای جلسه‌ی هماهنگی</a></li>
+        <li><a href="#dod">تعریف «انجام‌شده» و معیارهای پذیرش</a></li>
+        <li><a href="#glossary">ضمیمه: واژه‌نامه و قراردادهای داده‌ای</a></li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ==================== 1. INTRO ==================== -->
+  <section id="intro">
+    <h2><span class="num">۱</span>مقدمه و خلاصه‌ی اجرایی</h2>
+    <p class="section-lead">تعریف مسئله، تصویر کلان محصول و چیزی که در پایان این پروژه باید ساخته شود.</p>
+
+    <h3>۱.۱. مسئله</h3>
+    <p>در زندگی روزمره‌ی ما اطلاعات برنامه‌ریزی در چندین جا پراکنده است: یادداشت‌های کاغذی و دیجیتال، فهرست خرید روی یخچال، یادآورهای پراکنده در گوشی، تقویم و کارهای کاری و خانگی. نتیجه، فراموشی، دوباره‌کاری و نبود یک تصویر واحد از «امروز و این هفته‌ی ماست». همچنین ابزارهای موجود یا بسیار تخصصی‌اند (فقط عادت، فقط تقویم) یا بسیار سنگین و سازمانی، و به ندرت برای زبان فارسی و نیازهای یک خانواده‌ی دو نفره طراحی شده‌اند.</p>
+
+    <h3>۱.۲. راه‌حل پیشنهادی</h3>
+    <p>یک اپلیکیشن وبِ واکنش‌گرا، سریع و ساده که شش حوزه‌ی اصلی زندگی روزمره را در یک محیط یکپارچه و با یک زبان طراحی مشترک کنار هم می‌آورد و از طریق «نمای هفتگی/ماهانه» و «داشبورد امروز» آن‌ها را به یک تصویر واحد تبدیل می‌کند. محصول برای استفاده‌ی شخصی و خانوادگی دو نفره طراحی می‌شود اما معماری محتوا و اطلاعات به گونه‌ای است که قابل توسعه باشد.</p>
+
+    <div class="callout co-info">
+      <div class="title">تعریف کوتاه محصول (Elevator Pitch)</div>
+      <p style="margin:6px 0 0;">«یک برنامه‌ریز و دفترچه یادداشت فارسی‌زبان که عادت‌ها، تقویم، کارها، یادآورها، یادداشت‌ها و فهرست‌های ما را در یک جا نگه می‌دارد و هر روز صبح فقط یک چیز به ما نشان می‌دهد: امروز چه چیزی مهم است.»</p>
+    </div>
+
+    <h3>۱.۳. خلاصه‌ی قابلیت‌های کلیدی</h3>
+    <div class="grid grid-3">
+      <div class="tile">
+        <div class="icon bg-blue">✅</div>
+        <h4>ردیاب عادت‌ها</h4>
+        <p class="small muted">ثبت روزانه‌ی عادت‌ها، زنجیره‌ی استمرار (Streak)، آمار هفتگی/ماهانه و یادآور ملایم.</p>
+      </div>
+      <div class="tile">
+        <div class="icon bg-green">📅</div>
+        <h4>تقویم و مناسبت‌ها</h4>
+        <p class="small muted">قرارها، برنامه‌ها، مناسبت‌های مهم، رویدادهای تکرارشونده و نمای ماه/هفته/روز.</p>
+      </div>
+      <div class="tile">
+        <div class="icon bg-violet">🗂️</div>
+        <h4>مدیریت وظایف</h4>
+        <p class="small muted">کارهای روزانه و کاری، با اولویت، موعد، برچسب، پروژه و زیرکار.</p>
+      </div>
+      <div class="tile">
+        <div class="icon bg-orange">⏰</div>
+        <h4>یادآورها</h4>
+        <p class="small muted">دارو، ورزش، کارهای خانه و هر یادآوری دیگر با الگوهای تکرار منعطف.</p>
+      </div>
+      <div class="tile">
+        <div class="icon bg-rose">📝</div>
+        <h4>یادداشت‌ها</h4>
+        <p class="small muted">ثبت سریع افکار روزمره، جست‌وجوی کامل، برچسب و پین کردن.</p>
+      </div>
+      <div class="tile">
+        <div class="icon bg-blue">☑️</div>
+        <h4>فهرست‌ها</h4>
+        <p class="small muted">خرید، لوازم سفر، کارهای خانه و هر فهرست دلخواه با قالب‌های آماده.</p>
+      </div>
+    </div>
+    <div class="callout co-good">
+      <div class="title">نکته‌ی کلیدی تمایز</div>
+      <p style="margin:6px 0 0;">قدرت این محصول نه در هر ماژول به‌تنهایی، بلکه در <strong>ارتباط میان آن‌ها</strong> است: یک یادآور دارو می‌تواند به یک عادت وصل شود، یک قرار می‌تواند یک وظیفه‌ی آماده‌سازی تولید کند، و «نمای هفته» همه‌ی این‌ها را در یک صفحه نشان می‌دهد.</p>
+    </div>
+
+    <h3>۱.۴. مخاطبان این سند</h3>
+    <table>
+      <thead>
+        <tr><th>مخاطب</th><th>نقش</th><th>آنچه از این سند می‌گیرد</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>سفارش‌دهنده (کارفرما / مالک محصول)</td><td>تعریف نیاز، اولویت‌بندی، تأیید خروجی</td><td>زبان مشترک برای بیان نیازها و معیار پذیرش</td></tr>
+        <tr><td>توسعه‌دهنده (پیمانکار)</td><td>طراحی، توسعه، تست و تحویل</td><td>محدوده‌ی کار، اولویت‌ها، معیارهای پذیرش و مرزهای محصول</td></tr>
+        <tr><td>کاربر نهایی (خود ما)</td><td>استفاده‌ی روزمره و بازخورد</td><td>اطمینان از این‌که محصول واقعاً به درد زندگی روزمره می‌خورد</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ==================== 2. VISION ==================== -->
+  <section id="vision">
+    <h2><span class="num">۲</span>چشم‌انداز، اهداف و اصول محصول</h2>
+    <p class="section-lead">جهت‌گیری کلان، آنچه می‌خواهیم به آن برسیم و قواعدی که هر تصمیم طراحی باید با آن‌ها سنجیده شود.</p>
+
+    <h3>۲.۱. چشم‌انداز</h3>
+    <p>«محصولی که بعد از چند ماه استفاده، تبدیل به ستون فقرات زندگی روزمره‌ی ما شود: جایی که هر چیزی که نباید فراموش شود، هر عادتی که می‌خواهیم بسازیم و هر فکری که می‌خواهیم نگه داریم، در آن جا می‌گیرد — بی‌آنکه نگهداری خودِ ابزار به کاری سنگین تبدیل شود.»</p>
+
+    <h3>۲.۲. اهداف کسب‌وکار / پروژه (Goals)</h3>
+    <div class="grid grid-2">
+      <div class="card" style="margin:0;">
+        <h4 style="margin-top:0;">اهداف کمّی</h4>
+        <ul>
+          <li>فعال‌سازی روزانه‌ی هر دو کاربر در کمتر از یک هفته پس از انتشار.</li>
+          <li>زمان ثبت یک مورد سریع (عادت، وظیفه، یادداشت) کمتر از <strong>۱۰ ثانیه</strong>.</li>
+          <li>باز شدن کامل صفحه‌ی اصلی در کمتر از <strong>۲ ثانیه</strong> روی اینترنت خانگی و موبایل.</li>
+          <li>دسترسی کامل به امکانات اصلی بدون اسکرول‌های طولانی و بدون آموزش رسمی.</li>
+          <li>۹۰٪ از عملیات روزمره با موبایل و با یک دست قابل انجام باشد.</li>
+        </ul>
+      </div>
+      <div class="card" style="margin:0;">
+        <h4 style="margin-top:0;">اهداف کیفی</h4>
+        <ul>
+          <li>ایجاد حس «نظم و آرامش» به‌جای حس «مدیریت ابزار».</li>
+          <li>تداوم استفاده‌ی بلندمدت (نه ابزاری که پس از دو هفته رها شود).</li>
+          <li>ایجاد تصویر واحد از «امروز» و «این هفته» در یک نگاه.</li>
+          <li>قابلیت رشد و افزودن قابلیت‌های جدید بدون بازنویسی.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>۲.۳. غیراهداف (Non-Goals)</h3>
+    <div class="callout co-warn">
+      <ul style="margin:6px 0 0;">
+        <li><strong>ابزار تیمی/سازمانی نیست:</strong> مدیریت پروژه‌های چندنفره‌ی سازمانی، گردش‌کار تأیید و گزارش‌گیری مدیریتی خارج از محدوده است.</li>
+        <li><strong>شبکه‌ی اجتماعی نیست:</strong> اشتراک‌گذاری عمومی، فالوور، لایک و محتوای عمومی در دستور کار نیست.</li>
+        <li><strong>بازارِ افزونه و اکوسیستم نیست:</strong> فروشگاه افزونه‌ها و API عمومی در نسخه‌ی فعلی نیست.</li>
+        <li><strong>هوش مصنوعی سنگین در MVP نیست:</strong> پیشنهادهای هوشمند و تحلیل خودکار در مراحل بعدی بررسی می‌شود.</li>
+        <li><strong>اپلیکیشن بومی موبایل (Native) فعلاً نیست:</strong> تمرکز بر وبِ واکنش‌گراست؛ امکان تبدیل به PWA بررسی می‌شود.</li>
+      </ul>
+    </div>
+
+    <h3>۲.۴. اصول محصول (Product Principles)</h3>
+    <p>هر تصمیم طراحی و فنی باید با این اصول سنجیده شود؛ در صورت تعارض، اصل بالاتر مقدم است:</p>
+    <table>
+      <thead><tr><th style="width:22%;">اصل</th><th>توضیح</th><th style="width:34%;">نشانه‌ی آن در محصول</th></tr></thead>
+      <tbody>
+        <tr><td><strong>۱. سادگی پیش‌فرض</strong></td><td>هر قابلیت باید با کمترین تعداد تصمیم و کلیک قابل استفاده باشد. پیچیدگی فقط در صورت نیاز و به‌صورت تدریجی ظاهر شود.</td><td>افزودن سریع، فرم‌های کوتاه، پیش‌فرض‌های هوشمند</td></tr>
+        <tr><td><strong>۲. سرعت، اصل محترم</strong></td><td>هیچ تعاملی نباید منتظر شبکه بماند؛ ثبت باید فوری باشد و همگام‌سازی در پس‌زمینه انجام شود.</td><td>ثبت خوش‌بینانه (Optimistic UI)، کش محلی</td></tr>
+        <tr><td><strong>۳. یک تصویر واحد</strong></td><td>همه‌ی ماژول‌ها باید در یک «نمای زندگی» به هم گره بخورند؛ هیچ ماژولی جزیره نیست.</td><td>داشبورد امروز، نمای هفتگی، پیوند میان اقلام</td></tr>
+        <tr><td><strong>۴. احترام به تمرکز</strong></td><td>اعلان‌ها و هشدارها نباید مزاحم شوند؛ اطلاع‌رسانی ملایم، قابل تنظیم و معنادار باشد.</td><td>حالت «تمرکز»، دسته‌بندی اعلان‌ها</td></tr>
+        <tr><td><strong>۵. داده متعلق به کاربر است</strong></td><td>امکان خروجی گرفتن، بازیابی و حذف کامل داده‌ها وجود داشته باشد.</td><td>خروجی JSON/CSV، پشتیبان‌گیری</td></tr>
+        <tr><td><strong>۶. فارسی، زبان اول</strong></td><td>محصول از روز اول برای فارسی و راست‌به‌چپ طراحی شود، نه ترجمه‌ی بعدی.</td><td>تقویم شمسی، RTL کامل، اعداد فارسی</td></tr>
+        <tr><td><strong>۷. قابل اعتماد بودن</strong></td><td>هیچ داده‌ای نباید بی‌هیچ اثری ناپدید شود. حذف باید قابل بازگشت باشد.</td><td>سطل زباله، تأیید حذف، تاریخچه‌ی مختصر</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ==================== 3. USERS ==================== -->
+  <section id="users">
+    <h2><span class="num">۳</span>کاربران هدف و سناریوهای کاربردی</h2>
+    <p class="section-lead">چه کسی از این محصول استفاده می‌کند، در چه لحظاتی، و چه انتظاری دارد.</p>
+
+    <h3>۳.۱. پرسونای اصلی</h3>
+    <div class="grid grid-2">
+      <div class="card" style="margin:0;">
+        <h4 style="margin-top:0;">پرسونا ۱ — «برنامه‌ریز خانواده»</h4>
+        <p class="small muted">ویژگی‌ها: مسئول برنامه‌ریزی مشترک، نگهداری فهرست‌های خانه و خرید، پیگیری مناسبت‌ها.</p>
+        <ul>
+          <li><strong>نیاز اصلی:</strong> تصویر کامل از هفته‌ی پیش‌رو برای هر دو نفر.</li>
+          <li><strong>درد اصلی:</strong> پراکندگی اطلاعات میان یادداشت‌ها، پیام‌ها و تقویم.</li>
+          <li><strong>معیار موفقیت:</strong> هیچ قرار یا خرید مهمی فراموش نشود.</li>
+        </ul>
+      </div>
+      <div class="card" style="margin:0;">
+        <h4 style="margin-top:0;">پرسونا ۲ — «حرفه‌ای پرمشغله»</h4>
+        <p class="small muted">ویژگی‌ها: کارهای کاری و شخصی در هم آمیخته، نیاز به تمرکز، علاقه‌مند به عادت‌سازی و آمار.</p>
+        <ul>
+          <li><strong>نیاز اصلی:</strong> مدیریت وظایف کاری + عادت‌ها + یادآورهای سلامت (دارو/ورزش).</li>
+          <li><strong>درد اصلی:</strong> نبود یک «صفحه‌ی امروز» متمرکز؛ پرش میان چند ابزار.</li>
+          <li><strong>معیار موفقیت:</strong> روز کاری با یک نگاه قابل برنامه‌ریزی و جمع‌بندی باشد.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>۳.۲. سناریوهای کاربردی کلیدی (User Journeys)</h3>
+    <table>
+      <thead><tr><th style="width:16%;">سناریو</th><th>شرح</th><th style="width:30%;">خروجی مورد انتظار</th></tr></thead>
+      <tbody>
+        <tr><td><strong>صبح روز کاری</strong></td><td>کاربر اپ را باز می‌کند، «امروز» را می‌بیند: ۳ وظیفه‌ی مهم، ۲ قرار، یادآور دارو، ۲ عادت فعال.</td><td>در کمتر از ۳۰ ثانیه تصویر روز مشخص شود.</td></tr>
+        <tr><td><strong>افزودن سریع</strong></td><td>در میانه‌ی روز یک کار فوری یا یک فکر به ذهن می‌رسد؛ کاربر دکمه‌ی «افزودن» را می‌زند و در چند ثانیه ثبت می‌کند.</td><td>ثبت بدون خروج از صفحه‌ی فعلی و بدون فرم طولانی.</td></tr>
+        <tr><td><strong>برنامه‌ریزی هفتگی (شنبه/یکشنبه)</strong></td><td>کاربر به «نمای هفته» می‌رود، کارهای هفته را می‌بیند، قرارها را بررسی می‌کند و اولویت‌ها را مرتب می‌کند.</td><td>یک برنامه‌ی هفتگی مصوب ظرف ۵ تا ۱۰ دقیقه.</td></tr>
+        <tr><td><strong>خرید هفتگی</strong></td><td>کاربر فهرست «خرید خانه» را باز می‌کند، موارد را حین خرید تیک می‌زند؛ موارد تیک‌خورده بلافاصله با دستگاه دیگر همگام می‌شود.</td><td>هماهنگی کامل میان دو نفر بدون تماس.</td></tr>
+        <tr><td><strong>پیگیری عادت</strong></td><td>کاربر هر شب عادت‌های روز را ثبت می‌کند؛ زنجیره‌ی استمرار و آمار هفتگی را می‌بیند.</td><td>انگیزه‌ی ادامه و دیدن پیشرفت واقعی.</td></tr>
+        <tr><td><strong>جمع‌بندی آخر هفته</strong></td><td>کاربر گزارش هفتگی را می‌بیند: چند وظیفه انجام شد، کدام عادت‌ها تثبیت شدند، هفته‌ی بعد چه در پیش است.</td><td>بازخورد واقعی و تصمیم برای هفته‌ی بعد.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>۳.۳. زمینه‌های استفاده</h3>
+    <div class="pill-row">
+      <span class="pill">📱 موبایل، حین حرکت و خرید</span>
+      <span class="pill">💻 دسکتاپ، برای برنامه‌ریزی هفتگی</span>
+      <span class="pill">🌆 شب، برای جمع‌بندی روز</span>
+      <span class="pill">☀️ صبح، برای شروع روز</span>
+      <span class="pill">🛋️ استفاده‌ی تک‌دسته و کوتاه</span>
+      <span class="pill">📴 موقعیت‌های با اینترنت ضعیف</span>
+    </div>
+  </section>
+
+  <!-- ==================== 4. SCOPE ==================== -->
+  <section id="scope">
+    <h2><span class="num">۴</span>محدوده‌ی محصول و نقشه‌ی ماژول‌ها</h2>
+    <p class="section-lead">ماژول‌های محصول، وابستگی‌های آن‌ها و اولویت‌بندی کلی برای ساخت.</p>
+
+    <h3>۴.۱. نقشه‌ی ماژول‌ها</h3>
+    <table>
+      <thead>
+        <tr><th>ماژول</th><th>شرح کوتاه</th><th>ارتباط با ماژول‌های دیگر</th><th>اولویت</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="id-cell">عادت‌ها</td><td>تعریف عادت، ثبت روزانه، آمار و زنجیره</td><td>یادآور، داشبورد امروز، گزارش هفتگی</td><td><span class="badge b-must">باید</span></td></tr>
+        <tr><td class="id-cell">تقویم</td><td>رویداد، قرار، مناسبت، تکرار</td><td>وظایف، یادآور، نمای هفتگی/ماهانه</td><td><span class="badge b-must">باید</span></td></tr>
+        <tr><td class="id-cell">وظایف</td><td>کارهای روزانه و کاری با موعد و اولویت</td><td>تقویم، پروژه‌ها، داشبورد امروز</td><td><span class="badge b-must">باید</span></td></tr>
+        <tr><td class="id-cell">یادآورها</td><td>هشدارهای زمان‌دار و تکرارشونده</td><td>عادت‌ها، وظایف، تقویم، اعلان‌ها</td><td><span class="badge b-must">باید</span></td></tr>
+        <tr><td class="id-cell">یادداشت‌ها</td><td>متن آزاد با برچسب و جست‌وجو</td><td>جست‌وجوی سراسری، داشبورد</td><td><span class="badge b-must">باید</span></td></tr>
+        <tr><td class="id-cell">فهرست‌ها</td><td>چک‌لیست‌ها و قالب‌ها</td><td>اشتراک میان دو نفر، یادآور</td><td><span class="badge b-must">باید</span></td></tr>
+        <tr><td class="id-cell">نمای هفتگی/ماهانه</td><td>نمای تجمیعی زمان + داشبورد امروز</td><td>همه‌ی ماژول‌ها</td><td><span class="badge b-must">باید</span></td></tr>
+        <tr><td class="id-cell">جست‌وجوی سراسری</td><td>جست‌وجو در همه‌ی محتوا</td><td>همه‌ی ماژول‌ها</td><td><span class="badge b-should">بهتر است</span></td></tr>
+        <tr><td class="id-cell">گزارش و آمار</td><td>گزارش هفتگی/ماهانه از عادت‌ها و وظایف</td><td>عادت‌ها، وظایف</td><td><span class="badge b-should">بهتر است</span></td></tr>
+        <tr><td class="id-cell">همگام‌سازی دو کاربره</td><td>اشتراک داده‌ها میان دو حساب</td><td>همه‌ی ماژول‌ها</td><td><span class="badge b-must">باید</span></td></tr>
+        <tr><td class="id-cell">پشتیبان و خروجی داده</td><td>پشتیبان‌گیری، بازیابی، خروجی</td><td>همه‌ی ماژول‌ها</td><td><span class="badge b-should">بهتر است</span></td></tr>
+        <tr><td class="id-cell">تم و حالت تاریک</td><td>شخصی‌سازی ظاهر</td><td>طراحی</td><td><span class="badge b-could">می‌تواند</span></td></tr>
+        <tr><td class="id-cell">ابزارک/صفحه‌ی قفل (PWA)</td><td>دسترسی سریع و آفلاین</td><td>یادآورها</td><td><span class="badge b-could">می‌تواند</span></td></tr>
+        <tr><td class="id-cell">هوش مصنوعی و پیشنهاد خودکار</td><td>دسته‌بندی و پیشنهاد هوشمند</td><td>همه‌ی ماژول‌ها</td><td><span class="badge b-wont">فعلاً نه</span></td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout co-violet">
+      <div class="title">نکته‌ی طراحی ساختار داده</div>
+      <p style="margin:6px 0 0;">پیشنهاد می‌شود از همان ابتدا همه‌ی اقلام (وظیفه، رویداد، یادداشت، مورد فهرست، عادت) در یک مدل داده‌ی مشترک با قابلیت «برچسب، رنگ، مالک، تاریخ، وضعیت» طراحی شوند تا نمای هفتگی و جست‌وجوی سراسری به‌سادگی روی همه‌ی آن‌ها کار کنند. جزئیات بر عهده‌ی توسعه‌دهنده است.</p>
+    </div>
+  </section>
+
+  <!-- ==================== 5. HABITS ==================== -->
+  <section id="habits">
+    <h2><span class="num">۵</span>نیازمندی‌ها: ردیاب عادت‌ها</h2>
+    <p class="section-lead">ساخت، تثبیت و مشاهده‌ی پیشرفت عادت‌های روزمره مانند ورزش، مطالعه، مصرف دارو و نوشیدن آب.</p>
+
+    <h3>۵.۱. توضیح محصول</h3>
+    <p>کاربر می‌تواند عادت‌های دلخواه تعریف کند، هر روز آن‌ها را ثبت کند و با دیدن «زنجیره‌ی استمرار» و آمار، انگیزه‌ی ادامه بگیرد. این ماژول باید سبک و سریع باشد؛ ثبت یک عادت نباید بیش از چند ثانیه طول بکشد.</p>
+
+    <h3>۵.۲. داستان‌های کاربر</h3>
+    <ul>
+      <li>به عنوان کاربر، می‌خواهم عادت «ورزش روزانه» را تعریف کنم تا هر روز آن را ثبت کنم.</li>
+      <li>به عنوان کاربر، می‌خواهم بدانم چند روز پیاپی یک عادت را انجام داده‌ام تا انگیزه بگیرم.</li>
+      <li>به عنوان کاربر، می‌خواهم عادت‌های هفته را یک‌جا ببینم تا نقاط ضعف خود را پیدا کنم.</li>
+      <li>به عنوان کاربر، می‌خواهم برخی عادت‌ها فقط در روزهای خاصی (مثلاً زوج) یادآوری شوند.</li>
+    </ul>
+
+    <h3>۵.۳. نیازمندی‌های عملکردی</h3>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-HAB-01</span><span class="req-title">ایجاد و ویرایش عادت</span><span class="badge b-must">باید</span></div>
+      <p>کاربر بتواند عادت جدید با عنوان، توضیح اختیاری، رنگ/نماد، فراوانی (روزانه، هفتگی با انتخاب روزها، X بار در هفته) و زمان یادآوری ایجاد کند.</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>ایجاد عادت در کمتر از ۳۰ ثانیه و با حداکثر یک صفحه‌ی فرم.</li>
+        <li>امکان ویرایش همه‌ی فیلدها پس از ایجاد، بدون از دست رفتن تاریخچه.</li>
+        <li>حذف عادت نیازمند تأیید باشد و به «سطل زباله» برود.</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-HAB-02</span><span class="req-title">ثبت روزانه‌ی عادت</span><span class="badge b-must">باید</span></div>
+      <p>امکان علامت‌گذاری یک عادت به‌صورت «انجام شد / انجام نشد / تا حدی» برای هر روز، با یک کلیک یا لمس.</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>ثبت در صفحه‌ی «امروز» و در صفحه‌ی عادت‌ها با یک اقدام ممکن باشد.</li>
+        <li>ثبت یک عادت کمتر از ۲ ثانیه طول بکشد و بدون بارگذاری مجدد صفحه اعمال شود.</li>
+        <li>امکان جبران روزهای گذشته‌ی نزدیک (حداکثر ۷ روز قبل) وجود داشته باشد.</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-HAB-03</span><span class="req-title">زنجیره‌ی استمرار (Streak) و آمار</span><span class="badge b-must">باید</span></div>
+      <p>نمایش تعداد روزهای پیاپی انجام، درصد موفقیت در هفته/ماه، نمودار ساده‌ی روند و نقشه‌ی حرارتی ماهانه (اختیاری).</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>محاسبه‌ی درست زنجیره با در نظر گرفتن فراوانی عادت (مثلاً عادت «سه بار در هفته»).</li>
+        <li>آمار هفتگی و ماهانه در صفحه‌ی عادت و در گزارش هفتگی نمایش داده شود.</li>
+        <li>آمار باید برای فاصله‌های زمانی قابل تغییر (۷ / ۳۰ / ۹۰ روز) قابل مشاهده باشد.</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-HAB-04</span><span class="req-title">یادآوری عادت</span><span class="badge b-should">بهتر است</span></div>
+      <p>یادآوری در زمان تعیین‌شده یا در پایان روز برای عادت‌های ثبت‌نشده، با امکان خاموش کردن برای هر عادت.</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>یادآور در زمان محلی دستگاه ارسال شود.</li>
+        <li>برای عادت‌هایی که امروز انجام شده‌اند، یادآور ارسال نشود.</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-HAB-05</span><span class="req-title">قالب‌های آماده‌ی عادت</span><span class="badge b-could">می‌تواند</span></div>
+      <p>پیشنهاد مجموعه‌ای از عادت‌های رایج (نوشیدن آب، مطالعه، ورزش، مراقبه، مصرف دارو) برای شروع سریع.</p>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-HAB-06</span><span class="req-title">اشتراک عادت میان دو نفر</span><span class="badge b-should">بهتر است</span></div>
+      <p>امکان «مشترک» کردن یک عادت (مثلاً ورزش دونفره) و دیدن وضعیت هر دو نفر در یک نما.</p>
+    </div>
+
+    <h3>۵.۴. حالت‌های خاص و لبه</h3>
+    <ul>
+      <li>روزهای بدون ثبت نباید به‌عنوان «شکست» قطعی تفسیر شوند؛ برای فراوانی‌های «X بار در هفته» منطق انعطاف‌پذیر باشد.</li>
+      <li>تغییر فراوانی یک عادت نباید آمار گذشته را بازنویسی کند.</li>
+      <li>سال کبیسه و تغییر ساعت فصلی نباید در محاسبه‌ی زنجیره اختلال ایجاد کند.</li>
+    </ul>
+  </section>
+
+  <!-- ==================== 6. CALENDAR ==================== -->
+  <section id="calendar">
+    <h2><span class="num">۶</span>نیازمندی‌ها: تقویم، قرارها و مناسبت‌ها</h2>
+    <p class="section-lead">مدیریت زمان: قرارها، برنامه‌ها، مناسبت‌های مهم و رویدادهای تکرارشونده.</p>
+
+    <h3>۶.۱. توضیح محصول</h3>
+    <p>تقویم ستون فقرات زمانی محصول است و باید از تقویم شمسی به‌عنوان تقویم اصلی و میلادی به‌عنوان تقویم کمکی پشتیبانی کند. همه‌ی ماژول‌های زمان‌دار (وظایف، یادآورها، عادت‌ها) باید بتوانند روی تقویم دیده شوند.</p>
+
+    <h3>۶.۲. نیازمندی‌های عملکردی</h3>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-CAL-01</span><span class="req-title">ایجاد و ویرایش رویداد</span><span class="badge b-must">باید</span></div>
+      <p>رویداد با عنوان، تاریخ و ساعت شروع/پایان، مکان، توضیحات، رنگ/دسته، افراد (در صورت تمایل) و یادآور.</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>ایجاد رویداد از نمای ماه، هفته، روز و از دکمه‌ی «افزودن سریع» ممکن باشد.</li>
+        <li>رویداد تمام‌روز (بدون ساعت) پشتیبانی شود.</li>
+        <li>ویرایش یک رویداد تکرارشونده امکان انتخاب «فقط همین مورد» یا «این و موارد بعدی» را بدهد.</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-CAL-02</span><span class="req-title">مناسبت‌ها و تاریخ‌های مهم</span><span class="badge b-must">باید</span></div>
+      <p>ثبت مناسبت‌های شخصی (تولدها، سالگردها) و مشاهده‌ی آن‌ها در تقویم و یادآوری پیش از موعد (مثلاً ۷ روز قبل).</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>مناسبت سالانه بدون نیاز به تکرار دستی هر سال نمایش داده شود.</li>
+        <li>امکان افزودن یادآور آماده‌سازی برای مناسبت (مثلاً «خرید هدیه»).</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-CAL-03</span><span class="req-title">رویدادهای تکرارشونده</span><span class="badge b-must">باید</span></div>
+      <p>الگوهای تکرار: روزانه، هفتگی با انتخاب روزها، ماهانه (روز مشخص یا «آخرین جمعه»)، سالانه و الگوی سفارشی.</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>الگوهای رایج بدون نوشتن قاعده‌ی پیچیده قابل تعریف باشند.</li>
+        <li>پایان تکرار (تاریخ یا تعداد دفعات) پشتیبانی شود.</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-CAL-04</span><span class="req-title">نمای تقویم</span><span class="badge b-must">باید</span></div>
+      <p>نمای ماه (کلی)، هفته (جزئیات ساعتی)، روز و فهرستی (Agenda). جابه‌جایی سریع میان نماها و هفته‌ها/ماه‌ها.</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>در موبایل، نمای پیش‌فرض «روز/فهرست» و در دسکتاپ «هفته» باشد؛ امکان تغییر توسط کاربر.</li>
+        <li>روزهای دارای رویداد با نشانه‌ی بصری ملایم در نمای ماه مشخص شوند.</li>
+        <li>نمای هفته باید وظایف و یادآورها را نیز در کنار رویدادها نشان دهد.</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-CAL-05</span><span class="req-title">پشتیبانی از تقویم شمسی و میلادی</span><span class="badge b-must">باید</span></div>
+      <p>نمایش و ورود تاریخ بر اساس شمسی، با امکان مشاهده‌ی هم‌زمان تاریخ میلادی.</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>تبدیل تاریخ‌ها دقیق و بدون خطا باشد.</li>
+        <li>شروع هفته قابل تنظیم باشد (شنبه به‌عنوان پیش‌فرض).</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-CAL-06</span><span class="req-title">هماهنگی دو تقویم</span><span class="badge b-should">بهتر است</span></div>
+      <p>تفکیک بصری رویدادهای هر یک از دو کاربر (مثلاً با رنگ) و امکان فیلتر «فقط من / فقط همسر / هر دو».</p>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-CAL-07</span><span class="req-title">تداخل و هشدار</span><span class="badge b-could">می‌تواند</span></div>
+      <p>هشدار ملایم هنگام ایجاد رویدادی که با رویداد دیگری هم‌زمان است.</p>
+    </div>
+
+    <h3>۶.۳. حالت‌های خاص و لبه</h3>
+    <ul>
+      <li>رویدادهایی که از نیمه‌شب می‌گذرند (مثلاً سفر شبانه) باید به‌درستی نمایش داده شوند.</li>
+      <li>حذف یک «مورد» از یک سری تکرارشونده نباید کل سری را حذف کند.</li>
+      <li>تغییر منطقه‌ی زمانی دستگاه نباید زمان رویدادهای ثبت‌شده را جابه‌جا کند.</li>
+    </ul>
+  </section>
+
+  <!-- ==================== 7. TASKS ==================== -->
+  <section id="tasks">
+    <h2><span class="num">۷</span>نیازمندی‌ها: مدیریت وظایف و کارها</h2>
+    <p class="section-lead">مدیریت کارهای روزانه، وظایف کاری و تعهدات شخصی با اولویت و موعد.</p>
+
+    <h3>۷.۱. توضیح محصول</h3>
+    <p>ماژول وظایف باید به‌اندازه‌ی کافی ساده باشد که «خرید شیر» در آن ثبت شود و به‌اندازه‌ی کافی قدرتمند باشد که یک پروژه‌ی کاری چندمرحله‌ای را نیز در خود جای دهد. تمرکز بر «کارهای امروز» است، نه سیستم‌های پیچیده‌ی مدیریت پروژه.</p>
+
+    <h3>۷.۲. نیازمندی‌های عملکردی</h3>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-TASK-01</span><span class="req-title">ایجاد وظیفه</span><span class="badge b-must">باید</span></div>
+      <p>عنوان، توضیح، موعد (تاریخ و اختیاراً ساعت)، اولویت (بالا/متوسط/پایین)، برچسب، پروژه/دسته و وضعیت (انجام‌نشده/در حال انجام/انجام‌شده).</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>ایجاد وظیفه فقط با نوشتن عنوان ممکن باشد؛ بقیه‌ی فیلدها اختیاری و قابل افزودن بعدی.</li>
+        <li>ورود سریع با تایپ طبیعی (مثلاً «خرید شیر فردا») <span class="muted">(در صورت توافق در بخش پرسش‌های باز)</span>.</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-TASK-02</span><span class="req-title">سازمان‌دهی: پروژه، برچسب و اولویت</span><span class="badge b-must">باید</span></div>
+      <p>گروه‌بندی وظایف در پروژه‌ها/دسته‌ها (مثلاً «کار»، «خانه»، «سلامت»)، برچسب‌گذاری چندگانه و فیلتر بر اساس آن‌ها.</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>هر وظیفه می‌تواند هم‌زمان در یک پروژه و چند برچسب باشد.</li>
+        <li>فیلترها و مرتب‌سازی (بر اساس موعد، اولویت، تاریخ ایجاد) حفظ شوند.</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-TASK-03</span><span class="req-title">زیرکار و چک‌لیست درون وظیفه</span><span class="badge b-should">بهتر است</span></div>
+      <p>هر وظیفه بتواند چند گام (زیرکار) داشته باشد و نشان‌دهنده‌ی پیشرفت (مثلاً ۲ از ۵) باشد.</p>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-TASK-04</span><span class="req-title">تکرار وظیفه</span><span class="badge b-must">باید</span></div>
+      <p>وظایف تکرارشونده (مثلاً «پرداخت قبض هر ماه»، «آبیاری گیاهان هر ۳ روز») با الگوهای مشابه تقویم.</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>پس از انجام یک وظیفه‌ی تکرارشونده، نمونه‌ی بعدی به‌طور خودکار ساخته شود.</li>
+        <li>الگوی «انجام شد → نوبت بعد» و «موعد → نوبت بعد» هر دو پشتیبانی شوند.</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-TASK-05</span><span class="req-title">نمای «امروز» و «آینده»</span><span class="badge b-must">باید</span></div>
+      <p>فهرست وظایف امروز، موعدگذشته‌ها، فردا و هفته‌ی پیش‌رو؛ با امکان جابه‌جایی سریع کارها میان روزها (Drag &amp; Drop یا معادل لمسی).</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>وظایف موعدگذشته در بالای «امروز» با نشانه‌ی بصری ملایم (نه هشدار آزاردهنده) نمایش داده شوند.</li>
+        <li>جابه‌جایی یک وظیفه به روز دیگر با یک اقدام ساده ممکن باشد.</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-TASK-06</span><span class="req-title">اتمام و بازگشت</span><span class="badge b-must">باید</span></div>
+      <p>علامت‌گذاری انجام‌شده با بازخورد بصری دلپذیر، امکان «بازگرداندن» و مشاهده‌ی تاریخچه‌ی انجام.</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>انجام‌شده‌ها تا ۷ روز در دسترس و قابل بازگشت باشند، سپس بایگانی شوند.</li>
+        <li>«لغو انجام» از پیام تأیید یا از نمای تاریخچه ممکن باشد.</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-TASK-07</span><span class="req-title">پیوند وظیفه با رویداد و یادآور</span><span class="badge b-should">بهتر است</span></div>
+      <p>امکان ایجاد یک وظیفه از دل یک رویداد (مثلاً «آماده‌سازی برای جلسه») و بالعکس.</p>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-TASK-08</span><span class="req-title">کارهای مشترک</span><span class="badge b-should">بهتر است</span></div>
+      <p>تفویض یک وظیفه به «من» یا «همسر» و نمایش مسئول هر کار در فهرست‌ها.</p>
+    </div>
+
+    <h3>۷.۳. حالت‌های خاص و لبه</h3>
+    <ul>
+      <li>وظیفه‌ی بدون موعد نباید در «امروز» ظاهر شود؛ باید در «بدون تاریخ» قابل دسترسی باشد.</li>
+      <li>تغییر موعد وظیفه‌ی تکرارشونده نباید الگوی تکرار را بشکند.</li>
+      <li>حذف یک پروژه نباید وظایف آن را بی‌هیچ هشداری حذف کند؛ گزینه‌ی انتقال وجود داشته باشد.</li>
+    </ul>
+  </section>
+
+  <!-- ==================== 8. REMINDERS ==================== -->
+  <section id="reminders">
+    <h2><span class="num">۸</span>نیازمندی‌ها: یادآورها و اعلان‌ها</h2>
+    <p class="section-lead">هشدارهای قابل اعتماد برای دارو، ورزش، کارهای خانه و هر تعهد زمان‌دار دیگر.</p>
+
+    <h3>۸.۱. توضیح محصول</h3>
+    <p>یادآورها قلب «اطمینان» محصولند: چیزی که نباید فراموش شود. برای کاربردهای حساس مانند دارو، قابلیت اطمینان اعلان از هر چیز مهم‌تر است. اعلان‌ها باید ملایم، قابل تنظیم و بدون «خستگی اعلان» باشند.</p>
+
+    <h3>۸.۲. نیازمندی‌های عملکردی</h3>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-REM-01</span><span class="req-title">ایجاد یادآور</span><span class="badge b-must">باید</span></div>
+      <p>عنوان، زمان، تکرار (روزانه، هفتگی، ماهانه، سفارشی)، نوع (دارو/ورزش/کار خانه/عمومی) و یادداشت اختیاری.</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>الگوهای رایج «دارو: هر ۸ ساعت» و «هر روز ساعت ۲۲» به‌سادگی قابل تعریف باشند.</li>
+        <li>امکان «تعویض موقت» یا «سکوت تا تاریخ» برای یادآور.</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-REM-02</span><span class="req-title">تحویل قابل اعتماد اعلان</span><span class="badge b-must">باید</span></div>
+      <p>اعلان در زمان مقرر به دست کاربر برسد؛ در صورت بسته بودن مرورگر، روش جایگزین (اعلان وب/PWA، صدای یادآور درون‌برنامه‌ای) بررسی و اجرا شود.</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>سناریوی «مرورگر بسته است» به‌صورت صریح طراحی و تست شود.</li>
+        <li>یادآورهای از‌دست‌رفته در «صندوق یادآورها» نمایش داده شوند.</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-REM-03</span><span class="req-title">ثبت پاسخ به یادآور</span><span class="badge b-must">باید</span></div>
+      <p>از داخل خود اعلان یا از فهرست یادآورها امکان «انجام شد / یادآوری دوباره بعد از X دقیقه / رد شد» وجود داشته باشد.</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>پاسخ «انجام شد» به‌طور خودکار در عادت یا وظیفه‌ی مرتبط ثبت شود (در صورت وجود پیوند).</li>
+        <li>تاریخچه‌ی پاسخ‌ها برای گزارش (مثلاً درصد مصرف به‌موقع دارو) نگه داشته شود.</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-REM-04</span><span class="req-title">مرکز اعلان‌ها و تنظیمات</span><span class="badge b-should">بهتر است</span></div>
+      <p>فهرست تاریخچه‌ی اعلان‌ها، تنظیم صدا/لرزش/سکوت در ساعات خاص (مثلاً ۲۳ تا ۷) و اولویت‌بندی اعلان‌های مهم (دارو) بالاتر از بقیه.</p>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-REM-05</span><span class="req-title">یادآور مبتنی بر مکان</span><span class="badge b-wont">فعلاً نه</span></div>
+      <p>یادآور هنگام رسیدن به مکان (مثلاً «هنگام رسیدن به داروخانه»). خارج از محدوده‌ی فعلی و وابسته به امکانات مرورگر.</p>
+    </div>
+
+    <h3>۸.۳. حالت‌های خاص و لبه</h3>
+    <ul>
+      <li>یادآورهای از‌دست‌رفته هرگز بی‌سروصدا حذف نشوند.</li>
+      <li>در ساعات «سکوت» اعلان‌ها بی‌صدا جمع شوند و در اولین فرصت نمایش داده شوند.</li>
+      <li>یادآورهای حساس (دارو) نباید با «حالت تمرکز» خاموش شوند، مگر با تأیید صریح کاربر.</li>
+    </ul>
+  </section>
+
+  <!-- ==================== 9. NOTES ==================== -->
+  <section id="notes">
+    <h2><span class="num">۹</span>نیازمندی‌ها: یادداشت‌ها</h2>
+    <p class="section-lead">ثبت سریع و بازیابی آسان افکار، ایده‌ها و اطلاعات روزمره.</p>
+
+    <h3>۹.۱. توضیح محصول</h3>
+    <p>یادداشت‌ها باید «کم‌اصطکاک» باشند: باز کردن، نوشتن، بستن. ساختار پیچیده‌ی سندنویسی لازم نیست؛ تمرکز بر سرعت ثبت و پیدا کردن دوباره است.</p>
+
+    <h3>۹.۲. نیازمندی‌های عملکردی</h3>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-NOTE-01</span><span class="req-title">ایجاد سریع یادداشت</span><span class="badge b-must">باید</span></div>
+      <p>ایجاد یادداشت از هر صفحه با یک دکمه‌ی شناور یا میان‌بر؛ ذخیره‌ی خودکار حین تایپ.</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>از لحظه‌ی باز شدن تا شروع تایپ کمتر از ۲ ثانیه فاصله باشد.</li>
+        <li>ذخیره‌ی خودکار انجام شود و هیچ متنی به دلیل بستن ناگهانی از دست نرود (پیش‌نویس محلی).</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-NOTE-02</span><span class="req-title">قالب‌بندی متن</span><span class="badge b-should">بهتر است</span></div>
+      <p>عنوان، پاراگراف، فهرست نقطه‌ای/عددی، چک‌باکس، بولد، ایتالیک، نقل‌قول و پیوند — در حد مورد نیاز روزمره، نه ویرایشگر کامل.</p>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-NOTE-03</span><span class="req-title">برچسب، پین و آرشیو</span><span class="badge b-must">باید</span></div>
+      <p>برچسب‌گذاری، پین کردن یادداشت‌های مهم در بالای فهرست، آرشیو کردن موارد قدیمی و سطل زباله.</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>یادداشت‌های پین‌شده همیشه در بالای فهرست و در داشبورد نمایش داده شوند.</li>
+        <li>یادداشت حذف‌شده حداقل ۳۰ روز در سطل زباله بماند.</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-NOTE-04</span><span class="req-title">جست‌وجو در متن یادداشت‌ها</span><span class="badge b-must">باید</span></div>
+      <p>جست‌وجوی کامل‌متن با پشتیبانی از فارسی، نتایج فوری حین تایپ و برجسته‌سازی عبارت یافته‌شده.</p>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-NOTE-05</span><span class="req-title">پیوست تصویر</span><span class="badge b-could">می‌تواند</span></div>
+      <p>افزودن عکس (مثلاً عکس رسید یا دستور آشپزی) به یادداشت.</p>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-NOTE-06</span><span class="req-title">یادداشت روزانه (Daily Note)</span><span class="badge b-should">بهتر است</span></div>
+      <p>یک یادداشت خودکار برای هر روز که می‌تواند «میز کار» آن روز باشد و به‌طور خودکار با وظایف و رویدادهای همان روز پیوند بخورد.</p>
+    </div>
+  </section>
+
+  <!-- ==================== 10. LISTS ==================== -->
+  <section id="lists">
+    <h2><span class="num">۱۰</span>نیازمندی‌ها: فهرست‌ها و چک‌باکس‌ها</h2>
+    <p class="section-lead">فهرست‌های تیک‌زدنی برای خرید، لوازم سفر، کارهای خانه و هر چیز دیگر.</p>
+
+    <h3>۱۰.۱. توضیح محصول</h3>
+    <p>این ماژول ساده‌ترین و پرکاربردترین بخش در زندگی روزمره است؛ باید به‌قدری سریع باشد که در صف خرید هم قابل استفاده باشد. اشتراک زنده‌ی فهرست میان دو نفر مهم‌ترین ویژگی آن است.</p>
+
+    <h3>۱۰.۲. نیازمندی‌های عملکردی</h3>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-LIST-01</span><span class="req-title">ایجاد فهرست و مورد</span><span class="badge b-must">باید</span></div>
+      <p>ایجاد فهرست (عنوان، رنگ/نماد، توضیح) و افزودن موارد با یک فیلد ورودی سریع و پیوسته (تایپ ← Enter ← مورد بعد).</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>افزودن ۵ مورد پشت‌سرهم بدون لمس فیلد اضافه امکان‌پذیر باشد.</li>
+        <li>مرتب‌سازی دستی (کشیدن) و مرتب‌سازی خودکار (الفبا، وضعیت) موجود باشد.</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-LIST-02</span><span class="req-title">تیک زدن و بازگشت</span><span class="badge b-must">باید</span></div>
+      <p>تیک زدن مورد با بازخورد بصری (خط خوردن)، جابه‌جایی موارد تیک‌خورده به انتهای فهرست (قابل تنظیم) و امکان بازگرداندن.</p>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-LIST-03</span><span class="req-title">اشتراک زنده میان دو نفر</span><span class="badge b-must">باید</span></div>
+      <p>هر دو کاربر بتوانند یک فهرست را ببینند و ویرایش کنند؛ تغییرات بدون رفرش دستی نمایش داده شود.</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>تغییر یک نفر در عرض چند ثانیه برای نفر دیگر قابل مشاهده باشد.</li>
+        <li>تعارض (ویرایش هم‌زمان یک مورد) به‌صورت منطقی حل شود و داده‌ای از دست نرود.</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-LIST-04</span><span class="req-title">قالب‌های آماده</span><span class="badge b-should">بهتر است</span></div>
+      <p>قالب‌های «خرید هفتگی خانه»، «لوازم سفر»، «نظافت منزل»، «قبل از مهمانی»، «پرداخت‌های ماهانه» با امکان ساخت قالب شخصی.</p>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-LIST-05</span><span class="req-title">تکرار فهرست</span><span class="badge b-should">بهتر است</span></div>
+      <p>امکان «شروع دوباره»ی فهرست (مثلاً خرید هفتگی) بدون ساخت مجدد موارد.</p>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-LIST-06</span><span class="req-title">جزئیات مورد فهرست</span><span class="badge b-could">می‌تواند</span></div>
+      <p>تعداد، یادداشت کوتاه و قیمت تخمینی برای هر مورد (مثلاً در خرید).</p>
+    </div>
+  </section>
+
+  <!-- ==================== 11. VIEWS ==================== -->
+  <section id="views">
+    <h2><span class="num">۱۱</span>نیازمندی‌ها: نماهای هفتگی، ماهانه و داشبورد</h2>
+    <p class="section-lead">لایه‌ی تجمیعی محصول؛ جایی که همه‌ی ماژول‌ها به یک تصویر تبدیل می‌شوند.</p>
+
+    <h3>۱۱.۱. توضیح محصول</h3>
+    <p>اگر ماژول‌های بالا «صندوق‌ها» باشند، این بخش «میز کار» است. هدف آن است که کاربر در هر لحظه بداند «الان چه چیزی مهم است» و در انتهای هفته بداند «چه گذشت و هفته‌ی بعد چه در پیش است».</p>
+
+    <h3>۱۱.۲. نیازمندی‌های عملکردی</h3>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-VIEW-01</span><span class="req-title">داشبورد «امروز»</span><span class="badge b-must">باید</span></div>
+      <p>صفحه‌ی اصلی شامل: وظایف امروز، رویدادهای امروز، یادآورهای باقی‌مانده، عادت‌های امروز، و یادداشت‌های پین‌شده. امکان شخصی‌سازی ترتیب بخش‌ها.</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>پس از ورود، کاربر بدون اسکرول «تصویر روز» را ببیند.</li>
+        <li>همه‌ی اقلام قابل اقدام (تیک، ثبت، تکمیل) مستقیماً از داشبورد باشند.</li>
+        <li>حالت خالی (روز بدون برنامه) با پیام و اقدام مفید طراحی شود.</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-VIEW-02</span><span class="req-title">نمای هفتگی</span><span class="badge b-must">باید</span></div>
+      <p>نمای یک هفته شامل رویدادها، وظایف، یادآورها و وضعیت عادت‌ها؛ با ناوبری سریع میان هفته‌ها و امکان افزودن سریع اقلام در هر روز.</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>در موبایل، نمای هفتگی به‌صورت ستون‌های قابل اسکرول یا نمای فشرده‌ی روزانه باشد.</li>
+        <li>«برنامه‌ریزی هفتگی» به‌صورت یک گردش‌کار (مرور و اولویت‌بندی) پشتیبانی شود.</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-VIEW-03</span><span class="req-title">نمای ماهانه</span><span class="badge b-must">باید</span></div>
+      <p>نمای کلی ماه شامل مناسبت‌ها، رویدادها، حجم کارها و روند عادت‌ها؛ با قابلیت ورود سریع به هر روز.</p>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-VIEW-04</span><span class="req-title">گزارش و جمع‌بندی هفتگی/ماهانه</span><span class="badge b-should">بهتر است</span></div>
+      <p>گزارش خودکار: تعداد وظایف انجام‌شده، درصد موفقیت عادت‌ها، یادآورهای پاسخ‌داده‌شده، و مرور مختصر هفته‌ی پیش‌رو با امکان ثبت «جمع‌بندی شخصی».</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>گزارش در انتهای هفته (یا با درخواست کاربر) قابل مشاهده باشد.</li>
+        <li>شامل نمودارهای ساده و قابل فهم، بدون شلوغی.</li>
+      </ul></div>
+    </div>
+
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-VIEW-05</span><span class="req-title">حالت «تمرکز»</span><span class="badge b-could">می‌تواند</span></div>
+      <p>نمای ساده‌شده‌ای که فقط کار بعدی و تایمر کوتاه را نشان دهد؛ برای زمان‌هایی که کاربر می‌خواهد فقط یک کار را انجام دهد.</p>
+    </div>
+  </section>
+
+  <!-- ==================== 12. CROSS-CUTTING ==================== -->
+  <section id="cross">
+    <h2><span class="num">۱۲</span>نیازمندی‌های فراگیر: جست‌وجو، همگام‌سازی، پشتیبان</h2>
+    <p class="section-lead">قابلیت‌هایی که در سراسر محصول جریان دارند و کیفیت کلی را تعیین می‌کنند.</p>
+
+    <h3>۱۲.۱. جست‌وجوی سراسری</h3>
+    <div class="req">
+      <div class="req-head"><span class="req-id">FR-SEARCH-01</span><span class="req-title">جست‌وجو در همه‌ی محتوا</span><span class="badge b-should">بهتر است</span></div>
+      <p>یک جعبه‌ی جست‌وجو در دسترس دائمی که در وظایف، رویدادها، یادداشت‌ها، فهرست‌ها و عادت‌ها جست‌وجو کند؛ با پیشنهاد خودکار و فیلتر نوع محتوا.</p>
+      <div class="accept"><div class="accept-title">معیار پذیرش</div><ul>
+        <li>نتایج در کمتر از ۳۰۰ میلی‌ثانیه نمایش داده شوند (در مجموعه‌داده‌ی معمولی).</li>
+        <li>جست‌وجوی فارسی با املاهای مختلف (نیم‌فاصله، همزه) تا حد معقول مقاوم باشد.</li>
+        <li>میان‌بر صفحه‌کلید برای جست‌وجو در دسکتاپ (مثلاً Ctrl+K).</li>
+      </ul></div>
+    </div>
+
+    <h3>۱۲.۲. حساب کاربری، همگام‌سازی و اشتراک</h3>
+    <ul>
+      <li>ورود امن به حساب کاربری برای هر یک از دو نفر (ایمیل/رمز یا روش ساده‌ی مورد توافق).</li>
+      <li>همگام‌سازی داده‌ها میان دستگاه‌های مختلف (موبایل و دسکتاپ) بدون دخالت کاربر.</li>
+      <li>قابلیت «اشتراک» یک مورد یا ماژول با کاربر دیگر، و مشخص بودن مالک هر مورد.</li>
+      <li>رفتار آفلاین: ثبت و مشاهده‌ی محتوا بدون اینترنت، و همگام‌سازی پس از اتصال.</li>
+    </ul>
+
+    <h3>۱۲.۳. پشتیبان‌گیری، خروجی و بازیابی</h3>
+    <ul>
+      <li>پشتیبان‌گیری خودکار دوره‌ای و امکان دریافت پشتیبان دستی.</li>
+      <li>خروجی گرفتن از داده‌ها در قالب‌های قابل استفاده (JSON برای بازیابی، CSV/Markdown برای خواندن انسانی).</li>
+      <li>بازیابی از پشتیبان با نمایش پیش‌نمایش تغییرات.</li>
+      <li>سطل زباله‌ی سراسری برای اقلام حذف‌شده (حداقل ۳۰ روز).</li>
+    </ul>
+
+    <h3>۱۲.۴. تنظیمات و شخصی‌سازی</h3>
+    <ul>
+      <li>شروع هفته (شنبه/یکشنبه)، قالب تاریخ و زمان، زبان و اعداد (فارسی/لاتین).</li>
+      <li>تم روشن/تاریک/سیستم، و انتخاب رنگ شخصی.</li>
+      <li>تنظیمات اعلان در سطح ماژول و سطح مورد.</li>
+      <li>حالت حریم خصوصی: قفل کردن اپ با رمز/PIN (در موبایل).</li>
+    </ul>
+  </section>
+
+  <!-- ==================== 13. NFR ==================== -->
+  <section id="nfr">
+    <h2><span class="num">۱۳</span>نیازمندی‌های غیرعملکردی</h2>
+    <p class="section-lead">کیفیت، کارایی، امنیت و دسترس‌پذیری — چیزهایی که «حس» محصول را می‌سازند.</p>
+
+    <table>
+      <thead><tr><th style="width:20%;">دسته</th><th>نیازمندی</th><th style="width:22%;">معیار سنجش</th></tr></thead>
+      <tbody>
+        <tr><td><strong>کارایی</strong></td><td>بارگذاری سریع صفحات و واکنش فوری تعاملات؛ بدون انتظار برای شبکه در عملیات ثبت.</td><td>بارگذاری اولیه &lt; ۲ ثانیه؛ پاسخ تعامل &lt; ۱۰۰ میلی‌ثانیه</td></tr>
+        <tr><td><strong>آفلاین</strong></td><td>امکان مشاهده و ثشت محتوا بدون اینترنت و همگام‌سازی خودکار پس از اتصال.</td><td>عملیات اصلی بدون اینترنت ممکن باشد</td></tr>
+        <tr><td><strong>واکنش‌گرایی</strong></td><td>تجربه‌ی کامل روی موبایل (۳۶۰px به بالا)، تبلت و دسکتاپ.</td><td>بدون اسکرول افقی یا هم‌پوشانی در سایزهای رایج</td></tr>
+        <tr><td><strong>سازگاری</strong></td><td>مرورگرهای اصلی: Chrome، Safari، Firefox، Edge (دو نسخه‌ی آخر).</td><td>تست دستی روی دستگاه‌های اصلی</td></tr>
+        <tr><td><strong>دسترس‌پذیری</strong></td><td>کنتراست رنگ مناسب، ناوبری با صفحه‌کلید، برچسب‌های دسترس‌پذیری برای عناصر تعاملی، احترام به تنظیمات حرکت کاهش‌یافته.</td><td>سطح WCAG 2.1 AA تا حد معقول</td></tr>
+        <tr><td><strong>امنیت</strong></td><td>انتقال رمزنگاری‌شده‌ی داده‌ها، حفاظت از حساب کاربری، عدم نمایش اطلاعات حساس در اعلان‌های قابل مشاهده (قابل تنظیم).</td><td>بررسی امنیتی پایه پیش از انتشار</td></tr>
+        <tr><td><strong>حریم خصوصی</strong></td><td>داده‌ها فقط متعلق به دو کاربر است؛ بدون تبلیغات، بدون فروش داده، بدون ردیابی شخص ثالث غیرضروری.</td><td>سیاست حریم خصوصی کوتاه و شفاف</td></tr>
+        <tr><td><strong>قابلیت اطمینان</strong></td><td>نبود از دست رفتن داده؛ ثبت خوش‌بینانه با بازگشت ایمن در صورت خطا.</td><td>تست بازیابی و سناریوهای قطع اتصال</td></tr>
+        <tr><td><strong>مقیاس‌پذیری</strong></td><td>طراحی داده به‌گونه‌ای باشد که رشد چندساله‌ی محتوا (هزاران مورد) کندی محسوس ایجاد نکند.</td><td>تست با داده‌ی حجیم مصنوعی</td></tr>
+        <tr><td><strong>قابلیت نگهداری</strong></td><td>کد تمیز، تست‌پذیر و مستند؛ چون پروژه‌ی بلندمدت شخصی است.</td><td>پوشش تست منطق‌های حساس</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ==================== 14. UX ==================== -->
+  <section id="ux">
+    <h2><span class="num">۱۴</span>طراحی محصول و تجربه کاربری (UI/UX)</h2>
+    <p class="section-lead">زبان بصری، معماری اطلاعات و تعاملات کلیدی محصول.</p>
+
+    <h3>۱۴.۱. اصول تجربه کاربری</h3>
+    <div class="grid grid-3">
+      <div class="tile"><h4>کمترین اصطکاک</h4><p class="small muted">هر عمل پرتکرار باید در دسترس‌ترین جای ممکن باشد؛ فرم‌ها کوتاه، پیش‌فرض‌ها هوشمند، اقدامات تکراری با یک کلیک.</p></div>
+      <div class="tile"><h4>شفافیت وضعیت</h4><p class="small muted">کاربر همیشه بداند چه چیزی ذخیره شده، چه چیزی همگام شده و چه چیزی در انتظار است.</p></div>
+      <div class="tile"><h4>بازخورد دلپذیر</h4><p class="small muted">تکمیل کارها باید حس رضایت بدهد؛ انیمیشن‌های کوتاه، رنگ‌های آرام و پیام‌های انسانی.</p></div>
+      <div class="tile"><h4>قابل بازگشت بودن</h4><p class="small muted">هر عمل مخربی قابل بازگشت باشد؛ «Undo» بهتر از تأییدهای مکرر است.</p></div>
+      <div class="tile"><h4>سازگاری</h4><p class="small muted">الگوهای مشابه در همه‌ی ماژول‌ها: همان دکمه‌ی «افزودن»، همان فهرست، همان بازخورد.</p></div>
+      <div class="tile"><h4>آرامش بصری</h4><p class="small muted">سفیدخوانی کافی، اطلاعات کمتر در هر صفحه، اولویت با محتوا نه تزئینات.</p></div>
+    </div>
+
+    <h3>۱۴.۲. معماری اطلاعات و ناوبری</h3>
+    <p>ساختار پیشنهادی ناوبری (قابل مذاکره با توسعه‌دهنده):</p>
+    <table>
+      <thead><tr><th>بخش</th><th>موبایل</th><th>دسکتاپ</th></tr></thead>
+      <tbody>
+        <tr><td>امروز (داشبورد)</td><td>تب اول نوار پایین</td><td>صفحه‌ی پیش‌فرض پس از ورود</td></tr>
+        <tr><td>تقویم</td><td>تب دوم</td><td>منوی کناری</td></tr>
+        <tr><td>وظایف</td><td>تب سوم</td><td>منوی کناری</td></tr>
+        <tr><td>فهرست‌ها</td><td>تب چهارم</td><td>منوی کناری</td></tr>
+        <tr><td>یادداشت‌ها</td><td>منوی بیشتر / جست‌وجو</td><td>منوی کناری</td></tr>
+        <tr><td>عادت‌ها</td><td>منوی بیشتر / داشبورد</td><td>منوی کناری</td></tr>
+        <tr><td>افزودن سریع</td><td>دکمه‌ی شناور وسط نوار پایین</td><td>دکمه‌ی بالای صفحه + میان‌بر کیبورد</td></tr>
+      </tbody>
+    </table>
+
+    <h3>۱۴.۳. صفحات کلیدی و اسکلت آن‌ها</h3>
+
+    <h4>الف) صفحه‌ی «امروز» (داشبورد)</h4>
+    <div class="wire"><span class="hl">┌ امروز — شنبه ۱۵ مهر ────────────────────────┐</span>
+│  ☀️ صبح بخیر! امروز ۳ کار و ۲ قرار داری        │
+│  <span class="hl">[ + افزودن سریع ]</span>        <span class="dim">[ جست‌وجو ]</span>        │
+├──────────────────────────────────────────────┤
+│  📌 یادداشت‌های پین‌شده                        │
+│     • لیست خرید مهمانی ...                      │
+├──────────────────────────────────────────────┤
+│  ✅ کارهای امروز                    <span class="dim">۲ از ۳</span>      │
+│     ☐ تماس با تعمیرکار        <span class="dim">بالا • ۱۰:۰۰</span>   │
+│     ☑ ارسال گزارش            <span class="dim">انجام شد</span>       │
+│     ☐ خرید هدیه               <span class="dim">متوسط</span>          │
+├──────────────────────────────────────────────┤
+│  📅 برنامه‌ی امروز                            │
+│     ۰۹:۰۰ جلسه‌ی کاری   ۱۸:۰۰ باشگاه           │
+├──────────────────────────────────────────────┤
+│  🔁 عادت‌های امروز            <span class="hl">زنجیره: ۱۲ روز</span>   │
+│     [ آب ✓ ] [ مطالعه ○ ] [ ورزش ○ ] [ دارو ○ ]│
+├──────────────────────────────────────────────┤
+│  ⏰ یادآورهای باقی‌مانده                        │
+│     • ساعت ۲۱ — مصرف دارو                     │
+└──────────────────────────────────────────────┘</div>
+
+    <h4>ب) نمای هفتگی</h4>
+    <div class="wire"><span class="hl">┌ هفته‌ی ۱۵ تا ۲۱ مهر ──── [ ‹ هفته‌ی قبل ] [ هفته‌ی بعد › ] ┐</span>
+│ <span class="dim">شنبه ۱۵</span>   <span class="dim">یکشنبه ۱۶</span>  <span class="dim">دوشنبه ۱۷</span>  ...   <span class="dim">جمعه ۲۰</span>     │
+│ • جلسه        • خرید       • باشگاه              • سفر       │
+│ ○ تحویل پروژه  ○ پرداخت قبض                      ○ استراحت    │
+│ عادت: ✓✓○✓     عادت: ✓✓✓✓   عادت: ✓○✓✓          عادت: ○○○○   │
+│                                                         │
+│  <span class="hl">[ برنامه‌ریزی هفته ]</span>      <span class="dim">جمع‌بندی هفته‌ی قبل ↗</span>         │
+└─────────────────────────────────────────────────────────┘</div>
+
+    <h4>ج) نمای ماهانه</h4>
+    <div class="wire"><span class="hl">┌ مهر ۱۴۰۵ ─────────────────────────────────┐</span>
+│   ش    ی    د    س    چ    پ    ج             │
+│   ۱۲   ۱۳   ۱۴   <span class="hl">۱۵</span>   ۱۶   ۱۷   ۱۸           │
+│    •    •         <span class="hl">••</span>    •                   │
+│   ۱۹   ۲۰   ۲۱   ۲۲   ۲۳   ۲۴   ۲۵           │
+│    •                   •    •                │
+│  <span class="dim">• = رویداد / مناسبت  •• = روز شلوغ</span>          │
+│  نوار پایین: روند عادت‌های ماه + کارهای مانده    │
+└─────────────────────────────────────────────┘</div>
+
+    <h4>د) ویرایشگر سریع (افزودن مورد)</h4>
+    <div class="wire"><span class="hl">┌ افزودن ─────────────────────────────────┐</span>
+│  [ کار ]  [ رویداد ]  [ یادداشت ]  [ فهرست ]│
+│  ┌ عنوان________________________________ ┐ │
+│  │ <span class="hl">خرید هدیه تولد</span>                          │ │
+│  └──────────────────────────────────────┘ │
+│  <span class="dim">موعد:</span> فردا   <span class="dim">اولویت:</span> متوسط   <span class="dim">برچسب:</span> شخصی   │
+│            <span class="hl">[ ذخیره ]</span>   [ لغو ]                │
+└───────────────────────────────────────────┘</div>
+
+    <h3>۱۴.۴. سیستم طراحی (Design System)</h3>
+    <table>
+      <thead><tr><th style="width:22%;">عنصر</th><th>پیشنهاد</th></tr></thead>
+      <tbody>
+        <tr><td><strong>تایپوگرافی</strong></td><td>فونت فارسی خوانا (مثلاً Vazirmatn) با سلسله‌مراتب مشخص: عنوان صفحه ۲۴–۲۸px، عنوان بخش ۱۸–۲۰px، متن ۱۵–۱۶px؛ فاصله‌ی خطوط راحت برای فارسی.</td></tr>
+        <tr><td><strong>رنگ</strong></td><td>پالت آرام با یک رنگ اصلی، رنگ‌های معنایی برای وضعیت‌ها (موفقیت/هشدار/خطر) و رنگ‌های قابل انتخاب برای دسته‌ها. توجه به کنتراست و دسترس‌پذیری.</td></tr>
+        <tr><td><strong>فاصله‌گذاری</strong></td><td>سیستم ۴ یا ۸ پیکسلی؛ فضای کافی میان عناصر قابل لمس (حداقل ۴۴×۴۴ پیکسل).</td></tr>
+        <tr><td><strong>گوشه‌ها و سایه</strong></td><td>گوشه‌های نرم و ملایم، سایه‌ی سبک برای ایجاد عمق؛ اجتناب از طراحی پرسروصدا.</td></tr>
+        <tr><td><strong>آیکون‌ها</strong></td><td>مجموعه‌ی یکپارچه‌ی خطی، با نمادهای مشخص برای هر ماژول.</td></tr>
+        <tr><td><strong>حالت تاریک</strong></td><td>تم کامل تاریک با کنتراست مناسب و بدون رنگ‌های خیره‌کننده؛ قابل انتخاب خودکار از تنظیمات سیستم.</td></tr>
+        <tr><td><strong>حالت‌های خالی</strong></td><td>هر صفحه‌ی خالی باید تصویر/متن کوتاه + یک اقدام پیشنهادی داشته باشد؛ هیچ صفحه‌ی «سفید و گنگ» نداشته باشیم.</td></tr>
+        <tr><td><strong>ایندیکاتورها</strong></td><td>نشان‌های وضعیت: تازه، در حال همگام‌سازی، همگام‌شده، خطا، موعدگذشته.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>۱۴.۵. تعاملات کلیدی</h3>
+    <ul>
+      <li><strong>افزودن سریع:</strong> یک دکمه‌ی همیشه‌دردسترس که از هر صفحه فرم کوتاه باز کند و پس از ذخیره به همان صفحه بازگردد.</li>
+      <li><strong>کشیدن و رها کردن (Drag &amp; Drop):</strong> جابه‌جایی وظایف میان روزها و تغییر ترتیب فهرست‌ها؛ با معادل لمسی و جایگزین دسترس‌پذیر.</li>
+      <li><strong>اعمال گروهی:</strong> انتخاب چند مورد و انجام عمل دسته‌جمعی (حذف، تغییر تاریخ، تغییر برچسب).</li>
+      <li><strong>Undo:</strong> تقریباً برای همه‌ی عملیات مخرب؛ پیام کوتاه «حذف شد — بازگردانی».</li>
+      <li><strong>میان‌برهای صفحه‌کلید</strong> در دسکتاپ برای عملیات پرتکرار.</li>
+      <li><strong>ذخیره‌ی خودکار</strong> در همه‌ی فرم‌ها؛ بدون دکمه‌ی «ذخیره» در موارد ساده.</li>
+    </ul>
+
+    <h3>۱۴.۶. جریان‌های بحرانی (Critical Flows)</h3>
+    <ol>
+      <li><strong>اولین ورود (Onboarding):</strong> خوش‌آمدگویی کوتاه ← انتخاب ۲–۳ عادت پیشنهادی ← ایجاد اولین فهرست ← نمای «امروز». حداکثر ۲ دقیقه.</li>
+      <li><strong>روزمره:</strong> باز کردن اپ ← دیدن «امروز» ← اقدام روی اقلام ← پایان.</li>
+      <li><strong>برنامه‌ریزی هفتگی:</strong> نمای هفته ← بررسی وظایف بدون تاریخ ← تخصیص به روزها ← مرور قرارها ← ثبت هدف هفته.</li>
+      <li><strong>بازیابی خطا:</strong> خطای همگام‌سازی ← پیام شفاف ← تلاش مجدد ← حفظ داده‌ی محلی.</li>
+    </ol>
+
+    <h3>۱۴.۷. دسترس‌پذیری</h3>
+    <ul>
+      <li>کنتراست متن حداقل AA، قابلیت بزرگ‌نمایی متن بدون شکستن چیدمان.</li>
+      <li>ناوبری کامل با صفحه‌کلید و ترتیب منطقی فوکوس؛ نشانگر فوکوس قابل مشاهده.</li>
+      <li>برچسب‌های دسترس‌پذیری (aria-label) برای دکمه‌ها و نمادها؛ معادل متنی برای اطلاعات رنگی.</li>
+      <li>احترام به تنظیم «کاهش حرکت» سیستم‌عامل.</li>
+    </ul>
+  </section>
+
+  <!-- ==================== 15. LOCALIZATION ==================== -->
+  <section id="localization">
+    <h2><span class="num">۱۵</span>فارسی‌سازی و طراحی راست‌به‌چپ (RTL)</h2>
+    <p class="section-lead">محصول از پایه فارسی و RTL است؛ این‌ها الزامات غیرقابل مذاکره‌ی آن هستند.</p>
+
+    <div class="grid grid-2">
+      <div class="card" style="margin:0;">
+        <h4 style="margin-top:0;">تاریخ، زمان و اعداد</h4>
+        <ul>
+          <li>تقویم اصلی: شمسی؛ نمایش هم‌زمان میلادی در جزئیات (قابل تنظیم).</li>
+          <li>قالب‌های تاریخ فارسی: «شنبه ۱۵ مهر ۱۴۰۵».</li>
+          <li>اعداد فارسی به‌عنوان پیش‌فرض، با امکان تغییر به لاتین.</li>
+          <li>ساعت ۲۴ ساعته/۱۲ ساعته به انتخاب کاربر.</li>
+          <li>شروع هفته: شنبه (پیش‌فرض) و قابل تغییر.</li>
+        </ul>
+      </div>
+      <div class="card" style="margin:0;">
+        <h4 style="margin-top:0;">چیدمان و متن</h4>
+        <ul>
+          <li>آینه‌سازی کامل چیدمان؛ جهت آیکون‌های جهت‌دار (فلش‌ها، پیشرفت) مطابق RTL.</li>
+          <li>پشتیبانی از نیم‌فاصله در متن فارسی و جست‌وجوی مقاوم در برابر املای مختلف.</li>
+          <li>شکستن درست متن‌های طولانی فارسی و نمایش راست‌چین جدول‌ها.</li>
+          <li>متن‌های رابط کاربری به فارسی روان و انسانی؛ اجتناب از ترجمه‌ی تحت‌اللفظی.</li>
+          <li>پشتیبانی از متن‌های ترکیبی فارسی/انگلیسی (مثلاً نام محصولات) در یک سطر.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout co-good">
+      <div class="title">لحن و نوشتار محصول</div>
+      <p style="margin:6px 0 0;">لحن محصول: <strong>صمیمی، محترم، کوتاه و آرام‌بخش</strong>. مثال: به‌جای «خطای سیستمی رخ داد!» بنویسیم «مشکلی پیش آمد؛ داده‌های شما محفوظ است. دوباره تلاش کنیم؟». به‌جای «آیا مطمئن هستید که می‌خواهید این مورد حذف شود؟» بنویسیم «این مورد حذف شود؟ (تا ۳۰ روز قابل بازگشت است)».</p>
+    </div>
+  </section>
+
+  <!-- ==================== 16. CONTENT ==================== -->
+  <section id="content">
+    <h2><span class="num">۱۶</span>ملاحظات محتوایی و محصول</h2>
+    <p class="section-lead">آنچه محصول را از «نرم‌افزار» به «همراه» تبدیل می‌کند.</p>
+
+    <h3>۱۶.۱. محتوای پیش‌فرض و قالب‌ها</h3>
+    <ul>
+      <li>مجموعه‌ی قالب‌های آماده برای فهرست‌ها (خرید هفتگی، سفر، نظافت، مهمانی) و عادت‌ها (سلامت، یادگیری، نظم شخصی).</li>
+      <li>دسته‌بندی‌های پیشنهادی: «سلامت»، «خانه»، «کار»، «شخصی»، «خانوادگی»، «مالی».</li>
+      <li>مناسبت‌های پیش‌فرض قابل ویرایش (نوروز، تولدها و...) — با تأیید کاربر.</li>
+    </ul>
+
+    <h3>۱۶.۲. روان‌شناسی عادت و انگیزه</h3>
+    <ul>
+      <li><strong>بازخورد مثبت ملایم:</strong> جملات کوتاه تشویقی در تکمیل عادت‌ها (بدون اغراق و بدون فشار).</li>
+      <li><strong>زنجیره‌ی بصری:</strong> نمایش روزهای پیاپی به‌صورت زنجیره‌ی بصری؛ شکستن زنجیره نباید «سرزنش» ایجاد کند، بلکه «شروع دوباره» پیشنهاد دهد.</li>
+      <li><strong>اجتناب از Gamification سنگین:</strong> بدون امتیاز، مدال و رتبه‌بندی پیچیده؛ فقط نشانه‌های پیشرفت معنادار.</li>
+      <li><strong>انعطاف‌پذیری:</strong> امکان «روز تعطیل» برای عادت‌ها تا احساس شکست ایجاد نشود.</li>
+    </ul>
+
+    <h3>۱۶.۳. مدیریت اطلاع‌رسانی (ضد «خستگی اعلان»)</h3>
+    <ul>
+      <li>اعلان‌ها در سه سطح: <strong>حیاتی</strong> (دارو)، <strong>مهم</strong> (قرار)، <strong>ملایم</strong> (عادت).</li>
+      <li>پیش‌فرض: حداقل اعلان؛ کاربر اعلان را فعال می‌کند، نه بالعکس.</li>
+      <li>گزارش «مصرف اعلان»: نشان دادن این‌که هفته‌ی گذشته چند اعلان دریافت شده تا کاربر بتواند تنظیم کند.</li>
+    </ul>
+
+    <h3>۱۶.۴. محتوای آموزشی و کمک</h3>
+    <ul>
+      <li>راهنمای کوتاه درون‌برنامه‌ای برای هر ماژول (چند خط، نه مستندات طولانی).</li>
+      <li>نکته‌های کوچک (Tooltips) فقط در اولین استفاده و قابل بستن.</li>
+      <li>صفحه‌ی «پرسش‌های متداول» داخلی درباره‌ی پشتیبان‌گیری، حریم خصوصی و همگام‌سازی.</li>
+    </ul>
+
+    <h3>۱۶.۵. ملاحظات خانوادگی و اشتراکی</h3>
+    <ul>
+      <li>هر مورد باید مالک مشخص داشته باشد اما قابل «اشتراک» باشد.</li>
+      <li>امکان «حوزه‌ی خصوصی»: مواردی که فقط برای یک نفر قابل مشاهده است.</li>
+      <li>نمای «ما»: نمای ترکیبی که برنامه‌ی هر دو نفر را در یک تقویم نشان دهد (با تفکیک رنگ).</li>
+    </ul>
+  </section>
+
+  <!-- ==================== 17. ROADMAP ==================== -->
+  <section id="roadmap">
+    <h2><span class="num">۱۷</span>نقشه‌ی راه و مراحل تحویل</h2>
+    <p class="section-lead">پیشنهاد تحویل مرحله‌ای؛ هر مرحله یک محصول قابل استفاده باشد. زمان‌بندی دقیق پس از توافق با توسعه‌دهنده تعیین می‌شود.</p>
+
+    <div class="timeline">
+      <div class="tl-item">
+        <div class="tl-card">
+          <h4><span class="badge b-phase">فاز ۰</span> هماهنگی و طراحی پایه</h4>
+          <p class="small">تصویب این سند، پاسخ به پرسش‌های باز، طراحی معماری اطلاعات و وایرفریم‌های کلیدی، تصمیم‌های فنی اولیه.</p>
+          <p class="small muted"><strong>خروجی:</strong> سند نهایی + طرح UI تأییدشده + برنامه‌ی زمانی.</p>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-card">
+          <h4><span class="badge b-phase">فاز ۱ — MVP</span> هسته‌ی روزمره</h4>
+          <p class="small">داشبورد «امروز»، وظایف (ایجاد/تکمیل/موعد/اولویت)، یادداشت‌های ساده، فهرست‌های چک‌باکس، تقویم پایه (رویداد ساده + نمای ماه/هفته)، ورود به حساب و همگام‌سازی پایه.</p>
+          <p class="small muted"><strong>معیار انتشار:</strong> هر دو کاربر بتوانند یک هفته‌ی کامل را فقط با این ابزار برنامه‌ریزی کنند.</p>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-card">
+          <h4><span class="badge b-phase">فاز ۲</span> عادت‌ها و یادآورها</h4>
+          <p class="small">ردیاب عادت با آمار و زنجیره، سیستم یادآور و اعلان‌ها، وظایف تکرارشونده، رویدادهای تکرارشونده، مناسبت‌ها.</p>
+          <p class="small muted"><strong>معیار انتشار:</strong> یادآور دارو و ورزش به‌طور قابل اعتماد کار کند و آمار عادت‌ها معنادار باشد.</p>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-card">
+          <h4><span class="badge b-phase">فاز ۳</span> یکپارچگی و گزارش</h4>
+          <p class="small">نمای هفتگی پیشرفته و «برنامه‌ریزی هفتگی»، گزارش هفتگی/ماهانه، جست‌وجوی سراسری، قالب‌ها، اشتراک میان دو نفر در همه‌ی ماژول‌ها، یادداشت روزانه.</p>
+          <p class="small muted"><strong>معیار انتشار:</strong> گردش‌کار «جمع‌بندی هفته» کامل و لذت‌بخش باشد.</p>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-card">
+          <h4><span class="badge b-phase">فاز ۴</span> صیقل و ویژگی‌های تکمیلی</h4>
+          <p class="small">PWA و پشتیبانی آفلاین کامل، حالت تاریک، خروجی داده و پشتیبان‌گیری، تنظیمات پیشرفته‌ی اعلان، حالت تمرکز، بهینه‌سازی کارایی و دسترس‌پذیری.</p>
+          <p class="small muted"><strong>معیار انتشار:</strong> محصول برای استفاده‌ی بلندمدت روزانه «تمیز» و پایدار باشد.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout co-info">
+      <div class="title">پیشنهاد روش کار</div>
+      <p style="margin:6px 0 0;">تحویل در بازه‌های کوتاه (مثلاً دو هفته‌ای) با نمایش قابل استفاده‌ی پیشرفت، و جلسه‌ی کوتاه بازخورد پس از هر بازه. هر فاز باید با «تعریف انجام‌شده»ی روشن بسته شود تا از انباشت کار ناتمام جلوگیری شود.</p>
+    </div>
+  </section>
+
+  <!-- ==================== 18. SUCCESS ==================== -->
+  <section id="success">
+    <h2><span class="num">۱۸</span>معیارهای موفقیت</h2>
+    <p class="section-lead">چگونه می‌فهمیم محصول موفق بوده است؟</p>
+
+    <table>
+      <thead><tr><th style="width:26%;">معیار</th><th>توضیح</th><th style="width:22%;">هدف</th></tr></thead>
+      <tbody>
+        <tr><td>استفاده‌ی روزانه</td><td>تعداد روزهایی در هفته که هر دو کاربر حداقل یک بار اپ را باز می‌کنند</td><td>≥ ۵ روز در هفته پس از یک ماه</td></tr>
+        <tr><td>زمان ثبت</td><td>میانگین زمان ثبت یک مورد (کار/یادداشت/عادت)</td><td>&lt; ۱۰ ثانیه</td></tr>
+        <tr><td>نرخ تکمیل وظایف</td><td>نسبت وظایف انجام‌شده به کل وظایف هفتگی</td><td>روند صعودی پایدار</td></tr>
+        <tr><td>تداوم عادت‌ها</td><td>تعداد عادت‌هایی که پس از ۳۰ روز همچنان فعال‌اند</td><td>≥ ۷۰٪ عادت‌های فعال</td></tr>
+        <tr><td>پاسخ به یادآور</td><td>نسبت یادآورهای «انجام شد» به کل (به‌ویژه دارو)</td><td>≥ ۹۰٪ برای موارد حیاتی</td></tr>
+        <tr><td>از دست نرفتن داده</td><td>گزارش‌های از دست رفتن ناخواسته‌ی داده</td><td>صفر</td></tr>
+        <tr><td>رضایت ذهنی</td><td>حس نظم و کاهش فراموشی در زندگی روزمره (بازخورد کیفی ماهانه)</td><td>بهبود محسوس</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ==================== 19. RISKS ==================== -->
+  <section id="risks">
+    <h2><span class="num">۱۹</span>ریسک‌ها، وابستگی‌ها و محدودیت‌ها</h2>
+    <p class="section-lead">شناسایی زودهنگام مشکلات احتمالی و راه‌کار پیشنهادی برای هر یک.</p>
+
+    <table>
+      <thead><tr><th style="width:26%;">ریسک</th><th>اثر احتمالی</th><th style="width:32%;">راه‌کار پیشنهادی</th></tr></thead>
+      <tbody>
+        <tr><td>گسترش بیش‌ازحد محدوده (Scope Creep)</td><td>تاخیر، خستگی، ناتمام ماندن پروژه</td><td>پایبندی به اولویت‌ها، تحویل مرحله‌ای، ثبت ایده‌های جدید در «فهرست آینده» به‌جای افزودن فوری</td></tr>
+        <tr><td>محدودیت اعلان در مرورگر</td><td>یادآورهای مهم از دست بروند</td><td>بررسی زودهنگام راه‌کارهای PWA/وب‌سوکت؛ در صورت ناکافی بودن، پذیرش محدودیت و طراحی جایگزین</td></tr>
+        <tr><td>پیچیدگی تاریخ شمسی و تکرارها</td><td>خطای زمان‌بندی و بی‌اعتمادی</td><td>استفاده از کتابخانه‌های معتبر، تست‌های جامع تاریخ</td></tr>
+        <tr><td>تداخل ویرایش‌های هم‌زمان</td><td>از دست رفتن داده</td><td>مدیریت نسخه، ثبت خوش‌بینانه با حل تعارض، آزمون‌های چندکاربره</td></tr>
+        <tr><td>خستگی از ابزار</td><td>رها شدن محصول پس از مدتی</td><td>تمرکز بر سادگی، حذف قابلیت‌های غیرضروری، بازبینی ماهانه‌ی استفاده</td></tr>
+        <tr><td>وابستگی به اینترنت</td><td>بی‌استفاده شدن در شرایط قطعی</td><td>طراحی آفلاین‌محور از فاز ۴ و ثبت محلی از فاز ۱</td></tr>
+        <tr><td>ترجیح‌های متفاوت دو کاربر</td><td>نارضایتی یکی از دو نفر</td><td>شخصی‌سازی بالا، تنظیمات مستقل برای هر کاربر، جلسات بازخورد منظم</td></tr>
+      </tbody>
+    </table>
+
+    <h3>۱۹.۱. وابستگی‌ها</h3>
+    <ul>
+      <li>تصمیم‌گیری مشترک درباره‌ی روش ورود و میزبانی.</li>
+      <li>دسترسی به دامنه و فضای میزبانی.</li>
+      <li>زمان‌های بازخورد منظم از سوی سفارش‌دهنده (بدون آن، پروژه کند می‌شود).</li>
+    </ul>
+  </section>
+
+  <!-- ==================== 20. OPEN QUESTIONS ==================== -->
+  <section id="open">
+    <h2><span class="num">۲۰</span>پرسش‌های باز برای جلسه‌ی هماهنگی</h2>
+    <p class="section-lead">این موارد باید پیش از شروع فاز ۱ پاسخ داده شوند؛ هر پاسخ در نسخه‌ی بعدی این سند ثبت می‌شود.</p>
+
+    <table>
+      <thead><tr><th style="width:6%;">#</th><th style="width:38%;">پرسش</th><th>چرا مهم است</th><th style="width:18%;">تصمیم‌گیرنده</th></tr></thead>
+      <tbody>
+        <tr><td>۱</td><td>اولویت اولیه میان ماژول‌ها کدام است؟ (پیشنهاد: وظایف + فهرست + داشبورد)</td><td>تعیین محتوای MVP</td><td>هر دو نفر</td></tr>
+        <tr><td>۲</td><td>روش ورود به حساب: ایمیل/رمز، شماره، یا روش ساده‌ی دیگر؟</td><td>اثر بر امنیت و سادگی</td><td>توسعه‌دهنده</td></tr>
+        <tr><td>۳</td><td>آیا داده‌ها روی سرور شخصی نگهداری شود یا سرویس ابری؟</td><td>حریم خصوصی و هزینه</td><td>هر دو نفر</td></tr>
+        <tr><td>۴</td><td>ورود تاریخ فقط شمسی باشد یا دوزبانه؟</td><td>پیچیدگی UI</td><td>سفارش‌دهنده</td></tr>
+        <tr><td>۵</td><td>آیا تایپ طبیعی برای وظایف (مثل «خرید شیر فردا») در MVP لازم است؟</td><td>اثر بر زمان توسعه</td><td>هر دو نفر</td></tr>
+        <tr><td>۶</td><td>سطح اعلان‌های مورد نیاز: فقط درون‌مرورگری یا نیاز به اعلان موبایل/PWA؟</td><td>قابلیت اطمینان یادآور دارو</td><td>توسعه‌دهنده</td></tr>
+        <tr><td>۷</td><td>آیا نیاز به «حوزه‌ی خصوصی» (محتوای فقط-برای-خودم) داریم؟</td><td>طراحی مدل داده</td><td>سفارش‌دهنده</td></tr>
+        <tr><td>۸</td><td>میزان Gamification: فقط زنجیره‌ی ساده یا نشان‌ها و سطوح؟</td><td>لحن محصول</td><td>سفارش‌دهنده</td></tr>
+        <tr><td>۹</td><td>بازه‌ی نگهداری سطل زباله و تاریخچه‌ی نسخه‌ها چقدر باشد؟</td><td>فضای ذخیره‌سازی</td><td>هر دو نفر</td></tr>
+        <tr><td>۱۰</td><td>تعریف «انجام‌شده»ی هر فاز دقیقاً چه باشد؟ (تست‌ها، مستندات، استقرار)</td><td>جلوگیری از اختلاف نظر در تحویل</td><td>هر دو نفر</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ==================== 21. DOD ==================== -->
+  <section id="dod">
+    <h2><span class="num">۲۱</span>تعریف «انجام‌شده» و معیارهای پذیرش کلی</h2>
+    <p class="section-lead">هر قابلیت زمانی «انجام‌شده» تلقی می‌شود که همه‌ی موارد زیر برقرار باشد.</p>
+
+    <ul class="checklist">
+      <li>نیازمندی عملکردی مربوطه به‌طور کامل پیاده‌سازی شده و معیارهای پذیرش آن برآورده شده است.</li>
+      <li>رابط کاربری با اصول طراحی و الزامات RTL/فارسی سازگار است.</li>
+      <li>حالت‌های خالی، خطا، بارگذاری و موفقیت طراحی و پیاده‌سازی شده‌اند.</li>
+      <li>روی موبایل و دسکتاپ، در مرورگرهای اصلی، بدون شکستگی چیدمان کار می‌کند.</li>
+      <li>عملکرد پایه (کارایی و واکنش‌گرایی) در حد معیارهای بخش ۱۳ است.</li>
+      <li>داده‌ای در شرایط عادی یا خطا از دست نمی‌رود؛ ذخیره‌سازی و بازیابی تست شده است.</li>
+      <li>تست‌های منطقی حداقلی برای بخش‌های حساس (تاریخ‌ها، تکرارها، همگام‌سازی) نوشته شده است.</li>
+      <li>تغییرات در بازه‌ی کوتاه (مثلاً دو هفته‌ای) به نمایش گذاشته شده و بازخورد گرفته شده است.</li>
+      <li>مستند مختصری از تصمیم‌های گرفته‌شده برای آینده ثبت شده است.</li>
+    </ul>
+  </section>
+
+  <!-- ==================== 22. GLOSSARY ==================== -->
+  <section id="glossary">
+    <h2><span class="num">۲۲</span>ضمیمه: واژه‌نامه و قراردادهای داده‌ای</h2>
+    <p class="section-lead">تعریف مشترک اصطلاحات کلیدی برای جلوگیری از سوءتفاهم.</p>
+
+    <table>
+      <thead><tr><th style="width:24%;">اصطلاح</th><th>تعریف در این سند</th></tr></thead>
+      <tbody>
+        <tr><td><strong>عادت (Habit)</strong></td><td>رفتار تکرارشونده‌ای که کاربر می‌خواهد تداوم بخشد؛ با ثبت روزانه و آمار.</td></tr>
+        <tr><td><strong>وظیفه (Task)</strong></td><td>کار مشخص با نتیجه‌ی معلوم، اختیاراً دارای موعد، اولویت و تکرار.</td></tr>
+        <tr><td><strong>رویداد (Event)</strong></td><td>چیزی که در زمان مشخصی رخ می‌دهد (قرار، جلسه، سفر) و در تقویم دیده می‌شود.</td></tr>
+        <tr><td><strong>مناسبت (Occasion)</strong></td><td>تاریخ مهم تکرارشونده‌ی سالانه (تولد، سالگرد) که معمولاً نیاز به آماده‌سازی دارد.</td></tr>
+        <tr><td><strong>یادآور (Reminder)</strong></td><td>هشدار زمان‌دار که کاربر را به انجام کاری فراموش‌نشدنی دعوت می‌کند.</td></tr>
+        <tr><td><strong>فهرست (List)</strong></td><td>مجموعه‌ی موارد قابل تیک‌زدن برای یک هدف مشخص (خرید، سفر، نظافت).</td></tr>
+        <tr><td><strong>یادداشت (Note)</strong></td><td>متن آزاد برای ثبت اطلاعات و افکار، بدون موعد و تکلیف.</td></tr>
+        <tr><td><strong>زنجیره (Streak)</strong></td><td>تعداد واحدهای زمانی پیاپی که یک عادت با موفقیت ثبت شده است.</td></tr>
+        <tr><td><strong>داشبورد «امروز»</strong></td><td>صفحه‌ی اصلی تجمیعی که تصویر روز جاری را نشان می‌دهد.</td></tr>
+        <tr><td><strong>ثبت خوش‌بینانه</strong></td><td>الگوی رابط کاربری که تغییر را فوراً نشان می‌دهد و همگام‌سازی را در پس‌زمینه انجام می‌دهد.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>۲۲.۱. قراردادهای داده‌ای</h3>
+    <ul>
+      <li>همه‌ی تاریخ‌ها درون سیستم به‌صورت استاندارد (ISO) و در نمایش به شمسی تبدیل می‌شوند.</li>
+      <li>همه‌ی اقلام دارای فیلدهای مشترک: شناسه، نوع، عنوان، مالک، وضعیت، تاریخ ایجاد/ویرایش، برچسب‌ها.</li>
+      <li>حذف نرم (Soft Delete) با نگهداری در سطل زباله؛ حذف قطعی فقط با تأیید صریح.</li>
+      <li>همه‌ی عملیات باید قابل بازگشت یا دارای تاریخچه‌ی مختصر باشند.</li>
+    </ul>
+  </section>
+
+  <!-- ==================== SIGN-OFF ==================== -->
+  <section id="signoff">
+    <h2><span class="num">۲۳</span>تصویب سند</h2>
+    <p class="section-lead">با امضای این بخش، هر دو طرف تأیید می‌کنند که این سند مرجع مشترک کار است و هر تغییری با توافق و در نسخه‌ی جدید ثبت می‌شود.</p>
+    <div class="grid grid-2">
+      <div class="card" style="margin:0;">
+        <h4 style="margin-top:0;">سفارش‌دهنده (مالک محصول)</h4>
+        <p class="small muted">نام: ................................................</p>
+        <p class="small muted">تاریخ: ......... / ......... / ..........</p>
+        <p class="small muted">امضا: ................................................</p>
+      </div>
+      <div class="card" style="margin:0;">
+        <h4 style="margin-top:0;">پیمانکار (توسعه‌دهنده)</h4>
+        <p class="small muted">نام: ................................................</p>
+        <p class="small muted">تاریخ: ......... / ......... / ..........</p>
+        <p class="small muted">امضا: ................................................</p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="doc-footer">
+    <p>سند نیازمندی‌های محصول — برنامه‌ریز و دفترچه یادداشت شخصی «همه‌کاره» • نسخه ۱.۰ • اکتبر ۲۰۲۶</p>
+    <p class="small">این سند یک سند زنده است؛ هر تغییر با توافق دو طرف و افزایش شماره‌ی نسخه ثبت می‌شود.</p>
+  </footer>
+
+</div>
+</body>
+</html>
