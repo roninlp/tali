@@ -13,6 +13,7 @@ export type ButtonProps = JSX.ButtonHTMLAttributes<HTMLButtonElement> & {
 export function Button(props: ButtonProps) {
   const rest = omit(props, "variant", "children")
   const variant = () => props.variant ?? "primary"
+  const style = () => (typeof props.style === "object" && props.style !== null ? props.style : {})
 
   return (
     <button
@@ -22,10 +23,12 @@ export function Button(props: ButtonProps) {
         "border-radius": tokens.radius.md,
         padding: `${tokens.space.sm} ${tokens.space.md}`,
         border: "1px solid transparent",
-        cursor: "pointer",
+        cursor: props.disabled ? "not-allowed" : "pointer",
+        opacity: props.disabled ? 0.6 : 1,
         "background-color": variant() === "primary" ? tokens.color.brand : "transparent",
         color: variant() === "primary" ? "#fff" : tokens.color.ink,
-        "border-color": variant() === "ghost" ? tokens.color.line : "transparent"
+        "border-color": variant() === "ghost" ? tokens.color.line : "transparent",
+        ...style()
       }}
     >
       {props.children}

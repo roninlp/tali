@@ -3,6 +3,7 @@ import { FetchHttpClient } from "effect/http"
 import { RpcClient, RpcSerialization } from "effect/rpc"
 import { ApiRpcs, type ApiClient } from "@tali/rpc"
 import type { ListItem, ListItemInsert } from "@tali/domain"
+import { API_URL } from "./config"
 
 /**
  * Client-only RPC: the browser calls the derived `RpcClient` for `ApiRpcs`
@@ -13,7 +14,6 @@ import type { ListItem, ListItemInsert } from "@tali/domain"
  * The api Worker is reached at `VITE_API_URL` (defaults to the local
  * `wrangler dev` port). In production it is reverse-proxied at `/rpc`.
  */
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8787"
 
 /** Build the typed client, run `f`, and tear the scope down per call. */
 function withClient<A, E>(
@@ -26,6 +26,9 @@ function withClient<A, E>(
     Effect.provide(RpcClient.layerProtocolHttp({ url: `${API_URL}/rpc` })),
     Effect.provide(RpcSerialization.layerNdjson),
     Effect.provide(FetchHttpClient.layer),
+    // Cookies are set by the auth endpoints; RPC calls carry the session too
+    // (the RPC authorization middleware lands with the first protected aggregate).
+    Effect.provideService(FetchHttpClient.RequestInit, { credentials: "include" }),
     Effect.scoped
   )
 }

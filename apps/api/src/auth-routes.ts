@@ -6,17 +6,22 @@ import {
   LoginInput,
   RegisterInput,
   toUserProfile,
-  Unauthorized
+  Unauthorized,
+  type AuthErrorCode
 } from "@tali/domain"
 import { AuthService } from "./auth-service.js"
 
 /**
- * Auth & household endpoints (Slice 1 / ticket #15).
+ * Auth & household endpoints (Slice 1 / ticket #15, shell in #16).
  *
  * These ride the **plain HTTP** app rather than Effect RPC: minting and clearing
  * an HTTP-only session cookie needs the raw `HttpServerResponse`, which the RPC
  * layer does not expose to handlers. Aggregate CRUD/mutations keep using RPC;
  * sync (`/sync/*`) is plain HTTP for the same reason.
+ *
+ * Every non-2xx body is the shared `ErrorEnvelope` from `@tali/domain`
+ * (`docs/error-model-draft.md` §5.1): a stable `code`, a non-localized
+ * `message`, a `retryable` flag, and machine-readable `details`.
  */
 
 const SESSION_COOKIE = "tali_session"
@@ -32,11 +37,21 @@ const json = (
     Effect.orDie
   )
 
+/** The one plain-HTTP error shape (see the file header). */
+const fail = (
+  status: number,
+  code: AuthErrorCode,
+  message: string,
+  retryable = false,
+  details: Record<string, unknown> = {}
+): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
+  json(status, { error: { code, message, retryable, details } })
+
 /** Maps non-domain failures: a bad body is a 400, anything else a 500. */
 const unexpectedFailure = (error: unknown): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
   Schema.isSchemaError(error) || HttpServerError.isHttpServerError(error)
-    ? json(400, { code: "BadRequest" })
-    : json(500, { code: "InternalError" })
+    ? fail(400, "BadRequest", "Malformed request body")
+    : fail(500, "InternalError", "Unexpected server error", true)
 
 export const AuthRoutes = HttpRouter.use((router) =>
   Effect.gen(function*() {
@@ -73,12 +88,14 @@ export const AuthRoutes = HttpRouter.use((router) =>
         const request = yield* HttpServerRequest.HttpServerRequest
         const input = yield* HttpServerRequest.schemaBodyJson(RegisterInput)
         const { user, token } = yield* auth.register(input)
-        const response = yield* json(201, { user: toUserProfile(user) })
+        // A fresh account cannot belong to a household yet.
+        const response = yield* json(201, { user: toUserProfile(user), householdId: null })
         return setSession(response, token, request)
       }).pipe(
         Effect.catchTags(
           {
-            EmailAlreadyRegistered: () => json(409, { code: "EmailAlreadyRegistered" })
+            EmailAlreadyRegistered: () =>
+              fail(409, "EmailAlreadyRegistered", "Email already registered")
           },
           unexpectedFailure
         )
@@ -91,13 +108,15 @@ export const AuthRoutes = HttpRouter.use((router) =>
       Effect.gen(function*() {
         const request = yield* HttpServerRequest.HttpServerRequest
         const input = yield* HttpServerRequest.schemaBodyJson(LoginInput)
-        const { user, token } = yield* auth.login(input)
-        const response = yield* json(200, { user: toUserProfile(user) })
+        const { user, token, householdId } = yield* auth.login(input)
+        // The full session context: the client needs no follow-up `/auth/me`.
+        const response = yield* json(200, { user: toUserProfile(user), householdId })
         return setSession(response, token, request)
       }).pipe(
         Effect.catchTags(
           {
-            InvalidCredentials: () => json(401, { code: "InvalidCredentials" })
+            InvalidCredentials: () =>
+              fail(401, "InvalidCredentials", "Email or password is incorrect")
           },
           unexpectedFailure
         )
@@ -129,7 +148,7 @@ export const AuthRoutes = HttpRouter.use((router) =>
       }).pipe(
         Effect.catchTags(
           {
-            Unauthorized: () => json(401, { code: "Unauthorized" })
+            Unauthorized: () => fail(401, "Unauthorized", "No active session")
           },
           unexpectedFailure
         )
@@ -148,8 +167,9 @@ export const AuthRoutes = HttpRouter.use((router) =>
       }).pipe(
         Effect.catchTags(
           {
-            Unauthorized: () => json(401, { code: "Unauthorized" }),
-            AlreadyInHousehold: () => json(409, { code: "AlreadyInHousehold" })
+            Unauthorized: () => fail(401, "Unauthorized", "No active session"),
+            AlreadyInHousehold: () =>
+              fail(409, "AlreadyInHousehold", "Already a member of a household")
           },
           unexpectedFailure
         )
@@ -168,10 +188,11 @@ export const AuthRoutes = HttpRouter.use((router) =>
       }).pipe(
         Effect.catchTags(
           {
-            Unauthorized: () => json(401, { code: "Unauthorized" }),
-            AlreadyInHousehold: () => json(409, { code: "AlreadyInHousehold" }),
-            HouseholdFull: () => json(409, { code: "HouseholdFull" }),
-            InviteInvalid: () => json(404, { code: "InviteInvalid" })
+            Unauthorized: () => fail(401, "Unauthorized", "No active session"),
+            AlreadyInHousehold: () =>
+              fail(409, "AlreadyInHousehold", "Already a member of a household"),
+            HouseholdFull: () => fail(409, "HouseholdFull", "Household is full"),
+            InviteInvalid: () => fail(404, "InviteInvalid", "Invite code is invalid")
           },
           unexpectedFailure
         )
