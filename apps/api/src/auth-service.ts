@@ -127,14 +127,14 @@ export class AuthService extends Context.Service<AuthService>()("AuthService", {
 
     /**
      * Login carries a browser-derived login key, never a password. The limiter
-     * is checked before any credential work, and unknown emails burn a dummy
-     * comparison so failure timing and the error envelope stay flat.
+     * consumes the attempt before any credential work, and unknown emails burn
+     * a dummy comparison so failure timing and the error envelope stay flat.
      */
     const login = (input: LoginInput, clientIp: string) =>
       Effect.gen(function*() {
         const email = normalizeEmail(input.email)
         const key = limitKey(email, clientIp)
-        const limit = yield* limiter.status(key)
+        const limit = yield* limiter.consume(key)
         if (limit.limited) {
           return yield* Effect.fail(new RateLimited({ retryAfterSeconds: limit.retryAfterSeconds }))
         }
@@ -142,14 +142,12 @@ export class AuthService extends Context.Service<AuthService>()("AuthService", {
         const found = yield* users.findByEmail(email).pipe(Effect.orDie)
         if (Option.isNone(found)) {
           yield* verifier.verifyDummy(input.loginKey)
-          yield* limiter.recordFailure(key)
           return yield* Effect.fail(new InvalidCredentials())
         }
 
         const user = found.value
         const ok = yield* verifier.verify(input.loginKey, user)
         if (!ok) {
-          yield* limiter.recordFailure(key)
           return yield* Effect.fail(new InvalidCredentials())
         }
 
@@ -173,14 +171,13 @@ export class AuthService extends Context.Service<AuthService>()("AuthService", {
       Effect.gen(function*() {
         const user = yield* users.findById(userId).pipe(Effect.orDie)
         const key = limitKey(user.email, clientIp)
-        const limit = yield* limiter.status(key)
+        const limit = yield* limiter.consume(key)
         if (limit.limited) {
           return yield* Effect.fail(new RateLimited({ retryAfterSeconds: limit.retryAfterSeconds }))
         }
 
         const ok = yield* verifier.verify(input.currentLoginKey, user)
         if (!ok) {
-          yield* limiter.recordFailure(key)
           return yield* Effect.fail(new InvalidCredentials())
         }
 

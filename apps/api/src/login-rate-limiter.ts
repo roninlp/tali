@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import { SqlClient, SqlSchema } from "effect/sql"
 
 /**
@@ -10,7 +10,7 @@ import { SqlClient, SqlSchema } from "effect/sql"
  * is answered with `429` before any comparison runs.
  *
  * `login_attempts.key` is `${normalizeEmail(email)}|${ip}`. A fixed (not
- * sliding) window keeps the write path to one upsert per failure and is exact
+ * sliding) window keeps the write path to one upsert per attempt and is exact
  * enough for a two-user household.
  */
 
@@ -34,37 +34,17 @@ export class LoginRateLimiter extends Context.Service<LoginRateLimiter>()("Login
 
     const windowStartOf = (now: number): number => Math.floor(now / WINDOW_MS) * WINDOW_MS
 
-    const findAttempt = SqlSchema.findOneOption({
+    /**
+     * Reserve one attempt for `key` and return the updated counter.
+     *
+     * The increment and the read are the same `INSERT … RETURNING` statement,
+     * so concurrent requests serialise on the row: the sixth request sees six
+     * and is blocked instead of every request passing a separate pre-check.
+     * A successful login calls `clear`; every other attempt stays counted.
+     */
+    const consumeAttempt = SqlSchema.findOne({
       Request: Schema.Struct({ key: Schema.String, windowStart: Schema.Int }),
       Result: Attempt,
-      execute: ({ key, windowStart }) => sql`
-        SELECT window_start, failures
-        FROM login_attempts
-        WHERE key = ${key} AND window_start = ${windowStart}
-      `
-    })
-
-    /** Block the next attempt once the current window already has 5 failures. */
-    const status = (key: string, now: number) =>
-      Effect.gen(function*() {
-        const windowStart = windowStartOf(now)
-        const found = yield* findAttempt({ key, windowStart })
-        if (Option.isNone(found) || found.value.failures < LOGIN_MAX_FAILURES) {
-          return { limited: false, retryAfterSeconds: 0 }
-        }
-        return {
-          limited: true,
-          retryAfterSeconds: Math.max(1, Math.ceil((windowStart + WINDOW_MS - now) / 1000))
-        }
-      })
-
-    /**
-     * Record one failure, resetting the counter when the window has rolled
-     * over. The upsert is a single statement, so concurrent attempts cannot
-     * lose an increment.
-     */
-    const recordFailure = SqlSchema.void({
-      Request: Schema.Struct({ key: Schema.String, windowStart: Schema.Int }),
       execute: ({ key, windowStart }) => sql`
         INSERT INTO login_attempts (key, window_start, failures)
         VALUES (${key}, ${windowStart}, 1)
@@ -75,8 +55,24 @@ export class LoginRateLimiter extends Context.Service<LoginRateLimiter>()("Login
             ELSE 1
           END,
           window_start = excluded.window_start
+        RETURNING window_start, failures
       `
     })
+
+    /** Count this attempt and report whether the window is now exhausted. */
+    const consume = (key: string) =>
+      Effect.gen(function*() {
+        const now = Date.now()
+        const windowStart = windowStartOf(now)
+        const { failures } = yield* consumeAttempt({ key, windowStart })
+        if (failures <= LOGIN_MAX_FAILURES) {
+          return { limited: false, retryAfterSeconds: 0 }
+        }
+        return {
+          limited: true,
+          retryAfterSeconds: Math.max(1, Math.ceil((windowStart + WINDOW_MS - now) / 1000))
+        }
+      })
 
     /** A successful login clears the window so a hiccup does not linger. */
     const clear = SqlSchema.void({
@@ -85,9 +81,7 @@ export class LoginRateLimiter extends Context.Service<LoginRateLimiter>()("Login
     })
 
     return {
-      status: (key: string) => status(key, Date.now()),
-      recordFailure: (key: string) =>
-        recordFailure({ key, windowStart: windowStartOf(Date.now()) }),
+      consume: (key: string) => consume(key),
       clear
     } as const
   })
