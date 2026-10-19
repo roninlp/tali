@@ -6,6 +6,7 @@ import { Effect, Layer, String as Str } from "effect"
 import { D1Client } from "@effect/sql-d1"
 import {
   uuidV7,
+  type SyncEntityRow,
   type SyncPullResponse,
   type SyncPushEntry
 } from "@tali/domain"
@@ -51,7 +52,7 @@ const makeHarness = () => {
   const run = <A>(effect: Effect.Effect<A, unknown, SyncService>): Promise<A> =>
     Effect.runPromise(Effect.provide(effect, layer))
 
-  return { db, run }
+  return { db, fake, run }
 }
 
 type Harness = ReturnType<typeof makeHarness>
@@ -101,12 +102,41 @@ const itemOf = (page: SyncPullResponse, entityId: string) =>
 const feedCount = (db: DatabaseSync): number =>
   (db.prepare("SELECT COUNT(*) AS n FROM change_feed").get() as { readonly n: number }).n
 
+const appliedCount = (db: DatabaseSync): number =>
+  (db.prepare("SELECT COUNT(*) AS n FROM applied_mutations").get() as { readonly n: number }).n
+
+/** A device as the client engine models it: a cursor plus a mirror. */
+interface Device {
+  readonly userId: string
+  cursor: number
+  readonly mirror: Map<string, SyncEntityRow>
+}
+
+const device = (userId: string): Device => ({ userId, cursor: 0, mirror: new Map() })
+
+/** One client reconcile pass: pull every page, merge it, advance the cursor. */
+const syncDevice = async (harness: Harness, current: Device): Promise<void> => {
+  for (;;) {
+    const page = await pull(harness, {
+      userId: current.userId,
+      householdId: HOUSEHOLD,
+      cursor: current.cursor
+    })
+    for (const item of page.items) current.mirror.set(item.entityId, item)
+    for (const removed of page.removed) current.mirror.delete(removed.entityId)
+    current.cursor = page.nextCursor
+    if (!page.hasMore) return
+  }
+}
+
 describe("sync engine", () => {
   it("converges two devices after offline edits on both sides", async () => {
     const h = makeHarness()
+    const a = device(USER_A)
+    const b = device(USER_B)
     const id = uuidV7()
 
-    // Device A creates while offline, then pushes.
+    // Device A creates while offline, then pushes and syncs.
     await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
@@ -118,12 +148,10 @@ describe("sync engine", () => {
         })
       ]
     })
-
-    // Both devices drain the feed to their own cursors.
-    const aStart = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
-    const bStart = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
-    expect(itemOf(aStart, id)?.data.title).toBe("خرید نان")
-    expect(itemOf(bStart, id)?.data.title).toBe("خرید نان")
+    await syncDevice(h, a)
+    await syncDevice(h, b)
+    expect(a.mirror.get(id)?.data.title).toBe("خرید نان")
+    expect(b.mirror.get(id)?.data.title).toBe("خرید نان")
 
     // A renames offline; B checks it off offline. Neither has seen the other.
     await push(h, {
@@ -137,27 +165,59 @@ describe("sync engine", () => {
       entries: [entry({ entityId: id, baseVersion: 1, patch: { checked: true } })]
     })
     expect(bResult.results[0]?._tag).toBe("conflict")
+    expect(bResult.results[0]?.seq).toBeGreaterThan(0)
 
-    // Each device now pulls the delta from its own cursor.
-    const aDelta = await pull(h, {
+    // Each device pulls the delta from its own cursor (a push never advances
+    // the cursor — see the client engine), then renders the same bytes.
+    await syncDevice(h, a)
+    await syncDevice(h, b)
+
+    const fromA = a.mirror.get(id)
+    const fromB = b.mirror.get(id)
+    expect(fromA).toEqual(fromB)
+    expect(fromA?.data).toMatchObject({ title: "نان تازه", checked: true })
+    expect(fromA?.version).toBe(3)
+    expect(a.cursor).toBe(b.cursor)
+  })
+
+  it("never reports applied when a concurrent writer wins the compare-and-set", async () => {
+    const h = makeHarness()
+    const id = uuidV7()
+    await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      cursor: aStart.nextCursor
+      entries: [entry({ entityId: id, baseVersion: 0, patch: { title: "اول" } })]
     })
-    const bDelta = await pull(h, {
-      userId: USER_B,
-      householdId: HOUSEHOLD,
-      cursor: bStart.nextCursor
-    })
-    expect(aDelta.nextCursor).toBeGreaterThanOrEqual(bDelta.nextCursor)
-    expect(aDelta.hasMore).toBe(false)
+    const before = feedCount(h.db)
 
-    // Convergence: same bytes on both devices, both edits preserved.
-    const aItem = itemOf(aDelta, id)
-    const bItem = itemOf(bDelta, id)
-    expect(aItem).toEqual(bItem)
-    expect(aItem?.data).toMatchObject({ title: "نان تازه", checked: true })
-    expect(aItem?.version).toBe(3)
+    // Simulate the race the pre-read cannot see: another writer commits after
+    // our pre-read (baseVersion 1) but before our batch.
+    h.fake.beforeBatch = () => {
+      h.fake.beforeBatch = undefined
+      h.db.prepare(
+        "UPDATE list_items SET version = version + 1, title = ?, updated_at = ? WHERE id = ?"
+      ).run("نوشته‌ی همسر", NOW(), id)
+    }
+
+    const mutation = entry({
+      entityId: id,
+      baseVersion: 1,
+      patch: { title: "نوشته‌ی من" },
+      at: FUTURE()
+    })
+    await expect(
+      push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] })
+    ).rejects.toMatchObject({ _tag: "SyncContended" })
+
+    // The losing push wrote no feed entry and no ledger row, so it is safe to retry.
+    expect(feedCount(h.db)).toBe(before)
+    expect(appliedCount(h.db)).toBe(1)
+
+    // The retry resolves against fresh state instead of silently dropping the edit.
+    const retry = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] })
+    expect(retry.results[0]?._tag).toBe("conflict")
+    expect(retry.results[0]?.item?.data.title).toBe("نوشته‌ی من")
+    expect(feedCount(h.db)).toBe(before + 1)
   })
 
   it("resolves same-field races by field-level LWW against the row updatedAt", async () => {
@@ -301,6 +361,37 @@ describe("sync engine", () => {
     expect(scoped.entries.map((item) => item.entityId)).toEqual([other])
   })
 
+  it("refuses to write rows outside the pusher's household (including unclaimed rows)", async () => {
+    const h = makeHarness()
+    const foreign = uuidV7()
+    const legacy = uuidV7()
+    const now = NOW()
+
+    h.db.exec(`
+      INSERT INTO list_items
+        (id, title, checked, sort_order, version, created_at, updated_at, deleted_at,
+         owner_id, visibility, household_id)
+      VALUES
+        ('${foreign}', 'خانه‌ی دیگر', 0, 0, 1, '${now}', '${now}', NULL,
+         '${USER_C}', 'shared', '${HOUSEHOLD_B}'),
+        ('${legacy}', 'پیش از سینک', 0, 0, 1, '${now}', '${now}', NULL,
+         '', 'shared', NULL)
+    `)
+    const before = feedCount(h.db)
+
+    for (const entityId of [foreign, legacy]) {
+      await expect(
+        push(h, {
+          userId: USER_A,
+          householdId: HOUSEHOLD,
+          entries: [entry({ entityId, baseVersion: 1, patch: { title: "نفوذ" } })]
+        })
+      ).rejects.toMatchObject({ _tag: "SyncEntityForbidden" })
+    }
+
+    expect(feedCount(h.db)).toBe(before)
+  })
+
   it("paginates pull and resumes exactly at the last returned seq", async () => {
     const h = makeHarness()
     const ids = [uuidV7(), uuidV7(), uuidV7()]
@@ -378,6 +469,59 @@ describe("sync engine", () => {
     expect(boot.cursor).toBe(2)
 
     // The client can then continue incrementally from the bootstrap cursor.
+    const next = await pull(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      cursor: boot.cursor
+    })
+    expect(next.resetRequired).toBe(false)
+    expect(next.entries).toHaveLength(0)
+  })
+
+  it("still requires a reset when every feed entry is outside the window", async () => {
+    const h = makeHarness()
+    const first = uuidV7()
+    const second = uuidV7()
+    const longAgo = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000).toISOString()
+
+    // The entire feed has aged out: without a retained high-water marker the
+    // cursor's staleness would be undetectable and those rows silently missing.
+    h.db.exec(`
+      INSERT INTO list_items
+        (id, title, checked, sort_order, version, created_at, updated_at, deleted_at,
+         owner_id, visibility, household_id)
+      VALUES
+        ('${first}', 'اول', 0, 0, 1, '${longAgo}', '${longAgo}', NULL,
+         '${USER_A}', 'shared', '${HOUSEHOLD}'),
+        ('${second}', 'دوم', 0, 0, 1, '${longAgo}', '${longAgo}', NULL,
+         '${USER_A}', 'shared', '${HOUSEHOLD}')
+    `)
+    h.db.exec(`
+      INSERT INTO change_feed
+        (household_id, entity_type, entity_id, op, version, updated_at, owner_id, visibility)
+      VALUES
+        ('${HOUSEHOLD}', 'listItem', '${first}', 'upsert', 1, '${longAgo}', '${USER_A}', 'shared'),
+        ('${HOUSEHOLD}', 'listItem', '${second}', 'upsert', 1, '${longAgo}', '${USER_A}', 'shared')
+    `)
+
+    const stale = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    expect(stale.resetRequired).toBe(true)
+
+    const boot = await h.run(
+      Effect.gen(function*() {
+        const sync = yield* SyncService
+        return yield* sync.bootstrap({
+          userId: USER_B,
+          householdId: HOUSEHOLD,
+          offset: 0,
+          limit: 500
+        })
+      })
+    )
+    expect(boot.items.map((item) => item.entityId).sort()).toEqual([first, second].sort())
+    expect(boot.cursor).toBe(2)
+
+    // Bootstrapping once is enough: the retained marker keeps it from looping.
     const next = await pull(h, {
       userId: USER_B,
       householdId: HOUSEHOLD,

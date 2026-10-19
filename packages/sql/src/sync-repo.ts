@@ -160,16 +160,24 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
         return new Map(rows.map((row) => [row.id, toState(row)]))
       })
 
-    /** Dedupe pre-read: which of these mutation ids has the server already applied? */
-    const findApplied = (clientMutationIds: ReadonlyArray<string>) =>
+    /**
+     * Dedupe pre-read: which of these mutation ids has the server already
+     * applied? Scoped to the household so a ledger row can never hand another
+     * household's row back in a push result.
+     */
+    const findApplied = (input: {
+      readonly householdId: string
+      readonly clientMutationIds: ReadonlyArray<string>
+    }) =>
       Effect.gen(function*() {
-        const unique = [...new Set(clientMutationIds)]
+        const unique = [...new Set(input.clientMutationIds)]
         if (unique.length === 0) return new Map<string, AppliedMutation>()
         const rows = yield* sql<AppliedRow>`
           SELECT client_mutation_id AS clientMutationId, entity_type AS entityType,
                  entity_id AS entityId, server_version AS serverVersion, seq
           FROM applied_mutations
-          WHERE ${sql.in("client_mutation_id", unique)}
+          WHERE household_id = ${input.householdId}
+            AND ${sql.in("client_mutation_id", unique)}
         `
         return new Map(
           rows.map((row) => [
@@ -237,11 +245,27 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
     /** Bound feed growth + replay memory to the 90-day window (§DP-8). */
     const prune = (cutoff: string) =>
       Effect.gen(function*() {
-        yield* sql`DELETE FROM change_feed WHERE updated_at < ${cutoff}`
+        // Keep the newest feed row even when it is older than the window: it is
+        // the high-water marker that keeps `minSeq` non-empty, so a cursor that
+        // predates the pruned window is still detected as stale.
+        yield* sql`
+          DELETE FROM change_feed
+          WHERE updated_at < ${cutoff}
+            AND seq < (SELECT MAX(seq) FROM change_feed)
+        `
         yield* sql`DELETE FROM applied_mutations WHERE created_at < ${cutoff}`
       })
 
-    /** The entity write: insert, or a compare-and-set update on the row version. */
+    /**
+     * The entity write: insert, or a compare-and-set update on the row version.
+     *
+     * The `changes()` gate on the two statements that follow is what makes the
+     * CAS real inside a D1 batch: SQLite's `changes()` is the row count of the
+     * preceding statement, so when another writer wins between our pre-read and
+     * this batch, nothing is appended to the feed and nothing is recorded in
+     * `applied_mutations`. The service then treats the entry as contended and
+     * asks the client to retry (the retry re-resolves against fresh state).
+     */
     const writeEntity = ({ state, expectedVersion }: EntityWrite): Statement.Statement<unknown> => {
       if (expectedVersion === null) {
         return sql`
@@ -255,6 +279,7 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
              ${state.version}, ${String(state.data.createdAt ?? state.updatedAt)},
              ${state.updatedAt}, ${state.deletedAt}, ${state.ownerId},
              ${state.visibility}, ${state.householdId})
+          ON CONFLICT DO NOTHING
         `
       }
       return sql`
@@ -270,24 +295,30 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
       `
     }
 
-    /** Append the feed row. Must run immediately before `recordApplied`. */
+    /**
+     * Append the feed row, but only if the entity write above changed a row.
+     * Must run immediately before `recordApplied`.
+     */
     const appendFeed = (entry: FeedWrite): Statement.Statement<unknown> =>
       sql`
         INSERT INTO change_feed
           (household_id, entity_type, entity_id, op, version, updated_at, owner_id, visibility)
-        VALUES
-          (${entry.householdId}, ${entry.entityType}, ${entry.entityId}, ${entry.op},
-           ${entry.version}, ${entry.updatedAt}, ${entry.ownerId}, ${entry.visibility})
+        SELECT ${entry.householdId}, ${entry.entityType}, ${entry.entityId}, ${entry.op},
+               ${entry.version}, ${entry.updatedAt}, ${entry.ownerId}, ${entry.visibility}
+        WHERE changes() = 1
       `
 
-    /** Dedupe row; `last_insert_rowid()` is the feed seq appended just above. */
+    /**
+     * Dedupe row; `last_insert_rowid()` is the feed seq appended just above.
+     * Gated the same way, so a CAS miss records nothing at all.
+     */
     const recordApplied = (entry: AppliedWrite): Statement.Statement<unknown> =>
       sql`
         INSERT OR IGNORE INTO applied_mutations
           (client_mutation_id, household_id, entity_type, entity_id, server_version, seq, created_at)
-        VALUES
-          (${entry.clientMutationId}, ${entry.householdId}, ${entry.entityType},
-           ${entry.entityId}, ${entry.version}, last_insert_rowid(), ${entry.createdAt})
+        SELECT ${entry.clientMutationId}, ${entry.householdId}, ${entry.entityType},
+               ${entry.entityId}, ${entry.version}, last_insert_rowid(), ${entry.createdAt}
+        WHERE changes() = 1
       `
 
     const commit = (statements: ReadonlyArray<Statement.Statement<unknown>>) =>

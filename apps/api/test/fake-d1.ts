@@ -64,6 +64,12 @@ class BoundStatement {
 }
 
 export class FakeD1 {
+  /**
+   * Test hook: runs immediately before a batch starts, so a test can simulate
+   * another writer landing between the service's pre-read and its batch.
+   */
+  beforeBatch: (() => void) | undefined
+
   constructor(readonly db: DatabaseSync) {}
 
   prepare(sql: string): BoundStatement {
@@ -73,6 +79,7 @@ export class FakeD1 {
   async batch(
     statements: ReadonlyArray<BoundStatement>
   ): Promise<ReadonlyArray<D1ResultLike>> {
+    this.beforeBatch?.()
     this.db.exec("BEGIN")
     try {
       const results = statements.map((statement) => statement.execute())

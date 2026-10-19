@@ -208,6 +208,7 @@ export const SYNC_ERROR_CODES = [
   "Forbidden",
   "UnsupportedEntity",
   "StaleCursor",
+  "Conflict",
   "InternalError"
 ] as const
 export type SyncErrorCode = (typeof SYNC_ERROR_CODES)[number]

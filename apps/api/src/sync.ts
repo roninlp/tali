@@ -8,6 +8,7 @@ import {
 } from "@tali/domain"
 import { AuthService } from "./auth-service.js"
 import {
+  SyncContended,
   SyncEntityForbidden,
   SyncPayloadTooLarge,
   SyncService,
@@ -174,6 +175,10 @@ export const SyncRoutes = HttpRouter.use((router) =>
             SyncEntityForbidden: (error: SyncEntityForbidden) =>
               fail(403, "Forbidden", "Entity is not writable by this client", false, {
                 entityId: error.entityId
+              }),
+            SyncContended: (error: SyncContended) =>
+              fail(409, "Conflict", "A concurrent write won; retry the push", true, {
+                count: error.count
               })
           },
           unexpectedFailure

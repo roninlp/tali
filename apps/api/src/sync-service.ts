@@ -44,10 +44,20 @@ export class SyncEntityForbidden extends Data.TaggedError("SyncEntityForbidden")
   readonly entityId: string
 }> {}
 
+/**
+ * Another writer won the version race between our pre-read and our batch. The
+ * gated CAS wrote nothing for the losing entries, so the client can retry the
+ * push; every entry that did land is deduped by `clientMutationId`.
+ */
+export class SyncContended extends Data.TaggedError("SyncContended")<{
+  readonly count: number
+}> {}
+
 export type SyncServiceError =
   | UnsupportedSyncEntity
   | SyncPayloadTooLarge
   | SyncEntityForbidden
+  | SyncContended
 
 type DecodedPushEntry = Schema.Schema.Type<typeof SyncPushEntry>
 
@@ -232,15 +242,17 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
       Effect.gen(function*() {
         const limit = Math.min(Math.max(input.limit ?? DEFAULT_PULL_LIMIT, 1), MAX_PULL_LIMIT)
         const offset = Math.max(input.offset ?? 0, 0)
-        const [rows, cursor] = yield* Effect.all([
-          repo.bootstrapPage({
-            householdId: input.householdId,
-            userId: input.userId,
-            offset,
-            limit
-          }),
-          repo.maxSeq
-        ], { concurrency: "unbounded" }).pipe(Effect.orDie)
+        // Read the high-water cursor *before* the visible rows. A write that
+        // lands during paging then has a `seq` above the cursor and is delivered
+        // by the next incremental pull; reading it afterwards could skip a row
+        // that the page did not include.
+        const cursor = yield* repo.maxSeq.pipe(Effect.orDie)
+        const rows = yield* repo.bootstrapPage({
+          householdId: input.householdId,
+          userId: input.userId,
+          offset,
+          limit
+        }).pipe(Effect.orDie)
         const hasMore = rows.length > limit
         const items = hasMore ? rows.slice(0, limit) : rows
         return { items, nextOffset: offset + items.length, hasMore, cursor }
@@ -262,7 +274,10 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
         }
 
         const deduped = yield* repo
-          .findApplied(input.entries.map((entry) => entry.clientMutationId))
+          .findApplied({
+            householdId: input.householdId,
+            clientMutationIds: input.entries.map((entry) => entry.clientMutationId)
+          })
           .pipe(Effect.orDie)
         const states = yield* repo
           .findEntities(input.entries.map((entry) => entry.entityId))
@@ -310,10 +325,9 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           }
 
           const current = planned.get(entry.entityId)
-          if (
-            current !== undefined && current.householdId !== null &&
-            current.householdId !== input.householdId
-          ) {
+          // Households are hard boundaries: a row in another household (or an
+          // unclaimed pre-sync row with no household at all) is not writable.
+          if (current !== undefined && current.householdId !== input.householdId) {
             return yield* Effect.fail(new SyncEntityForbidden({ entityId: entry.entityId }))
           }
           if (
@@ -422,17 +436,36 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
 
         yield* repo.commit(statements).pipe(Effect.orDie)
 
+        const writes = plans.filter(
+          (plan): plan is Extract<Plan, { readonly kind: "write" }> => plan.kind === "write"
+        )
         const applied = yield* repo
-          .findApplied(plans.filter((plan) => plan.kind !== "dedupe")
-            .map((plan) => plan.entry.clientMutationId))
+          .findApplied({
+            householdId: input.householdId,
+            clientMutationIds: writes.map((plan) => plan.entry.clientMutationId)
+          })
           .pipe(Effect.orDie)
+        // The gated CAS writes nothing when a concurrent writer won, so a
+        // missing ledger row means this entry did not apply. Failing the whole
+        // request is safe and never silently drops the client's edit: the
+        // client keeps its outbox and retries, and already-applied entries
+        // dedupe. See `writeEntity`/`appendFeed` in `sync-repo.ts`.
+        const contended = writes.filter(
+          (plan) => !applied.has(plan.entry.clientMutationId)
+        )
+        if (contended.length > 0) {
+          return yield* Effect.fail(new SyncContended({ count: contended.length }))
+        }
+
         const authoritative = yield* repo
           .findEntities(input.entries.map((entry) => entry.entityId))
           .pipe(Effect.orDie)
 
         const results: Array<SyncPushResult> = plans.map((plan) => {
           const state = authoritative.get(plan.entry.entityId) ?? (plan.kind === "dedupe" ? undefined : plan.state)
-          const item = state === undefined ? {} : { item: toRow(state) }
+          const item = state === undefined || state.householdId !== input.householdId
+            ? {}
+            : { item: toRow(state) }
           if (plan.kind === "dedupe") {
             return {
               _tag: "alreadyApplied" as const,
