@@ -228,10 +228,10 @@ export const openLocalStore = async (
       return applied
     },
 
-    async ack(clientMutationIds, rows = [], cursor) {
+    async ack(clientMutationIds, rows = []) {
       ensureOpen()
-      if (clientMutationIds.length === 0 && rows.length === 0 && cursor === undefined) return
-      const tx = db.transaction([MIRROR, OUTBOX, META], "readwrite")
+      if (clientMutationIds.length === 0 && rows.length === 0) return
+      const tx = db.transaction([MIRROR, OUTBOX], "readwrite")
       const outbox = tx.objectStore(OUTBOX)
       const byMutation = outbox.index("byClientMutationId")
 
@@ -244,8 +244,6 @@ export const openLocalStore = async (
       const mirror = tx.objectStore(MIRROR)
       for (const row of rows) mirror.put(row)
 
-      if (cursor !== undefined) advanceCursor(tx.objectStore(META), cursor)
-
       await txDone(tx)
       notify()
     },
@@ -254,6 +252,14 @@ export const openLocalStore = async (
       ensureOpen()
       const tx = db.transaction(MIRROR, "readwrite")
       tx.objectStore(MIRROR).delete([entityType, entityId])
+      await txDone(tx)
+      notify()
+    },
+
+    async clearMirror() {
+      ensureOpen()
+      const tx = db.transaction(MIRROR, "readwrite")
+      tx.objectStore(MIRROR).clear()
       await txDone(tx)
       notify()
     },

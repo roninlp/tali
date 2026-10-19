@@ -7,6 +7,7 @@ import { ListItemService, ListItemServiceLive } from "./list-item-service.js"
 import { AuthServiceLive } from "./auth-service.js"
 import { AuthRoutes } from "./auth-routes.js"
 import { SyncRoutes } from "./sync.js"
+import { SyncServiceLive } from "./sync-service.js"
 
 /** Implement the RPC contract. Each handler yields the service, then delegates. */
 const RpcHandlers = ApiRpcs.toLayer({
@@ -41,6 +42,7 @@ export const AppLayer = Layer.mergeAll(
   RpcLayer
 ).pipe(
   Layer.provide(AuthServiceLive),
+  Layer.provide(SyncServiceLive),
   Layer.provide(ListItemServiceLive),
   Layer.provide(ListItemRepoLive)
 )

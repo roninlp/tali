@@ -4,12 +4,14 @@ import { Title } from "@solidjs/meta"
 import { AuthProvider } from "./lib/auth"
 import { LocalStoreProvider } from "./lib/local-store"
 import { Splash } from "./components/form"
+import { SyncRunner } from "./components/sync-runner"
 import { Router } from "./router"
 
 export default function App() {
   return (
     <AuthProvider>
       <LocalStoreProvider>
+        <SyncRunner />
         <Router>
           {(props) => (
             <>
