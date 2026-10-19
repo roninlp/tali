@@ -12,6 +12,13 @@ export default function Document(props: ParentProps) {
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Tali</title>
+        {/* Minimal global reset for the client-only shell. The design-system
+            token sheet (RTL foundations, Vazirmatn) lands with its own ticket. */}
+        <style>{`
+          *, *::before, *::after { box-sizing: border-box; }
+          html, body { margin: 0; padding: 0; }
+          body { min-height: 100dvh; background: #ffffff; }
+        `}</style>
         <HydrationScript />
       </head>
       <body>{props.children}</body>

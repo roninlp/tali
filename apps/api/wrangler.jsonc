@@ -4,6 +4,9 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-16",
   "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "WEB_ORIGIN": "http://localhost:3000"
+  },
   "d1_databases": [
     {
       "binding": "DB",
