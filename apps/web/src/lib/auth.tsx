@@ -7,16 +7,20 @@ import type {
   SessionContext
 } from "@tali/domain"
 import { authApi, type ApiResult, type AuthFailure } from "./auth-api"
+import { cacheSession, clearCachedSession, readCachedSession } from "./session-cache"
 
 /**
  * The client session store.
  *
  * Auth state is one signal: `checking` until `/auth/me` settles on boot, then
  * `signedOut`, `signedIn` with the server's `SessionContext`, or `error` when
- * the boot request failed for a reason other than "no session" (the app shows
- * a retry instead of pretending the user is logged out). Forms call the
- * `signIn`/`register`/… methods, which both hit the API and update the store;
- * route guards read `status()` so a reload keeps the user signed in.
+ * the boot request failed and no cached session exists to fall back to. Forms
+ * call the `signIn`/`register`/… methods, which both hit the API and update the
+ * store; route guards read `status()` so a reload keeps the user signed in.
+ *
+ * When the server is unreachable but a session was cached, the store boots
+ * `signedIn` with that cache (and records `bootFailure`) so the local-first
+ * mirror and outbox remain usable offline.
  */
 
 export type AuthStatus = "checking" | "signedOut" | "signedIn" | "error"
@@ -31,7 +35,7 @@ export interface AuthStore {
   session: () => SessionContext | undefined
   /** The user's household id, if the session has one. */
   householdId: () => string | undefined
-  /** Set only while `status() === "error"`: why the boot restore failed. */
+  /** Set when the boot `/auth/me` failed, even if a cached session kept us signed in. */
   bootFailure: () => AuthFailure | undefined
   signIn: (input: LoginInput) => Promise<ApiResult<void>>
   signUp: (input: RegisterInput) => Promise<ApiResult<void>>
@@ -50,21 +54,25 @@ export function AuthProvider(props: ParentProps) {
   const [bootFailure, setBootFailure] = createSignal<AuthFailure>()
 
   const applySession = (next: SessionContext) => {
+    cacheSession(next)
     setSession(next)
     setBootFailure(undefined)
     setStatus("signedIn")
   }
 
   const clearSession = () => {
+    clearCachedSession()
     setSession(undefined)
     setBootFailure(undefined)
     setStatus("signedOut")
   }
 
   /**
-   * Boot/refresh: only `Unauthorized` means "signed out". A 5xx or a network
-   * failure is a boot error the UI retries, not a reason to discard a session
-   * that may still be valid.
+   * Boot/refresh: `Unauthorized` means "signed out". A 5xx or a network
+   * failure is normally a boot error the UI retries — but if a previous
+   * session was cached, the shell boots from that instead so the local mirror
+   * and unsent outbox stay usable offline. The cookie is still the only thing
+   * the server accepts, so nothing is trusted beyond rendering local data.
    */
   const refresh = async () => {
     setStatus("checking")
@@ -76,6 +84,13 @@ export function AuthProvider(props: ParentProps) {
     }
     if (result.error.code === "Unauthorized") {
       clearSession()
+      return
+    }
+    const cached = readCachedSession()
+    if (cached !== undefined) {
+      setSession(cached)
+      setBootFailure(result.error)
+      setStatus("signedIn")
       return
     }
     setBootFailure(result.error)
