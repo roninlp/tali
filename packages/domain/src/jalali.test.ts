@@ -55,6 +55,35 @@ describe("Jalali leap years and month boundaries", () => {
     for (const year of [1400, 1401, 1402, 1404, 1405]) expect(isJalaliLeapYear(year)).toBe(false)
   })
 
+  it("follows the 33-year leap cycle", () => {
+    // One complete cycle: 1400..1432. Leap years sit at residues
+    // 1, 5, 9, 13, 17, 22, 26 and 30 mod 33.
+    const leapResidues = new Set([1, 5, 9, 13, 17, 22, 26, 30])
+    const leaps: number[] = []
+    for (let year = 1400; year < 1433; year += 1) {
+      expect(isJalaliLeapYear(year), `year ${year}`).toBe(leapResidues.has(year % 33))
+      if (isJalaliLeapYear(year)) leaps.push(year)
+    }
+    expect(leaps).toEqual([1403, 1408, 1412, 1416, 1420, 1424, 1428, 1432])
+  })
+
+  it("keeps Esfand 29/30 correct across the leap cycle", () => {
+    // Leap years end on Esfand 30, common years on Esfand 29; the next day is
+    // always Farvardin 1 of the following year.
+    for (const year of [1403, 1408, 1412, 1416, 1420, 1424, 1428, 1432]) {
+      expect(daysInJalaliMonth(year, 12), `Esfand ${year}`).toBe(30)
+      expect(toIsoDate(addJalaliDays(jalaliDate(year, 12, 30), 1))).toBe(
+        toIsoDate(jalaliDate(year + 1, 1, 1))
+      )
+    }
+    for (const year of [1404, 1405, 1409, 1417, 1421, 1425, 1429]) {
+      expect(daysInJalaliMonth(year, 12), `Esfand ${year}`).toBe(29)
+      expect(toIsoDate(addJalaliDays(jalaliDate(year, 12, 29), 1))).toBe(
+        toIsoDate(jalaliDate(year + 1, 1, 1))
+      )
+    }
+  })
+
   it("knows month and year lengths", () => {
     expect(daysInJalaliYear(1403)).toBe(366)
     expect(daysInJalaliYear(1404)).toBe(365)
