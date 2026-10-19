@@ -50,6 +50,15 @@ const requestResult = <A>(request: IDBRequest<A>): Promise<A> =>
     request.onerror = () => reject(request.error ?? new Error("IndexedDB request failed"))
   })
 
+/** Write the cursor only when it moves forward; a stale pull must not rewind it. */
+const advanceCursor = (meta: IDBObjectStore, seq: number): void => {
+  const read = meta.get(CURSOR_KEY) as IDBRequest<{ key: string; value: unknown } | undefined>
+  read.onsuccess = () => {
+    const current = typeof read.result?.value === "number" ? read.result.value : 0
+    if (seq > current) meta.put({ key: CURSOR_KEY, value: seq })
+  }
+}
+
 export interface OpenLocalStoreOptions {
   /** Override the IndexedDB factory (tests). Defaults to the global. */
   readonly factory?: IDBFactory
@@ -219,10 +228,10 @@ export const openLocalStore = async (
       return applied
     },
 
-    async ack(clientMutationIds, rows = []) {
+    async ack(clientMutationIds, rows = [], cursor) {
       ensureOpen()
-      if (clientMutationIds.length === 0 && rows.length === 0) return
-      const tx = db.transaction([MIRROR, OUTBOX], "readwrite")
+      if (clientMutationIds.length === 0 && rows.length === 0 && cursor === undefined) return
+      const tx = db.transaction([MIRROR, OUTBOX, META], "readwrite")
       const outbox = tx.objectStore(OUTBOX)
       const byMutation = outbox.index("byClientMutationId")
 
@@ -235,6 +244,16 @@ export const openLocalStore = async (
       const mirror = tx.objectStore(MIRROR)
       for (const row of rows) mirror.put(row)
 
+      if (cursor !== undefined) advanceCursor(tx.objectStore(META), cursor)
+
+      await txDone(tx)
+      notify()
+    },
+
+    async removeFromMirror(entityType, entityId) {
+      ensureOpen()
+      const tx = db.transaction(MIRROR, "readwrite")
+      tx.objectStore(MIRROR).delete([entityType, entityId])
       await txDone(tx)
       notify()
     },
@@ -251,13 +270,7 @@ export const openLocalStore = async (
     async setCursor(seq) {
       ensureOpen()
       const tx = db.transaction(META, "readwrite")
-      const meta = tx.objectStore(META)
-      const read = meta.get(CURSOR_KEY) as IDBRequest<{ key: string; value: unknown } | undefined>
-      read.onsuccess = () => {
-        const current = typeof read.result?.value === "number" ? read.result.value : 0
-        // The cursor only moves forward; a stale pull must not rewind it.
-        if (seq > current) meta.put({ key: CURSOR_KEY, value: seq })
-      }
+      advanceCursor(tx.objectStore(META), seq)
       await txDone(tx)
     },
 

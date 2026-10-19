@@ -119,7 +119,7 @@ function TodayPage() {
         entityType: "listItem",
         entityId: id,
         op: "upsert",
-        patch: { id, title, checked: false, sortOrder: nextOrder, createdAt: now, updatedAt: now },
+        patch: { id, title, checked: false, sortOrder: nextOrder, createdAt: now },
         now
       })
       clearTimeout(draftTimer)
@@ -138,7 +138,7 @@ function TodayPage() {
       entityType: "listItem",
       entityId: row.entityId,
       op: "upsert",
-      patch: { checked: !checkedOf(row), updatedAt: now },
+      patch: { checked: !checkedOf(row) },
       now
     })
   }

@@ -103,7 +103,7 @@ Every local mutation appends **one** outbox entry, written to IndexedDB in the *
 }
 ```
 
-- `baseVersion` is the **optimistic concurrency** anchor. When a client edits a row it recorded `baseVersion = <version it last saw>`. The next edit to *the same row* from the same client chains off the version the server assigned to the previous edit — so per-entity causal order is preserved (see §4.3).
+- `baseVersion` is the **optimistic concurrency** anchor. When a client edits a row it recorded `baseVersion = <version it last saw>`. The next edit to *the same row* from the same client chains off the version the server assigned to the previous edit — so per-entity causal order is preserved (see §4.3). Until that response arrives the client has not seen a newer server version, so a second edit queued against the same row stores the **same** anchor; the push engine substitutes the version returned for the preceding entry of that entity when it sends the chain.
 - `patch` is **partial** (only fields the user actually changed), which is what makes field-level LWW possible (two users editing *different* fields of one row don't clobber each other).
 
 ### 4.2 Server apply (idempotent + atomic on D1)
@@ -123,7 +123,7 @@ Every local mutation appends **one** outbox entry, written to IndexedDB in the *
 
 ### 4.3 Ordering: outbox vs server monotonic versions
 
-- The client's outbox is a **FIFO with per-entity causal order**: for a given `entityId`, entries must be sent and applied in the order created (each `baseVersion` references the previous entry's assigned `version`). Entries for *different* entities are independent and may be interleaved arbitrarily.
+- The client's outbox is a **FIFO with per-entity causal order**: for a given `entityId`, entries must be sent and applied in the order created (each `baseVersion` references the previous entry's assigned `version`). Entries for *different* entities are independent and may be interleaved arbitrarily. The queued `baseVersion` is authoritative only for the **first un-acked entry per entity**; the engine replaces the anchor of every subsequent entry with the `version` from the preceding push result before sending it.
 - The server assigns `seq` and `version` in **arrival order** — the server's ordering is authoritative. The client's local optimistic values are **discarded** on ack; the client adopts the server's returned `version` and advances its cursor to the returned `seq`.
 - The push **response** returns, per entry, `{ _tag: "applied", entityId, version, seq }` (or `"alreadyApplied"` / `"conflict"` / `"tombstone"`). Because the response carries the authoritative `seq`, the client can advance its pull cursor past its own writes without a second round-trip.
 

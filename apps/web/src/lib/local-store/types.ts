@@ -90,13 +90,27 @@ export interface LocalStore {
   mergeServer: (rows: ReadonlyArray<ServerRow>) => Promise<number>
 
   /**
-   * Drop acked outbox entries and adopt the server's rows. One transaction, so
-   * the queue and the mirror cannot disagree afterwards.
+   * Drop acked outbox entries, adopt the server's rows, and advance the pull
+   * cursor. One transaction, so the queue, the mirror, and the cursor cannot
+   * disagree afterwards. The cursor never moves backwards.
+   *
+   * The push response carries the authoritative `seq` for the client's own
+   * writes; passing it here lets the cursor move past them without a second
+   * pull round-trip (`docs/sync-protocol-draft.md` §4.3/§7.4).
    */
   ack: (
     clientMutationIds: ReadonlyArray<string>,
-    rows?: ReadonlyArray<ServerRow>
+    rows?: ReadonlyArray<ServerRow>,
+    cursor?: number
   ) => Promise<void>
+
+  /**
+   * Drop a mirrored row without queueing a mutation. The server uses this when
+   * a row is no longer visible to this user (a visibility flip, or a hard
+   * purge), which is "remove from mirror", not a soft delete
+   * (`docs/sync-protocol-draft.md` §3.1/DP-9).
+   */
+  removeFromMirror: (entityType: SyncEntityType, entityId: string) => Promise<void>
 
   /** The last feed `seq` applied to the mirror (0 = nothing seen yet). */
   cursor: () => Promise<number>

@@ -85,8 +85,9 @@ describe("local store", () => {
 
     const pending = await store.pending()
     expect(pending).toHaveLength(2)
-    // Both entries reference the last *server* version; the push engine chains
-    // them per entity (sync-protocol §4.3).
+    // Neither entry invents a server version: both still reference the last
+    // version the client saw (0). The push engine rewrites the second anchor
+    // from the first entry's push result (sync-protocol §4.1/§4.3).
     expect(pending.map((entry) => entry.baseVersion)).toEqual([0, 0])
     expect(pending[1]!.patch).toEqual({ checked: true })
     store.close()
@@ -150,10 +151,15 @@ describe("local store", () => {
       deletedAt: null,
       data: { title: "پیش‌نویس", checked: false, sortOrder: 0 }
     }
-    await store.ack([entry!.clientMutationId], [authoritative])
+    await store.ack([entry!.clientMutationId], [authoritative], 41)
 
     expect(await store.pending()).toHaveLength(0)
     expect(await store.get("listItem", id)).toMatchObject({ version: 7, updatedAt: authoritative.updatedAt })
+    // The push response's `seq` advances the pull cursor in the same
+    // transaction, and a stale value cannot rewind it.
+    expect(await store.cursor()).toBe(41)
+    await store.ack([], [], 12)
+    expect(await store.cursor()).toBe(41)
 
     // The next local edit uses the server version as its concurrency anchor.
     await store.writeLocal({
@@ -163,6 +169,29 @@ describe("local store", () => {
       patch: { checked: true }
     })
     expect((await store.pending())[0]!.baseVersion).toBe(7)
+    store.close()
+  })
+
+  it("removes a mirror row the server no longer shows, without queueing a mutation", async () => {
+    const store = await open(freshUser())
+    const id = uuidV7()
+    await store.mergeServer([
+      {
+        entityType: "listItem",
+        entityId: id,
+        version: 3,
+        updatedAt: new Date().toISOString(),
+        deletedAt: null,
+        data: { title: "خصوصی شد" }
+      }
+    ])
+
+    await store.removeFromMirror("listItem", id)
+
+    expect(await store.get("listItem", id)).toBeUndefined()
+    expect(await store.list("listItem")).toHaveLength(0)
+    // A visibility flip is not a local delete: nothing is queued to push.
+    expect(await store.pending()).toHaveLength(0)
     store.close()
   })
 
