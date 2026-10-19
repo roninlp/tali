@@ -29,6 +29,16 @@ export interface SyncTransport {
   readonly push: (entries: ReadonlyArray<SyncPushEntry>) => Promise<SyncPushResponse>
 }
 
+/** A non-2xx sync response; the stable code and details travel to the engine. */
+export class SyncRejected extends Error {
+  constructor(
+    readonly code: string,
+    readonly details: Readonly<Record<string, unknown>> = {}
+  ) {
+    super(code)
+  }
+}
+
 const request = async <A>(
   path: string,
   schema: Schema.ConstraintDecoder<A>,
@@ -46,12 +56,17 @@ const request = async <A>(
   }
   const body: unknown = await response.json().catch(() => undefined)
   if (!response.ok) {
-    const code = Schema.decodeUnknownOption(
+    const envelope = Schema.decodeUnknownOption(
       Schema.Struct({
-        error: Schema.Struct({ code: Schema.String })
+        error: Schema.Struct({
+          code: Schema.String,
+          details: Schema.optional(Schema.Record(Schema.String, Schema.Unknown))
+        })
       })
     )(body)
-    throw new Error(code._tag === "Some" ? code.value.error.code : "sync-failed")
+    throw envelope._tag === "Some"
+      ? new SyncRejected(envelope.value.error.code, envelope.value.error.details ?? {})
+      : new SyncRejected("sync-failed")
   }
   return Schema.decodeUnknownSync(schema)(body)
 }
@@ -160,7 +175,24 @@ export const createSyncEngine = (
         const chained = versionByEntity.get(key)
         return chained === undefined ? entry : { ...entry, baseVersion: chained }
       })
-      const response = await transport.push(entries)
+      let response: SyncPushResponse
+      try {
+        response = await transport.push(entries)
+      } catch (cause) {
+        // A 403 means this entry can never be applied (the row went private,
+        // or belongs to another household). Retrying would fail forever and
+        // block every later entry, so drop that entity's queue and mirror row.
+        if (!(cause instanceof SyncRejected) || cause.code !== "Forbidden") throw cause
+        const entityId = cause.details.entityId
+        if (typeof entityId !== "string") throw cause
+        const poisoned = pending.filter((entry) => entry.entityId === entityId)
+        if (poisoned.length === 0) throw cause
+        await store.ack(poisoned.map((entry) => entry.clientMutationId))
+        for (const entityType of new Set(poisoned.map((entry) => entry.entityType))) {
+          await store.removeFromMirror(entityType, entityId)
+        }
+        continue
+      }
       for (const result of response.results) {
         versionByEntity.set(
           `${result.entityType}\u0000${result.entityId}`,
@@ -168,10 +200,12 @@ export const createSyncEngine = (
         )
       }
       const rows = response.results.flatMap(asServerRows)
+      // Deliberately no cursor here: a push's highest `seq` is not contiguous
+      // with what this device has pulled. A remote change committed between
+      // our pull and our push would be skipped forever if we jumped to it.
       await store.ack(
         response.results.map((result) => result.clientMutationId),
-        rows,
-        response.cursor
+        rows
       )
       // Defensive: a server result set with no ids would otherwise spin.
       if (response.results.length === 0) return

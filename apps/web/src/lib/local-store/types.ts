@@ -90,18 +90,17 @@ export interface LocalStore {
   mergeServer: (rows: ReadonlyArray<ServerRow>) => Promise<number>
 
   /**
-   * Drop acked outbox entries, adopt the server's rows, and advance the pull
-   * cursor. One transaction, so the queue, the mirror, and the cursor cannot
-   * disagree afterwards. The cursor never moves backwards.
+   * Drop acked outbox entries and adopt the server's rows. One transaction, so
+   * the queue and the mirror cannot disagree afterwards.
    *
-   * The push response carries the authoritative `seq` for the client's own
-   * writes; passing it here lets the cursor move past them without a second
-   * pull round-trip (`docs/sync-protocol-draft.md` §4.3/§7.4).
+   * It deliberately does **not** touch the pull cursor: a push's highest `seq`
+   * is not contiguous with what this device has pulled, so moving the cursor to
+   * it would skip a remote change committed between the pull and the push. The
+   * cursor only advances from `/sync/pull` (and bootstrap).
    */
   ack: (
     clientMutationIds: ReadonlyArray<string>,
-    rows?: ReadonlyArray<ServerRow>,
-    cursor?: number
+    rows?: ReadonlyArray<ServerRow>
   ) => Promise<void>
 
   /**

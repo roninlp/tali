@@ -151,14 +151,14 @@ describe("local store", () => {
       deletedAt: null,
       data: { title: "پیش‌نویس", checked: false, sortOrder: 0 }
     }
-    await store.ack([entry!.clientMutationId], [authoritative], 41)
+    await store.ack([entry!.clientMutationId], [authoritative])
 
     expect(await store.pending()).toHaveLength(0)
     expect(await store.get("listItem", id)).toMatchObject({ version: 7, updatedAt: authoritative.updatedAt })
-    // The push response's `seq` advances the pull cursor in the same
-    // transaction, and a stale value cannot rewind it.
-    expect(await store.cursor()).toBe(41)
-    await store.ack([], [], 12)
+    // `ack` never moves the pull cursor: a push's `seq` is not contiguous with
+    // what this device has pulled (a remote change in between would be lost).
+    expect(await store.cursor()).toBe(0)
+    await store.setCursor(41)
     expect(await store.cursor()).toBe(41)
 
     // The next local edit uses the server version as its concurrency anchor.

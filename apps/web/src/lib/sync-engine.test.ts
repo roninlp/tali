@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { uuidV7, type SyncBootstrapResponse, type SyncPullResponse, type SyncPushEntry, type SyncPushResponse } from "@tali/domain"
 import { openLocalStore } from "./local-store/store"
 import type { LocalStore } from "./local-store/types"
-import { createSyncEngine, type SyncTransport } from "./sync-engine"
+import { createSyncEngine, SyncRejected, type SyncTransport } from "./sync-engine"
 
 /**
  * The client half of #18: the handler behind `registerSync` pulls deltas into
@@ -93,7 +93,9 @@ describe("client sync engine", () => {
       version: 1,
       data: { title: "سرور" }
     })
-    expect(await store.cursor()).toBe(9)
+    // Only pulls advance the cursor; the push's seq (9) may not be contiguous
+    // with what this device has pulled, so ack must not jump to it.
+    expect(await store.cursor()).toBe(0)
     store.close()
   })
 
@@ -257,6 +259,123 @@ describe("client sync engine", () => {
     expect(await store.get("listItem", stale)).toBeUndefined()
     expect(await store.get("listItem", fresh)).toBeDefined()
     expect(await store.cursor()).toBe(41)
+    store.close()
+  })
+
+  it("does not skip a remote change that lands between our pull and our push", async () => {
+    const store = await open()
+    const local = uuidV7()
+    const remote = uuidV7()
+    await store.setCursor(10)
+    await store.writeLocal({
+      entityType: "listItem",
+      entityId: local,
+      op: "upsert",
+      patch: { title: "محلی" }
+    })
+
+    // The spouse's change is committed at seq 15 after our pull but before our
+    // push (which takes seq 20). Advancing the cursor to 20 would skip seq 15.
+    let remoteLanded = false
+    const engine = createSyncEngine(
+      transport({
+        pull: async (cursor) => {
+          if (!remoteLanded || cursor >= 15) return emptyPull(cursor)
+          return {
+            ...emptyPull(15),
+            entries: [
+              {
+                seq: 15,
+                entityType: "listItem",
+                entityId: remote,
+                op: "upsert",
+                version: 1,
+                updatedAt: "2026-10-19T08:00:00.000Z",
+                ownerId: "spouse",
+                visibility: "shared"
+              }
+            ],
+            items: [
+              {
+                entityType: "listItem",
+                entityId: remote,
+                version: 1,
+                updatedAt: "2026-10-19T08:00:00.000Z",
+                deletedAt: null,
+                data: { title: "از همسر" }
+              }
+            ],
+            nextCursor: 15
+          }
+        },
+        push: async (entries) => {
+          remoteLanded = true
+          return {
+            results: entries.map((entry) => ({
+              _tag: "applied" as const,
+              clientMutationId: entry.clientMutationId,
+              entityType: entry.entityType,
+              entityId: entry.entityId,
+              version: 1,
+              seq: 20
+            })),
+            cursor: 20
+          }
+        }
+      })
+    )
+
+    await engine.sync(store)
+    await engine.sync(store)
+
+    expect(await store.get("listItem", remote)).toMatchObject({ data: { title: "از همسر" } })
+    store.close()
+  })
+
+  it("drops an outbox entry the server will never accept instead of poisoning the queue", async () => {
+    const store = await open()
+    const poisoned = uuidV7()
+    const healthy = uuidV7()
+    await store.writeLocal({
+      entityType: "listItem",
+      entityId: poisoned,
+      op: "upsert",
+      patch: { title: "خصوصی شد" }
+    })
+    await store.writeLocal({
+      entityType: "listItem",
+      entityId: healthy,
+      op: "upsert",
+      patch: { title: "سالم" }
+    })
+
+    let calls = 0
+    const engine = createSyncEngine(
+      transport({
+        push: async (entries) => {
+          calls += 1
+          if (calls === 1) {
+            throw new SyncRejected("Forbidden", { entityId: poisoned })
+          }
+          return {
+            results: entries.map((entry) => ({
+              _tag: "applied" as const,
+              clientMutationId: entry.clientMutationId,
+              entityType: entry.entityType,
+              entityId: entry.entityId,
+              version: 1,
+              seq: 30
+            })),
+            cursor: 30
+          }
+        }
+      })
+    )
+
+    await expect(engine.sync(store)).resolves.toBeUndefined()
+    expect(await store.pending()).toHaveLength(0)
+    expect(await store.get("listItem", poisoned)).toBeUndefined()
+    expect(await store.get("listItem", healthy)).toBeDefined()
     store.close()
   })
 
