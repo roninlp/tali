@@ -2,10 +2,11 @@ import { Effect, Layer } from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/http"
 import { RpcServer, RpcSerialization } from "effect/rpc"
 import { ApiRpcs } from "@tali/rpc"
-import { ListItemRepoLive } from "@tali/sql"
+import { ListItemRepoLive, PushSubscriptionRepoLive } from "@tali/sql"
 import { ListItemService, ListItemServiceLive } from "./list-item-service.js"
 import { AuthServiceLive } from "./auth-service.js"
 import { AuthRoutes } from "./auth-routes.js"
+import { PushRoutes } from "./push-routes.js"
 import { SyncRoutes } from "./sync.js"
 import { SyncServiceLive } from "./sync-service.js"
 
@@ -39,10 +40,12 @@ export const AppLayer = Layer.mergeAll(
   HttpRouter.add("GET", "/health", HttpServerResponse.json({ ok: true })),
   SyncRoutes,
   AuthRoutes,
+  PushRoutes,
   RpcLayer
 ).pipe(
   Layer.provide(AuthServiceLive),
   Layer.provide(SyncServiceLive),
   Layer.provide(ListItemServiceLive),
-  Layer.provide(ListItemRepoLive)
+  Layer.provide(ListItemRepoLive),
+  Layer.provide(PushSubscriptionRepoLive)
 )

@@ -12,12 +12,21 @@ export default function Document(props: ParentProps) {
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Tali</title>
-        {/* Inline mark so the SPA never 404s on /favicon.ico; the real icons and
-            manifest land with the service-worker ticket. */}
+        <meta name="description" content="تالی — برنامه‌ریز شخصی و خانوادگی" />
+        <meta name="theme-color" content="#2f5fe0" />
+        {/* Installable PWA shell: the manifest + service worker are what let a
+            Web Push subscription survive the page (ticket #20). */}
+        <link rel="manifest" href="/manifest.webmanifest" />
+        <link rel="apple-touch-icon" href="/icons/icon-180.png" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-title" content="تالی" />
+        {/* Inline mark so the SPA never 404s on /favicon.ico; the PNG icons are
+            the installable ones referenced by the manifest. */}
         <link
           rel="icon"
           href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%232f5fe0'/%3E%3Ctext x='32' y='45' font-size='38' text-anchor='middle' fill='%23fff'%3E%D8%AA%3C/text%3E%3C/svg%3E"
         />
+        <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
         {/* Base layout (reset, RTL, self-hosted Vazirmatn) lives in @tali/ui. */}
         <HydrationScript />
       </head>

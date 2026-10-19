@@ -29,6 +29,9 @@ import { AuthService } from "./auth-service.js"
 const SESSION_COOKIE = "tali_session"
 const SESSION_MAX_AGE = "30 days"
 
+/** The session cookie name, shared with route modules that authenticate too. */
+export { SESSION_COOKIE }
+
 /** Serialize a body and mark it uncacheable (auth responses are per-session). */
 const json = (
   status: number,

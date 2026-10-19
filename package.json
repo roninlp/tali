@@ -8,11 +8,13 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "dev": "turbo run dev"
+    "dev": "turbo run dev",
+    "test:push": "node scripts/test-push.mjs"
   },
   "devDependencies": {
     "turbo": "^2.11.8",
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "web-push": "^3.6.7"
   },
   "engines": {
     "node": ">=24"
