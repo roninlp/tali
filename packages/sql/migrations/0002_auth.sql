@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS households (
   id          TEXT PRIMARY KEY,
   name        TEXT NOT NULL,
   invite_code TEXT NOT NULL,
-  created_by  TEXT NOT NULL,
+  created_by  TEXT NOT NULL REFERENCES users (id),
   created_at  TEXT NOT NULL
 );
 
@@ -28,8 +28,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_households_invite_code ON households (invi
 
 CREATE TABLE IF NOT EXISTS memberships (
   id           TEXT PRIMARY KEY,
-  household_id TEXT NOT NULL,
-  user_id      TEXT NOT NULL,
+  household_id TEXT NOT NULL REFERENCES households (id) ON DELETE CASCADE,
+  user_id      TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   role         TEXT NOT NULL,
   joined_at    TEXT NOT NULL
 );
@@ -40,7 +40,7 @@ CREATE INDEX IF NOT EXISTS idx_memberships_household ON memberships (household_i
 
 CREATE TABLE IF NOT EXISTS sessions (
   id         TEXT PRIMARY KEY,
-  user_id    TEXT NOT NULL,
+  user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   token_hash TEXT NOT NULL,
   expires_at TEXT NOT NULL,
   created_at TEXT NOT NULL

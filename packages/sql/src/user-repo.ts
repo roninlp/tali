@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Schema } from "effect"
-import { SqlClient, SqlModel, SqlSchema } from "effect/sql"
+import { SqlClient, SqlModel, SqlSchema, Statement } from "effect/sql"
 import { User } from "@tali/domain"
 
 /**
@@ -27,11 +27,18 @@ export class UserRepo extends Context.Service<UserRepo>()("UserRepo", {
       execute: (email) => sql`SELECT * FROM users WHERE email = ${email}`
     })
 
+    /**
+     * Raw statement so `D1Client.batch` can insert the user and its first
+     * session atomically (D1 has no interactive transactions).
+     */
+    const insertStatement = (user: User): Statement.Statement<User> =>
+      sql<User>`INSERT INTO users ${sql.insert(user as unknown as Record<string, unknown>)} RETURNING *`
+
     return {
       insert: base.insert,
       findById: base.findById,
-      update: base.update,
-      findByEmail
+      findByEmail,
+      insertStatement
     } as const
   })
 }) {}

@@ -1,19 +1,23 @@
 import { Context, Effect, Layer, Option } from "effect"
+import { D1Client } from "@effect/sql-d1"
 import {
   AlreadyInHousehold,
   CreateHouseholdInput,
   EmailAlreadyRegistered,
   Household,
+  HouseholdFull,
   InvalidCredentials,
   InviteInvalid,
   JoinHouseholdInput,
   LoginInput,
   Membership,
+  normalizeEmail,
   RegisterInput,
   Session,
   toUserProfile,
   Unauthorized,
   User,
+  type InviteCode,
   type SessionContext,
   type UserId
 } from "@tali/domain"
@@ -28,21 +32,22 @@ import {
   UserRepoLive
 } from "@tali/sql"
 import { PasswordHasher, PasswordHasherLive } from "./password-hasher.js"
+import { randomToken, sha256Hex } from "./bytes.js"
 
 /** 30 days — long enough for a two-person household, short enough to re-auth. */
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
+/** Invite codes are short-lived secrets handed over out-of-band. */
+const INVITE_CODE_BYTES = 8
 
-const toHex = (bytes: Uint8Array): string =>
-  Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
-
-const randomToken = (bytes: number): string =>
-  toHex(crypto.getRandomValues(new Uint8Array(bytes)))
-
-const sha256Hex = (value: string): Effect.Effect<string> =>
-  Effect.promise(async () => {
-    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))
-    return toHex(new Uint8Array(digest))
-  })
+const uniqueViolationOn = (
+  error: { readonly message: string; readonly cause: unknown },
+  column: string
+): boolean => {
+  const reason = error.cause as { readonly cause?: unknown }
+  return `${error.message} ${String(reason)} ${String(reason.cause)}`.includes(
+    `UNIQUE constraint failed: ${column}`
+  )
+}
 
 /**
  * The auth & shared-space service (Slice 1 / ticket #15).
@@ -50,63 +55,72 @@ const sha256Hex = (value: string): Effect.Effect<string> =>
  * Owns ids, timestamps and session minting; repositories are pure SQL. Only the
  * domain errors (bad credentials, taken email, …) live in the error channel —
  * repository `SqlError`/`SchemaError` are unexpected and surface as defects.
+ *
+ * Multi-row writes (register, create-household) go through `D1Client.batch`,
+ * because D1 has no interactive transactions (domain-model-draft §1.3).
  */
 export class AuthService extends Context.Service<AuthService>()("AuthService", {
   make: Effect.gen(function*() {
+    const d1 = yield* D1Client.D1Client
     const users = yield* UserRepo
     const households = yield* HouseholdRepo
     const memberships = yield* MembershipRepo
     const sessions = yield* SessionRepo
     const hasher = yield* PasswordHasher
 
-    const mintSession = (userId: UserId): Effect.Effect<string> =>
+    /** Build a session row + its raw cookie token (no I/O). */
+    const mintSession = (userId: UserId): Effect.Effect<{ token: string; session: Session }> =>
       Effect.gen(function*() {
         const token = randomToken(32)
         const tokenHash = yield* sha256Hex(token)
         const now = new Date()
-        yield* sessions
-          .insert(
-            Session.insert.make({
-              userId,
-              tokenHash,
-              expiresAt: new Date(now.getTime() + SESSION_TTL_MS).toISOString(),
-              createdAt: now.toISOString()
-            })
-          )
-          .pipe(Effect.orDie)
-        return token
+        return {
+          token,
+          session: Session.insert.make({
+            userId,
+            tokenHash,
+            expiresAt: new Date(now.getTime() + SESSION_TTL_MS).toISOString(),
+            createdAt: now.toISOString()
+          })
+        }
       })
 
     const register = (input: RegisterInput) =>
       Effect.gen(function*() {
-        const email = input.email.trim().toLowerCase()
+        const email = normalizeEmail(input.email)
         const existing = yield* users.findByEmail(email).pipe(Effect.orDie)
         if (Option.isSome(existing)) {
           return yield* Effect.fail(new EmailAlreadyRegistered({ email }))
         }
         const passwordHash = yield* hasher.hash(input.password)
         const now = new Date().toISOString()
-        const user = yield* users
-          .insert(
-            User.insert.make({
-              email,
-              passwordHash,
-              displayName: input.displayName,
-              timeZone: input.timeZone,
-              weekStart: "saturday",
-              digits: "persian",
-              createdAt: now,
-              updatedAt: now
-            })
+        const user = User.insert.make({
+          email,
+          passwordHash,
+          displayName: input.displayName,
+          timeZone: input.timeZone,
+          weekStart: "saturday",
+          digits: "persian",
+          createdAt: now,
+          updatedAt: now
+        })
+        const { token, session } = yield* mintSession(user.id)
+        // Atomic: a user without its first session cannot be logged into.
+        const [userRows] = yield* d1
+          .batch([users.insertStatement(user), sessions.insertStatement(session)])
+          .pipe(
+            Effect.catchTag("SqlError", (error) =>
+              uniqueViolationOn(error, "users.email")
+                ? Effect.fail(new EmailAlreadyRegistered({ email }))
+                : Effect.die(error)
+            )
           )
-          .pipe(Effect.orDie)
-        const token = yield* mintSession(user.id)
-        return { user, token }
+        return { user: userRows[0], token }
       })
 
     const login = (input: LoginInput) =>
       Effect.gen(function*() {
-        const email = input.email.trim().toLowerCase()
+        const email = normalizeEmail(input.email)
         const found = yield* users.findByEmail(email).pipe(Effect.orDie)
         if (Option.isNone(found)) {
           return yield* Effect.fail(new InvalidCredentials())
@@ -116,7 +130,8 @@ export class AuthService extends Context.Service<AuthService>()("AuthService", {
         if (!ok) {
           return yield* Effect.fail(new InvalidCredentials())
         }
-        const token = yield* mintSession(user.id)
+        const { token, session } = yield* mintSession(user.id)
+        yield* sessions.insert(session).pipe(Effect.orDie)
         return { user, token }
       })
 
@@ -126,7 +141,11 @@ export class AuthService extends Context.Service<AuthService>()("AuthService", {
         yield* sessions.deleteByTokenHash(tokenHash).pipe(Effect.orDie)
       })
 
-    const authorize = (token: string) =>
+    /**
+     * Resolve the authenticated principal plus its household (if any), renewing
+     * the session's expiry so an active household never has to re-login.
+     */
+    const me = (token: string): Effect.Effect<SessionContext, Unauthorized> =>
       Effect.gen(function*() {
         const tokenHash = yield* sha256Hex(token)
         const found = yield* sessions.findByTokenHash(tokenHash).pipe(Effect.orDie)
@@ -134,25 +153,21 @@ export class AuthService extends Context.Service<AuthService>()("AuthService", {
           return yield* Effect.fail(new Unauthorized())
         }
         const session = found.value
-        if (Date.parse(session.expiresAt) <= Date.now()) {
+        const now = Date.now()
+        if (Date.parse(session.expiresAt) <= now) {
           yield* sessions.deleteByTokenHash(tokenHash).pipe(Effect.orDie)
           return yield* Effect.fail(new Unauthorized())
         }
-        return yield* users.findById(session.userId).pipe(Effect.orDie)
-      })
-
-    /** Resolve the authenticated principal plus its household (if any). */
-    const contextFor = (token: string): Effect.Effect<SessionContext, Unauthorized> =>
-      Effect.gen(function*() {
-        const user = yield* authorize(token)
+        yield* sessions
+          .extend({ tokenHash, expiresAt: new Date(now + SESSION_TTL_MS).toISOString() })
+          .pipe(Effect.orDie)
+        const user = yield* users.findById(session.userId).pipe(Effect.orDie)
         const membership = yield* memberships.findByUserId(user.id).pipe(Effect.orDie)
         return {
           user: toUserProfile(user),
           householdId: Option.isSome(membership) ? membership.value.householdId : null
         }
       })
-
-    const me = (token: string): Effect.Effect<SessionContext, Unauthorized> => contextFor(token)
 
     const createHousehold = (userId: UserId, input: CreateHouseholdInput) =>
       Effect.gen(function*() {
@@ -161,27 +176,29 @@ export class AuthService extends Context.Service<AuthService>()("AuthService", {
           return yield* Effect.fail(new AlreadyInHousehold())
         }
         const now = new Date().toISOString()
-        const household = yield* households
-          .insert(
-            Household.insert.make({
-              name: input.name,
-              inviteCode: randomToken(8),
-              createdBy: userId,
-              createdAt: now
-            })
+        const household = Household.insert.make({
+          name: input.name,
+          inviteCode: randomToken(INVITE_CODE_BYTES) as InviteCode,
+          createdBy: userId,
+          createdAt: now
+        })
+        const membership = Membership.insert.make({
+          householdId: household.id,
+          userId,
+          role: "owner",
+          joinedAt: now
+        })
+        // Atomic: a household without its owner membership would be unreachable.
+        const [householdRows] = yield* d1
+          .batch([households.insertStatement(household), memberships.insertStatement(membership)])
+          .pipe(
+            Effect.catchTag("SqlError", (error) =>
+              uniqueViolationOn(error, "memberships.user_id")
+                ? Effect.fail(new AlreadyInHousehold())
+                : Effect.die(error)
+            )
           )
-          .pipe(Effect.orDie)
-        yield* memberships
-          .insert(
-            Membership.insert.make({
-              householdId: household.id,
-              userId,
-              role: "owner",
-              joinedAt: now
-            })
-          )
-          .pipe(Effect.orDie)
-        return household
+        return householdRows[0]
       })
 
     const joinHousehold = (userId: UserId, input: JoinHouseholdInput) =>
@@ -196,24 +213,33 @@ export class AuthService extends Context.Service<AuthService>()("AuthService", {
           return yield* Effect.fail(new InviteInvalid({ inviteCode }))
         }
         const household = found.value
-        yield* memberships
-          .insert(
-            Membership.insert.make({
-              householdId: household.id,
-              userId,
-              role: "member",
-              joinedAt: new Date().toISOString()
-            })
-          )
-          .pipe(Effect.orDie)
+        const membership = Membership.insert.make({
+          householdId: household.id,
+          userId,
+          role: "member",
+          joinedAt: new Date().toISOString()
+        })
+        // The cap is enforced inside the insert, so two concurrent joins cannot
+        // both occupy the second slot (CC-01: two memberships).
+        const inserted = yield* memberships.insertIfRoom(membership).pipe(
+          Effect.catchTag("SqlError", (error) =>
+            uniqueViolationOn(error, "memberships.user_id")
+              ? Effect.fail(new AlreadyInHousehold())
+              : Effect.die(error)
+          ),
+          Effect.catchTag("SchemaError", Effect.die)
+        )
+        if (Option.isNone(inserted)) {
+          return yield* Effect.fail(new HouseholdFull())
+        }
         return household
       })
 
-    return { register, login, logout, me, contextFor, createHousehold, joinHousehold } as const
+    return { register, login, logout, me, createHousehold, joinHousehold } as const
   })
 }) {}
 
-/** Provides `AuthService`, wiring the repositories and the password hasher. */
+/** Provides `AuthService`, wiring the repositories, D1 batch and password hasher. */
 export const AuthServiceLive = Layer.effect(AuthService, AuthService.make).pipe(
   Layer.provide(UserRepoLive),
   Layer.provide(HouseholdRepoLive),

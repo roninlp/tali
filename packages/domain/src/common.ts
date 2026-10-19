@@ -36,3 +36,21 @@ export type Visibility = Schema.Schema.Type<typeof Visibility>
 /** Household membership role; the first user is the `owner`, the second a `member`. */
 export const MembershipRole = Schema.Literals(["owner", "member"])
 export type MembershipRole = Schema.Schema.Type<typeof MembershipRole>
+
+const EMAIL_PATTERN = /^\s*[^\s@]+@[^\s@]+\.[^\s@]+\s*$/
+
+/** Email address: format-checked at the schema edge, canonicalized by `normalizeEmail`. */
+export const Email = Schema.String.check(Schema.isPattern(EMAIL_PATTERN)).pipe(
+  Schema.brand("Email")
+)
+export type Email = Schema.Schema.Type<typeof Email>
+
+/**
+ * Canonical stored/looked-up form of an email. Schema validation guarantees the
+ * shape; this only lower-cases and trims so two spellings map to one row.
+ */
+export const normalizeEmail = (raw: string): Email => raw.trim().toLowerCase() as Email
+
+/** Opaque invite secret the second user presents to join a household. */
+export const InviteCode = Schema.String.pipe(Schema.brand("InviteCode"))
+export type InviteCode = Schema.Schema.Type<typeof InviteCode>

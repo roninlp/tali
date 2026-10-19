@@ -2,7 +2,9 @@ import { Schema } from "effect"
 import { Model } from "effect/schema"
 import {
   Digits,
+  Email,
   HouseholdId,
+  InviteCode,
   MembershipId,
   MembershipRole,
   SessionId,
@@ -23,7 +25,7 @@ import {
 
 export class User extends Model.Class<User>("User")({
   id: Model.UuidV7Insert(UserId),
-  email: Schema.String,
+  email: Email,
   passwordHash: Model.Sensitive(Schema.String),
   displayName: Schema.String,
   timeZone: Schema.String,
@@ -37,7 +39,7 @@ export class Household extends Model.Class<Household>("Household")({
   id: Model.UuidV7Insert(HouseholdId),
   name: Schema.String,
   /** Shared secret the second user presents to join (the "invite"). */
-  inviteCode: Schema.String,
+  inviteCode: InviteCode,
   createdBy: UserId,
   createdAt: Schema.String
 }) {}
@@ -62,7 +64,7 @@ export class Session extends Model.Class<Session>("Session")({
 /** The public user projection returned over the wire (`passwordHash` never leaves the server). */
 export const UserProfile = Schema.Struct({
   id: UserId,
-  email: Schema.String,
+  email: Email,
   displayName: Schema.String,
   timeZone: Schema.String,
   weekStart: WeekStart,
@@ -88,27 +90,39 @@ export type SessionContext = Schema.Schema.Type<typeof SessionContext>
 
 // --- Inputs -------------------------------------------------------------
 
+const PASSWORD_MIN_LENGTH = 8
+
+/** Real IANA time-zone identifiers only (validated by the platform's `Intl`). */
+const isIanaTimeZone = Schema.makeFilter<string>((value) => {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value })
+    return true
+  } catch {
+    return "must be a valid IANA time zone identifier"
+  }
+})
+
 export const RegisterInput = Schema.Struct({
-  email: Schema.String,
-  password: Schema.String,
-  displayName: Schema.String,
-  timeZone: Schema.String
+  email: Email,
+  password: Schema.String.check(Schema.isMinLength(PASSWORD_MIN_LENGTH)),
+  displayName: Schema.String.check(Schema.isMinLength(1)),
+  timeZone: Schema.String.check(isIanaTimeZone)
 })
 export type RegisterInput = Schema.Schema.Type<typeof RegisterInput>
 
 export const LoginInput = Schema.Struct({
-  email: Schema.String,
+  email: Email,
   password: Schema.String
 })
 export type LoginInput = Schema.Schema.Type<typeof LoginInput>
 
 export const CreateHouseholdInput = Schema.Struct({
-  name: Schema.String
+  name: Schema.String.check(Schema.isMinLength(1))
 })
 export type CreateHouseholdInput = Schema.Schema.Type<typeof CreateHouseholdInput>
 
 export const JoinHouseholdInput = Schema.Struct({
-  inviteCode: Schema.String
+  inviteCode: InviteCode
 })
 export type JoinHouseholdInput = Schema.Schema.Type<typeof JoinHouseholdInput>
 
@@ -130,6 +144,8 @@ export class AlreadyInHousehold extends Schema.TaggedError<AlreadyInHousehold>()
   "AlreadyInHousehold",
   {}
 ) {}
+
+export class HouseholdFull extends Schema.TaggedError<HouseholdFull>()("HouseholdFull", {}) {}
 
 export class InviteInvalid extends Schema.TaggedError<InviteInvalid>()("InviteInvalid", {
   inviteCode: Schema.String

@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import { constantTimeEqual, fromHex, toHex } from "./bytes.js"
 
 /**
  * Password hashing (ticket #15).
@@ -7,7 +8,7 @@ import { Context, Effect, Layer } from "effect"
  * primitive (WebCrypto offers PBKDF2 only, and argon2 would need a WASM/pure-JS
  * dependency). This is an interim, Workers-native **PBKDF2-SHA256** implementation
  * behind a stable interface; the algorithm choice is tracked as a follow-up
- * decision ticket. Format: `pbkdf2-sha256$<iterations>$<saltHex>$<hashHex>`.
+ * decision ticket (#21). Format: `pbkdf2-sha256$<iterations>$<saltHex>$<hashHex>`.
  */
 const SCHEME = "pbkdf2-sha256"
 const ITERATIONS = 100_000
@@ -15,27 +16,6 @@ const KEY_BITS = 256
 const SALT_BYTES = 16
 
 const encoder = new TextEncoder()
-
-const toHex = (bytes: Uint8Array): string =>
-  Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
-
-const fromHex = (hex: string): Uint8Array => {
-  const out = new Uint8Array(hex.length / 2)
-  for (let i = 0; i < out.length; i++) {
-    out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16)
-  }
-  return out
-}
-
-/** Length-independent, value-independent comparison (avoids early exit). */
-const constantTimeEqual = (a: string, b: string): boolean => {
-  if (a.length !== b.length) return false
-  let diff = 0
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
-  }
-  return diff === 0
-}
 
 const derive = (password: string, salt: Uint8Array, iterations: number): Effect.Effect<Uint8Array> =>
   Effect.promise(async () => {

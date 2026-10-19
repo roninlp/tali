@@ -1,5 +1,5 @@
-import { Effect } from "effect"
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { Effect, Schema } from "effect"
+import { HttpRouter, HttpServerError, HttpServerRequest, HttpServerResponse } from "effect/http"
 import {
   CreateHouseholdInput,
   JoinHouseholdInput,
@@ -20,17 +20,23 @@ import { AuthService } from "./auth-service.js"
  */
 
 const SESSION_COOKIE = "tali_session"
+const SESSION_MAX_AGE = "30 days"
 
-const json = (status: number, body: unknown): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
-  HttpServerResponse.json(body, { status }).pipe(Effect.orDie)
+/** Serialize a body and mark it uncacheable (auth responses are per-session). */
+const json = (
+  status: number,
+  body: unknown
+): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
+  HttpServerResponse.json(body, { status }).pipe(
+    Effect.map(HttpServerResponse.setHeader("cache-control", "no-store")),
+    Effect.orDie
+  )
 
-/** Maps the leftover (non-domain) failures: a bad body is a 400, anything else a 500. */
-const orElse = (error: unknown): Effect.Effect<HttpServerResponse.HttpServerResponse> => {
-  const tag = (error as { readonly _tag?: string })._tag
-  return tag === "SchemaError"
+/** Maps non-domain failures: a bad body is a 400, anything else a 500. */
+const unexpectedFailure = (error: unknown): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
+  Schema.isSchemaError(error) || HttpServerError.isHttpServerError(error)
     ? json(400, { code: "BadRequest" })
     : json(500, { code: "InternalError" })
-}
 
 export const AuthRoutes = HttpRouter.use((router) =>
   Effect.gen(function*() {
@@ -45,14 +51,20 @@ export const AuthRoutes = HttpRouter.use((router) =>
         httpOnly: true,
         sameSite: "lax",
         path: "/",
-        maxAge: "30 days",
+        maxAge: SESSION_MAX_AGE,
         secure: request.url.startsWith("https://")
       })
 
-    const tokenFrom = (request: HttpServerRequest.HttpServerRequest): Effect.Effect<string, Unauthorized> => {
-      const token = request.cookies[SESSION_COOKIE]
-      return token === undefined ? Effect.fail(new Unauthorized()) : Effect.succeed(token)
-    }
+    /** Resolve the cookie's token and principal, failing `Unauthorized` without one. */
+    const authenticate = (request: HttpServerRequest.HttpServerRequest) =>
+      Effect.gen(function*() {
+        const token = request.cookies[SESSION_COOKIE]
+        if (token === undefined) {
+          return yield* Effect.fail(new Unauthorized())
+        }
+        const context = yield* auth.me(token)
+        return { token, context }
+      })
 
     yield* router.add(
       "POST",
@@ -68,7 +80,7 @@ export const AuthRoutes = HttpRouter.use((router) =>
           {
             EmailAlreadyRegistered: () => json(409, { code: "EmailAlreadyRegistered" })
           },
-          orElse
+          unexpectedFailure
         )
       )
     )
@@ -87,7 +99,7 @@ export const AuthRoutes = HttpRouter.use((router) =>
           {
             InvalidCredentials: () => json(401, { code: "InvalidCredentials" })
           },
-          orElse
+          unexpectedFailure
         )
       )
     )
@@ -103,7 +115,7 @@ export const AuthRoutes = HttpRouter.use((router) =>
         }
         const response = yield* json(200, { ok: true })
         return HttpServerResponse.expireCookieUnsafe(response, SESSION_COOKIE, { path: "/" })
-      }).pipe(Effect.catchTags({}, orElse))
+      }).pipe(Effect.catchTags({}, unexpectedFailure))
     )
 
     yield* router.add(
@@ -111,15 +123,15 @@ export const AuthRoutes = HttpRouter.use((router) =>
       "/auth/me",
       Effect.gen(function*() {
         const request = yield* HttpServerRequest.HttpServerRequest
-        const token = yield* tokenFrom(request)
-        const context = yield* auth.me(token)
-        return yield* json(200, context)
+        const { token, context } = yield* authenticate(request)
+        // Re-stamp the cookie so the sliding server-side expiry is mirrored client-side.
+        return setSession(yield* json(200, context), token, request)
       }).pipe(
         Effect.catchTags(
           {
             Unauthorized: () => json(401, { code: "Unauthorized" })
           },
-          orElse
+          unexpectedFailure
         )
       )
     )
@@ -129,18 +141,17 @@ export const AuthRoutes = HttpRouter.use((router) =>
       "/household",
       Effect.gen(function*() {
         const request = yield* HttpServerRequest.HttpServerRequest
-        const token = yield* tokenFrom(request)
-        const context = yield* auth.me(token)
+        const { token, context } = yield* authenticate(request)
         const input = yield* HttpServerRequest.schemaBodyJson(CreateHouseholdInput)
         const household = yield* auth.createHousehold(context.user.id, input)
-        return yield* json(201, { household })
+        return setSession(yield* json(201, { household }), token, request)
       }).pipe(
         Effect.catchTags(
           {
             Unauthorized: () => json(401, { code: "Unauthorized" }),
             AlreadyInHousehold: () => json(409, { code: "AlreadyInHousehold" })
           },
-          orElse
+          unexpectedFailure
         )
       )
     )
@@ -150,19 +161,19 @@ export const AuthRoutes = HttpRouter.use((router) =>
       "/household/join",
       Effect.gen(function*() {
         const request = yield* HttpServerRequest.HttpServerRequest
-        const token = yield* tokenFrom(request)
-        const context = yield* auth.me(token)
+        const { token, context } = yield* authenticate(request)
         const input = yield* HttpServerRequest.schemaBodyJson(JoinHouseholdInput)
         const household = yield* auth.joinHousehold(context.user.id, input)
-        return yield* json(200, { household })
+        return setSession(yield* json(200, { household }), token, request)
       }).pipe(
         Effect.catchTags(
           {
             Unauthorized: () => json(401, { code: "Unauthorized" }),
             AlreadyInHousehold: () => json(409, { code: "AlreadyInHousehold" }),
+            HouseholdFull: () => json(409, { code: "HouseholdFull" }),
             InviteInvalid: () => json(404, { code: "InviteInvalid" })
           },
-          orElse
+          unexpectedFailure
         )
       )
     )
