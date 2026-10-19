@@ -112,6 +112,12 @@ export interface LocalStore {
    */
   removeFromMirror: (entityType: SyncEntityType, entityId: string) => Promise<void>
 
+  /**
+   * Empty the mirror without touching the outbox, cursor or drafts. Used by
+   * the sync engine when a stale cursor forces a re-bootstrap.
+   */
+  clearMirror: () => Promise<void>
+
   /** The last feed `seq` applied to the mirror (0 = nothing seen yet). */
   cursor: () => Promise<number>
   setCursor: (seq: number) => Promise<void>

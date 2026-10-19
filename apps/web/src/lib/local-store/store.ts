@@ -258,6 +258,14 @@ export const openLocalStore = async (
       notify()
     },
 
+    async clearMirror() {
+      ensureOpen()
+      const tx = db.transaction(MIRROR, "readwrite")
+      tx.objectStore(MIRROR).clear()
+      await txDone(tx)
+      notify()
+    },
+
     async cursor() {
       ensureOpen()
       const tx = db.transaction(META, "readonly")

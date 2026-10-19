@@ -37,21 +37,6 @@ export class ListItemNotFound extends Schema.TaggedError<ListItemNotFound>()("Li
   id: ListItemId
 }) {}
 
-/**
- * A single entry in the sync change feed (CC-02). One `Change` per row
- * mutation; consumers reconcile by `version`/`updatedAt`.
- */
-export class Change extends Schema.Class<Change>("Change")({
-  entity: Schema.Literal("ListItem"),
-  id: ListItemId,
-  version: Schema.Number,
-  updatedAt: Schema.String,
-  deleted: Schema.Boolean
-}) {}
-
-/** Response of the plain-HTTP sync pull endpoint (`GET /sync/pull`). */
-export class SyncPullResponse extends Schema.Class<SyncPullResponse>("SyncPullResponse")({
-  cursor: Schema.Number,
-  changes: Schema.Array(Change),
-  hasMore: Schema.Boolean
-}) {}
+// The sync wire shapes (change feed, pull/push envelopes, hydrated rows) live
+// in `./sync.ts`: they are aggregate-agnostic, so they do not depend on this
+// dummy aggregate.
