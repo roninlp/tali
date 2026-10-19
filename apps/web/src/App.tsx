@@ -1,3 +1,4 @@
+import "@tali/ui/base.css"
 import { Loading } from "solid-js"
 import { Title } from "@solidjs/meta"
 import { AuthProvider } from "./lib/auth"

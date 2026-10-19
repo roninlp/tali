@@ -21,7 +21,9 @@ export function Button(props: ButtonProps) {
       style={{
         "font-family": tokens.font.sans,
         "border-radius": tokens.radius.md,
-        padding: `${tokens.space.sm} ${tokens.space.md}`,
+        "padding-block": tokens.space.sm,
+        "padding-inline-start": tokens.logical.ps.md,
+        "padding-inline-end": tokens.logical.pe.md,
         border: "1px solid transparent",
         cursor: props.disabled ? "not-allowed" : "pointer",
         opacity: props.disabled ? 0.6 : 1,
