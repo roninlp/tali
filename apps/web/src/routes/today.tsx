@@ -1,9 +1,11 @@
-import { Show } from "solid-js"
+import { createSignal, Show } from "solid-js"
 import { Title } from "@solidjs/meta"
 import { useNavigate } from "@solidjs/router"
 import { Button, tokens } from "@tali/ui"
 import { Guard } from "../components/guard"
+import { FormError } from "../components/form"
 import { useAuth } from "../lib/auth"
+import { authErrorMessage } from "../lib/auth-copy"
 
 export default function TodayRoute() {
   return (
@@ -25,11 +27,23 @@ function TodayPage() {
   const auth = useAuth()
   const navigate = useNavigate()
 
+  const [signOutBusy, setSignOutBusy] = createSignal(false)
+  const [signOutError, setSignOutError] = createSignal<string>()
+
   const name = () => auth.session()?.user.displayName ?? ""
 
   const signOut = async () => {
-    await auth.signOut()
-    navigate("/login", { replace: true })
+    if (signOutBusy()) return
+    setSignOutBusy(true)
+    setSignOutError(undefined)
+    const result = await auth.signOut()
+    setSignOutBusy(false)
+    if (result.ok) {
+      navigate("/login", { replace: true })
+    } else {
+      // The server still holds the session; say so instead of pretending.
+      setSignOutError(authErrorMessage(result.error.code))
+    }
   }
 
   return (
@@ -57,18 +71,19 @@ function TodayPage() {
         <div style={{ display: "grid", gap: "2px" }}>
           <strong style={{ "font-size": "1.1rem", color: tokens.color.brand }}>تالی</strong>
           <Show when={auth.session()?.user.displayName}>
-            {(name) => (
-              <span style={{ "font-size": "0.85rem", color: tokens.color.inkSoft }}>{name()}</span>
+            {(displayName) => (
+              <span style={{ "font-size": "0.85rem", color: tokens.color.inkSoft }}>{displayName()}</span>
             )}
           </Show>
         </div>
-        <Button variant="ghost" type="button" onClick={() => void signOut()}>
-          خروج
+        <Button variant="ghost" type="button" disabled={signOutBusy()} onClick={() => void signOut()}>
+          {signOutBusy() ? "در حال خروج…" : "خروج"}
         </Button>
       </header>
 
       <main style={{ padding: tokens.space.lg, display: "grid", gap: tokens.space.md, "max-width": "720px" }}>
         <h1 style={{ margin: 0, "font-size": "1.5rem" }}>امروز</h1>
+        <FormError message={signOutError()} />
         <section
           style={{
             background: tokens.color.surface,

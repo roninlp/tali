@@ -115,7 +115,7 @@ export function AuthFooterLink(props: { href: string; text: string; linkText: st
   )
 }
 
-export function Splash(props: { message?: string }) {
+export function Splash(props: { message?: string; action?: JSX.Element }) {
   return (
     <main
       dir="rtl"
@@ -125,11 +125,15 @@ export function Splash(props: { message?: string }) {
         "min-height": "100dvh",
         display: "grid",
         "place-items": "center",
+        padding: tokens.space.md,
         "font-family": tokens.font.sans,
         color: tokens.color.inkSoft
       }}
     >
-      <p>{props.message ?? "در حال بارگذاری…"}</p>
+      <div style={{ display: "grid", gap: tokens.space.md, "justify-items": "center", "text-align": "center" }}>
+        <p style={{ margin: 0 }}>{props.message ?? "در حال بارگذاری…"}</p>
+        {props.action}
+      </div>
     </main>
   )
 }

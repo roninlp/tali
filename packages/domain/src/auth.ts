@@ -88,6 +88,37 @@ export const SessionContext = Schema.Struct({
 })
 export type SessionContext = Schema.Schema.Type<typeof SessionContext>
 
+// --- Plain-HTTP response bodies -----------------------------------------
+//
+// Shared so the web client decodes exactly the shape the Worker sends; the
+// auth routes and `apps/web` both import these instead of hand-mirroring them.
+
+export const SessionResponse = SessionContext
+export type SessionResponse = SessionContext
+
+export const HouseholdResponse = Schema.Struct({ household: Household })
+export type HouseholdResponse = Schema.Schema.Type<typeof HouseholdResponse>
+
+export const OkResponse = Schema.Struct({ ok: Schema.Boolean })
+export type OkResponse = Schema.Schema.Type<typeof OkResponse>
+
+/**
+ * Stable client-facing codes for auth failures carried by the plain-HTTP
+ * `ErrorEnvelope` (see `error.ts`). `Network` is client-only (transport never
+ * reached the Worker) and is added at the edge, not here.
+ */
+export const AUTH_ERROR_CODES = [
+  "EmailAlreadyRegistered",
+  "InvalidCredentials",
+  "Unauthorized",
+  "AlreadyInHousehold",
+  "HouseholdFull",
+  "InviteInvalid",
+  "BadRequest",
+  "InternalError"
+] as const
+export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[number]
+
 // --- Inputs -------------------------------------------------------------
 
 const PASSWORD_MIN_LENGTH = 8

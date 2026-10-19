@@ -1,8 +1,11 @@
 import { Option, Schema } from "effect"
 import {
-  Household,
+  AUTH_ERROR_CODES,
+  ErrorEnvelope,
+  HouseholdResponse,
+  OkResponse,
   SessionContext,
-  UserProfile,
+  type AuthErrorCode,
   type CreateHouseholdInput,
   type JoinHouseholdInput,
   type LoginInput,
@@ -17,60 +20,40 @@ import { API_URL } from "./config"
  * set/cleared by the raw response. Every call sends `credentials: "include"`
  * so the `tali_session` cookie travels across the dev origin boundary.
  *
- * Failures are values, not exceptions: the API answers non-2xx with a
- * `{ code, ... }` envelope, which becomes an {@link AuthFailure} the UI maps to
- * Persian copy. A transport failure is the `Network` code.
+ * Failures are values, not exceptions: the API answers non-2xx with the shared
+ * `ErrorEnvelope`, which is decoded to an {@link AuthFailure} the UI maps to
+ * Persian copy. A transport failure (or a request that times out) is `Network`.
  */
 
-const SessionResponse = Schema.Struct({ user: UserProfile })
-const HouseholdResponse = Schema.Struct({ household: Household })
-const OkResponse = Schema.Struct({ ok: Schema.Boolean })
+/** No request may hang the boot splash or disable a form forever. */
+const REQUEST_TIMEOUT_MS = 15_000
 
-export type AuthFailureCode =
-  | "EmailAlreadyRegistered"
-  | "InvalidCredentials"
-  | "Unauthorized"
-  | "AlreadyInHousehold"
-  | "HouseholdFull"
-  | "InviteInvalid"
-  | "BadRequest"
-  | "InternalError"
-  | "Network"
+export type AuthFailureCode = AuthErrorCode | "Network"
 
 export interface AuthFailure {
   readonly code: AuthFailureCode
-  readonly status: number
+  /** Whether the same request is worth retrying (5xx, network, timeout). */
+  readonly retryable: boolean
 }
 
 export type ApiResult<A> =
   | { readonly ok: true; readonly value: A }
   | { readonly ok: false; readonly error: AuthFailure }
 
-const KNOWN_CODES: ReadonlySet<string> = new Set<AuthFailureCode>([
-  "EmailAlreadyRegistered",
-  "InvalidCredentials",
-  "Unauthorized",
-  "AlreadyInHousehold",
-  "HouseholdFull",
-  "InviteInvalid"
-])
+const KNOWN_CODES: ReadonlySet<string> = new Set(AUTH_ERROR_CODES)
 
-/** Read the stable code from the API envelope (`{ code }`, or the drafted `{ error: { code } }`). */
-const readCode = (body: unknown): string | undefined => {
-  if (typeof body !== "object" || body === null) return undefined
-  const direct = (body as { code?: unknown }).code
-  if (typeof direct === "string") return direct
-  const nested = (body as { error?: { code?: unknown } }).error?.code
-  return typeof nested === "string" ? nested : undefined
-}
-
-const classify = (status: number, body: unknown): AuthFailureCode => {
-  const code = readCode(body)
-  if (code !== undefined && KNOWN_CODES.has(code)) return code as AuthFailureCode
-  if (status === 401) return "Unauthorized"
-  if (status === 400 || status === 422) return "BadRequest"
-  if (status >= 500) return "InternalError"
-  return "InternalError"
+/** Decode the shared envelope. Anything malformed falls back to the status. */
+const classify = (status: number, body: unknown): AuthFailure => {
+  const envelope = Schema.decodeUnknownOption(ErrorEnvelope)(body)
+  if (Option.isSome(envelope)) {
+    const { code, retryable } = envelope.value.error
+    if (KNOWN_CODES.has(code)) {
+      return { code: code as AuthErrorCode, retryable }
+    }
+  }
+  if (status === 401) return { code: "Unauthorized", retryable: false }
+  if (status === 400 || status === 422) return { code: "BadRequest", retryable: false }
+  return { code: "InternalError", retryable: true }
 }
 
 const send = async <A>(
@@ -81,41 +64,45 @@ const send = async <A>(
 ): Promise<ApiResult<A>> => {
   let response: Response
   try {
-    const init: RequestInit = { method, credentials: "include" }
+    const init: RequestInit = {
+      method,
+      credentials: "include",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+    }
     if (body !== undefined) {
       init.headers = { "content-type": "application/json" }
       init.body = JSON.stringify(body)
     }
     response = await fetch(`${API_URL}${path}`, init)
   } catch {
-    return { ok: false, error: { code: "Network", status: 0 } }
+    return { ok: false, error: { code: "Network", retryable: true } }
   }
 
   const json: unknown = await response.json().catch(() => undefined)
   if (!response.ok) {
-    return { ok: false, error: { code: classify(response.status, json), status: response.status } }
+    return { ok: false, error: classify(response.status, json) }
   }
 
   const decoded = Schema.decodeUnknownOption(schema)(json)
   return Option.isSome(decoded)
     ? { ok: true, value: decoded.value }
-    : { ok: false, error: { code: "InternalError", status: response.status } }
+    : { ok: false, error: { code: "InternalError", retryable: false } }
 }
 
 export const authApi = {
   me: (): Promise<ApiResult<SessionContext>> => send("GET", "/auth/me", SessionContext),
 
-  register: (input: RegisterInput): Promise<ApiResult<{ user: UserProfile }>> =>
-    send("POST", "/auth/register", SessionResponse, input),
+  register: (input: RegisterInput): Promise<ApiResult<SessionContext>> =>
+    send("POST", "/auth/register", SessionContext, input),
 
-  login: (input: LoginInput): Promise<ApiResult<{ user: UserProfile }>> =>
-    send("POST", "/auth/login", SessionResponse, input),
+  login: (input: LoginInput): Promise<ApiResult<SessionContext>> =>
+    send("POST", "/auth/login", SessionContext, input),
 
   logout: (): Promise<ApiResult<{ ok: boolean }>> => send("POST", "/auth/logout", OkResponse),
 
-  createHousehold: (input: CreateHouseholdInput): Promise<ApiResult<{ household: Household }>> =>
+  createHousehold: (input: CreateHouseholdInput): Promise<ApiResult<HouseholdResponse>> =>
     send("POST", "/household", HouseholdResponse, input),
 
-  joinHousehold: (input: JoinHouseholdInput): Promise<ApiResult<{ household: Household }>> =>
+  joinHousehold: (input: JoinHouseholdInput): Promise<ApiResult<HouseholdResponse>> =>
     send("POST", "/household/join", HouseholdResponse, input)
 }

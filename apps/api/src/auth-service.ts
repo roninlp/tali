@@ -132,7 +132,13 @@ export class AuthService extends Context.Service<AuthService>()("AuthService", {
         }
         const { token, session } = yield* mintSession(user.id)
         yield* sessions.insert(session).pipe(Effect.orDie)
-        return { user, token }
+        // Same context `/auth/me` would report, so login needs no second round trip.
+        const membership = yield* memberships.findByUserId(user.id).pipe(Effect.orDie)
+        return {
+          user,
+          token,
+          householdId: Option.isSome(membership) ? membership.value.householdId : null
+        }
       })
 
     const logout = (token: string): Effect.Effect<void> =>

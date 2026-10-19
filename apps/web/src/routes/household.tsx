@@ -81,6 +81,7 @@ function Divider() {
 
 function CreateHousehold(props: { onCreated: (summary: HouseholdSummary) => void }) {
   const auth = useAuth()
+  const navigate = useNavigate()
 
   const [name, setName] = createSignal("خانه‌ی ما")
   const [error, setError] = createSignal<string>()
@@ -103,6 +104,10 @@ function CreateHousehold(props: { onCreated: (summary: HouseholdSummary) => void
 
     if (result.ok) {
       props.onCreated(result.value)
+    } else if (result.error.code === "AlreadyInHousehold") {
+      // The server knows about a membership this tab does not: resync, then go.
+      await auth.refresh()
+      navigate("/today", { replace: true })
     } else {
       setError(authErrorMessage(result.error.code))
     }
@@ -198,6 +203,9 @@ function JoinHousehold() {
     setBusy(false)
 
     if (result.ok) {
+      navigate("/today", { replace: true })
+    } else if (result.error.code === "AlreadyInHousehold") {
+      await auth.refresh()
       navigate("/today", { replace: true })
     } else {
       setError(authErrorMessage(result.error.code))
