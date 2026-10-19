@@ -35,12 +35,6 @@ declare module "virtual:file-routes" {
   /** The flat route manifest, in scan order. */
   const routes: readonly [
     {
-      path: "/";
-      page: true;
-      $component: FileRouteLazyRef<typeof import("./src/routes/index")>;
-      $$route?: undefined;
-    },
-    {
       path: "/*404";
       page: true;
       $component: FileRouteLazyRef<typeof import("./src/routes/[...404]")>;
@@ -53,9 +47,9 @@ declare module "virtual:file-routes" {
       $$route?: undefined;
     },
     {
-      path: "/today";
+      path: "/";
       page: true;
-      $component: FileRouteLazyRef<typeof import("./src/routes/today")>;
+      $component: FileRouteLazyRef<typeof import("./src/routes/index")>;
       $$route?: undefined;
     },
     {
@@ -68,6 +62,12 @@ declare module "virtual:file-routes" {
       path: "/register";
       page: true;
       $component: FileRouteLazyRef<typeof import("./src/routes/register")>;
+      $$route?: undefined;
+    },
+    {
+      path: "/today";
+      page: true;
+      $component: FileRouteLazyRef<typeof import("./src/routes/today")>;
       $$route?: undefined;
     }
   ];

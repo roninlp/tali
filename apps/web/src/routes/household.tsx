@@ -1,4 +1,4 @@
-import { createSignal, onSettled, Show } from "solid-js"
+import { createSignal, onSettled, Show, untrack } from "solid-js"
 import { Title } from "@solidjs/meta"
 import { useNavigate } from "@solidjs/router"
 import { Button, tokens } from "@tali/ui"
@@ -28,11 +28,12 @@ function HouseholdPage() {
   const auth = useAuth()
   const navigate = useNavigate()
   const [created, setCreated] = createSignal<HouseholdSummary>()
+  // Snapshot at mount: someone who already belongs to a household has no
+  // business here, but creating one *in* this screen must not skip the invite.
+  const alreadyInHousehold = untrack(() => auth.householdId() !== undefined)
 
-  // Someone who already belongs to a household has no business here — but only
-  // check on mount: creating one *in* this screen must not skip the invite step.
   onSettled(() => {
-    if (auth.householdId() !== undefined) {
+    if (alreadyInHousehold) {
       navigate("/today", { replace: true })
     }
   })

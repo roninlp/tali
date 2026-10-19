@@ -31,10 +31,10 @@ export function Guard(props: ParentProps<{ access: Access }>) {
   })
 
   createEffect(
-    () => ({ allowed: allowed(), status: auth.status() }),
-    ({ allowed: isAllowed, status }) => {
+    () => ({ allowed: allowed(), status: auth.status(), householdId: auth.householdId() }),
+    ({ allowed: isAllowed, status, householdId }) => {
       if (isAllowed || status === "checking") return
-      navigate(status === "signedOut" ? "/login" : landingPath(auth.householdId()), { replace: true })
+      navigate(status === "signedOut" ? "/login" : landingPath(householdId), { replace: true })
     }
   )
 
