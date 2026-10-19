@@ -2,6 +2,7 @@ import { Context, Effect, Layer, Option } from "effect"
 import { D1Client } from "@effect/sql-d1"
 import {
   AlreadyInHousehold,
+  ChangePasswordInput,
   CreateHouseholdInput,
   EmailAlreadyRegistered,
   Household,
@@ -12,6 +13,7 @@ import {
   LoginInput,
   Membership,
   normalizeEmail,
+  RateLimited,
   RegisterInput,
   Session,
   toUserProfile,
@@ -31,13 +33,17 @@ import {
   UserRepo,
   UserRepoLive
 } from "@tali/sql"
-import { PasswordHasher, PasswordHasherLive } from "./password-hasher.js"
+import { CredentialVerifier, CredentialVerifierLive } from "./credential-verifier.js"
+import { LoginRateLimiter, LoginRateLimiterLive } from "./login-rate-limiter.js"
 import { randomToken, sha256Hex } from "./bytes.js"
 
 /** 30 days — long enough for a two-person household, short enough to re-auth. */
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
 /** Invite codes are short-lived secrets handed over out-of-band. */
 const INVITE_CODE_BYTES = 8
+
+/** Rate-limit bucket identity: one email+IP pair shares a fixed window. */
+const limitKey = (email: string, clientIp: string): string => `${email}|${clientIp}`
 
 const uniqueViolationOn = (
   error: { readonly message: string; readonly cause: unknown },
@@ -66,7 +72,8 @@ export class AuthService extends Context.Service<AuthService>()("AuthService", {
     const households = yield* HouseholdRepo
     const memberships = yield* MembershipRepo
     const sessions = yield* SessionRepo
-    const hasher = yield* PasswordHasher
+    const verifier = yield* CredentialVerifier
+    const limiter = yield* LoginRateLimiter
 
     /** Build a session row + its raw cookie token (no I/O). */
     const mintSession = (userId: UserId): Effect.Effect<{ token: string; session: Session }> =>
@@ -92,11 +99,11 @@ export class AuthService extends Context.Service<AuthService>()("AuthService", {
         if (Option.isSome(existing)) {
           return yield* Effect.fail(new EmailAlreadyRegistered({ email }))
         }
-        const passwordHash = yield* hasher.hash(input.password)
+        const credential = yield* verifier.enroll(input.loginKey)
         const now = new Date().toISOString()
         const user = User.insert.make({
           email,
-          passwordHash,
+          ...credential,
           displayName: input.displayName,
           timeZone: input.timeZone,
           weekStart: "saturday",
@@ -118,18 +125,35 @@ export class AuthService extends Context.Service<AuthService>()("AuthService", {
         return { user: userRows[0], token }
       })
 
-    const login = (input: LoginInput) =>
+    /**
+     * Login carries a browser-derived login key, never a password. The limiter
+     * is checked before any credential work, and unknown emails burn a dummy
+     * comparison so failure timing and the error envelope stay flat.
+     */
+    const login = (input: LoginInput, clientIp: string) =>
       Effect.gen(function*() {
         const email = normalizeEmail(input.email)
+        const key = limitKey(email, clientIp)
+        const limit = yield* limiter.status(key)
+        if (limit.limited) {
+          return yield* Effect.fail(new RateLimited({ retryAfterSeconds: limit.retryAfterSeconds }))
+        }
+
         const found = yield* users.findByEmail(email).pipe(Effect.orDie)
         if (Option.isNone(found)) {
+          yield* verifier.verifyDummy(input.loginKey)
+          yield* limiter.recordFailure(key)
           return yield* Effect.fail(new InvalidCredentials())
         }
+
         const user = found.value
-        const ok = yield* hasher.verify(input.password, user.passwordHash)
+        const ok = yield* verifier.verify(input.loginKey, user)
         if (!ok) {
+          yield* limiter.recordFailure(key)
           return yield* Effect.fail(new InvalidCredentials())
         }
+
+        yield* limiter.clear(key)
         const { token, session } = yield* mintSession(user.id)
         yield* sessions.insert(session).pipe(Effect.orDie)
         // Same context `/auth/me` would report, so login needs no second round trip.
@@ -139,6 +163,36 @@ export class AuthService extends Context.Service<AuthService>()("AuthService", {
           token,
           householdId: Option.isSome(membership) ? membership.value.householdId : null
         }
+      })
+
+    /**
+     * Swap the stored verifier after proving the current login key. Re-deriving
+     * happens in the browser; this endpoint only ever handles keys.
+     */
+    const changePassword = (userId: UserId, input: ChangePasswordInput, clientIp: string) =>
+      Effect.gen(function*() {
+        const user = yield* users.findById(userId).pipe(Effect.orDie)
+        const key = limitKey(user.email, clientIp)
+        const limit = yield* limiter.status(key)
+        if (limit.limited) {
+          return yield* Effect.fail(new RateLimited({ retryAfterSeconds: limit.retryAfterSeconds }))
+        }
+
+        const ok = yield* verifier.verify(input.currentLoginKey, user)
+        if (!ok) {
+          yield* limiter.recordFailure(key)
+          return yield* Effect.fail(new InvalidCredentials())
+        }
+
+        const credential = yield* verifier.enroll(input.newLoginKey)
+        yield* users
+          .update({
+            ...user,
+            ...credential,
+            updatedAt: new Date().toISOString()
+          })
+          .pipe(Effect.orDie)
+        yield* limiter.clear(key)
       })
 
     const logout = (token: string): Effect.Effect<void> =>
@@ -241,15 +295,16 @@ export class AuthService extends Context.Service<AuthService>()("AuthService", {
         return household
       })
 
-    return { register, login, logout, me, createHousehold, joinHousehold } as const
+    return { register, login, changePassword, logout, me, createHousehold, joinHousehold } as const
   })
 }) {}
 
-/** Provides `AuthService`, wiring the repositories, D1 batch and password hasher. */
+/** Provides `AuthService`, wiring the repositories, D1 batch and credential verifier. */
 export const AuthServiceLive = Layer.effect(AuthService, AuthService.make).pipe(
   Layer.provide(UserRepoLive),
   Layer.provide(HouseholdRepoLive),
   Layer.provide(MembershipRepoLive),
   Layer.provide(SessionRepoLive),
-  Layer.provide(PasswordHasherLive)
+  Layer.provide(CredentialVerifierLive),
+  Layer.provide(LoginRateLimiterLive)
 )

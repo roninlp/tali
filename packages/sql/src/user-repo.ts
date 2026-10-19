@@ -36,6 +36,7 @@ export class UserRepo extends Context.Service<UserRepo>()("UserRepo", {
 
     return {
       insert: base.insert,
+      update: base.update,
       findById: base.findById,
       findByEmail,
       insertStatement

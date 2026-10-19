@@ -8,6 +8,7 @@ import type { AuthFailureCode } from "./auth-api"
 const MESSAGES: Record<AuthFailureCode, string> = {
   EmailAlreadyRegistered: "این ایمیل قبلاً ثبت شده است. وارد شوید.",
   InvalidCredentials: "ایمیل یا گذرواژه درست نیست.",
+  RateLimited: "تلاش‌های ناموفق زیاد بود. کمی بعد دوباره تلاش کنید.",
   Unauthorized: "نشست شما پایان یافته است. دوباره وارد شوید.",
   AlreadyInHousehold: "شما در حال حاضر عضو یک خانه هستید.",
   HouseholdFull: "این خانه پر شده است.",

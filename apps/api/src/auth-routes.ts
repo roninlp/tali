@@ -1,9 +1,11 @@
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { HttpRouter, HttpServerError, HttpServerRequest, HttpServerResponse } from "effect/http"
 import {
+  ChangePasswordInput,
   CreateHouseholdInput,
   JoinHouseholdInput,
   LoginInput,
+  RateLimited,
   RegisterInput,
   toUserProfile,
   Unauthorized,
@@ -52,6 +54,15 @@ const unexpectedFailure = (error: unknown): Effect.Effect<HttpServerResponse.Htt
   Schema.isSchemaError(error) || HttpServerError.isHttpServerError(error)
     ? fail(400, "BadRequest", "Malformed request body")
     : fail(500, "InternalError", "Unexpected server error", true)
+
+/**
+ * Rate-limit bucket IP. Cloudflare sets `CF-Connecting-IP`; Effect's adapter
+ * also exposes a remote address. Local `wrangler dev` has neither, so all local
+ * attempts share one bucket.
+ */
+const clientIp = (request: HttpServerRequest.HttpServerRequest): string =>
+  request.headers["cf-connecting-ip"] ??
+  Option.getOrElse(request.remoteAddress, () => "unknown")
 
 export const AuthRoutes = HttpRouter.use((router) =>
   Effect.gen(function*() {
@@ -108,7 +119,7 @@ export const AuthRoutes = HttpRouter.use((router) =>
       Effect.gen(function*() {
         const request = yield* HttpServerRequest.HttpServerRequest
         const input = yield* HttpServerRequest.schemaBodyJson(LoginInput)
-        const { user, token, householdId } = yield* auth.login(input)
+        const { user, token, householdId } = yield* auth.login(input, clientIp(request))
         // The full session context: the client needs no follow-up `/auth/me`.
         const response = yield* json(200, { user: toUserProfile(user), householdId })
         return setSession(response, token, request)
@@ -116,7 +127,44 @@ export const AuthRoutes = HttpRouter.use((router) =>
         Effect.catchTags(
           {
             InvalidCredentials: () =>
-              fail(401, "InvalidCredentials", "Email or password is incorrect")
+              fail(401, "InvalidCredentials", "Email or login key is incorrect"),
+            RateLimited: (error: RateLimited) =>
+              fail(429, "RateLimited", "Too many login attempts", true, {
+                retryAfterSeconds: error.retryAfterSeconds
+              }).pipe(
+                Effect.map((response) =>
+                  HttpServerResponse.setHeader(response, "retry-after", `${error.retryAfterSeconds}`)
+                )
+              )
+          },
+          unexpectedFailure
+        )
+      )
+    )
+
+    yield* router.add(
+      "POST",
+      "/auth/change-password",
+      Effect.gen(function*() {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        const { token, context } = yield* authenticate(request)
+        const input = yield* HttpServerRequest.schemaBodyJson(ChangePasswordInput)
+        yield* auth.changePassword(context.user.id, input, clientIp(request))
+        return setSession(yield* json(200, { ok: true }), token, request)
+      }).pipe(
+        Effect.catchTags(
+          {
+            Unauthorized: () => fail(401, "Unauthorized", "No active session"),
+            InvalidCredentials: () =>
+              fail(401, "InvalidCredentials", "Current login key is incorrect"),
+            RateLimited: (error: RateLimited) =>
+              fail(429, "RateLimited", "Too many attempts", true, {
+                retryAfterSeconds: error.retryAfterSeconds
+              }).pipe(
+                Effect.map((response) =>
+                  HttpServerResponse.setHeader(response, "retry-after", `${error.retryAfterSeconds}`)
+                )
+              )
           },
           unexpectedFailure
         )

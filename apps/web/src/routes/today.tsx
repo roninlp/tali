@@ -190,6 +190,9 @@ function TodayPage() {
         </div>
         <div style={{ display: "flex", "align-items": "center", gap: tokens.space.sm }}>
           <SyncStatus />
+          <Button variant="ghost" type="button" onClick={() => navigate("/settings")}>
+            تنظیمات
+          </Button>
           <Button variant="ghost" type="button" disabled={signOutBusy()} onClick={() => void signOut()}>
             {signOutBusy() ? "در حال خروج…" : "خروج"}
           </Button>
