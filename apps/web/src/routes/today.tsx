@@ -1,13 +1,11 @@
 import { createEffect, createSignal, For, Show } from "solid-js"
 import { Title } from "@solidjs/meta"
-import { useNavigate } from "@solidjs/router"
 import { Button, tokens } from "@tali/ui"
 import { DEFAULT_TIME_ZONE, formatJalaliDate, todayInTimeZone, uuidV7 } from "@tali/domain"
+import { AppHeader } from "../components/app-header"
 import { Guard } from "../components/guard"
-import { FormError, TextInput } from "../components/form"
-import { SyncStatus } from "../components/sync-status"
+import { TextInput } from "../components/form"
 import { useAuth } from "../lib/auth"
-import { authErrorMessage } from "../lib/auth-copy"
 import { useLocalStore } from "../lib/local-store"
 import type { MirrorRecord } from "../lib/local-store"
 
@@ -41,10 +39,7 @@ export default function TodayRoute() {
 function TodayPage() {
   const auth = useAuth()
   const local = useLocalStore()
-  const navigate = useNavigate()
 
-  const [signOutBusy, setSignOutBusy] = createSignal(false)
-  const [signOutError, setSignOutError] = createSignal<string>()
   const [items, setItems] = createSignal<ReadonlyArray<MirrorRecord>>([])
   const [draft, setDraft] = createSignal("")
   const [addBusy, setAddBusy] = createSignal(false)
@@ -151,20 +146,6 @@ function TodayPage() {
     })
   }
 
-  const signOut = async () => {
-    if (signOutBusy()) return
-    setSignOutBusy(true)
-    setSignOutError(undefined)
-    const result = await auth.signOut()
-    setSignOutBusy(false)
-    if (result.ok) {
-      navigate("/login", { replace: true })
-    } else {
-      // The server still holds the session; say so instead of pretending.
-      setSignOutError(authErrorMessage(result.error.code))
-    }
-  }
-
   return (
     <div
       dir="rtl"
@@ -176,43 +157,13 @@ function TodayPage() {
         background: "#f7f9fd"
       }}
     >
-      <header
-        style={{
-          display: "flex",
-          "align-items": "center",
-          "justify-content": "space-between",
-          gap: tokens.space.md,
-          padding: `${tokens.space.md} ${tokens.space.lg}`,
-          background: tokens.color.surface,
-          "border-bottom": `1px solid ${tokens.color.line}`,
-          "flex-wrap": "wrap"
-        }}
-      >
-        <div style={{ display: "grid", gap: "2px" }}>
-          <strong style={{ "font-size": "1.1rem", color: tokens.color.brand }}>تالی</strong>
-          <Show when={auth.session()?.user.displayName}>
-            {(displayName) => (
-              <span style={{ "font-size": "0.85rem", color: tokens.color.inkSoft }}>{displayName()}</span>
-            )}
-          </Show>
-        </div>
-        <div style={{ display: "flex", "align-items": "center", gap: tokens.space.sm }}>
-          <SyncStatus />
-          <Button variant="ghost" type="button" onClick={() => navigate("/settings")}>
-            تنظیمات
-          </Button>
-          <Button variant="ghost" type="button" disabled={signOutBusy()} onClick={() => void signOut()}>
-            {signOutBusy() ? "در حال خروج…" : "خروج"}
-          </Button>
-        </div>
-      </header>
+      <AppHeader active="today" />
 
       <main style={{ padding: tokens.space.lg, display: "grid", gap: tokens.space.md, "max-width": "720px" }}>
         <h1 style={{ margin: 0, "font-size": "1.5rem" }}>امروز</h1>
         <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.9rem" }}>
           {formatJalaliDate(today(), { digits: digits() })}
         </p>
-        <FormError message={signOutError()} />
 
         <section
           style={{

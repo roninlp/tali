@@ -5,20 +5,22 @@ import { Button, tokens } from "@tali/ui"
 import type { LoginKey } from "@tali/domain"
 import { AuthCard, Field, FormError, TextInput } from "../components/form"
 import { Guard } from "../components/guard"
+import { PushHealthPanel } from "../components/push-health"
 import { useAuth } from "../lib/auth"
 import { authErrorMessage } from "../lib/auth-copy"
 import { deriveLoginKey, passwordProblem } from "../lib/login-key"
 
 /**
- * Account settings (ticket #25). Today this is only the credential swap: both
- * the current and the new password are stretched to login keys in the browser,
- * so the API verifies the old key and stores a fresh verifier without ever
- * seeing a password.
+ * Account settings (ticket #25) plus the device's notification health
+ * (ticket #20). Today the credential form is only the password swap: both the
+ * current and the new password are stretched to login keys in the browser, so
+ * the API verifies the old key and stores a fresh verifier without ever seeing
+ * a password.
  */
 export default function SettingsRoute() {
   return (
     <>
-      <Title>تنظیمات حساب — تالی</Title>
+      <Title>تنظیمات — تالی</Title>
       <Guard access="session">
         <SettingsPage />
       </Guard>
@@ -91,7 +93,7 @@ function SettingsPage() {
 
   return (
     <AuthCard
-      title="تنظیمات حساب"
+      title="تنظیمات"
       subtitle="گذرواژه فقط در همین مرورگر به کلید ورود تبدیل می‌شود و به سرور نمی‌رسد."
       footer={
         <nav style={{ "text-align": "center", "font-size": "0.9rem" }}>
@@ -156,6 +158,8 @@ function SettingsPage() {
           {busy() ? "در حال ذخیره…" : "تغییر گذرواژه"}
         </Button>
       </form>
+
+      <PushHealthPanel />
     </AuthCard>
   )
 }

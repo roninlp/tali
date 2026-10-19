@@ -1,0 +1,33 @@
+{
+  "name": "تالی — برنامه‌ریز شخصی و خانوادگی",
+  "short_name": "تالی",
+  "description": "برنامه‌ریز شخصی و خانوادگی: کارها، یادداشت‌ها، عادت‌ها و یادآورها.",
+  "lang": "fa",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f7f9fd",
+  "theme_color": "#2f5fe0",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

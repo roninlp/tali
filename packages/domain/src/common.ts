@@ -21,6 +21,9 @@ export type MembershipId = Schema.Schema.Type<typeof MembershipId>
 export const SessionId = Schema.String.pipe(Schema.brand("SessionId"))
 export type SessionId = Schema.Schema.Type<typeof SessionId>
 
+export const PushSubscriptionId = Schema.String.pipe(Schema.brand("PushSubscriptionId"))
+export type PushSubscriptionId = Schema.Schema.Type<typeof PushSubscriptionId>
+
 /** First day of the week; Saturday is the Persian-calendar default. */
 export const WeekStart = Schema.Literals(["saturday", "sunday", "monday"])
 export type WeekStart = Schema.Schema.Type<typeof WeekStart>

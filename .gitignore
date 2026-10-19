@@ -10,5 +10,7 @@ dist/
 .env
 .env.*
 !.env.example
+# Local Web Push subscription pasted from the dev permission panel.
+.push-subscription.json
 .DS_Store
 .alchemy/

@@ -39,7 +39,14 @@ Run the web app:
 
 ```sh
 cd apps/web
-pnpm dev              # srvx dev --port 3000
+pnpm dev              # Vite dev server on :3000
+```
+
+Web Push shell (service worker, VAPID subscription, permission panel):
+
+```sh
+# see docs/web-push-local.md for VAPID keys + the local test-push script
+pnpm test:push
 ```
 
 ## The scaffold round-trip (dummy aggregate: `ListItem`)

@@ -1,0 +1,7 @@
+# Local Worker vars (copy to .dev.vars). Never commit .dev.vars.
+# Web Push (VAPID) — the private key is a secret; see docs/web-push-local.md.
+VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=mailto:you@example.com
+# Origin allowed to call the API cross-origin during local dev.
+WEB_ORIGIN=http://localhost:3000

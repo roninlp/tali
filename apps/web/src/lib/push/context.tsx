@@ -1,0 +1,285 @@
+import {
+  createContext,
+  createEffect,
+  createSignal,
+  useContext,
+  type ParentProps
+} from "solid-js"
+import { useAuth } from "../auth"
+import { VAPID_CONFIGURED, VAPID_PUBLIC_KEY, urlBase64ToUint8Array } from "./config"
+import {
+  readQueuedReminderActions,
+  type QueuedReminderAction
+} from "./notification-actions"
+import { registerPushSubscription, type PushRegistrationFailure } from "./push-api"
+import {
+  isInstalled,
+  isPushSupported,
+  isSecureContext,
+  readyRegistration,
+  registerServiceWorker
+} from "./service-worker"
+
+/**
+ * The client half of the Web Push shell (ticket #20).
+ *
+ * Owns: service-worker registration, the VAPID-restricted `PushSubscription`,
+ * its registration with `POST /push/register`, and the permission/health state
+ * both `/reminders` and `/settings` render.
+ *
+ * What it deliberately does **not** own: scheduling or dispatch. The shell can
+ * receive a push that someone else sends (the local test script today, the
+ * reminder cron in a later slice).
+ */
+
+export type PushPermission = NotificationPermission | "unsupported"
+
+export interface PushContextValue {
+  supported: () => boolean
+  secure: () => boolean
+  installed: () => boolean
+  configured: () => boolean
+  permission: () => PushPermission
+  subscribed: () => boolean
+  busy: () => boolean
+  error: () => string | undefined
+  /** Last Done/Snooze tap the service worker queued (stub consumer). */
+  lastAction: () => QueuedReminderAction | undefined
+  /** Request permission + subscribe + register. Must be called from a user gesture. */
+  enable: () => Promise<void>
+  /** Drop this device's subscription. */
+  disable: () => Promise<void>
+  /** Re-read browser state and (when signed in) re-register an existing subscription. */
+  refresh: () => Promise<void>
+  /** The raw subscription JSON, for the local test-push script. */
+  subscriptionJson: () => PushSubscriptionJSON | undefined
+}
+
+const PushContext = createContext<PushContextValue>()
+
+const FAILURE_MESSAGE: Record<PushRegistrationFailure, string> = {
+  Unauthorized: "برای ثبت اشتراک اعلان باید وارد شوید.",
+  BadRequest: "مرورگر اطلاعات اشتراک را به شکل نامعتبر فرستاد.",
+  Network: "ارتباط با سرور برقرار نشد؛ ثبت اشتراک در اجرای بعدی دوباره تلاش می‌شود.",
+  InternalError: "ثبت اشتراک روی سرور ناموفق بود؛ بعداً دوباره تلاش می‌شود."
+}
+
+const permissionOf = (): PushPermission =>
+  isPushSupported() ? Notification.permission : "unsupported"
+
+/** Post the public key so `pushsubscriptionchange` can resubscribe without a page. */
+const shareConfigWithWorker = async (): Promise<void> => {
+  if (!VAPID_CONFIGURED) return
+  const registration = await readyRegistration()
+  registration?.active?.postMessage({
+    type: "tali:push-config",
+    applicationServerKey: VAPID_PUBLIC_KEY
+  })
+}
+
+/** The body of `POST /push/register`, built from the browser's subscription. */
+const toRegistrationInput = (subscription: PushSubscription) => {
+  const json = subscription.toJSON()
+  return {
+    endpoint: json.endpoint ?? subscription.endpoint,
+    expirationTime: json.expirationTime ?? null,
+    keys: {
+      p256dh: json.keys?.p256dh ?? "",
+      auth: json.keys?.auth ?? ""
+    }
+  }
+}
+
+export function PushProvider(props: ParentProps) {
+  const auth = useAuth()
+
+  const [permission, setPermission] = createSignal<PushPermission>(permissionOf())
+  const [subscription, setSubscription] = createSignal<PushSubscription>()
+  const [busy, setBusy] = createSignal(false)
+  const [error, setError] = createSignal<string>()
+  const [lastAction, setLastAction] = createSignal<QueuedReminderAction>()
+
+  const supported = isPushSupported
+  const secure = isSecureContext
+  const installed = isInstalled
+  const configured = () => VAPID_CONFIGURED
+  const subscribed = () => subscription() !== undefined
+
+  const refreshLastAction = async () => {
+    try {
+      const queued = await readQueuedReminderActions()
+      setLastAction(queued.at(-1))
+    } catch {
+      // The queue is a stub; a read failure must not break the panel.
+    }
+  }
+
+  const syncRegistration = async (current: PushSubscription): Promise<boolean> => {
+    if (auth.status() !== "signedIn") return false
+    const result = await registerPushSubscription(toRegistrationInput(current))
+    if (result.ok) {
+      setError(undefined)
+      return true
+    }
+    setError(FAILURE_MESSAGE[result.code])
+    return false
+  }
+
+  const refresh = async (): Promise<void> => {
+    setPermission(permissionOf())
+
+    const registration = await registerServiceWorker()
+    if (registration === undefined) {
+      setSubscription(undefined)
+      return
+    }
+    await shareConfigWithWorker()
+
+    let current: PushSubscription | null = null
+    try {
+      current = await registration.pushManager.getSubscription()
+    } catch {
+      current = null
+    }
+    setSubscription(current ?? undefined)
+
+    // Keep the server in step with the browser: a reload or a rotated
+    // subscription re-registers the same capability URL idempotently.
+    if (current !== null && auth.status() === "signedIn") {
+      await syncRegistration(current)
+    }
+  }
+
+  const enable = async (): Promise<void> => {
+    if (busy()) return
+    if (!supported()) {
+      setError("این مرورگر از اعلان‌های Web Push پشتیبانی نمی‌کند.")
+      return
+    }
+    if (!configured()) {
+      setError("کلید عمومی VAPID تنظیم نشده است؛ ابتدا راهنمای آزمون محلی را ببینید.")
+      return
+    }
+    if (!secure()) {
+      setError("Web Push فقط در بستر امن (HTTPS یا localhost) کار می‌کند.")
+      return
+    }
+
+    setBusy(true)
+    setError(undefined)
+    try {
+      const granted = await Notification.requestPermission()
+      setPermission(granted)
+      if (granted !== "granted") {
+        setError("اجازه‌ی اعلان داده نشد. از تنظیمات مرورگر می‌توانید آن را فعال کنید.")
+        return
+      }
+
+      const registration = await registerServiceWorker()
+      if (registration === undefined) {
+        setError("ثبت service worker ناموفق بود.")
+        return
+      }
+      await navigator.serviceWorker.ready
+      await shareConfigWithWorker()
+
+      const existing = await registration.pushManager.getSubscription()
+      const current =
+        existing ??
+        (await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+        }))
+
+      setSubscription(current)
+      const ok = await syncRegistration(current)
+      if (ok) await refreshLastAction()
+    } catch (cause) {
+      console.warn("[tali] push subscription failed", cause)
+      setError("اشتراک اعلان ساخته نشد. دوباره تلاش کنید.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const disable = async (): Promise<void> => {
+    const current = subscription()
+    if (current === undefined) return
+    setBusy(true)
+    setError(undefined)
+    try {
+      await current.unsubscribe()
+      setSubscription(undefined)
+    } catch (cause) {
+      console.warn("[tali] push unsubscribe failed", cause)
+      setError("لغو اشتراک ناموفق بود.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  createEffect(
+    () => null,
+    () => {
+      // Register the worker once per boot; this is also what makes the app
+      // installable as a PWA. The panel surfaces failures.
+      void refresh()
+      void refreshLastAction()
+
+      if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return
+      const onMessage = (event: MessageEvent) => {
+        const data = event.data as { type?: string } | undefined
+        if (data?.type === "tali:reminder-action") {
+          void refreshLastAction()
+        } else if (data?.type === "tali:push-subscription-change") {
+          void refresh()
+        }
+      }
+      navigator.serviceWorker.addEventListener("message", onMessage)
+      return () => navigator.serviceWorker.removeEventListener("message", onMessage)
+    }
+  )
+
+  // The API registration needs a session; retry when boot finishes signing in
+  // (or after a login, which usually follows the permission grant).
+  createEffect(
+    () => auth.status(),
+    (status) => {
+      if (status === "signedIn") void refresh()
+    }
+  )
+
+  // Keep the visible permission in step with changes made in browser settings.
+  createEffect(
+    () => null,
+    () => {
+      if (typeof document === "undefined") return
+      const onVisibility = () => {
+        setPermission(permissionOf())
+        if (document.visibilityState === "visible") void refreshLastAction()
+      }
+      document.addEventListener("visibilitychange", onVisibility)
+      return () => document.removeEventListener("visibilitychange", onVisibility)
+    }
+  )
+
+  const value: PushContextValue = {
+    supported,
+    secure,
+    installed,
+    configured,
+    permission,
+    subscribed,
+    busy,
+    error,
+    lastAction,
+    enable,
+    disable,
+    refresh,
+    subscriptionJson: () => subscription()?.toJSON()
+  }
+
+  return <PushContext value={value}>{props.children}</PushContext>
+}
+
+export const usePush = (): PushContextValue => useContext(PushContext)
