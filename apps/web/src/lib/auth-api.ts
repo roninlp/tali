@@ -6,6 +6,7 @@ import {
   OkResponse,
   SessionContext,
   type AuthErrorCode,
+  type ChangePasswordInput,
   type CreateHouseholdInput,
   type JoinHouseholdInput,
   type LoginInput,
@@ -97,6 +98,9 @@ export const authApi = {
 
   login: (input: LoginInput): Promise<ApiResult<SessionContext>> =>
     send("POST", "/auth/login", SessionContext, input),
+
+  changePassword: (input: ChangePasswordInput): Promise<ApiResult<{ ok: boolean }>> =>
+    send("POST", "/auth/change-password", OkResponse, input),
 
   logout: (): Promise<ApiResult<{ ok: boolean }>> => send("POST", "/auth/logout", OkResponse),
 

@@ -2,11 +2,12 @@ import { createSignal } from "solid-js"
 import { Title } from "@solidjs/meta"
 import { useNavigate } from "@solidjs/router"
 import { Button } from "@tali/ui"
-import type { Email } from "@tali/domain"
+import type { Email, LoginKey } from "@tali/domain"
 import { AuthCard, AuthFooterLink, Field, FormError, TextInput } from "../components/form"
 import { Guard, landingPath } from "../components/guard"
 import { useAuth } from "../lib/auth"
 import { authErrorMessage } from "../lib/auth-copy"
+import { deriveLoginKey } from "../lib/login-key"
 
 export default function LoginRoute() {
   return (
@@ -39,7 +40,18 @@ function LoginPage() {
 
     setBusy(true)
     setError(undefined)
-    const result = await auth.signIn({ email: email().trim() as Email, password: password() })
+
+    const emailInput = email().trim() as Email
+    let loginKey: LoginKey
+    try {
+      loginKey = await deriveLoginKey(password(), emailInput)
+    } catch {
+      setBusy(false)
+      setError(authErrorMessage("InternalError"))
+      return
+    }
+
+    const result = await auth.signIn({ email: emailInput, loginKey })
     setBusy(false)
 
     if (result.ok) {

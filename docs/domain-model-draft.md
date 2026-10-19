@@ -122,7 +122,9 @@ These are **not** "common items" (no `version`/`tags`/`deletedAt` sync contract 
 export class User extends Model.Class<User>("User")({
   id: Model.UuidV7Insert(UserId),
   email: Schema.String,                    // normalized lower-case
-  passwordHash: Model.Sensitive(Schema.String),  // argon2id; never serialized to JSON
+  credentialVerifier: Model.Sensitive(Schema.String), // SHA-256(credentialSalt || loginKey); see ADR-0001
+  credentialSalt: Schema.String,           // per-user random salt
+  kdfVersion: Schema.Int,                  // browser KDF recipe version (1)
   displayName: Schema.String,
   timeZone: Schema.String,                 // IANA, e.g. "Asia/Tehran"; captured once at signup
   weekStart: Schema.Literal("saturday", "sunday", "monday"),  // default "saturday"

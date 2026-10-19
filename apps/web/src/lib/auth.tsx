@@ -1,5 +1,6 @@
 import { createContext, createSignal, onSettled, useContext, type ParentProps } from "solid-js"
 import type {
+  ChangePasswordInput,
   CreateHouseholdInput,
   JoinHouseholdInput,
   LoginInput,
@@ -39,6 +40,8 @@ export interface AuthStore {
   bootFailure: () => AuthFailure | undefined
   signIn: (input: LoginInput) => Promise<ApiResult<void>>
   signUp: (input: RegisterInput) => Promise<ApiResult<void>>
+  /** Swap the credential after proving the current login key. */
+  changePassword: (input: ChangePasswordInput) => Promise<ApiResult<void>>
   signOut: () => Promise<ApiResult<void>>
   createHousehold: (input: CreateHouseholdInput) => Promise<ApiResult<HouseholdSummary>>
   joinHousehold: (input: JoinHouseholdInput) => Promise<ApiResult<HouseholdSummary>>
@@ -125,8 +128,13 @@ export function AuthProvider(props: ParentProps) {
     return { ok: true, value: undefined }
   }
 
-  const signOut = async (): Promise<ApiResult<void>> => {
-    const result = await authApi.logout()
+  const changePassword = async (input: ChangePasswordInput): Promise<ApiResult<void>> => {
+    const result = await authApi.changePassword(input)
+    if (!result.ok) return fail(result.error)
+    return { ok: true, value: undefined }
+  }
+
+  const signOut = async (): Promise<ApiResult<void>> => {    const result = await authApi.logout()
     // The cookie is HTTP-only: only the server can revoke it. If the call
     // fails, keep the session so the UI can say so instead of lying.
     if (!result.ok) return fail(result.error)
@@ -169,6 +177,7 @@ export function AuthProvider(props: ParentProps) {
     bootFailure,
     signIn,
     signUp,
+    changePassword,
     signOut,
     createHousehold,
     joinHousehold,

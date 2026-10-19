@@ -2,11 +2,12 @@ import { createSignal } from "solid-js"
 import { Title } from "@solidjs/meta"
 import { useNavigate } from "@solidjs/router"
 import { Button } from "@tali/ui"
-import type { Email, RegisterInput } from "@tali/domain"
+import type { Email, LoginKey, RegisterInput } from "@tali/domain"
 import { AuthCard, AuthFooterLink, Field, FormError, TextInput } from "../components/form"
 import { Guard, landingPath } from "../components/guard"
 import { useAuth } from "../lib/auth"
 import { authErrorMessage } from "../lib/auth-copy"
+import { deriveLoginKey, passwordProblem } from "../lib/login-key"
 
 /**
  * Detect the browser's IANA zone so a new account gets sensible date/reminder
@@ -44,8 +45,7 @@ function RegisterPage() {
   const validate = (): string | undefined => {
     if (displayName().trim() === "") return "نام نمایشی را وارد کنید."
     if (!/^\s*[^\s@]+@[^\s@]+\.[^\s@]+\s*$/.test(email())) return "ایمیل معتبر وارد کنید."
-    if (password().length < 8) return "گذرواژه باید حداقل ۸ نویسه باشد."
-    return undefined
+    return passwordProblem(password())
   }
 
   const submit = async (event: SubmitEvent) => {
@@ -60,9 +60,20 @@ function RegisterPage() {
 
     setBusy(true)
     setError(undefined)
+
+    const emailInput = email().trim() as Email
+    let loginKey: LoginKey
+    try {
+      loginKey = await deriveLoginKey(password(), emailInput)
+    } catch {
+      setBusy(false)
+      setError(authErrorMessage("InternalError"))
+      return
+    }
+
     const input: RegisterInput = {
-      email: email().trim() as Email,
-      password: password(),
+      email: emailInput,
+      loginKey,
       displayName: displayName().trim(),
       timeZone: detectedTimeZone()
     }
@@ -107,7 +118,7 @@ function RegisterPage() {
           />
         </Field>
 
-        <Field label="گذرواژه" for="register-password" hint="حداقل ۸ نویسه">
+        <Field label="گذرواژه" for="register-password" hint="حداقل ۱۲ نویسه">
           <TextInput
             id="register-password"
             type="password"
