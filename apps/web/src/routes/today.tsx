@@ -2,7 +2,7 @@ import { createEffect, createSignal, For, Show } from "solid-js"
 import { Title } from "@solidjs/meta"
 import { useNavigate } from "@solidjs/router"
 import { Button, tokens } from "@tali/ui"
-import { uuidV7 } from "@tali/domain"
+import { DEFAULT_TIME_ZONE, formatJalaliDate, todayInTimeZone, uuidV7 } from "@tali/domain"
 import { Guard } from "../components/guard"
 import { FormError, TextInput } from "../components/form"
 import { SyncStatus } from "../components/sync-status"
@@ -52,6 +52,14 @@ function TodayPage() {
   let draftTimer: ReturnType<typeof setTimeout> | undefined
 
   const name = () => auth.session()?.user.displayName ?? ""
+  const digits = () => auth.session()?.user.digits ?? "persian"
+  const today = () => {
+    try {
+      return todayInTimeZone(auth.session()?.user.timeZone ?? DEFAULT_TIME_ZONE)
+    } catch {
+      return todayInTimeZone(DEFAULT_TIME_ZONE)
+    }
+  }
   const sorted = () => [...items()].sort((a, b) => sortOrderOf(a) - sortOrderOf(b))
 
   // Hydrate from the mirror as soon as the store opens; the outbox is replayed
@@ -198,6 +206,9 @@ function TodayPage() {
 
       <main style={{ padding: tokens.space.lg, display: "grid", gap: tokens.space.md, "max-width": "720px" }}>
         <h1 style={{ margin: 0, "font-size": "1.5rem" }}>امروز</h1>
+        <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.9rem" }}>
+          {formatJalaliDate(today(), { digits: digits() })}
+        </p>
         <FormError message={signOutError()} />
 
         <section

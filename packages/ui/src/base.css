@@ -1,0 +1,118 @@
+/**
+ * Tali base layout (CC-04).
+ *
+ * The document is Persian and RTL; this sheet supplies the self-hosted font,
+ * a small reset, and the logical-property spacing variables. Never add
+ * physical `left`/`right` rules here — use inline-start/inline-end (`ms`, `me`,
+ * `ps`, `pe`) so the layout mirrors correctly under `dir="rtl"`.
+ */
+
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("./fonts/vazirmatn-variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --tali-space-none: 0;
+  --tali-space-sm: 8px;
+  --tali-space-md: 16px;
+  --tali-space-lg: 24px;
+
+  /* Logical spacing aliases: margin/padding inline start/end. */
+  --tali-ms-none: var(--tali-space-none);
+  --tali-ms-sm: var(--tali-space-sm);
+  --tali-ms-md: var(--tali-space-md);
+  --tali-ms-lg: var(--tali-space-lg);
+  --tali-me-none: var(--tali-space-none);
+  --tali-me-sm: var(--tali-space-sm);
+  --tali-me-md: var(--tali-space-md);
+  --tali-me-lg: var(--tali-space-lg);
+  --tali-ps-none: var(--tali-space-none);
+  --tali-ps-sm: var(--tali-space-sm);
+  --tali-ps-md: var(--tali-space-md);
+  --tali-ps-lg: var(--tali-space-lg);
+  --tali-pe-none: var(--tali-space-none);
+  --tali-pe-sm: var(--tali-space-sm);
+  --tali-pe-md: var(--tali-space-md);
+  --tali-pe-lg: var(--tali-space-lg);
+
+  --tali-color-brand: #2f5fe0;
+  --tali-color-ink: #1c2333;
+  --tali-color-ink-soft: #4a5568;
+  --tali-color-surface: #ffffff;
+  --tali-color-line: #e3e7f0;
+
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  max-inline-size: 100%;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  min-block-size: 100dvh;
+  background: var(--tali-color-surface);
+  color: var(--tali-color-ink);
+  font-family: "Vazirmatn", system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.7;
+  overflow-wrap: break-word;
+}
+
+img,
+svg,
+video,
+canvas {
+  display: block;
+  max-inline-size: 100%;
+  block-size: auto;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  max-inline-size: 100%;
+}
+
+input,
+select,
+textarea {
+  min-inline-size: 0;
+}
+
+button {
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+a {
+  color: inherit;
+}
+
+pre,
+code {
+  overflow-wrap: anywhere;
+}
+
+:focus-visible {
+  outline: 2px solid var(--tali-color-brand);
+  outline-offset: 2px;
+}
