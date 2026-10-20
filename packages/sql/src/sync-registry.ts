@@ -709,6 +709,7 @@ const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
         version = ${state.version},
         updated_at = ${state.updatedAt},
         deleted_at = ${state.deletedAt},
+        list_id = ${encodeNullableText(state.data.listId)},
         name = ${encodeText(state.data.title)},
         done = ${encodeBit(state.data.checked)},
         ordering = ${encodeInt(state.data.sortOrder)},

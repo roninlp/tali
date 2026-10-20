@@ -388,13 +388,15 @@ describe("sync engine", () => {
     const before = feedCount(h.db)
 
     for (const entityId of [foreign, legacy]) {
-      await expect(
-        push(h, {
-          userId: USER_A,
-          householdId: HOUSEHOLD,
-          entries: [entry({ entityId, baseVersion: 1, patch: { title: "نفوذ" } })]
-        })
-      ).rejects.toMatchObject({ _tag: "SyncEntityForbidden" })
+      for (const op of ["upsert", "delete"] as const) {
+        await expect(
+          push(h, {
+            userId: USER_A,
+            householdId: HOUSEHOLD,
+            entries: [entry({ entityId, baseVersion: 1, op, patch: { title: "نفوذ" } })]
+          })
+        ).rejects.toMatchObject({ _tag: "SyncEntityForbidden" })
+      }
     }
 
     expect(feedCount(h.db)).toBe(before)
@@ -700,15 +702,17 @@ describe("sync engine", () => {
       .toEqual([shared])
 
     // A spouse's private task is not writable.
-    await expect(
-      push(h, {
-        userId: USER_B,
-        householdId: HOUSEHOLD,
-        entries: [
-          entry({ entityType: "task", entityId: priv, baseVersion: 1, patch: { title: "نفوذ" } })
-        ]
-      })
-    ).rejects.toMatchObject({ _tag: "SyncEntityForbidden" })
+    for (const op of ["upsert", "delete"] as const) {
+      await expect(
+        push(h, {
+          userId: USER_B,
+          householdId: HOUSEHOLD,
+          entries: [
+            entry({ entityType: "task", entityId: priv, baseVersion: 1, op, patch: { title: "نفوذ" } })
+          ]
+        })
+      ).rejects.toMatchObject({ _tag: "SyncEntityForbidden" })
+    }
 
     // A shared task is.
     const edit = await push(h, {
@@ -846,6 +850,7 @@ describe("sync engine", () => {
   it("keeps the legacy listItem wire shape and dual-writes the real columns", async () => {
     const h = makeHarness()
     const id = uuidV7()
+    const listId = uuidV7()
 
     await push(h, {
       userId: USER_A,
@@ -855,24 +860,62 @@ describe("sync engine", () => {
     await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      entries: [entry({ entityId: id, baseVersion: 1, patch: { checked: false } })]
+      entries: [entry({ entityId: id, baseVersion: 1, patch: { checked: false, listId } })]
     })
 
     const page = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
     const item = page.items.find((row) => row.entityId === id)
     // No web change: the wire payload stays title/checked/sortOrder.
-    expect(item?.data).toMatchObject({ title: "نان", checked: false, sortOrder: 3 })
+    expect(item?.data).toMatchObject({ title: "نان", checked: false, sortOrder: 3, listId })
 
     const row = h.db
-      .prepare("SELECT name, done, ordering, checked_at FROM list_items WHERE id = ?")
+      .prepare("SELECT name, done, ordering, checked_at, list_id FROM list_items WHERE id = ?")
       .get(id) as {
         readonly name: string
         readonly done: number
         readonly ordering: number
         readonly checked_at: string | null
+        readonly list_id: string | null
       }
     // …and the real #33 columns move with it (retires the one-way dual-write).
-    expect(row).toMatchObject({ name: "نان", done: 0, ordering: 3, checked_at: null })
+    expect(row).toMatchObject({ name: "نان", done: 0, ordering: 3, checked_at: null, list_id: listId })
+  })
+
+  it("chunks IN lookups below D1's bound-parameter ceiling", async () => {
+    const h = makeHarness()
+    // More refs than one statement may bind: the dedupe pre-read, the entity
+    // hydration and a full pull/bootstrap page all build `IN` lists.
+    const ids = Array.from({ length: 150 }, () => uuidV7())
+
+    const pushed = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: ids.map((entityId) => entry({ entityId, baseVersion: 0, patch: { title: entityId } }))
+    })
+    expect(pushed.results).toHaveLength(ids.length)
+    expect(pushed.results.every((result) => result._tag === "applied")).toBe(true)
+
+    const page = await pull(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+      limit: 500
+    })
+    expect(page.items).toHaveLength(ids.length)
+
+    const boot = await h.run(
+      Effect.gen(function*() {
+        const sync = yield* SyncService
+        return yield* sync.bootstrap({
+          userId: USER_A,
+          householdId: HOUSEHOLD,
+          offset: 0,
+          limit: 500
+        })
+      })
+    )
+    expect(boot.items).toHaveLength(ids.length)
+    expect(new Set(boot.items.map((item) => item.entityId)).size).toBe(ids.length)
   })
 
   it("rejects entity types that are not registered yet", async () => {

@@ -83,6 +83,24 @@ export interface EntityRef {
 export const entityKey = (ref: EntityRef): string =>
   `${ref.entityType}\u0000${ref.entityId}`
 
+/**
+ * D1 refuses a statement that binds more than 100 parameters
+ * (<https://developers.cloudflare.com/d1/platform/limits/>), and `sql.in(...)`
+ * expands to one bound parameter per value. Pull/bootstrap pages default to
+ * 500 refs and a push may carry 200 entries, so every `IN` list is split into
+ * chunks that leave headroom for the statement's other bindings. Without this
+ * the first page above ~100 refs of a single entity type throws `SqlError`.
+ */
+const MAX_IN_PARAMS = 90
+
+const chunked = <A>(values: ReadonlyArray<A>, size: number): ReadonlyArray<ReadonlyArray<A>> => {
+  const chunks: Array<ReadonlyArray<A>> = []
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size))
+  }
+  return chunks
+}
+
 const toEntityRow = (state: SyncEntityState): SyncEntityRow => ({
   entityType: state.entityType,
   entityId: state.entityId,
@@ -104,7 +122,8 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
     /**
      * Batch-hydrate entity rows behind feed/push references. Rows live in
      * per-entity tables, so this is one `IN` query per distinct type present
-     * in the page — never a query per row.
+     * in the page — never a query per row. Ids are chunked because a page can
+     * hold far more refs than D1 allows bound parameters in one statement.
      */
     const findEntities = (refs: ReadonlyArray<EntityRef>) =>
       Effect.gen(function*() {
@@ -118,23 +137,25 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
         for (const [entityType, ids] of byType) {
           const def = registry.get(entityType)
           if (def === undefined) continue
-          const rows = yield* sql<Record<string, unknown>>`
-            SELECT ${sql.literal(def.select)} FROM ${sql.literal(def.table)}
-            WHERE ${sql.in("id", [...ids])}
-          `
-          for (const row of rows) {
-            const id = String(row.id)
-            states.set(entityKey({ entityType, entityId: id }), {
-              entityType,
-              entityId: id,
-              householdId: typeof row.householdId === "string" ? row.householdId : null,
-              ownerId: typeof row.ownerId === "string" ? row.ownerId : "",
-              visibility: row.visibility === "private" ? "private" : "shared",
-              version: typeof row.version === "number" ? row.version : Number(row.version ?? 0),
-              updatedAt: String(row.updatedAt ?? ""),
-              deletedAt: typeof row.deletedAt === "string" ? row.deletedAt : null,
-              data: def.hydrate(row)
-            })
+          for (const chunk of chunked([...ids], MAX_IN_PARAMS)) {
+            const rows = yield* sql<Record<string, unknown>>`
+              SELECT ${sql.literal(def.select)} FROM ${sql.literal(def.table)}
+              WHERE ${sql.in("id", chunk)}
+            `
+            for (const row of rows) {
+              const id = String(row.id)
+              states.set(entityKey({ entityType, entityId: id }), {
+                entityType,
+                entityId: id,
+                householdId: typeof row.householdId === "string" ? row.householdId : null,
+                ownerId: typeof row.ownerId === "string" ? row.ownerId : "",
+                visibility: row.visibility === "private" ? "private" : "shared",
+                version: typeof row.version === "number" ? row.version : Number(row.version ?? 0),
+                updatedAt: String(row.updatedAt ?? ""),
+                deletedAt: typeof row.deletedAt === "string" ? row.deletedAt : null,
+                data: def.hydrate(row)
+              })
+            }
           }
         }
         return states
@@ -152,13 +173,16 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
       Effect.gen(function*() {
         const unique = [...new Set(input.clientMutationIds)]
         if (unique.length === 0) return new Map<string, AppliedMutation>()
-        const rows = yield* sql<AppliedRow>`
-          SELECT client_mutation_id AS clientMutationId, entity_type AS entityType,
-                 entity_id AS entityId, server_version AS serverVersion, seq
-          FROM applied_mutations
-          WHERE household_id = ${input.householdId}
-            AND ${sql.in("client_mutation_id", unique)}
-        `
+        const rows: Array<AppliedRow> = []
+        for (const chunk of chunked(unique, MAX_IN_PARAMS)) {
+          rows.push(...(yield* sql<AppliedRow>`
+            SELECT client_mutation_id AS clientMutationId, entity_type AS entityType,
+                   entity_id AS entityId, server_version AS serverVersion, seq
+            FROM applied_mutations
+            WHERE household_id = ${input.householdId}
+              AND ${sql.in("client_mutation_id", chunk)}
+          `))
+        }
         return new Map(
           rows.map((row) => [
             row.clientMutationId,

@@ -22,6 +22,15 @@ interface D1ResultLike {
   readonly meta: D1Meta
 }
 
+/**
+ * D1 rejects a statement that binds more than 100 parameters
+ * (<https://developers.cloudflare.com/d1/platform/limits/>). Enforcing it here
+ * makes the harness fail the way production does instead of silently accepting
+ * a query D1 would refuse — `sql.in(...)` lists above this ceiling are a real
+ * outage, not a style issue.
+ */
+export const D1_MAX_BOUND_PARAMS = 100
+
 class BoundStatement {
   constructor(
     private readonly db: DatabaseSync,
@@ -50,6 +59,12 @@ class BoundStatement {
   }
 
   execute(): D1ResultLike {
+    if (this.params.length > D1_MAX_BOUND_PARAMS) {
+      throw new Error(
+        `D1 rejects more than ${D1_MAX_BOUND_PARAMS} bound parameters per query ` +
+          `(got ${this.params.length}): ${this.sql}`
+      )
+    }
     const statement = this.db.prepare(this.sql)
     const results = statement.all(...(this.params as Array<string | number | null>))
     const meta = this.db
