@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { HttpRouter, HttpServerError, HttpServerRequest, HttpServerResponse } from "effect/http"
 import {
   SyncPushRequest,
@@ -50,6 +50,18 @@ const unexpectedFailure = (error: unknown): Effect.Effect<HttpServerResponse.Htt
     ? fail(400, "BadRequest", "Malformed request")
     : fail(500, "InternalError", "Unexpected server error", true)
 
+/**
+ * Effect v4 keeps `HttpServerRequest.url` path-only (`/sync/pull?cursor=0`);
+ * the absolute URL is derived from the `host`/`x-forwarded-proto` headers.
+ * `new URL(request.url)` therefore throws on every sync request — ask the
+ * request for its absolute URL instead.
+ */
+const requestUrl = (request: HttpServerRequest.HttpServerRequest): URL =>
+  Option.getOrElse(
+    HttpServerRequest.toURL(request),
+    () => new URL(request.url, "http://localhost")
+  )
+
 /** Cursor/limit are query params; the wire schema validates the body, not the URL. */
 const queryInt = (
   url: URL,
@@ -89,7 +101,7 @@ export const SyncRoutes = HttpRouter.use((router) =>
         if (context.householdId === null) {
           return yield* fail(409, "NoHousehold", "Join or create a household first")
         }
-        const url = new URL(request.url)
+        const url = requestUrl(request)
         const cursor = queryInt(url, "cursor", 0, 0)
         const limit = queryInt(url, "limit", 500, 1)
         if (cursor === undefined || limit === undefined) {
@@ -121,7 +133,7 @@ export const SyncRoutes = HttpRouter.use((router) =>
         if (context.householdId === null) {
           return yield* fail(409, "NoHousehold", "Join or create a household first")
         }
-        const url = new URL(request.url)
+        const url = requestUrl(request)
         const offset = queryInt(url, "offset", 0, 0)
         const limit = queryInt(url, "limit", 500, 1)
         if (offset === undefined || limit === undefined) {

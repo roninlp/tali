@@ -13,7 +13,10 @@ export default defineConfig({
     fileRoutes({ types: true })
   ],
   server: {
-    port: 3000
+    port: 3000,
+    // The api Worker allow-lists this exact origin (and the Alchemy stack pins
+    // it as the web dev URL), so fail loudly instead of drifting to :3001.
+    strictPort: true
   },
   test: {
     environment: "jsdom",

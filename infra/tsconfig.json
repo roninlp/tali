@@ -4,7 +4,8 @@
     "lib": ["ES2023", "DOM"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "types": ["node"],
     "noEmit": true
   },
-  "include": ["stack.ts"]
+  "include": ["alchemy.run.ts"]
 }

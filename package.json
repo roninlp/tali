@@ -9,6 +9,9 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "dev": "turbo run dev",
+    "stack:plan": "turbo run plan",
+    "stack:deploy": "turbo run deploy",
+    "stack:destroy": "turbo run destroy",
     "test:push": "node scripts/test-push.mjs"
   },
   "devDependencies": {
