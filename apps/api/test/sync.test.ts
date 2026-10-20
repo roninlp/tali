@@ -950,17 +950,167 @@ describe("sync engine", () => {
     expect(guarded.results[0]?._tag).toBe("applied")
     expect(guarded.results[0]?.item?.data).toMatchObject({ status: "todo", ownerId: USER_A })
 
-    // A task cannot exist without a title (FR-TASK-01); the schema rejects it.
+    // A task cannot exist without a title (FR-TASK-01); the schema rejects it
+    // as a *per-entry* rejection, so the valid entry in the same push applies.
     const before = feedCount(h.db)
-    await expect(
-      push(h, {
-        userId: USER_A,
-        householdId: HOUSEHOLD,
-        entries: [
-          entry({ entityType: "task", entityId: uuidV7(), baseVersion: 0, patch: { title: "" } })
-        ]
-      })
-    ).rejects.toMatchObject({ _tag: "SyncInvalidPatch" })
-    expect(feedCount(h.db)).toBe(before)
+    const valid = uuidV7()
+    const rejected = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({ entityType: "task", entityId: uuidV7(), baseVersion: 0, patch: { title: "" } }),
+        entry({ entityType: "listItem", entityId: valid, baseVersion: 0, patch: { title: "سالم" } })
+      ]
+    })
+    expect(rejected.results[0]).toMatchObject({ _tag: "rejected", code: "InvalidPatch" })
+    expect(rejected.results[1]?._tag).toBe("applied")
+    expect(rejected.results[1]?.item?.data.title).toBe("سالم")
+    expect(feedCount(h.db)).toBe(before + 1)
+  })
+
+  // ── M4: one unappliable entry must not wedge the outbox chunk ──────────────
+
+  it("rejects a duplicate live tag name without wedging the rest of the push", async () => {
+    const h = makeHarness()
+    const existing = uuidV7()
+    const duplicate = uuidV7()
+
+    // The spouse's tag is already live in the household.
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({ entityType: "tag", entityId: existing, baseVersion: 0, patch: { name: "فوری" } })
+      ]
+    })
+    const beforeFeed = feedCount(h.db)
+    const beforeApplied = appliedCount(h.db)
+
+    const mutation = entry({
+      entityType: "tag",
+      entityId: duplicate,
+      baseVersion: 0,
+      patch: { name: "فوری" }
+    })
+    const healthy = uuidV7()
+    const result = await push(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      entries: [
+        mutation,
+        entry({
+          entityType: "listItem",
+          entityId: healthy,
+          baseVersion: 0,
+          patch: { title: "سالم" }
+        })
+      ]
+    })
+
+    // The duplicate tag is rejected on its own; the healthy entry still applies.
+    expect(result.results).toHaveLength(2)
+    expect(result.results[0]).toMatchObject({
+      _tag: "rejected",
+      code: "UniqueViolation",
+      entityId: duplicate
+    })
+    expect(result.results[1]?._tag).toBe("applied")
+    expect(result.results[1]?.entityId).toBe(healthy)
+    // Exactly one feed row and one ledger row came from the healthy entry.
+    expect(feedCount(h.db)).toBe(beforeFeed + 1)
+    expect(appliedCount(h.db)).toBe(beforeApplied + 1)
+    // The duplicate id never landed; the spouse's row is still the only tag.
+    expect((h.db.prepare("SELECT COUNT(*) AS n FROM tags").get() as { readonly n: number }).n).toBe(1)
+
+    // Replaying the rejected entry is a no-op, and the next pass is not wedged.
+    const replay = await push(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      entries: [mutation]
+    })
+    expect(replay.results[0]).toMatchObject({ _tag: "rejected", code: "UniqueViolation" })
+    expect(feedCount(h.db)).toBe(beforeFeed + 1)
+    expect(appliedCount(h.db)).toBe(beforeApplied + 1)
+
+    const after = uuidV7()
+    const next = await push(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({ entityType: "listItem", entityId: after, baseVersion: 0, patch: { title: "بعدی" } })
+      ]
+    })
+    expect(next.results[0]?._tag).toBe("applied")
+  })
+
+  it("orders parents before children so a project+task push succeeds in one batch", async () => {
+    const h = makeHarness()
+    const projectId = uuidV7()
+    const taskId = uuidV7()
+
+    // The task arrives first in the request but its FK parent is also here.
+    const result = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "task",
+          entityId: taskId,
+          baseVersion: 0,
+          patch: { title: "کار", projectId }
+        }),
+        entry({
+          entityType: "project",
+          entityId: projectId,
+          baseVersion: 0,
+          patch: { title: "خانه" }
+        })
+      ]
+    })
+
+    expect(result.results.map((row) => row._tag)).toEqual(["applied", "applied"])
+    // Ordering inside the one batch is what makes the FK satisfiable.
+    expect(h.fake.batchCalls).toBe(1)
+    const task = h.db
+      .prepare("SELECT project_id FROM tasks WHERE id = ?")
+      .get(taskId) as { readonly project_id: string }
+    expect(task.project_id).toBe(projectId)
+  })
+
+  it("rejects a task whose project parent is missing instead of failing the request", async () => {
+    const h = makeHarness()
+    const taskId = uuidV7()
+    const healthy = uuidV7()
+    const before = feedCount(h.db)
+
+    const result = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "task",
+          entityId: taskId,
+          baseVersion: 0,
+          patch: { title: "یتیم", projectId: uuidV7() }
+        }),
+        entry({
+          entityType: "listItem",
+          entityId: healthy,
+          baseVersion: 0,
+          patch: { title: "سالم" }
+        })
+      ]
+    })
+
+    expect(result.results[0]).toMatchObject({
+      _tag: "rejected",
+      code: "ForeignKeyViolation",
+      entityId: taskId
+    })
+    expect(result.results[1]?._tag).toBe("applied")
+    expect(feedCount(h.db)).toBe(before + 1)
+    expect(
+      (h.db.prepare("SELECT COUNT(*) AS n FROM tasks WHERE id = ?").get(taskId) as { readonly n: number }).n
+    ).toBe(0)
   })
 })

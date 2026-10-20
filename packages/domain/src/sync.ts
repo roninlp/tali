@@ -170,12 +170,32 @@ const TombstoneResult = Schema.Struct({
   item: Schema.optional(SyncEntityRow)
 })
 
+/**
+ * A **non-retryable** per-entry failure: the server could not apply this entry
+ * as written, and retrying the identical entry can never succeed. Examples are
+ * a patch the aggregate's schema rejects, a live tag name another member
+ * already owns, or a row whose foreign-key parent is missing.
+ *
+ * One rejected entry never rejects the rest of its push. The client acks and
+ * drops it so it cannot wedge the outbox behind a permanent failure; `code` is
+ * stable for programmatic handling, `message` is for diagnosis only.
+ */
+const RejectedResult = Schema.Struct({
+  _tag: Schema.Literal("rejected"),
+  clientMutationId: Schema.String,
+  entityType: SyncEntityType,
+  entityId: Schema.String,
+  code: Schema.String,
+  message: Schema.String
+})
+
 /** Per-entry outcome (`docs/sync-protocol-draft.md` §4.3). */
 export const SyncPushResult = Schema.Union([
   AppliedResult,
   AlreadyAppliedResult,
   ConflictResult,
-  TombstoneResult
+  TombstoneResult,
+  RejectedResult
 ])
 export type SyncPushResult = Schema.Schema.Type<typeof SyncPushResult>
 

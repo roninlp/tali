@@ -105,7 +105,89 @@ type Plan =
     readonly entry: PushEntry
     readonly tag: WriteTag
     readonly state: SyncEntityState
+    /** Index into the planned write groups (statements are applied per group). */
+    readonly group: number
   }
+  | {
+    readonly kind: "rejected"
+    readonly entry: PushEntry
+    readonly code: string
+    readonly message: string
+  }
+
+/** A non-retryable per-entry failure surfaced as `_tag: "rejected"`. */
+interface ConstraintFailure {
+  readonly code: string
+  readonly message: string
+}
+
+/**
+ * The stable code for an entry the server can never apply as written. The raw
+ * SQLite message is kept for diagnosis; the code is what clients branch on.
+ */
+const CONSTRAINT_CODES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/UNIQUE constraint failed/i, "UniqueViolation"],
+  [/FOREIGN KEY constraint failed/i, "ForeignKeyViolation"],
+  [/NOT NULL constraint failed/i, "NotNullViolation"],
+  [/CHECK constraint failed/i, "CheckViolation"],
+  [/constraint failed/i, "ConstraintViolation"]
+]
+
+/**
+ * D1 and the driver wrap SQLite failures differently (`SqlError` → reason →
+ * native cause), so collect messages/codes down the whole cause chain rather
+ * than matching only the top-level error.
+ */
+const errorTexts = (error: unknown, seen = new Set<unknown>()): ReadonlyArray<string> => {
+  if (error === null || error === undefined) return []
+  if (typeof error === "string") return [error]
+  if (typeof error !== "object" || seen.has(error)) return []
+  seen.add(error)
+  const record = error as Record<string, unknown>
+  const texts: Array<string> = []
+  for (const key of ["message", "code", "errstr"]) {
+    const value = record[key]
+    if (typeof value === "string") texts.push(value)
+  }
+  for (const key of ["cause", "reason", "error"]) {
+    texts.push(...errorTexts(record[key], seen))
+  }
+  return texts
+}
+
+/** `undefined` means "not a constraint failure" — keep today's retryable path. */
+const constraintFailureOf = (error: unknown): ConstraintFailure | undefined => {
+  const texts = errorTexts(error)
+  if (texts.length === 0) return undefined
+  const joined = texts.join("\n")
+  for (const [pattern, code] of CONSTRAINT_CODES) {
+    if (!pattern.test(joined)) continue
+    const detail = texts.find((text) => pattern.test(text)) ?? joined
+    return { code, message: detail.slice(0, 500) }
+  }
+  return undefined
+}
+
+/**
+ * Parents before children inside one batch, so the common offline "create a
+ * project/tag/list and its dependent row together" push succeeds without a
+ * retry. `Array.prototype.sort` is stable, so entries for the same entity keep
+ * their FIFO order.
+ */
+const dependencyRank = (entityType: SyncEntityType): number => {
+  switch (entityType) {
+    case "project":
+    case "tag":
+    case "list":
+      return 0
+    case "task":
+    case "note":
+    case "listItem":
+      return 1
+    default:
+      return 1
+  }
+}
 
 const asVisibility = (value: unknown): Visibility =>
   value === "private" ? "private" : "shared"
@@ -152,7 +234,35 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
   make: Effect.gen(function*() {
     const repo = yield* SyncRepo
 
+    /**
+     * One entry's write, always exactly three statements: entity write, gated
+     * feed append, gated ledger row. Grouping them lets the failure path retry
+     * one entry at a time without ever splitting the exactly-once triple.
+     */
+    type WriteStatement = ReturnType<typeof repo.writeEntity>
+    interface WriteGroup {
+      readonly index: number
+      readonly entry: PushEntry
+      readonly state: SyncEntityState
+      readonly expectedVersion: number | null
+      readonly statements: ReadonlyArray<WriteStatement>
+    }
+
     const entityTypeOf = (entityType: SyncEntityType) => repo.definition(entityType)
+
+    /**
+     * Commit a statement sequence, distinguishing a SQLite constraint failure
+     * (the caller isolates it per entry) from a transient/infra failure (which
+     * stays retryable exactly as before).
+     */
+    const commitOrConstraint = (statements: ReadonlyArray<WriteStatement>) =>
+      repo.commit(statements).pipe(
+        Effect.map(() => undefined as ConstraintFailure | undefined),
+        Effect.catchTag("SqlError", (error) => {
+          const constraint = constraintFailureOf(error)
+          return constraint === undefined ? Effect.die(error) : Effect.succeed(constraint)
+        })
+      )
 
     const push = (input: {
       readonly userId: string
@@ -183,8 +293,12 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           .pipe(Effect.orDie)
         const planned = new Map(states)
         const plans: Array<Plan> = []
-        const statements: Array<ReturnType<typeof repo.writeEntity>> = []
+        const groups: Array<WriteGroup> = []
         const now = new Date().toISOString()
+
+        const reject = (entry: PushEntry, code: string, message: string) => {
+          plans.push({ kind: "rejected", entry, code, message })
+        }
 
         /** Strict decode boundary for client-authored data. */
         const validate = (
@@ -214,6 +328,21 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
                 : Effect.die(result.error)
           )
 
+        /**
+         * An invalid patch is this entry's problem, not the request's: the
+         * other entries in the push still apply and this one is rejected.
+         */
+        const validateEntry = (
+          definition: SyncEntityDefinition,
+          data: Record<string, unknown>,
+          meta: SyncEntityMeta,
+          entry: PushEntry
+        ) =>
+          validate(definition, data, meta, entry).pipe(
+            Effect.map(Option.some),
+            Effect.catchTag("SyncInvalidPatch", () => Effect.succeed(Option.none()))
+          )
+
         const write = (
           entry: PushEntry,
           state: SyncEntityState,
@@ -221,27 +350,36 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           op: "upsert" | "delete",
           tag: WriteTag
         ) => {
-          statements.push(repo.writeEntity({ state, expectedVersion }))
-          statements.push(repo.appendFeed({
-            householdId: input.householdId,
-            entityType: state.entityType,
-            entityId: state.entityId,
-            op,
-            version: state.version,
-            updatedAt: state.updatedAt,
-            ownerId: state.ownerId,
-            visibility: state.visibility
-          }))
-          statements.push(repo.recordApplied({
-            clientMutationId: entry.clientMutationId,
-            householdId: input.householdId,
-            entityType: state.entityType,
-            entityId: state.entityId,
-            version: state.version,
-            createdAt: now
-          }))
+          const group: WriteGroup = {
+            index: groups.length,
+            entry,
+            state,
+            expectedVersion,
+            statements: [
+              repo.writeEntity({ state, expectedVersion }),
+              repo.appendFeed({
+                householdId: input.householdId,
+                entityType: state.entityType,
+                entityId: state.entityId,
+                op,
+                version: state.version,
+                updatedAt: state.updatedAt,
+                ownerId: state.ownerId,
+                visibility: state.visibility
+              }),
+              repo.recordApplied({
+                clientMutationId: entry.clientMutationId,
+                householdId: input.householdId,
+                entityType: state.entityType,
+                entityId: state.entityId,
+                version: state.version,
+                createdAt: now
+              })
+            ]
+          }
+          groups.push(group)
           planned.set(entityKey(state), state)
-          plans.push({ kind: "write", entry, tag, state })
+          plans.push({ kind: "write", entry, tag, state, group: group.index })
         }
 
         /** Insert data for an offline create, validated against the aggregate. */
@@ -337,7 +475,12 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           }
 
           if (current === undefined) {
-            const data = yield* insertData(definition, entry, patch)
+            const inserted = yield* Effect.option(insertData(definition, entry, patch))
+            if (Option.isNone(inserted)) {
+              reject(entry, "InvalidPatch", "The patch does not match this entity")
+              continue
+            }
+            const data = inserted.value
             const visibility = asVisibility(data.visibility)
             const state: SyncEntityState = {
               entityType: entry.entityType,
@@ -369,12 +512,17 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
               conflict: false,
               now
             })
-            const data = yield* validate(
+            const validated = yield* validateEntry(
               definition,
               merged,
               { version: current.version + 1, updatedAt: now, deletedAt: null },
               entry
             )
+            if (Option.isNone(validated)) {
+              reject(entry, "InvalidPatch", "The patch does not match this entity")
+              continue
+            }
+            const data = validated.value
             const visibility = asVisibility(data.visibility ?? current.visibility)
             const state: SyncEntityState = {
               ...current,
@@ -399,12 +547,17 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
             conflict: true,
             now
           })
-          const data = yield* validate(
+          const validated = yield* validateEntry(
             definition,
             merged,
             { version: current.version + 1, updatedAt: now, deletedAt: null },
             entry
           )
+          if (Option.isNone(validated)) {
+            reject(entry, "InvalidPatch", "The patch does not match this entity")
+            continue
+          }
+          const data = validated.value
           const visibility = asVisibility(data.visibility ?? current.visibility)
 
           if (sameData(data, current.data) && visibility === current.visibility) {
@@ -422,10 +575,32 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           write(entry, state, current.version, "upsert", "conflict")
         }
 
-        yield* repo.commit(statements).pipe(Effect.orDie)
+        // Parents before children (stable within a type), so a project/tag/list
+        // created in the same push exists before the task/note/listItem that
+        // references it. The happy path is still exactly one D1 batch.
+        const orderedGroups = [...groups].sort(
+          (a, b) => dependencyRank(a.state.entityType) - dependencyRank(b.state.entityType)
+        )
+        const rejectedGroups = new Map<number, ConstraintFailure>()
+
+        if (orderedGroups.length > 0) {
+          const failure = yield* commitOrConstraint(
+            orderedGroups.flatMap((group) => group.statements)
+          )
+          if (failure !== undefined) {
+            // The batch rolled back atomically, so nothing was applied twice.
+            // Re-run one entry at a time: the entries that fit apply normally,
+            // the entry that violated a constraint is rejected on its own.
+            for (const group of orderedGroups) {
+              const groupFailure = yield* commitOrConstraint(group.statements)
+              if (groupFailure !== undefined) rejectedGroups.set(group.index, groupFailure)
+            }
+          }
+        }
 
         const writes = plans.filter(
-          (plan): plan is Extract<Plan, { readonly kind: "write" }> => plan.kind === "write"
+          (plan): plan is Extract<Plan, { readonly kind: "write" }> =>
+            plan.kind === "write" && !rejectedGroups.has(plan.group)
         )
         const applied = yield* repo
           .findApplied({
@@ -433,14 +608,25 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
             clientMutationIds: writes.map((plan) => plan.entry.clientMutationId)
           })
           .pipe(Effect.orDie)
-        // The gated CAS writes nothing when a concurrent writer won, so a
-        // missing ledger row means this entry did not apply. Failing the whole
-        // request is safe and never silently drops the client's edit: the
-        // client keeps its outbox and retries, and already-applied entries
-        // dedupe. See `writeEntity`/`appendFeed` in `sync-repo.ts`.
-        const contended = writes.filter(
-          (plan) => !applied.has(plan.entry.clientMutationId)
-        )
+
+        // Two distinct "the write changed nothing" outcomes:
+        // - an UPDATE gate missed because another writer won the CAS → retryable;
+        // - an INSERT with ON CONFLICT DO NOTHING no-oped because a live row
+        //   already holds the unique key (e.g. a household tag name) → this
+        //   entry can never apply as written, so reject it instead of looping.
+        const contended: Array<Extract<Plan, { readonly kind: "write" }>> = []
+        for (const plan of writes) {
+          if (applied.has(plan.entry.clientMutationId)) continue
+          const group = groups[plan.group]!
+          if (group.expectedVersion === null) {
+            rejectedGroups.set(plan.group, {
+              code: "UniqueViolation",
+              message: "Insert conflicted with a row that is already live"
+            })
+          } else {
+            contended.push(plan)
+          }
+        }
         if (contended.length > 0) {
           return yield* Effect.fail(new SyncContended({ count: contended.length }))
         }
@@ -453,6 +639,29 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           .pipe(Effect.orDie)
 
         const results: Array<SyncPushResult> = plans.map((plan) => {
+          if (plan.kind === "rejected") {
+            return {
+              _tag: "rejected" as const,
+              clientMutationId: plan.entry.clientMutationId,
+              entityType: plan.entry.entityType,
+              entityId: plan.entry.entityId,
+              code: plan.code,
+              message: plan.message
+            }
+          }
+          if (plan.kind === "write") {
+            const rejection = rejectedGroups.get(plan.group)
+            if (rejection !== undefined) {
+              return {
+                _tag: "rejected" as const,
+                clientMutationId: plan.entry.clientMutationId,
+                entityType: plan.entry.entityType,
+                entityId: plan.entry.entityId,
+                code: rejection.code,
+                message: rejection.message
+              }
+            }
+          }
           const state = authoritative.get(entityKey(plan.entry)) ??
             (plan.kind === "dedupe" ? undefined : plan.state)
           const item = state === undefined || state.householdId !== input.householdId
@@ -481,7 +690,10 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           }
         })
 
-        const cursor = results.reduce((max, result) => Math.max(max, result.seq), 0)
+        const cursor = results.reduce(
+          (max, result) => result._tag === "rejected" ? max : Math.max(max, result.seq),
+          0
+        )
         return { results, cursor }
       })
 

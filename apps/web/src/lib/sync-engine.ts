@@ -4,7 +4,8 @@ import {
   SyncPullResponse,
   SyncPushResponse,
   type SyncEntityRow,
-  type SyncPushEntry
+  type SyncPushEntry,
+  type SyncPushResult
 } from "@tali/domain"
 import { API_URL } from "./config"
 import type { LocalStore } from "./local-store/types"
@@ -85,8 +86,8 @@ export const httpSyncTransport = (): SyncTransport => ({
     })
 })
 
-const asServerRows = (result: { readonly item?: SyncEntityRow }): ReadonlyArray<SyncEntityRow> =>
-  result.item === undefined ? [] : [result.item]
+const asServerRows = (result: SyncPushResult): ReadonlyArray<SyncEntityRow> =>
+  result._tag === "rejected" || result.item === undefined ? [] : [result.item]
 
 export interface SyncEngine {
   /** One reconcile pass: pull deltas, then drain as much of the outbox as possible. */
@@ -194,6 +195,16 @@ export const createSyncEngine = (
         continue
       }
       for (const result of response.results) {
+        // A rejected entry can never apply as written (invalid patch, duplicate
+        // live tag name, missing FK parent). Acking it below drops it from the
+        // outbox so it cannot wedge every later entry; the mirror row stays
+        // because the user's local intent is still what they see.
+        if (result._tag === "rejected") {
+          console.warn(
+            `[sync] rejected ${result.entityType}/${result.entityId} (${result.code}): ${result.message}`
+          )
+          continue
+        }
         versionByEntity.set(
           `${result.entityType}\u0000${result.entityId}`,
           result.version
