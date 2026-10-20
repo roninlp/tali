@@ -70,6 +70,9 @@ export class FakeD1 {
    */
   beforeBatch: (() => void) | undefined
 
+  /** How many `batch()` calls ran — the sync commit must be exactly one. */
+  batchCalls = 0
+
   constructor(readonly db: DatabaseSync) {}
 
   prepare(sql: string): BoundStatement {
@@ -79,6 +82,7 @@ export class FakeD1 {
   async batch(
     statements: ReadonlyArray<BoundStatement>
   ): Promise<ReadonlyArray<D1ResultLike>> {
+    this.batchCalls += 1
     this.beforeBatch?.()
     this.db.exec("BEGIN")
     try {
