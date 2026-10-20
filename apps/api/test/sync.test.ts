@@ -1113,4 +1113,59 @@ describe("sync engine", () => {
       (h.db.prepare("SELECT COUNT(*) AS n FROM tasks WHERE id = ?").get(taskId) as { readonly n: number }).n
     ).toBe(0)
   })
+
+  it("keeps a delete tombstone retryable when the row appears after the pre-read", async () => {
+    const h = makeHarness()
+    const id = uuidV7()
+
+    // A `delete` for an unseen row is inserted as a tombstone. Another writer
+    // creates that row between our pre-read and our batch, so the insert is
+    // suppressed by ON CONFLICT DO NOTHING. That is a lost race, not an
+    // unappliable entry: the retry sees the live row and deletes it.
+    h.fake.beforeBatch = () => {
+      h.fake.beforeBatch = undefined
+      h.db
+        .prepare(
+          `INSERT INTO list_items
+             (id, title, checked, sort_order, version, created_at, updated_at, deleted_at,
+              household_id, owner_id, visibility, type, done, ordering, tag_ids)
+           VALUES (?, ?, 0, 0, 1, ?, ?, NULL, ?, ?, 'shared', 'listItem', 0, 0, '[]')`
+        )
+        .run(id, "همسر", NOW(), NOW(), HOUSEHOLD, USER_B)
+    }
+
+    const mutation = entry({ entityId: id, baseVersion: 0, op: "delete", patch: {} })
+    await expect(
+      push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] })
+    ).rejects.toMatchObject({ _tag: "SyncContended" })
+    expect(feedCount(h.db)).toBe(0)
+
+    // The retry resolves against the row that now exists and tombstones it,
+    // instead of silently dropping the user's delete.
+    const retry = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] })
+    expect(retry.results[0]?._tag).toBe("applied")
+    expect(retry.results[0]?.item?.deletedAt).not.toBeNull()
+  })
+
+  it("keeps non-constraint failures retryable instead of rejecting the entry", async () => {
+    const h = makeHarness()
+    const id = uuidV7()
+
+    // A transient D1 failure must not be isolated into a per-entry rejection:
+    // that would tell the client to drop a mutation that is perfectly valid.
+    h.fake.beforeBatch = () => {
+      h.fake.beforeBatch = undefined
+      throw new Error("D1_ERROR: network connection lost: NETWORK")
+    }
+
+    const mutation = entry({ entityId: id, baseVersion: 0, patch: { title: "سالم" } })
+    await expect(
+      push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] })
+    ).rejects.toMatchObject({ _tag: "SqlError" })
+    expect(feedCount(h.db)).toBe(0)
+    expect(appliedCount(h.db)).toBe(0)
+
+    const retry = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] })
+    expect(retry.results[0]?._tag).toBe("applied")
+  })
 })

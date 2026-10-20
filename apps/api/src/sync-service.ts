@@ -611,14 +611,21 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
 
         // Two distinct "the write changed nothing" outcomes:
         // - an UPDATE gate missed because another writer won the CAS → retryable;
-        // - an INSERT with ON CONFLICT DO NOTHING no-oped because a live row
-        //   already holds the unique key (e.g. a household tag name) → this
+        // - an upsert INSERT with ON CONFLICT DO NOTHING no-oped because a live
+        //   row already holds the unique key (e.g. a household tag name) → this
         //   entry can never apply as written, so reject it instead of looping.
+        //
+        // A `delete` for a row the server never saw is also an insert
+        // (`expectedVersion: null`), but its no-op means the row *did* appear
+        // after our pre-read. That converges on retry (the retry sees the live
+        // row and applies the delete through the CAS), so it stays retryable;
+        // rejecting it would drop the delete and resurrect the row on the next
+        // pull.
         const contended: Array<Extract<Plan, { readonly kind: "write" }>> = []
         for (const plan of writes) {
           if (applied.has(plan.entry.clientMutationId)) continue
           const group = groups[plan.group]!
-          if (group.expectedVersion === null) {
+          if (group.expectedVersion === null && group.entry.op === "upsert") {
             rejectedGroups.set(plan.group, {
               code: "UniqueViolation",
               message: "Insert conflicted with a row that is already live"
