@@ -11,7 +11,11 @@ import {
   type SyncPullResponse,
   type SyncPushEntry
 } from "@tali/domain"
-import { SyncService, SyncServiceLive } from "../src/sync-service.js"
+import {
+  MAX_ISOLATION_BATCHES,
+  SyncService,
+  SyncServiceLive
+} from "../src/sync-service.js"
 import { FakeD1 } from "./fake-d1.js"
 
 /**
@@ -103,6 +107,28 @@ const entry = (input: {
   patch: input.patch ?? {},
   clientUpdatedAt: input.at ?? NOW()
 })
+
+/**
+ * A full-size push chunk of listItems, with the listed positions replaced by
+ * tasks whose project parent does not exist — permanent FK constraint
+ * failures. Task and listItem share a dependency rank, so input order (and
+ * therefore the position under test) is preserved.
+ */
+const isolationChunk = (count: number, poisonAt: ReadonlyArray<number>) => {
+  const poisoned = new Set(poisonAt)
+  const ids = Array.from({ length: count }, () => uuidV7())
+  const entries = ids.map((entityId, index) =>
+    poisoned.has(index)
+      ? entry({
+        entityType: "task",
+        entityId,
+        baseVersion: 0,
+        patch: { title: `poison-${index}`, projectId: uuidV7() }
+      })
+      : entry({ entityId, baseVersion: 0, patch: { title: `ok-${index}` } })
+  )
+  return { ids, entries }
+}
 
 const itemOf = (page: SyncPullResponse, entityId: string) =>
   page.items.find((item) => item.entityId === entityId)
@@ -1112,6 +1138,157 @@ describe("sync engine", () => {
     expect(
       (h.db.prepare("SELECT COUNT(*) AS n FROM tasks WHERE id = ?").get(taskId) as { readonly n: number }).n
     ).toBe(0)
+  })
+
+  // ── M4 follow-up: bounded bisection, not an O(entries) isolation sweep ─────
+
+  it("isolates one poison entry among 200 within MAX_ISOLATION_BATCHES", async () => {
+    const h = makeHarness()
+
+    // The happy path is unchanged: a full chunk still commits in one batch.
+    const healthy = Array.from({ length: 200 }, () => uuidV7())
+    const happy = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: healthy.map((entityId) =>
+        entry({ entityId, baseVersion: 0, patch: { title: entityId } })
+      )
+    })
+    expect(happy.results.every((result) => result._tag === "applied")).toBe(true)
+    expect(h.fake.batchCalls).toBe(1)
+
+    h.fake.batchCalls = 0
+    const beforeFeed = feedCount(h.db)
+    const beforeApplied = appliedCount(h.db)
+    const { ids, entries } = isolationChunk(200, [100])
+
+    const result = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
+
+    expect(result.results).toHaveLength(200)
+    expect(result.results[100]).toMatchObject({
+      _tag: "rejected",
+      code: "ForeignKeyViolation",
+      entityId: ids[100]
+    })
+    expect(result.results.filter((row) => row._tag === "applied")).toHaveLength(199)
+    // Bisection needs 16 batches for one bad entry in 200 — not 201.
+    expect(h.fake.batchCalls).toBe(16)
+    expect(h.fake.batchCalls).toBeLessThanOrEqual(MAX_ISOLATION_BATCHES)
+    expect(feedCount(h.db)).toBe(beforeFeed + 199)
+    expect(appliedCount(h.db)).toBe(beforeApplied + 199)
+  })
+
+  it("isolates a poison entry in first, middle and last position", async () => {
+    const h = makeHarness()
+
+    for (const position of [0, 100, 199]) {
+      h.fake.batchCalls = 0
+      const { ids, entries } = isolationChunk(200, [position])
+      const result = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
+
+      expect(result.results[position]).toMatchObject({
+        _tag: "rejected",
+        code: "ForeignKeyViolation",
+        entityId: ids[position]
+      })
+      expect(result.results.filter((row) => row._tag === "applied")).toHaveLength(199)
+      expect(h.fake.batchCalls).toBeLessThanOrEqual(MAX_ISOLATION_BATCHES)
+    }
+  })
+
+  it("isolates two poison entries without a per-entry sweep", async () => {
+    const h = makeHarness()
+    const beforeFeed = feedCount(h.db)
+    const beforeApplied = appliedCount(h.db)
+    const { ids, entries } = isolationChunk(200, [0, 199])
+
+    const result = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
+
+    expect(result.results[0]).toMatchObject({
+      _tag: "rejected",
+      code: "ForeignKeyViolation",
+      entityId: ids[0]
+    })
+    expect(result.results[199]).toMatchObject({
+      _tag: "rejected",
+      code: "ForeignKeyViolation",
+      entityId: ids[199]
+    })
+    expect(result.results.filter((row) => row._tag === "applied")).toHaveLength(198)
+    // Two bad entries at opposite ends of the chunk: 31 batches, still bounded.
+    expect(h.fake.batchCalls).toBe(31)
+    expect(h.fake.batchCalls).toBeLessThanOrEqual(MAX_ISOLATION_BATCHES)
+    expect(feedCount(h.db)).toBe(beforeFeed + 198)
+    expect(appliedCount(h.db)).toBe(beforeApplied + 198)
+  })
+
+  it("returns AttributionLimit instead of wedging when the batch budget is exhausted", async () => {
+    const h = makeHarness()
+    const { entries } = isolationChunk(200, [0, 100, 199])
+
+    const result = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
+
+    // The push still completes: no retryable failure, no unbounded fan-out.
+    expect(result.results).toHaveLength(200)
+    expect(h.fake.batchCalls).toBe(MAX_ISOLATION_BATCHES)
+    expect(result.results.every((row) => row._tag === "applied" || row._tag === "rejected")).toBe(true)
+    const limited = result.results.filter(
+      (row) => row._tag === "rejected" && row.code === "AttributionLimit"
+    )
+    expect(limited.length).toBeGreaterThan(0)
+    // Every entry the server said it applied is in the feed and ledger exactly once.
+    const applied = result.results.filter((row) => row._tag === "applied").length
+    expect(feedCount(h.db)).toBe(applied)
+    expect(appliedCount(h.db)).toBe(applied)
+  })
+
+  it("propagates a non-constraint failure from the attribution path as retryable", async () => {
+    const h = makeHarness()
+    const { entries } = isolationChunk(200, [100])
+
+    // The full batch fails on the poison's constraint; the very next
+    // attribution batch hits a transient network failure. That must escape as
+    // retryable, never as a per-entry rejection the client would ack.
+    let seen = 0
+    h.fake.beforeBatch = () => {
+      seen += 1
+      if (seen === 2) throw new Error("D1_ERROR: network connection lost: NETWORK")
+    }
+
+    await expect(
+      push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
+    ).rejects.toMatchObject({ _tag: "SqlError" })
+    expect(feedCount(h.db)).toBe(0)
+    expect(appliedCount(h.db)).toBe(0)
+
+    h.fake.beforeBatch = undefined
+    h.fake.batchCalls = 0
+    const retry = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
+    expect(retry.results.filter((row) => row._tag === "applied")).toHaveLength(199)
+    expect(retry.results[100]?._tag).toBe("rejected")
+    expect(h.fake.batchCalls).toBeLessThanOrEqual(MAX_ISOLATION_BATCHES)
+  })
+
+  it("replays a partially isolated push exactly once", async () => {
+    const h = makeHarness()
+    const { entries } = isolationChunk(200, [100])
+
+    const first = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
+    expect(first.results.filter((row) => row._tag === "applied")).toHaveLength(199)
+    const feedAfterFirst = feedCount(h.db)
+    const appliedAfterFirst = appliedCount(h.db)
+
+    h.fake.batchCalls = 0
+    const replay = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
+    expect(replay.results.filter((row) => row._tag === "alreadyApplied")).toHaveLength(199)
+    expect(replay.results[100]).toMatchObject({
+      _tag: "rejected",
+      code: "ForeignKeyViolation"
+    })
+    expect(feedCount(h.db)).toBe(feedAfterFirst)
+    expect(appliedCount(h.db)).toBe(appliedAfterFirst)
+    // Only the rejected entry was re-attempted.
+    expect(h.fake.batchCalls).toBe(2)
   })
 
   it("keeps a delete tombstone retryable when the row appears after the pre-read", async () => {

@@ -27,6 +27,8 @@ import {
  * Pull reads the household-scoped `change_feed` and hydrates the latest row
  * state; push dedupes, resolves conflicts field-by-field (tombstone →
  * delete-wins → done-wins → LWW), and commits every write in one D1 batch.
+ * A constraint failure is attributed to entry groups by bounded recursive
+ * bisection (`MAX_ISOLATION_BATCHES`), never a linear per-entry sweep.
  * The server is the single resolver: clients adopt the returned row.
  *
  * Which aggregates sync, their tables, writable-field allowlists and hydration
@@ -38,6 +40,17 @@ const FEED_RETENTION_MS = 90 * 24 * 60 * 60 * 1000
 const DEFAULT_PULL_LIMIT = 500
 const MAX_PULL_LIMIT = 1000
 const MAX_PUSH_ENTRIES = 200
+
+/**
+ * Hard ceiling on the D1 batches one push may issue, including its first
+ * (happy-path) attempt, while attributing a constraint failure to entry
+ * groups. Recursive bisection needs ~18 batches to find one bad entry among
+ * `MAX_PUSH_ENTRIES` and ~31 for two; a linear per-entry sweep would need up
+ * to 201 and turn into a retryable 500 under Workers/D1 limits. At the cap the
+ * unattempted groups are returned as `rejected` with `AttributionLimit` so the
+ * client acks them instead of resending the chunk forever.
+ */
+export const MAX_ISOLATION_BATCHES = 32
 
 export class UnsupportedSyncEntity extends Data.TaggedError("UnsupportedSyncEntity")<{
   readonly entityType: string
@@ -582,19 +595,69 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           (a, b) => dependencyRank(a.state.entityType) - dependencyRank(b.state.entityType)
         )
         const rejectedGroups = new Map<number, ConstraintFailure>()
+        let batchesUsed = 0
+
+        const commit = (subset: ReadonlyArray<WriteGroup>) =>
+          Effect.suspend(() => {
+            batchesUsed += 1
+            return commitOrConstraint(subset.flatMap((group) => group.statements))
+          })
+
+        /**
+         * Attribute a failed batch by recursive bisection instead of a linear
+         * per-entry sweep. `subset` is a contiguous range already known to
+         * have failed a constraint; halves are attempted in order so a parent
+         * half is always committed before a child half. A half that succeeds
+         * is applied exactly once (the parent rolled back atomically); a half
+         * that fails is split again, and a single group is attempted once:
+         * its own constraint failure rejects it, while a non-constraint error
+         * propagates as the request's retryable failure.
+         *
+         * The budget is a hard cap, not a hint: once `MAX_ISOLATION_BATCHES`
+         * batches have run, the unattempted remainder is marked rejected with
+         * `AttributionLimit` so an unlucky chunk can never wedge the outbox.
+         */
+        const attribute = (subset: ReadonlyArray<WriteGroup>): Effect.Effect<void> =>
+          Effect.suspend(() => {
+            if (batchesUsed >= MAX_ISOLATION_BATCHES) {
+              const limit: ConstraintFailure = {
+                code: "AttributionLimit",
+                message:
+                  `Isolation stopped after ${MAX_ISOLATION_BATCHES} batches; this entry could not be attributed`
+              }
+              for (const group of subset) rejectedGroups.set(group.index, limit)
+              return Effect.void
+            }
+            if (subset.length === 1) {
+              const group = subset[0]!
+              return commit(subset).pipe(
+                Effect.map((failure) => {
+                  if (failure !== undefined) rejectedGroups.set(group.index, failure)
+                })
+              )
+            }
+            const mid = Math.floor(subset.length / 2)
+            const halves = [subset.slice(0, mid), subset.slice(mid)]
+            return Effect.forEach(
+              halves,
+              (half) =>
+                Effect.suspend(() => {
+                  if (batchesUsed >= MAX_ISOLATION_BATCHES) return attribute(half)
+                  return commit(half).pipe(
+                    Effect.flatMap((failure) =>
+                      failure === undefined ? Effect.void : attribute(half)
+                    )
+                  )
+                }),
+              { discard: true }
+            )
+          })
 
         if (orderedGroups.length > 0) {
-          const failure = yield* commitOrConstraint(
-            orderedGroups.flatMap((group) => group.statements)
-          )
+          const failure = yield* commit(orderedGroups)
           if (failure !== undefined) {
-            // The batch rolled back atomically, so nothing was applied twice.
-            // Re-run one entry at a time: the entries that fit apply normally,
-            // the entry that violated a constraint is rejected on its own.
-            for (const group of orderedGroups) {
-              const groupFailure = yield* commitOrConstraint(group.statements)
-              if (groupFailure !== undefined) rejectedGroups.set(group.index, groupFailure)
-            }
+            // The batch rolled back atomically, so no group was applied twice.
+            yield* attribute(orderedGroups)
           }
         }
 
