@@ -58,7 +58,8 @@ VITE_VAPID_PUBLIC_KEY=<public key>
 VITE_API_URL=http://localhost:8787
 ```
 
-`apps/api/.dev.vars` (git-ignored; `wrangler dev` reads it):
+`apps/api/.dev.vars` (git-ignored; read by the test-push script, and usable as
+`alchemy deploy --env-file .dev.vars` once the Worker starts signing pushes):
 
 ```sh
 VAPID_PUBLIC_KEY=<public key>
@@ -71,20 +72,16 @@ WEB_ORIGIN=http://localhost:3000
 rejects localhost subjects. The API route does not sign anything yet, but the
 test script does, and the same values will become the Worker's secrets.
 
-## 3. Apply the migration and run the app
+## 3. Run the app
+
+From the repo root:
 
 ```sh
-cd apps/api
-pnpm wrangler d1 migrations apply DB --local
-pnpm dev                      # wrangler dev on :8787
+pnpm dev                      # alchemy dev: local D1 (migrations applied) + api on :8787 + web on :3000
 ```
 
-In a second terminal:
-
-```sh
-cd apps/web
-pnpm dev                      # Vite on :3000
-```
+One process brings up the API Worker, the database, and the Vite server; there
+is no separate `wrangler dev` step and no manual migration command.
 
 Open <http://localhost:3000> (localhost is a secure context, so Web Push works
 without HTTPS), then register/sign in, create or join the household, and go to

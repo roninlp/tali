@@ -6,5 +6,17 @@
   "dependencies": {
     "alchemy": "2.0.0-beta.83",
     "effect": "^4.0.5"
+  },
+  "devDependencies": {
+    "@effect/platform-node": "^4.0.5",
+    "@types/node": "^26.6.5",
+    "typescript": "~5.9.3"
+  },
+  "scripts": {
+    "dev": "alchemy dev",
+    "deploy": "alchemy deploy",
+    "plan": "alchemy plan",
+    "destroy": "alchemy destroy",
+    "typecheck": "tsc --noEmit"
   }
 }
