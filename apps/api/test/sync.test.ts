@@ -7,15 +7,21 @@ import { D1Client } from "@effect/sql-d1"
 import {
   uuidV7,
   type SyncEntityRow,
+  type SyncEntityType,
   type SyncPullResponse,
   type SyncPushEntry
 } from "@tali/domain"
-import { SyncService, SyncServiceLive } from "../src/sync-service.js"
+import {
+  MAX_ISOLATION_BATCHES,
+  SyncService,
+  SyncServiceLive
+} from "../src/sync-service.js"
 import { FakeD1 } from "./fake-d1.js"
 
 /**
- * The exit criterion for #18: two devices converge for the dummy aggregate
- * after offline edits on both sides.
+ * The sync-engine suite: #18's two-device convergence for the dummy aggregate,
+ * extended by #34 to the per-entity registry (Task alongside the legacy
+ * listItem), plus visibility/authorization, dedupe, CAS and bootstrap.
  *
  * These run the real service + repository SQL against SQLite (D1's engine),
  * through a D1-shaped batch so atomicity and `last_insert_rowid()` behave like
@@ -23,7 +29,12 @@ import { FakeD1 } from "./fake-d1.js"
  * server, which is exactly what two browsers do.
  */
 
-const MIGRATIONS = ["0001_list_items.sql", "0002_auth.sql", "0003_sync_engine.sql"]
+const MIGRATIONS = [
+  "0001_list_items.sql",
+  "0002_auth.sql",
+  "0003_sync_engine.sql",
+  "0005_core_planning.sql"
+]
 const NOW = (): string => new Date().toISOString()
 const PAST = "2020-01-01T00:00:00.000Z"
 const FUTURE = (): string => new Date(Date.now() + 60_000).toISOString()
@@ -80,6 +91,7 @@ const push = (
   )
 
 const entry = (input: {
+  readonly entityType?: SyncEntityType
   readonly entityId: string
   readonly baseVersion: number
   readonly patch?: Record<string, unknown>
@@ -88,13 +100,35 @@ const entry = (input: {
   readonly clientMutationId?: string
 }): SyncPushEntry => ({
   clientMutationId: input.clientMutationId ?? uuidV7(),
-  entityType: "listItem",
+  entityType: input.entityType ?? "listItem",
   entityId: input.entityId,
   baseVersion: input.baseVersion,
   op: input.op ?? "upsert",
   patch: input.patch ?? {},
   clientUpdatedAt: input.at ?? NOW()
 })
+
+/**
+ * A full-size push chunk of listItems, with the listed positions replaced by
+ * tasks whose project parent does not exist — permanent FK constraint
+ * failures. Task and listItem share a dependency rank, so input order (and
+ * therefore the position under test) is preserved.
+ */
+const isolationChunk = (count: number, poisonAt: ReadonlyArray<number>) => {
+  const poisoned = new Set(poisonAt)
+  const ids = Array.from({ length: count }, () => uuidV7())
+  const entries = ids.map((entityId, index) =>
+    poisoned.has(index)
+      ? entry({
+        entityType: "task",
+        entityId,
+        baseVersion: 0,
+        patch: { title: `poison-${index}`, projectId: uuidV7() }
+      })
+      : entry({ entityId, baseVersion: 0, patch: { title: `ok-${index}` } })
+  )
+  return { ids, entries }
+}
 
 const itemOf = (page: SyncPullResponse, entityId: string) =>
   page.items.find((item) => item.entityId === entityId)
@@ -380,13 +414,15 @@ describe("sync engine", () => {
     const before = feedCount(h.db)
 
     for (const entityId of [foreign, legacy]) {
-      await expect(
-        push(h, {
-          userId: USER_A,
-          householdId: HOUSEHOLD,
-          entries: [entry({ entityId, baseVersion: 1, patch: { title: "نفوذ" } })]
-        })
-      ).rejects.toMatchObject({ _tag: "SyncEntityForbidden" })
+      for (const op of ["upsert", "delete"] as const) {
+        await expect(
+          push(h, {
+            userId: USER_A,
+            householdId: HOUSEHOLD,
+            entries: [entry({ entityId, baseVersion: 1, op, patch: { title: "نفوذ" } })]
+          })
+        ).rejects.toMatchObject({ _tag: "SyncEntityForbidden" })
+      }
     }
 
     expect(feedCount(h.db)).toBe(before)
@@ -529,5 +565,784 @@ describe("sync engine", () => {
     })
     expect(next.resetRequired).toBe(false)
     expect(next.entries).toHaveLength(0)
+  })
+
+  // ── #34: the registry, exercised through Task alongside the legacy listItem ──
+
+  it("converges a Task edited offline on both devices", async () => {
+    const h = makeHarness()
+    const a = device(USER_A)
+    const b = device(USER_B)
+    const id = uuidV7()
+
+    // A creates the task offline and pushes it.
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "task",
+          entityId: id,
+          baseVersion: 0,
+          patch: { title: "خرید هدیه", dueDate: "2026-10-22" }
+        })
+      ]
+    })
+    await syncDevice(h, a)
+    await syncDevice(h, b)
+    expect(a.mirror.get(id)?.data.status).toBe("todo")
+    expect(b.mirror.get(id)?.data.title).toBe("خرید هدیه")
+
+    // A renames offline; B completes it offline. Neither has seen the other.
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({ entityType: "task", entityId: id, baseVersion: 1, patch: { title: "خرید کادو" } })
+      ]
+    })
+    const bResult = await push(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "task",
+          entityId: id,
+          baseVersion: 1,
+          patch: { status: "done" },
+          at: FUTURE()
+        })
+      ]
+    })
+    expect(bResult.results[0]?._tag).toBe("conflict")
+    expect(bResult.results[0]?.item?.data.status).toBe("done")
+    // The completion stamp is server-side and part of the synced row.
+    expect(bResult.results[0]?.item?.data.completedAt).toEqual(expect.any(String))
+
+    await syncDevice(h, a)
+    await syncDevice(h, b)
+
+    const fromA = a.mirror.get(id)
+    const fromB = b.mirror.get(id)
+    expect(fromA).toEqual(fromB)
+    // Field-level LWW: A's rename and B's completion both survive.
+    expect(fromA?.data).toMatchObject({ title: "خرید کادو", status: "done" })
+    expect(fromA?.version).toBe(3)
+    expect(a.cursor).toBe(b.cursor)
+  })
+
+  it("lets a task completion beat a concurrent rename (done-wins)", async () => {
+    const h = makeHarness()
+    const id = uuidV7()
+
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [entry({ entityType: "task", entityId: id, baseVersion: 0, patch: { title: "اول" } })]
+    })
+    await push(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "task",
+          entityId: id,
+          baseVersion: 1,
+          patch: { status: "done" },
+          at: FUTURE()
+        })
+      ]
+    })
+    // A's rename is *newer* than the completion but must not reopen the task.
+    const rename = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "task",
+          entityId: id,
+          baseVersion: 1,
+          patch: { title: "دوم" },
+          at: new Date(Date.now() + 120_000).toISOString()
+        })
+      ]
+    })
+    expect(rename.results[0]?._tag).toBe("conflict")
+    expect(rename.results[0]?.item?.data).toMatchObject({ title: "دوم", status: "done" })
+
+    // Replying against the current version can still reopen it (not a conflict).
+    const reopen = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({ entityType: "task", entityId: id, baseVersion: 3, patch: { status: "todo" } })
+      ]
+    })
+    expect(reopen.results[0]?._tag).toBe("applied")
+    expect(reopen.results[0]?.item?.data.status).toBe("todo")
+    expect(reopen.results[0]?.item?.data.completedAt).toBeNull()
+  })
+
+  it("authorizes Task rows: private owner-only, shared household-wide, foreign unwritable", async () => {
+    const h = makeHarness()
+    const shared = uuidV7()
+    const priv = uuidV7()
+    const foreign = uuidV7()
+    const now = NOW()
+
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({ entityType: "task", entityId: shared, baseVersion: 0, patch: { title: "مشترک" } }),
+        entry({
+          entityType: "task",
+          entityId: priv,
+          baseVersion: 0,
+          patch: { title: "خصوصی", visibility: "private" }
+        })
+      ]
+    })
+    h.db.exec(`
+      INSERT INTO tasks (id, title, owner_id, household_id, created_at, updated_at, version)
+      VALUES ('${foreign}', 'خانه‌ی دیگر', '${USER_C}', '${HOUSEHOLD_B}', '${now}', '${now}', 1)
+    `)
+
+    const forB = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    expect(forB.items.filter((item) => item.entityType === "task").map((item) => item.entityId))
+      .toEqual([shared])
+    expect(forB.removed).toContainEqual({ entityType: "task", entityId: priv })
+
+    const boot = await h.run(
+      Effect.gen(function*() {
+        const sync = yield* SyncService
+        return yield* sync.bootstrap({
+          userId: USER_B,
+          householdId: HOUSEHOLD,
+          offset: 0,
+          limit: 500
+        })
+      })
+    )
+    expect(boot.items.filter((item) => item.entityType === "task").map((item) => item.entityId))
+      .toEqual([shared])
+
+    // A spouse's private task is not writable.
+    for (const op of ["upsert", "delete"] as const) {
+      await expect(
+        push(h, {
+          userId: USER_B,
+          householdId: HOUSEHOLD,
+          entries: [
+            entry({ entityType: "task", entityId: priv, baseVersion: 1, op, patch: { title: "نفوذ" } })
+          ]
+        })
+      ).rejects.toMatchObject({ _tag: "SyncEntityForbidden" })
+    }
+
+    // A shared task is.
+    const edit = await push(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({ entityType: "task", entityId: shared, baseVersion: 1, patch: { title: "از سوی همسر" } })
+      ]
+    })
+    expect(edit.results[0]?._tag).toBe("applied")
+    expect(edit.results[0]?.item?.data.title).toBe("از سوی همسر")
+
+    // A row in another household is never writable, even when shared.
+    await expect(
+      push(h, {
+        userId: USER_A,
+        householdId: HOUSEHOLD,
+        entries: [
+          entry({ entityType: "task", entityId: foreign, baseVersion: 1, patch: { title: "نفوذ" } })
+        ]
+      })
+    ).rejects.toMatchObject({ _tag: "SyncEntityForbidden" })
+
+    // B's own private task exists for B only.
+    const own = uuidV7()
+    await push(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "task",
+          entityId: own,
+          baseVersion: 0,
+          patch: { title: "مال من", visibility: "private" }
+        })
+      ]
+    })
+    const forA = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
+    expect(forA.items.map((item) => item.entityId)).not.toContain(own)
+  })
+
+  it("returns a retryable conflict when a Task loses the compare-and-set", async () => {
+    const h = makeHarness()
+    const id = uuidV7()
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [entry({ entityType: "task", entityId: id, baseVersion: 0, patch: { title: "اول" } })]
+    })
+    const before = feedCount(h.db)
+
+    // Another writer commits after our pre-read (baseVersion 1) but before our batch.
+    h.fake.beforeBatch = () => {
+      h.fake.beforeBatch = undefined
+      h.db.prepare(
+        "UPDATE tasks SET version = version + 1, title = ?, updated_at = ? WHERE id = ?"
+      ).run("نوشته‌ی همسر", NOW(), id)
+    }
+
+    const mutation = entry({
+      entityType: "task",
+      entityId: id,
+      baseVersion: 1,
+      patch: { title: "نوشته‌ی من" },
+      at: FUTURE()
+    })
+    await expect(
+      push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] })
+    ).rejects.toMatchObject({ _tag: "SyncContended" })
+    expect(feedCount(h.db)).toBe(before)
+
+    const retry = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] })
+    expect(retry.results[0]?._tag).toBe("conflict")
+    expect(retry.results[0]?.item?.data.title).toBe("نوشته‌ی من")
+    expect(feedCount(h.db)).toBe(before + 1)
+  })
+
+  it("hydrates every registered aggregate on pull and bootstrap", async () => {
+    const h = makeHarness()
+    const ids: Record<string, string> = {
+      task: uuidV7(),
+      project: uuidV7(),
+      tag: uuidV7(),
+      list: uuidV7(),
+      listItem: uuidV7(),
+      note: uuidV7()
+    }
+    const patches: Record<string, Record<string, unknown>> = {
+      task: { title: "کار", dueDate: "2026-10-22" },
+      project: { title: "خانه" },
+      tag: { name: "فوری" },
+      list: { title: "هفتگی" },
+      listItem: { title: "شیر", checked: false, sortOrder: 0 },
+      note: { title: "ایده", body: { type: "doc" }, plainText: "ایده" }
+    }
+    const types = Object.keys(ids) as ReadonlyArray<SyncEntityType>
+
+    const result = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: types.map((entityType) =>
+        entry({ entityType, entityId: ids[entityType]!, baseVersion: 0, patch: patches[entityType]! })
+      )
+    })
+    expect(result.results.every((entry) => entry._tag === "applied")).toBe(true)
+    // Every entry of the push lands in ONE D1 batch (§4.2).
+    expect(h.fake.batchCalls).toBe(1)
+
+    const page = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
+    for (const entityType of types) {
+      const item = page.items.find((row) => row.entityType === entityType)
+      expect(item?.entityId).toBe(ids[entityType])
+    }
+    const task = page.items.find((row) => row.entityType === "task")
+    expect(task?.data).toMatchObject({ title: "کار", status: "todo", priority: "medium", timeZone: "UTC" })
+    const note = page.items.find((row) => row.entityType === "note")
+    expect(note?.data.body).toEqual({ type: "doc" })
+    const list = page.items.find((row) => row.entityType === "list")
+    expect(list?.data).toMatchObject({ title: "هفتگی", sort: "manual", checkedPlacement: "bottom" })
+
+    const boot = await h.run(
+      Effect.gen(function*() {
+        const sync = yield* SyncService
+        return yield* sync.bootstrap({
+          userId: USER_A,
+          householdId: HOUSEHOLD,
+          offset: 0,
+          limit: 500
+        })
+      })
+    )
+    expect(boot.items.map((item) => item.entityType).sort()).toEqual([...types].sort())
+  })
+
+  it("keeps the legacy listItem wire shape and dual-writes the real columns", async () => {
+    const h = makeHarness()
+    const id = uuidV7()
+    const listId = uuidV7()
+
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [entry({ entityId: id, baseVersion: 0, patch: { title: "نان", checked: true, sortOrder: 3 } })]
+    })
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [entry({ entityId: id, baseVersion: 1, patch: { checked: false, listId } })]
+    })
+
+    const page = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
+    const item = page.items.find((row) => row.entityId === id)
+    // No web change: the wire payload stays title/checked/sortOrder.
+    expect(item?.data).toMatchObject({ title: "نان", checked: false, sortOrder: 3, listId })
+
+    const row = h.db
+      .prepare("SELECT name, done, ordering, checked_at, list_id FROM list_items WHERE id = ?")
+      .get(id) as {
+        readonly name: string
+        readonly done: number
+        readonly ordering: number
+        readonly checked_at: string | null
+        readonly list_id: string | null
+      }
+    // …and the real #33 columns move with it (retires the one-way dual-write).
+    expect(row).toMatchObject({ name: "نان", done: 0, ordering: 3, checked_at: null, list_id: listId })
+  })
+
+  it("chunks IN lookups below D1's bound-parameter ceiling", async () => {
+    const h = makeHarness()
+    // More refs than one statement may bind: the dedupe pre-read, the entity
+    // hydration and a full pull/bootstrap page all build `IN` lists.
+    const ids = Array.from({ length: 150 }, () => uuidV7())
+
+    const pushed = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: ids.map((entityId) => entry({ entityId, baseVersion: 0, patch: { title: entityId } }))
+    })
+    expect(pushed.results).toHaveLength(ids.length)
+    expect(pushed.results.every((result) => result._tag === "applied")).toBe(true)
+
+    const page = await pull(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+      limit: 500
+    })
+    expect(page.items).toHaveLength(ids.length)
+
+    const boot = await h.run(
+      Effect.gen(function*() {
+        const sync = yield* SyncService
+        return yield* sync.bootstrap({
+          userId: USER_A,
+          householdId: HOUSEHOLD,
+          offset: 0,
+          limit: 500
+        })
+      })
+    )
+    expect(boot.items).toHaveLength(ids.length)
+    expect(new Set(boot.items.map((item) => item.entityId)).size).toBe(ids.length)
+  })
+
+  it("rejects entity types that are not registered yet", async () => {
+    const h = makeHarness()
+    await expect(
+      push(h, {
+        userId: USER_A,
+        householdId: HOUSEHOLD,
+        entries: [
+          entry({ entityType: "event", entityId: uuidV7(), baseVersion: 0, patch: { title: "جلسه" } })
+        ]
+      })
+    ).rejects.toMatchObject({ _tag: "UnsupportedSyncEntity", entityType: "event" })
+  })
+
+  it("guards patch values and rejects an insert the aggregate cannot accept", async () => {
+    const h = makeHarness()
+
+    // A value that fails its field guard is dropped, not written: the default applies.
+    const guarded = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "task",
+          entityId: uuidV7(),
+          baseVersion: 0,
+          patch: { title: "کار", status: "archived", ownerId: "someone-else" }
+        })
+      ]
+    })
+    expect(guarded.results[0]?._tag).toBe("applied")
+    expect(guarded.results[0]?.item?.data).toMatchObject({ status: "todo", ownerId: USER_A })
+
+    // A task cannot exist without a title (FR-TASK-01); the schema rejects it
+    // as a *per-entry* rejection, so the valid entry in the same push applies.
+    const before = feedCount(h.db)
+    const valid = uuidV7()
+    const rejected = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({ entityType: "task", entityId: uuidV7(), baseVersion: 0, patch: { title: "" } }),
+        entry({ entityType: "listItem", entityId: valid, baseVersion: 0, patch: { title: "سالم" } })
+      ]
+    })
+    expect(rejected.results[0]).toMatchObject({ _tag: "rejected", code: "InvalidPatch" })
+    expect(rejected.results[1]?._tag).toBe("applied")
+    expect(rejected.results[1]?.item?.data.title).toBe("سالم")
+    expect(feedCount(h.db)).toBe(before + 1)
+  })
+
+  // ── M4: one unappliable entry must not wedge the outbox chunk ──────────────
+
+  it("rejects a duplicate live tag name without wedging the rest of the push", async () => {
+    const h = makeHarness()
+    const existing = uuidV7()
+    const duplicate = uuidV7()
+
+    // The spouse's tag is already live in the household.
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({ entityType: "tag", entityId: existing, baseVersion: 0, patch: { name: "فوری" } })
+      ]
+    })
+    const beforeFeed = feedCount(h.db)
+    const beforeApplied = appliedCount(h.db)
+
+    const mutation = entry({
+      entityType: "tag",
+      entityId: duplicate,
+      baseVersion: 0,
+      patch: { name: "فوری" }
+    })
+    const healthy = uuidV7()
+    const result = await push(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      entries: [
+        mutation,
+        entry({
+          entityType: "listItem",
+          entityId: healthy,
+          baseVersion: 0,
+          patch: { title: "سالم" }
+        })
+      ]
+    })
+
+    // The duplicate tag is rejected on its own; the healthy entry still applies.
+    expect(result.results).toHaveLength(2)
+    expect(result.results[0]).toMatchObject({
+      _tag: "rejected",
+      code: "UniqueViolation",
+      entityId: duplicate
+    })
+    expect(result.results[1]?._tag).toBe("applied")
+    expect(result.results[1]?.entityId).toBe(healthy)
+    // Exactly one feed row and one ledger row came from the healthy entry.
+    expect(feedCount(h.db)).toBe(beforeFeed + 1)
+    expect(appliedCount(h.db)).toBe(beforeApplied + 1)
+    // The duplicate id never landed; the spouse's row is still the only tag.
+    expect((h.db.prepare("SELECT COUNT(*) AS n FROM tags").get() as { readonly n: number }).n).toBe(1)
+
+    // Replaying the rejected entry is a no-op, and the next pass is not wedged.
+    const replay = await push(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      entries: [mutation]
+    })
+    expect(replay.results[0]).toMatchObject({ _tag: "rejected", code: "UniqueViolation" })
+    expect(feedCount(h.db)).toBe(beforeFeed + 1)
+    expect(appliedCount(h.db)).toBe(beforeApplied + 1)
+
+    const after = uuidV7()
+    const next = await push(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({ entityType: "listItem", entityId: after, baseVersion: 0, patch: { title: "بعدی" } })
+      ]
+    })
+    expect(next.results[0]?._tag).toBe("applied")
+  })
+
+  it("orders parents before children so a project+task push succeeds in one batch", async () => {
+    const h = makeHarness()
+    const projectId = uuidV7()
+    const taskId = uuidV7()
+
+    // The task arrives first in the request but its FK parent is also here.
+    const result = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "task",
+          entityId: taskId,
+          baseVersion: 0,
+          patch: { title: "کار", projectId }
+        }),
+        entry({
+          entityType: "project",
+          entityId: projectId,
+          baseVersion: 0,
+          patch: { title: "خانه" }
+        })
+      ]
+    })
+
+    expect(result.results.map((row) => row._tag)).toEqual(["applied", "applied"])
+    // Ordering inside the one batch is what makes the FK satisfiable.
+    expect(h.fake.batchCalls).toBe(1)
+    const task = h.db
+      .prepare("SELECT project_id FROM tasks WHERE id = ?")
+      .get(taskId) as { readonly project_id: string }
+    expect(task.project_id).toBe(projectId)
+  })
+
+  it("rejects a task whose project parent is missing instead of failing the request", async () => {
+    const h = makeHarness()
+    const taskId = uuidV7()
+    const healthy = uuidV7()
+    const before = feedCount(h.db)
+
+    const result = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "task",
+          entityId: taskId,
+          baseVersion: 0,
+          patch: { title: "یتیم", projectId: uuidV7() }
+        }),
+        entry({
+          entityType: "listItem",
+          entityId: healthy,
+          baseVersion: 0,
+          patch: { title: "سالم" }
+        })
+      ]
+    })
+
+    expect(result.results[0]).toMatchObject({
+      _tag: "rejected",
+      code: "ForeignKeyViolation",
+      entityId: taskId
+    })
+    expect(result.results[1]?._tag).toBe("applied")
+    expect(feedCount(h.db)).toBe(before + 1)
+    expect(
+      (h.db.prepare("SELECT COUNT(*) AS n FROM tasks WHERE id = ?").get(taskId) as { readonly n: number }).n
+    ).toBe(0)
+  })
+
+  // ── M4 follow-up: bounded bisection, not an O(entries) isolation sweep ─────
+
+  it("isolates one poison entry among 200 within MAX_ISOLATION_BATCHES", async () => {
+    const h = makeHarness()
+
+    // The happy path is unchanged: a full chunk still commits in one batch.
+    const healthy = Array.from({ length: 200 }, () => uuidV7())
+    const happy = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: healthy.map((entityId) =>
+        entry({ entityId, baseVersion: 0, patch: { title: entityId } })
+      )
+    })
+    expect(happy.results.every((result) => result._tag === "applied")).toBe(true)
+    expect(h.fake.batchCalls).toBe(1)
+
+    h.fake.batchCalls = 0
+    const beforeFeed = feedCount(h.db)
+    const beforeApplied = appliedCount(h.db)
+    const { ids, entries } = isolationChunk(200, [100])
+
+    const result = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
+
+    expect(result.results).toHaveLength(200)
+    expect(result.results[100]).toMatchObject({
+      _tag: "rejected",
+      code: "ForeignKeyViolation",
+      entityId: ids[100]
+    })
+    expect(result.results.filter((row) => row._tag === "applied")).toHaveLength(199)
+    // Bisection needs 16 batches for one bad entry in 200 — not 201.
+    expect(h.fake.batchCalls).toBe(16)
+    expect(h.fake.batchCalls).toBeLessThanOrEqual(MAX_ISOLATION_BATCHES)
+    expect(feedCount(h.db)).toBe(beforeFeed + 199)
+    expect(appliedCount(h.db)).toBe(beforeApplied + 199)
+  })
+
+  it("isolates a poison entry in first, middle and last position", async () => {
+    const h = makeHarness()
+
+    for (const position of [0, 100, 199]) {
+      h.fake.batchCalls = 0
+      const { ids, entries } = isolationChunk(200, [position])
+      const result = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
+
+      expect(result.results[position]).toMatchObject({
+        _tag: "rejected",
+        code: "ForeignKeyViolation",
+        entityId: ids[position]
+      })
+      expect(result.results.filter((row) => row._tag === "applied")).toHaveLength(199)
+      expect(h.fake.batchCalls).toBeLessThanOrEqual(MAX_ISOLATION_BATCHES)
+    }
+  })
+
+  it("isolates two poison entries without a per-entry sweep", async () => {
+    const h = makeHarness()
+    const beforeFeed = feedCount(h.db)
+    const beforeApplied = appliedCount(h.db)
+    const { ids, entries } = isolationChunk(200, [0, 199])
+
+    const result = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
+
+    expect(result.results[0]).toMatchObject({
+      _tag: "rejected",
+      code: "ForeignKeyViolation",
+      entityId: ids[0]
+    })
+    expect(result.results[199]).toMatchObject({
+      _tag: "rejected",
+      code: "ForeignKeyViolation",
+      entityId: ids[199]
+    })
+    expect(result.results.filter((row) => row._tag === "applied")).toHaveLength(198)
+    // Two bad entries at opposite ends of the chunk: 31 batches, still bounded.
+    expect(h.fake.batchCalls).toBe(31)
+    expect(h.fake.batchCalls).toBeLessThanOrEqual(MAX_ISOLATION_BATCHES)
+    expect(feedCount(h.db)).toBe(beforeFeed + 198)
+    expect(appliedCount(h.db)).toBe(beforeApplied + 198)
+  })
+
+  it("returns AttributionLimit instead of wedging when the batch budget is exhausted", async () => {
+    const h = makeHarness()
+    const { entries } = isolationChunk(200, [0, 100, 199])
+
+    const result = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
+
+    // The push still completes: no retryable failure, no unbounded fan-out.
+    expect(result.results).toHaveLength(200)
+    expect(h.fake.batchCalls).toBe(MAX_ISOLATION_BATCHES)
+    expect(result.results.every((row) => row._tag === "applied" || row._tag === "rejected")).toBe(true)
+    const limited = result.results.filter(
+      (row) => row._tag === "rejected" && row.code === "AttributionLimit"
+    )
+    expect(limited.length).toBeGreaterThan(0)
+    // Every entry the server said it applied is in the feed and ledger exactly once.
+    const applied = result.results.filter((row) => row._tag === "applied").length
+    expect(feedCount(h.db)).toBe(applied)
+    expect(appliedCount(h.db)).toBe(applied)
+  })
+
+  it("propagates a non-constraint failure from the attribution path as retryable", async () => {
+    const h = makeHarness()
+    const { entries } = isolationChunk(200, [100])
+
+    // The full batch fails on the poison's constraint; the very next
+    // attribution batch hits a transient network failure. That must escape as
+    // retryable, never as a per-entry rejection the client would ack.
+    let seen = 0
+    h.fake.beforeBatch = () => {
+      seen += 1
+      if (seen === 2) throw new Error("D1_ERROR: network connection lost: NETWORK")
+    }
+
+    await expect(
+      push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
+    ).rejects.toMatchObject({ _tag: "SqlError" })
+    expect(feedCount(h.db)).toBe(0)
+    expect(appliedCount(h.db)).toBe(0)
+
+    h.fake.beforeBatch = undefined
+    h.fake.batchCalls = 0
+    const retry = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
+    expect(retry.results.filter((row) => row._tag === "applied")).toHaveLength(199)
+    expect(retry.results[100]?._tag).toBe("rejected")
+    expect(h.fake.batchCalls).toBeLessThanOrEqual(MAX_ISOLATION_BATCHES)
+  })
+
+  it("replays a partially isolated push exactly once", async () => {
+    const h = makeHarness()
+    const { entries } = isolationChunk(200, [100])
+
+    const first = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
+    expect(first.results.filter((row) => row._tag === "applied")).toHaveLength(199)
+    const feedAfterFirst = feedCount(h.db)
+    const appliedAfterFirst = appliedCount(h.db)
+
+    h.fake.batchCalls = 0
+    const replay = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
+    expect(replay.results.filter((row) => row._tag === "alreadyApplied")).toHaveLength(199)
+    expect(replay.results[100]).toMatchObject({
+      _tag: "rejected",
+      code: "ForeignKeyViolation"
+    })
+    expect(feedCount(h.db)).toBe(feedAfterFirst)
+    expect(appliedCount(h.db)).toBe(appliedAfterFirst)
+    // Only the rejected entry was re-attempted.
+    expect(h.fake.batchCalls).toBe(2)
+  })
+
+  it("keeps a delete tombstone retryable when the row appears after the pre-read", async () => {
+    const h = makeHarness()
+    const id = uuidV7()
+
+    // A `delete` for an unseen row is inserted as a tombstone. Another writer
+    // creates that row between our pre-read and our batch, so the insert is
+    // suppressed by ON CONFLICT DO NOTHING. That is a lost race, not an
+    // unappliable entry: the retry sees the live row and deletes it.
+    h.fake.beforeBatch = () => {
+      h.fake.beforeBatch = undefined
+      h.db
+        .prepare(
+          `INSERT INTO list_items
+             (id, title, checked, sort_order, version, created_at, updated_at, deleted_at,
+              household_id, owner_id, visibility, type, done, ordering, tag_ids)
+           VALUES (?, ?, 0, 0, 1, ?, ?, NULL, ?, ?, 'shared', 'listItem', 0, 0, '[]')`
+        )
+        .run(id, "همسر", NOW(), NOW(), HOUSEHOLD, USER_B)
+    }
+
+    const mutation = entry({ entityId: id, baseVersion: 0, op: "delete", patch: {} })
+    await expect(
+      push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] })
+    ).rejects.toMatchObject({ _tag: "SyncContended" })
+    expect(feedCount(h.db)).toBe(0)
+
+    // The retry resolves against the row that now exists and tombstones it,
+    // instead of silently dropping the user's delete.
+    const retry = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] })
+    expect(retry.results[0]?._tag).toBe("applied")
+    expect(retry.results[0]?.item?.deletedAt).not.toBeNull()
+  })
+
+  it("keeps non-constraint failures retryable instead of rejecting the entry", async () => {
+    const h = makeHarness()
+    const id = uuidV7()
+
+    // A transient D1 failure must not be isolated into a per-entry rejection:
+    // that would tell the client to drop a mutation that is perfectly valid.
+    h.fake.beforeBatch = () => {
+      h.fake.beforeBatch = undefined
+      throw new Error("D1_ERROR: network connection lost: NETWORK")
+    }
+
+    const mutation = entry({ entityId: id, baseVersion: 0, patch: { title: "سالم" } })
+    await expect(
+      push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] })
+    ).rejects.toMatchObject({ _tag: "SqlError" })
+    expect(feedCount(h.db)).toBe(0)
+    expect(appliedCount(h.db)).toBe(0)
+
+    const retry = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] })
+    expect(retry.results[0]?._tag).toBe("applied")
   })
 })

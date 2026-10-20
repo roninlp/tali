@@ -115,7 +115,9 @@ Every local mutation appends **one** outbox entry, written to IndexedDB in the *
    - `INSERT OR IGNORE INTO applied_mutations (clientMutationId, entityType, entityId, serverVersion) VALUES (...)`
    - the entity **upsert** with `version = version + 1` guarded by `WHERE id = :id AND version = :baseVersion` (compare-and-set — see conflict path §6),
    - `INSERT INTO change_feed (...)` with the new `version`/`updatedAt`/`op`/`ownerId`/`visibility`.
-3. The whole batch is **atomic** — all-or-nothing (D1 rolls back the batch on any failure). So a client never sees a half-applied push; a retry after a lost response hits the dedupe table and is a no-op.
+
+   Writes are ordered **parents before children** (projects/tags/lists before tasks/notes/listItems), so an offline create of a parent and its dependent row in the same push applies in that one batch.
+3. The batch is **atomic** — all-or-nothing (D1 rolls back the batch on any failure). If it fails on a SQLite constraint (UNIQUE / FOREIGN KEY / CHECK / NOT NULL), the server attributes it by **bounded recursive bisection**: the ordered groups are split in half and each half is retried as its own batch; a half that succeeds is applied once, a half that still fails is split again, and a single group is attempted once. An entry that can never apply as written comes back as `{ _tag: "rejected", code, message }` while the rest of the push still applies. A push issues at most `MAX_ISOLATION_BATCHES` (32) batches in total including the first attempt — enough for one bad entry (~18) or two (~31) among the 200-entry push cap. If that cap is reached, the unattempted remainder is returned as `rejected` with code `AttributionLimit` so the client acks it instead of resending the chunk forever (a bounded, explicit loss rather than an O(entries) fan-out that trips D1/Workers limits). An **upsert** insert silently suppressed by `ON CONFLICT DO NOTHING` (a live unique tag name) is treated the same way, instead of becoming an endless retryable contention. (A *delete* tombstone insert that no-ops is not a rejection: it means the row appeared after the pre-read, and the retry resolves it through the CAS.) Each successful entry still commits its entity row, feed row and ledger row together, so a replay dedupes and nothing is applied twice. Non-constraint failures are not isolated: they keep the retryable 500 behaviour.
 
 **Why this is sound on D1:** D1 is *single-writer* per database — concurrent pushes from the two users are serialized by D1 itself, so the `version = :baseVersion` compare-and-set and the `applied_mutations` dedupe cannot both "win" a race in the two-user case. (The one theoretical race — the *same* `clientMutationId` pushed twice *concurrently* — is excluded because the client awaits each push and never fires the same id concurrently. This is the documented MVP boundary.)
 
@@ -125,7 +127,7 @@ Every local mutation appends **one** outbox entry, written to IndexedDB in the *
 
 - The client's outbox is a **FIFO with per-entity causal order**: for a given `entityId`, entries must be sent and applied in the order created (each `baseVersion` references the previous entry's assigned `version`). Entries for *different* entities are independent and may be interleaved arbitrarily. The queued `baseVersion` is authoritative only for the **first un-acked entry per entity**; the engine replaces the anchor of every subsequent entry with the `version` from the preceding push result before sending it.
 - The server assigns `seq` and `version` in **arrival order** — the server's ordering is authoritative. The client's local optimistic values are **discarded** on ack; the client adopts the server's returned `version` and advances its cursor to the returned `seq`.
-- The push **response** returns, per entry, `{ _tag: "applied", entityId, version, seq }` (or `"alreadyApplied"` / `"conflict"` / `"tombstone"`). Because the response carries the authoritative `seq`, the client can advance its pull cursor past its own writes without a second round-trip.
+- The push **response** returns, per entry, `{ _tag: "applied", entityId, version, seq }` (or `"alreadyApplied"` / `"conflict"` / `"tombstone"` / `"rejected"`). A `"rejected"` result carries a stable `code` and a diagnostic `message`, and no `version`/`seq`: the entry cannot apply as written (invalid patch, duplicate live tag name, missing FK parent), so the client acks and drops it rather than retrying forever. Because the response carries the authoritative `seq`, the client can advance its pull cursor past its own writes without a second round-trip.
 
 ---
 
@@ -240,7 +242,14 @@ export const SyncPushResult = Schema.Union(
   Schema.Struct({ _tag: Schema.Literal("applied"), entityId: Schema.String, version: Schema.Int, seq: Schema.Int }),
   Schema.Struct({ _tag: Schema.Literal("alreadyApplied"), entityId: Schema.String, version: Schema.Int }),
   Schema.Struct({ _tag: Schema.Literal("conflict"), entityId: Schema.String, version: Schema.Int, merged: SyncEntity }),
-  Schema.Struct({ _tag: Schema.Literal("tombstone"), entityId: Schema.String, version: Schema.Int })
+  Schema.Struct({ _tag: Schema.Literal("tombstone"), entityId: Schema.String, version: Schema.Int }),
+  // Non-retryable: this one entry cannot apply as written; the client drops it.
+  Schema.Struct({
+    _tag: Schema.Literal("rejected"),
+    entityId: Schema.String,
+    code: Schema.String,      // e.g. "InvalidPatch" | "UniqueViolation" | "ForeignKeyViolation"
+    message: Schema.String
+  })
 )
 
 export const SyncPushResponse = Schema.Struct({

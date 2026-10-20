@@ -14,8 +14,9 @@ import {
  *
  * Migration 0005 extends the Slice 1 `list_items` table in place instead of
  * forking it. The real columns are `name` / `done` / `ordering` / `checked_at`;
- * the scaffold columns (`title` / `checked` / `sort_order`) are written too so
- * the existing sync engine keeps working until #34. The legacy reader lives in
+ * the scaffold columns (`title` / `checked` / `sort_order`) are written too, as
+ * the sync registry (#34) keeps the legacy wire shape and dual-writes both sets
+ * so the web mirror needs no change. The legacy reader lives in
  * `list-item-repo.ts` and only sees scaffold rows.
  */
 

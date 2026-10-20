@@ -1,12 +1,13 @@
 import { Schema } from "effect"
 
 /**
- * The dummy aggregate carried end-to-end for the scaffold round-trip.
+ * The scaffold `ListItem` shape the sync `listItem` entity speaks.
  *
- * NOTE: this is a minimal stub. The real core-planning `ListItem` aggregate
- * lives in `./planning/list-item.ts` and is exported from this package as
- * `PlanningListItem` (plus `Planning.ListItem`) to avoid colliding with this
- * scaffold until ticket #34 retires it.
+ * NOTE: this is the scaffold wire shape the sync `listItem` entity still speaks
+ * (ticket #34 keeps it compatible so the web mirror needs no change). The real
+ * core-planning `ListItem` aggregate lives in `./planning/list-item.ts` and is
+ * exported from this package as `PlanningListItem` (plus `Planning.ListItem`);
+ * sync dual-writes both column sets. Retiring this stub is UI work (#39).
  *
  * Keep this package free of DB/runtime coupling — it is the only package both
  * `apps/web` and `apps/api` are allowed to depend on.

@@ -30,8 +30,8 @@ export * from "./planning/tag"
 export * from "./planning/list"
 export * from "./planning/note"
 // The real `ListItem` aggregate collides with the pre-Slice-2 scaffold stub
-// (`./list-item`). Re-export it under an unambiguous alias plus the full
-// `Planning` namespace until ticket #34 retires the stub.
+// (`./list-item`), which sync still speaks for the web mirror (#34). Re-export
+// it under an unambiguous alias plus the full `Planning` namespace.
 export {
   ListItem as PlanningListItem,
   ListItemCreate as PlanningListItemCreate

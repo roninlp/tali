@@ -1,5 +1,5 @@
 import "fake-indexeddb/auto"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { uuidV7, type SyncBootstrapResponse, type SyncPullResponse, type SyncPushEntry, type SyncPushResponse } from "@tali/domain"
 import { openLocalStore } from "./local-store/store"
 import type { LocalStore } from "./local-store/types"
@@ -376,6 +376,76 @@ describe("client sync engine", () => {
     expect(await store.pending()).toHaveLength(0)
     expect(await store.get("listItem", poisoned)).toBeUndefined()
     expect(await store.get("listItem", healthy)).toBeDefined()
+    store.close()
+  })
+
+  it("acks a rejected entry and keeps draining without removing its mirror row", async () => {
+    const store = await open()
+    const rejectedId = uuidV7()
+    const healthyId = uuidV7()
+    await store.writeLocal({
+      entityType: "tag",
+      entityId: rejectedId,
+      op: "upsert",
+      patch: { name: "تکراری" }
+    })
+    await store.writeLocal({
+      entityType: "listItem",
+      entityId: healthyId,
+      op: "upsert",
+      patch: { title: "سالم" }
+    })
+
+    let calls = 0
+    const engine = createSyncEngine(
+      transport({
+        push: async (entries) => {
+          calls += 1
+          return {
+            results: entries.map((entry) =>
+              entry.entityId === rejectedId
+                ? {
+                  _tag: "rejected" as const,
+                  clientMutationId: entry.clientMutationId,
+                  entityType: entry.entityType,
+                  entityId: entry.entityId,
+                  code: "UniqueViolation",
+                  message: "UNIQUE constraint failed: tags.household_id, tags.name"
+                }
+                : {
+                  _tag: "applied" as const,
+                  clientMutationId: entry.clientMutationId,
+                  entityType: entry.entityType,
+                  entityId: entry.entityId,
+                  version: 1,
+                  seq: 7,
+                  item: {
+                    entityType: entry.entityType,
+                    entityId: entry.entityId,
+                    version: 1,
+                    updatedAt: "2026-10-19T08:00:01.000Z",
+                    deletedAt: null,
+                    data: { id: healthyId, type: "listItem", title: "سرور", checked: false, sortOrder: 0 }
+                  }
+                }
+            ),
+            cursor: 7
+          }
+        }
+      })
+    )
+
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    await expect(engine.sync(store)).resolves.toBeUndefined()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("UniqueViolation"))
+    warn.mockRestore()
+
+    // The rejected entry is acked (dropped from the outbox)…
+    expect(calls).toBe(1)
+    expect(await store.pending()).toHaveLength(0)
+    // …but its optimistic mirror row is not removed, and the healthy entry applied.
+    expect(await store.get("tag", rejectedId)).toBeDefined()
+    expect(await store.get("listItem", healthyId)).toMatchObject({ data: { title: "سرور" } })
     store.close()
   })
 
