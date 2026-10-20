@@ -7,3 +7,34 @@ export * from "./error"
 export * from "./auth"
 export * from "./list-item"
 export * from "./push"
+export {
+  ItemType,
+  ListCheckedPlacement,
+  ListId,
+  ListItemSort,
+  LocalDate,
+  NoteId,
+  Priority,
+  ProjectId,
+  TagId,
+  TagIds,
+  TaskId,
+  TaskStatus,
+  TimeZone,
+  TimestampUtc,
+  commonItemFields
+} from "./planning/common"
+export * from "./planning/task"
+export * from "./planning/project"
+export * from "./planning/tag"
+export * from "./planning/list"
+export * from "./planning/note"
+// The real `ListItem` aggregate collides with the pre-Slice-2 scaffold stub
+// (`./list-item`). Re-export it under an unambiguous alias plus the full
+// `Planning` namespace until ticket #34 retires the stub.
+export {
+  ListItem as PlanningListItem,
+  ListItemCreate as PlanningListItemCreate
+} from "./planning/list-item"
+export { ListItemId as PlanningListItemId } from "./planning/common"
+export * as Planning from "./planning"
