@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import { Visibility } from "./common.js"
+import { ItemType } from "./planning/common.js"
 
 /**
  * Sync wire shapes shared by the client store and the sync endpoints.
@@ -15,19 +16,7 @@ import { Visibility } from "./common.js"
  * `docs/domain-model-draft.md` §2.4; the mirror is schema-agnostic, so every
  * synced aggregate is addressable even before its aggregate model lands.
  */
-export const SyncEntityType = Schema.Literals([
-  "habit",
-  "habitEntry",
-  "event",
-  "occasion",
-  "task",
-  "reminder",
-  "note",
-  "tag",
-  "list",
-  "listItem",
-  "project"
-])
+export const SyncEntityType = ItemType
 export type SyncEntityType = Schema.Schema.Type<typeof SyncEntityType>
 
 /** `delete` is a soft-delete tombstone, not a physical row removal. */

@@ -3,9 +3,12 @@ import { Schema } from "effect"
 /**
  * The dummy aggregate carried end-to-end for the scaffold round-trip.
  *
- * NOTE: this is a minimal stub. The real domain model lands in ticket #7
- * (`docs/domain-model-draft.md`) and will replace these placeholders. Keep
- * this package free of DB/runtime coupling — it is the only package both
+ * NOTE: this is a minimal stub. The real core-planning `ListItem` aggregate
+ * lives in `./planning/list-item.ts` and is exported from this package as
+ * `PlanningListItem` (plus `Planning.ListItem`) to avoid colliding with this
+ * scaffold until ticket #34 retires it.
+ *
+ * Keep this package free of DB/runtime coupling — it is the only package both
  * `apps/web` and `apps/api` are allowed to depend on.
  */
 
