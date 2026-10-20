@@ -19,9 +19,11 @@ import {
  * "ticked wins" rule.
  *
  * NOTE: the legacy scaffold exports a different top-level `ListItem` stub for
- * the pre-Slice-2 `list_items` table. This real aggregate is re-exported from
- * `@tali/domain` as `PlanningListItem` (and under the `Planning` namespace)
- * until ticket #34 retires the stub.
+ * the pre-Slice-2 `list_items` table, and #34 keeps that scaffold wire shape
+ * for sync so the web mirror needs no change. This real aggregate is re-exported
+ * from `@tali/domain` as `PlanningListItem` (and under the `Planning`
+ * namespace); sync dual-writes both column sets. Retiring the stub is #39's UI
+ * work.
  */
 export class ListItem extends Model.Class<ListItem>("ListItem")({
   ...commonItemFields("listItem", ListItemId),

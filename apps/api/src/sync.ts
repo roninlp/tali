@@ -10,6 +10,7 @@ import { AuthService } from "./auth-service.js"
 import {
   SyncContended,
   SyncEntityForbidden,
+  SyncInvalidPatch,
   SyncPayloadTooLarge,
   SyncService,
   UnsupportedSyncEntity
@@ -183,6 +184,11 @@ export const SyncRoutes = HttpRouter.use((router) =>
             SyncPayloadTooLarge: (error: SyncPayloadTooLarge) =>
               fail(422, "BadRequest", "Too many entries in one push", false, {
                 count: error.count
+              }),
+            SyncInvalidPatch: (error: SyncInvalidPatch) =>
+              fail(400, "BadRequest", "The patch does not match this entity", false, {
+                entityType: error.entityType,
+                entityId: error.entityId
               }),
             SyncEntityForbidden: (error: SyncEntityForbidden) =>
               fail(403, "Forbidden", "Entity is not writable by this client", false, {

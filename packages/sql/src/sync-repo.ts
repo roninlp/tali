@@ -1,44 +1,25 @@
 import { Context, Effect, Layer, Option } from "effect"
 import { D1Client } from "@effect/sql-d1"
 import { SqlClient, Statement } from "effect/sql"
+import { type SyncEntityRow, type SyncEntityType, type SyncOp, type Visibility } from "@tali/domain"
 import {
-  type SyncEntityRow,
-  type SyncEntityType,
-  type SyncOp,
-  type Visibility
-} from "@tali/domain"
+  makeSyncRegistry,
+  type SyncEntityDefinition,
+  type SyncEntityState,
+  type SyncRegistry
+} from "./sync-registry.js"
 
 /**
- * D1-backed persistence for the sync engine (ticket #18).
+ * D1-backed persistence for the sync engine (tickets #18, #34).
  *
  * The pull list is `change_feed` (global `seq`); the conflict field is the
  * entity row's per-row `version` (session draft §2). Every push write is built
  * as a statement sequence the service applies in **one** `D1Client.batch()`,
  * because D1 has no interactive transactions.
  *
- * Only the dummy `listItem` aggregate is syncable in Slice 1. The branch is
- * deliberately explicit: adding an aggregate means adding its row adapter here,
- * not guessing at columns.
+ * Which tables/columns/allowlists exist is the registry's job
+ * (`sync-registry.ts`); this module owns the SQL shape and the CAS gate.
  */
-
-const LIST_ITEM_COLUMNS =
-  `id, title, checked, sort_order AS sortOrder, version, ` +
-  `created_at AS createdAt, updated_at AS updatedAt, deleted_at AS deletedAt, ` +
-  `owner_id AS ownerId, visibility, household_id AS householdId`
-
-interface ListItemRow {
-  readonly id: string
-  readonly title: string
-  readonly checked: number | boolean
-  readonly sortOrder: number
-  readonly version: number
-  readonly createdAt: string
-  readonly updatedAt: string
-  readonly deletedAt: string | null
-  readonly ownerId: string
-  readonly visibility: string
-  readonly householdId: string | null
-}
 
 export interface FeedRow {
   readonly seq: number
@@ -57,18 +38,6 @@ interface AppliedRow {
   readonly entityId: string
   readonly serverVersion: number
   readonly seq: number
-}
-
-export interface SyncEntityState {
-  readonly entityType: SyncEntityType
-  readonly entityId: string
-  readonly householdId: string | null
-  readonly ownerId: string
-  readonly visibility: Visibility
-  readonly version: number
-  readonly updatedAt: string
-  readonly deletedAt: string | null
-  readonly data: Record<string, unknown>
 }
 
 export interface AppliedMutation {
@@ -105,59 +74,70 @@ export interface AppliedWrite {
   readonly createdAt: string
 }
 
-const asVisibility = (value: string): Visibility =>
-  value === "private" ? "private" : "shared"
-
-const asBoolean = (value: number | boolean): boolean => value === true || value === 1
-
-const toState = (row: ListItemRow): SyncEntityState => ({
-  entityType: "listItem",
-  entityId: row.id,
-  householdId: row.householdId,
-  ownerId: row.ownerId,
-  visibility: asVisibility(row.visibility),
-  version: row.version,
-  updatedAt: row.updatedAt,
-  deletedAt: row.deletedAt,
-  data: {
-    id: row.id,
-    type: "listItem",
-    title: row.title,
-    checked: asBoolean(row.checked),
-    sortOrder: row.sortOrder,
-    ownerId: row.ownerId,
-    visibility: asVisibility(row.visibility),
-    createdAt: row.createdAt
-  }
-})
-
-const toEntityRow = (row: ListItemRow): SyncEntityRow => {
-  const state = toState(row)
-  return {
-    entityType: "listItem",
-    entityId: row.id,
-    version: row.version,
-    updatedAt: row.updatedAt,
-    deletedAt: row.deletedAt,
-    data: state.data
-  }
+/** `(entityType, entityId)` is the real identity of a row across tables. */
+export interface EntityRef {
+  readonly entityType: SyncEntityType
+  readonly entityId: string
 }
+
+export const entityKey = (ref: EntityRef): string =>
+  `${ref.entityType}\u0000${ref.entityId}`
+
+const toEntityRow = (state: SyncEntityState): SyncEntityRow => ({
+  entityType: state.entityType,
+  entityId: state.entityId,
+  version: state.version,
+  updatedAt: state.updatedAt,
+  deletedAt: state.deletedAt,
+  data: state.data
+})
 
 export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
   make: Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
     const d1 = yield* D1Client.D1Client
+    const registry: SyncRegistry = makeSyncRegistry(sql)
 
-    /** Batch-hydrate the entity rows behind a set of feed entries. */
-    const findEntities = (ids: ReadonlyArray<string>) =>
+    const definition = (entityType: SyncEntityType): SyncEntityDefinition | undefined =>
+      registry.get(entityType)
+
+    /**
+     * Batch-hydrate entity rows behind feed/push references. Rows live in
+     * per-entity tables, so this is one `IN` query per distinct type present
+     * in the page — never a query per row.
+     */
+    const findEntities = (refs: ReadonlyArray<EntityRef>) =>
       Effect.gen(function*() {
-        const unique = [...new Set(ids)]
-        if (unique.length === 0) return new Map<string, SyncEntityState>()
-        const rows = yield* sql<ListItemRow>`
-          SELECT ${sql.literal(LIST_ITEM_COLUMNS)} FROM list_items
-          WHERE ${sql.in("id", unique)}
-        `
-        return new Map(rows.map((row) => [row.id, toState(row)]))
+        const byType = new Map<SyncEntityType, Set<string>>()
+        for (const ref of refs) {
+          const ids = byType.get(ref.entityType) ?? new Set<string>()
+          ids.add(ref.entityId)
+          byType.set(ref.entityType, ids)
+        }
+        const states = new Map<string, SyncEntityState>()
+        for (const [entityType, ids] of byType) {
+          const def = registry.get(entityType)
+          if (def === undefined) continue
+          const rows = yield* sql<Record<string, unknown>>`
+            SELECT ${sql.literal(def.select)} FROM ${sql.literal(def.table)}
+            WHERE ${sql.in("id", [...ids])}
+          `
+          for (const row of rows) {
+            const id = String(row.id)
+            states.set(entityKey({ entityType, entityId: id }), {
+              entityType,
+              entityId: id,
+              householdId: typeof row.householdId === "string" ? row.householdId : null,
+              ownerId: typeof row.ownerId === "string" ? row.ownerId : "",
+              visibility: row.visibility === "private" ? "private" : "shared",
+              version: typeof row.version === "number" ? row.version : Number(row.version ?? 0),
+              updatedAt: String(row.updatedAt ?? ""),
+              deletedAt: typeof row.deletedAt === "string" ? row.deletedAt : null,
+              data: def.hydrate(row)
+            })
+          }
+        }
+        return states
       })
 
     /**
@@ -208,7 +188,15 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
         LIMIT ${input.limit + 1}
       `
 
-    /** All visible live rows for a fresh mirror / stale cursor (`/sync/bootstrap`). */
+    /**
+     * All visible live rows for a fresh mirror / stale cursor
+     * (`/sync/bootstrap`), across every registered aggregate.
+     *
+     * The per-entity branches are `UNION ALL`ed with a literal entity type, so
+     * paging/ordering is one global sequence: `updated_at`, then type/id as a
+     * stable tiebreak. Hydration happens in `findEntities` on the page refs —
+     * this query only decides *which* rows belong to the page.
+     */
     const bootstrapPage = (input: {
       readonly householdId: string
       readonly userId: string
@@ -216,16 +204,31 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
       readonly limit: number
     }) =>
       Effect.gen(function*() {
-        const rows = yield* sql<ListItemRow>`
-          SELECT ${sql.literal(LIST_ITEM_COLUMNS)} FROM list_items
-          WHERE household_id = ${input.householdId}
-            AND deleted_at IS NULL
-            AND (owner_id = ${input.userId} OR visibility = 'shared')
-          ORDER BY updated_at ASC, id ASC
+        const branches = registry.all().map((def) =>
+          sql`
+            SELECT ${def.entityType} AS entityType, id, updated_at AS updatedAt
+            FROM ${sql.literal(def.table)}
+            WHERE ${sql.literal(def.scope.householdId)} = ${input.householdId}
+              AND ${sql.literal(def.softDeleteColumn)} IS NULL
+              AND (${sql.literal(def.scope.ownerId)} = ${input.userId}
+                OR ${sql.literal(def.scope.visibility)} = 'shared')
+          `
+        )
+        const rows = yield* sql<{ readonly entityType: SyncEntityType; readonly id: string }>`
+          ${sql.join(" UNION ALL ", false)(branches)}
+          ORDER BY updatedAt ASC, entityType ASC, id ASC
           LIMIT ${input.limit + 1} OFFSET ${input.offset}
         `
-        return rows.map(toEntityRow)
+        return rows.map((row) => ({ entityType: row.entityType, entityId: row.id }))
       })
+
+    /** Hydrate a page of bootstrap refs into wire rows. */
+    const bootstrapEntities = (refs: ReadonlyArray<EntityRef>) =>
+      Effect.map(findEntities(refs), (states) =>
+        refs.flatMap((ref) => {
+          const state = states.get(entityKey(ref))
+          return state === undefined ? [] : [toEntityRow(state)]
+        }))
 
     const minSeq = Effect.gen(function*() {
       const rows = yield* sql<{ minSeq: number | null }>`
@@ -267,32 +270,11 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
      * asks the client to retry (the retry re-resolves against fresh state).
      */
     const writeEntity = ({ state, expectedVersion }: EntityWrite): Statement.Statement<unknown> => {
-      if (expectedVersion === null) {
-        return sql`
-          INSERT INTO list_items
-            (id, title, checked, sort_order, version, created_at, updated_at, deleted_at,
-             owner_id, visibility, household_id)
-          VALUES
-            (${state.entityId}, ${String(state.data.title ?? "")},
-             ${state.data.checked === true ? 1 : 0},
-             ${typeof state.data.sortOrder === "number" ? state.data.sortOrder : 0},
-             ${state.version}, ${String(state.data.createdAt ?? state.updatedAt)},
-             ${state.updatedAt}, ${state.deletedAt}, ${state.ownerId},
-             ${state.visibility}, ${state.householdId})
-          ON CONFLICT DO NOTHING
-        `
+      const def = registry.get(state.entityType)
+      if (def === undefined) {
+        throw new Error(`sync entity type is not registered: ${state.entityType}`)
       }
-      return sql`
-        UPDATE list_items SET
-          title = ${String(state.data.title ?? "")},
-          checked = ${state.data.checked === true ? 1 : 0},
-          sort_order = ${typeof state.data.sortOrder === "number" ? state.data.sortOrder : 0},
-          version = ${state.version},
-          updated_at = ${state.updatedAt},
-          deleted_at = ${state.deletedAt},
-          visibility = ${state.visibility}
-        WHERE id = ${state.entityId} AND version = ${expectedVersion}
-      `
+      return expectedVersion === null ? def.insert(state) : def.update(state, expectedVersion)
     }
 
     /**
@@ -325,10 +307,12 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
       statements.length === 0 ? Effect.succeed([]) : d1.batch(statements)
 
     return {
+      definition,
       findEntities,
       findApplied,
       pullFeed,
       bootstrapPage,
+      bootstrapEntities,
       minSeq,
       maxSeq,
       prune,
