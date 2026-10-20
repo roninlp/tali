@@ -4,7 +4,8 @@ import {
   type ListId,
   PlanningListItem as ListItem,
   type PlanningListItemId as ListItemId,
-  type TagId
+  type TagId,
+  type UserId
 } from "@tali/domain"
 
 /**
@@ -54,12 +55,26 @@ export class PlanningListItemRepo extends Context.Service<PlanningListItemRepo>(
           (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toListItem)
         )
 
-      /** Manual ordering within a list; `id` is the stable tiebreak. */
-      const listByList = (listId: ListId) =>
+      /**
+       * Manual ordering within one visible list; `id` is the stable tiebreak.
+       *
+       * A shared list can still hold a member's `private` items, so the read is
+       * scoped exactly like the sibling `listVisible` queries: this household,
+       * live rows, shared or owned by the caller (`docs/sync-protocol-draft.md`
+       * §1.4 — a spouse's private item never leaves the server).
+       */
+      const listByList = (input: {
+        readonly listId: ListId
+        readonly householdId: string
+        readonly userId: UserId
+      }) =>
         Effect.map(
           sql<ListItemRow>`
             SELECT ${sql.literal(LIST_ITEM_COLUMNS)} FROM list_items
-            WHERE list_id = ${listId} AND deleted_at IS NULL
+            WHERE list_id = ${input.listId}
+              AND household_id = ${input.householdId}
+              AND deleted_at IS NULL
+              AND (owner_id = ${input.userId} OR visibility = 'shared')
             ORDER BY ordering ASC, id ASC
           `,
           (rows) => rows.map(toListItem)

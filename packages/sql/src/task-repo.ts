@@ -59,7 +59,13 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
         (rows) => rows.map(toTask)
       )
 
-    /** "Today"/overdue buckets read by local due day, never by the server clock. */
+    /**
+     * "Today"/overdue buckets read by local due day, never by the server clock.
+     *
+     * `status` and `priority` are TEXT enums, so alphabetical order would put
+     * `done` ahead of `todo` and `low` ahead of `medium`; the CASE ranks pin
+     * lifecycle (todo → doing → done) and importance (high → medium → low).
+     */
     const listDueOn = (input: {
       readonly householdId: string
       readonly userId: UserId
@@ -72,7 +78,10 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
             AND deleted_at IS NULL
             AND due_date = ${input.dueDate}
             AND (owner_id = ${input.userId} OR visibility = 'shared')
-          ORDER BY status ASC, priority ASC, id ASC
+          ORDER BY
+            CASE status WHEN 'todo' THEN 0 WHEN 'doing' THEN 1 ELSE 2 END,
+            CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
+            id ASC
         `,
         (rows) => rows.map(toTask)
       )
