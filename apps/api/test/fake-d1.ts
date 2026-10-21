@@ -35,11 +35,12 @@ class BoundStatement {
   constructor(
     private readonly db: DatabaseSync,
     private readonly sql: string,
-    private readonly params: ReadonlyArray<unknown> = []
+    private readonly params: ReadonlyArray<unknown> = [],
+    private readonly onExecute: () => void = () => {}
   ) {}
 
   bind(...params: ReadonlyArray<unknown>): BoundStatement {
-    return new BoundStatement(this.db, this.sql, params)
+    return new BoundStatement(this.db, this.sql, params, this.onExecute)
   }
 
   async all(): Promise<D1ResultLike> {
@@ -59,6 +60,9 @@ class BoundStatement {
   }
 
   execute(): D1ResultLike {
+    // Count every statement the way D1 does for its Free-plan per-invocation
+    // ceiling — a batch's statements each count, not the batch itself.
+    this.onExecute()
     if (this.params.length > D1_MAX_BOUND_PARAMS) {
       throw new Error(
         `D1 rejects more than ${D1_MAX_BOUND_PARAMS} bound parameters per query ` +
@@ -88,10 +92,19 @@ export class FakeD1 {
   /** How many `batch()` calls ran — the sync commit must be exactly one. */
   batchCalls = 0
 
+  /**
+   * Statements executed, `batch()` members included. D1 counts each statement
+   * against its per-invocation query ceiling, so a test can budget a whole tick
+   * against the Free plan's 50.
+   */
+  statementCalls = 0
+
   constructor(readonly db: DatabaseSync) {}
 
   prepare(sql: string): BoundStatement {
-    return new BoundStatement(this.db, sql)
+    return new BoundStatement(this.db, sql, [], () => {
+      this.statementCalls += 1
+    })
   }
 
   async batch(

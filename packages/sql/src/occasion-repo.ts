@@ -116,7 +116,51 @@ export class OccasionRepo extends Context.Service<OccasionRepo>()("OccasionRepo"
         (rows) => rows.map(toOccasion)
       )
 
-    return { findById, listVisible } as const
+    /**
+     * Every live occasion in one household, regardless of visibility.
+     *
+     * For the **system** materialiser only (ticket #61's per-minute sweep): it
+     * has no viewer, so it must see shared and private occasions alike to
+     * create each one's advance reminder under that occasion's own owner. A
+     * reminder row inherits the occasion's visibility, so a private occasion
+     * still yields a private reminder and nothing leaks across members.
+     * User-facing reads must keep using `listVisible`.
+     */
+    const listByHousehold = (householdId: string) =>
+      Effect.map(
+        sql<OccasionRow>`
+          SELECT ${sql.literal(OCCASION_SELECT)} FROM occasions
+          WHERE household_id = ${householdId} AND deleted_at IS NULL
+          ORDER BY origin_date ASC, title ASC, id ASC
+        `,
+        (rows) => rows.map(toOccasion)
+      )
+
+    /**
+     * Every live occasion that wants an advance reminder, across households,
+     * bounded.
+     *
+     * One read is the whole discovery cost of the sweep's materialisation pass
+     * (#61), so the tick does not pay a query per household. The caller groups
+     * by `householdId`; ordering by household keeps the bound deterministic.
+     */
+    const listAdvanceReminderSources = (limit: number) =>
+      Effect.map(
+        sql<OccasionRow>`
+          SELECT ${sql.literal(OCCASION_SELECT)} FROM occasions
+          WHERE deleted_at IS NULL AND advance_reminder_days IS NOT NULL
+          ORDER BY household_id ASC, origin_date ASC, id ASC
+          LIMIT ${limit}
+        `,
+        (rows) => rows.map(toOccasion)
+      )
+
+    return {
+      findById,
+      listVisible,
+      listByHousehold,
+      listAdvanceReminderSources
+    } as const
   })
 }) {}
 

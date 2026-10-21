@@ -166,7 +166,7 @@ export function PushHealthPanel() {
           hint={
             push.configured()
               ? undefined
-              : "برای آزمون محلی، مقدار VITE_VAPID_PUBLIC_KEY را در apps/web/.env.local بگذارید (docs/web-push-local.md)."
+              : "کلید عمومی از سرور خوانده می‌شود (GET /push/vapid). اگر تنظیم نشده باشد، VAPID_* را در محیط API بگذارید (docs/web-push-local.md)."
           }
         />
         <Show when={push.lastAction()}>
@@ -175,7 +175,7 @@ export function PushHealthPanel() {
               label="آخرین پاسخ اعلان (آزمایشی)"
               value={`${actionCopy(action().action)} · ${formatTime(action().at)}`}
               tone="ok"
-              hint="دکمه‌های انجام شد/بعداً در صف محلی دستگاه ذخیره می‌شوند تا زنجیره‌ی یادآور آن را مصرف کند."
+              hint="دکمه‌های انجام شد/بعداً نخست در صف محلی دستگاه ذخیره و سپس به دفتر ارسال فرستاده می‌شوند؛ پس از ثبت، از صف پاک می‌شوند."
             />
           )}
         </Show>

@@ -1,4 +1,5 @@
 import { Context, Effect, Layer, Option, Schema } from "effect"
+import type { Statement } from "effect/sql"
 import {
   EventRepo,
   EventRepoLive,
@@ -143,6 +144,34 @@ export interface ReminderServiceApi {
     readonly ownerTimeZone: string
     readonly now?: string
   }) => Effect.Effect<Option.Option<ReminderDispatch>, ReminderServiceError>
+  /**
+   * Claim every due fire in **one** D1 batch (ADR-0005 §3/§9).
+   *
+   * This is what the sweep calls: `listDueFires` already returns the fields the
+   * policy needs (`tier`, `silencedUntil`, `repeat`, `timeZone`), so the tick
+   * costs two statements per fire in one batch instead of a read + batch +
+   * read per fire — the difference between fitting and blowing D1's Free-plan
+   * 50-queries-per-invocation ceiling on a busy minute.
+   *
+   * The return is the number of fires planned, not inserts that won: the
+   * unique key is the mutex (a loser writes nothing and its CAS cannot advance),
+   * and the owed read is what decides delivery. `claim` keeps the exact
+   * per-reminder `Option` for callers that need to know.
+   */
+  readonly claimMany: (input: {
+    readonly fires: ReadonlyArray<{
+      readonly reminderId: ReminderId
+      readonly scheduledFor: string
+      /** The ledger row's owner: the reminder's owner, from the due read. */
+      readonly ownerId: UserId
+      readonly ownerTimeZone: string
+      readonly tier: Reminder["tier"]
+      readonly repeat: ReminderRepeat
+      readonly timeZone: string
+      readonly silencedUntil: string | null
+    }>
+    readonly now?: string
+  }) => Effect.Effect<number, ReminderServiceError>
   /** Done / Snooze / Dismiss, with the link effect in the same batch. */
   readonly respond: (
     viewer: ReminderViewer,
@@ -921,6 +950,97 @@ export class ReminderService extends Context.Service<ReminderService>()("Reminde
         return yield* dispatches.findById(dispatch.id).pipe(Effect.orDie)
       })
 
+    /**
+     * Claim a tick's whole due list in one batch (ADR-0005 §3, §9).
+     *
+     * The fields come from `listDueFires`, which is the same row the policy
+     * would read — so this does not re-read the reminder per fire. Statements
+     * per fire: the claim INSERT plus, when the series continues, the CAS
+     * advance. A silenced fire writes only the advance. All of them ride one
+     * `sync.commit`, which is what keeps a ten-fire minute inside D1's Free-plan
+     * query ceiling.
+     */
+    const claimMany = (input: {
+      readonly fires: ReadonlyArray<{
+        readonly reminderId: ReminderId
+        readonly scheduledFor: string
+        readonly ownerId: UserId
+        readonly ownerTimeZone: string
+        readonly tier: Reminder["tier"]
+        readonly repeat: ReminderRepeat
+        readonly timeZone: string
+        readonly silencedUntil: string | null
+      }>
+      readonly now?: string
+    }): Effect.Effect<number, ReminderServiceError> =>
+      Effect.gen(function*() {
+        const now = input.now ?? new Date().toISOString()
+        const statements: Array<Statement.Statement<unknown>> = []
+        let planned = 0
+
+        for (const fire of input.fires) {
+          if (!validInstant(fire.scheduledFor)) continue
+          const plan = reminderDeliverAt(fire, fire.ownerTimeZone, fire.scheduledFor)
+          if (plan._tag === "suppress") {
+            const silencedUntil = fire.silencedUntil ?? fire.scheduledFor
+            const next = advancePastSilence(
+              fire.repeat,
+              fire.scheduledFor,
+              fire.timeZone,
+              silencedUntil
+            )
+            if (next !== fire.scheduledFor) {
+              statements.push(
+                dispatches.advanceSuppressedStatement({
+                  reminderId: fire.reminderId,
+                  from: fire.scheduledFor,
+                  to: next
+                })
+              )
+            }
+            continue
+          }
+
+          const dispatch = new ReminderDispatch({
+            id: uuidV7() as ReminderDispatch["id"],
+            reminderId: fire.reminderId,
+            userId: fire.ownerId,
+            scheduledFor: fire.scheduledFor,
+            deliverAt: plan.deliverAt,
+            rootScheduledFor: fire.scheduledFor,
+            origin: "schedule",
+            pushOutcome: "pending" as PushOutcome,
+            attempts: 0,
+            lastAttemptAt: null,
+            parentDispatchId: null,
+            response: null,
+            respondedAt: null,
+            snoozedUntil: null,
+            createdAt: now
+          })
+          const next = reminderNextFireAfterNow(
+            fire.repeat,
+            fire.timeZone,
+            fire.scheduledFor,
+            now
+          )
+          statements.push(dispatches.claimInsertStatement(dispatch))
+          if (next !== null) {
+            statements.push(
+              dispatches.advanceFireAtStatement({
+                reminderId: fire.reminderId,
+                from: fire.scheduledFor,
+                to: next
+              })
+            )
+          }
+          planned += 1
+        }
+
+        yield* sync.commit(statements).pipe(Effect.orDie)
+        return planned
+      })
+
     const respond = (
       viewer: ReminderViewer,
       input: Schema.Schema.Type<typeof ReminderRespondInput>,
@@ -1000,7 +1120,17 @@ export class ReminderService extends Context.Service<ReminderService>()("Reminde
         }
       })
 
-    return { create, get, update, delete: remove, list, inbox, claim, respond } as const
+    return {
+      create,
+      get,
+      update,
+      delete: remove,
+      list,
+      inbox,
+      claim,
+      claimMany,
+      respond
+    } as const
   })
 }) {}
 

@@ -12,11 +12,13 @@
  *   pnpm test:push path/to/subscription.json
  *   PUSH_SUBSCRIPTION='{"endpoint":...}' pnpm test:push
  *
- * VAPID values come from the environment or from `apps/api/.dev.vars` (the
- * public key may also come from `apps/web/.env.local` as VITE_VAPID_PUBLIC_KEY).
+ * VAPID values come from the environment or from `apps/api/.dev.vars`; only the
+ * private key is required (the public half is derived). Generate a pair with
+ * `pnpm exec web-push generate-vapid-keys` — no key is committed to this repo.
  * See docs/web-push-local.md.
  */
 
+import { createECDH } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import webpush from "web-push"
@@ -50,7 +52,13 @@ const fileEnv = {
 const env = { ...fileEnv, ...process.env }
 
 const privateKey = env.VAPID_PRIVATE_KEY
-const publicKey = env.VAPID_PUBLIC_KEY ?? env.VITE_VAPID_PUBLIC_KEY
+/** Same derivation as `infra/alchemy.run.ts`: only the private half is required. */
+const publicKeyOf = (scalar) => {
+  const ecdh = createECDH("prime256v1")
+  ecdh.setPrivateKey(Buffer.from(scalar, "base64url"))
+  return ecdh.getPublicKey().toString("base64url")
+}
+const publicKey = env.VAPID_PUBLIC_KEY ?? (privateKey ? publicKeyOf(privateKey) : undefined)
 const subject = env.VAPID_SUBJECT ?? "mailto:tali@example.com"
 
 const fail = (message) => {
@@ -60,9 +68,10 @@ const fail = (message) => {
 
 if (!privateKey || !publicKey) {
   fail(
-    "VAPID keys are missing. Generate a pair and put them in apps/api/.dev.vars " +
-      "(VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY) and apps/web/.env.local (VITE_VAPID_PUBLIC_KEY). " +
-      "See docs/web-push-local.md."
+    "VAPID_PRIVATE_KEY is missing. Generate a pair with " +
+      "`pnpm exec web-push generate-vapid-keys` and export it (or put it in " +
+      "apps/api/.dev.vars). No key pair ships with this repository. " +
+      "See docs/web-push-local.md §1."
   )
 }
 

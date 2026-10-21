@@ -46,6 +46,7 @@ describe("fetchReminderInbox", () => {
             dispatch: dispatch(),
             reminderId: uuidV7(),
             title: "دارو",
+            note: "یک قرص",
             kind: "medication",
             tier: "critical",
             link: { _tag: "none" },

@@ -1,15 +1,21 @@
 import type { ReminderNotificationAction } from "@tali/domain"
 
 /**
- * The stub half of the "Done / Snooze" wiring (ticket #20).
+ * The page half of the Done/Snooze wiring (tickets #20, #61).
  *
- * The service worker cannot call the sync outbox directly (the mirror is
- * per-user and the SW does not know the signed-in user), so it appends each
- * notification response to a tiny device-local queue. This module reads that
- * queue so the permission panel can prove the action reached a handler; the
- * reminder slice will drain it into the real outbox / `ReminderDispatch` ledger.
+ * The service worker cannot own the signed-in session's UI state, so on a
+ * notification action it appends a durable record to this device-local queue
+ * and tries to flush it immediately. This module is the **page drain**: on
+ * boot, on `visibilitychange`, and when the worker messages that a tap landed,
+ * the app reads the queue and posts each answer to the existing
+ * `POST /reminders/dispatches/:id/respond` route.
  *
- * Keep the database and store names in sync with `apps/web/public/sw.js`.
+ * `id` in the queue is the **dispatch id**, not the reminder id: one fire is
+ * one ledger row and one answer, and a snoozed occurrence must not answer the
+ * earlier one. A record is deleted only after the server accepted it (or said
+ * the dispatch does not exist), so an offline tap survives until the next open.
+ *
+ * Keep the database/store names in sync with `apps/web/public/sw.js`.
  */
 
 export const PUSH_DB_NAME = "tali.push.v1"
@@ -18,8 +24,11 @@ export const PUSH_ACTIONS_STORE = "actions"
 export interface QueuedReminderAction {
   /** IndexedDB auto-increment key (absent on freshly written records). */
   readonly seq?: number
-  readonly reminderId: string
+  /** The ledger row the notification represented. */
+  readonly dispatchId: string
   readonly action: ReminderNotificationAction
+  /** Preset minutes for a `snooze` tap (the notification's default is 10). */
+  readonly snoozeMinutes?: number
   /** ISO-8601 timestamp written by the service worker. */
   readonly at: string
 }
@@ -57,4 +66,48 @@ export const readQueuedReminderActions = async (): Promise<ReadonlyArray<QueuedR
   } finally {
     db.close()
   }
+}
+
+const deleteQueuedReminderAction = async (seq: number): Promise<void> => {
+  const db = await openDatabase()
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction(PUSH_ACTIONS_STORE, "readwrite")
+      transaction.objectStore(PUSH_ACTIONS_STORE).delete(seq)
+      transaction.oncomplete = () => resolve()
+      transaction.onerror = () => reject(transaction.error ?? new Error("Could not drain the queue"))
+    })
+  } finally {
+    db.close()
+  }
+}
+
+export interface FlushResult {
+  /** Records the caller's `send` accepted (and that are now deleted). */
+  readonly drained: number
+  /** Records left for the next open (network/server failure). */
+  readonly remaining: number
+}
+
+/**
+ * Drain the queue through `send`.
+ *
+ * `send` returns `true` when the record is finished with (accepted, or
+ * permanently unanswerable) and `false` to keep it. The default page wiring
+ * passes `respondToReminder`; tests pass a fake, so the ordering and the
+ * delete-on-success rule are provable without a server.
+ */
+export const flushQueuedReminderActions = async (
+  send: (record: QueuedReminderAction) => Promise<boolean>
+): Promise<FlushResult> => {
+  const queued = await readQueuedReminderActions()
+  let drained = 0
+  for (const record of queued) {
+    if (record.seq === undefined) continue
+    const handled = await send(record)
+    if (!handled) continue
+    await deleteQueuedReminderAction(record.seq)
+    drained += 1
+  }
+  return { drained, remaining: queued.length - drained }
 }
