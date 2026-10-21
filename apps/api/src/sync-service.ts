@@ -184,19 +184,24 @@ const constraintFailureOf = (error: unknown): ConstraintFailure | undefined => {
 
 /**
  * Parents before children inside one batch, so the common offline "create a
- * project/tag/list and its dependent row together" push succeeds without a
- * retry. `Array.prototype.sort` is stable, so entries for the same entity keep
- * their FIFO order.
+ * project/tag/list (or a habit) and its dependent row together" push succeeds
+ * without a retry. `Array.prototype.sort` is stable, so entries for the same
+ * entity keep their FIFO order.
  */
 const dependencyRank = (entityType: SyncEntityType): number => {
   switch (entityType) {
     case "project":
     case "tag":
     case "list":
+    // A habit is the parent of its daily entries (#63): an offline push may
+    // carry the habit and a tap in the same batch.
+    case "habit":
       return 0
     case "task":
     case "note":
     case "listItem":
+    case "habitEntry":
+      // `habitEntry` follows the `habit` it logs (rank 0) in the same batch.
       return 1
     default:
       return 1
@@ -309,6 +314,55 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
         const plans: Array<Plan> = []
         const groups: Array<WriteGroup> = []
         const now = new Date().toISOString()
+
+        /**
+         * Parent rows named by this push, whether or not they are also being
+         * written here. The entry pre-read only fetches the entry's own row, so
+         * a parent reference needs its own scoped lookup.
+         */
+        const parentRefs = input.entries.flatMap((entry) => {
+          const rule = entityTypeOf(entry.entityType)?.parent
+          if (rule === undefined) return []
+          const current = states.get(entityKey(entry))
+          const fromRow = current?.data[rule.field]
+          const fromPatch = entry.patch[rule.field]
+          const parentId = typeof fromRow === "string"
+            ? fromRow
+            : typeof fromPatch === "string"
+            ? fromPatch
+            : undefined
+          return parentId === undefined
+            ? []
+            : [{ entityType: rule.entityType, entityId: parentId }]
+        })
+        const parentStates = parentRefs.length === 0
+          ? new Map<string, SyncEntityState>()
+          : yield* repo.findEntities(parentRefs).pipe(Effect.orDie)
+
+        /**
+         * Scope of the rows this push intends to write, keyed like `planned`.
+         *
+         * A child may reference a parent created in the same push (the batch
+         * orders parents first, but planning runs in wire order), so the parent
+         * rule resolves against the DB pre-read *and* this map.
+         */
+        const incoming = new Map<
+          string,
+          Pick<SyncEntityState, "householdId" | "ownerId" | "visibility" | "deletedAt">
+        >()
+        for (const entry of input.entries) {
+          if (entry.op !== "upsert") continue
+          const current = states.get(entityKey(entry))
+          const patchVisibility = entry.patch.visibility
+          incoming.set(entityKey(entry), {
+            householdId: current?.householdId ?? input.householdId,
+            ownerId: current?.ownerId ?? input.userId,
+            visibility: patchVisibility === "private" || patchVisibility === "shared"
+              ? patchVisibility
+              : current?.visibility ?? "shared",
+            deletedAt: current?.deletedAt ?? null
+          })
+        }
 
         const reject = (entry: PushEntry, code: string, message: string) => {
           plans.push({ kind: "rejected", entry, code, message })
@@ -492,6 +546,63 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
 
           const patch = sanitizePatch(definition, entry.patch, { allowCreatedAt: true })
           const updatePatch = sanitizePatch(definition, entry.patch, { allowCreatedAt: false })
+
+          // A strict field that was sent with an invalid value is rejected
+          // rather than dropped: silently substituting a default would record a
+          // different day/status than the user chose (#63). Deletes are exempt:
+          // a tombstone must always be able to land.
+          const invalidStrict = entry.op === "delete"
+            ? undefined
+            : definition.strict?.find((field) => {
+              const value = entry.patch[field]
+              return value !== undefined && definition.writable.get(field)?.(value) !== true
+            })
+          if (invalidStrict !== undefined) {
+            reject(entry, "InvalidPatch", `The patch value for "${invalidStrict}" is not valid`)
+            continue
+          }
+
+          const parentRule = definition.parent
+          if (parentRule !== undefined && entry.op !== "delete") {
+            const parentId = typeof current?.data[parentRule.field] === "string"
+              ? String(current.data[parentRule.field])
+              : typeof patch[parentRule.field] === "string"
+              ? String(patch[parentRule.field])
+              : undefined
+            const parent = parentId === undefined
+              ? undefined
+              : parentStates.get(
+                entityKey({ entityType: parentRule.entityType, entityId: parentId })
+              ) ??
+                incoming.get(entityKey({ entityType: parentRule.entityType, entityId: parentId }))
+            // A child never outlives or out-shares its parent: a missing row,
+            // another household, a trashed parent or a private parent owned by
+            // someone else all reject the entry instead of writing a row the
+            // owner cannot see (#63).
+            if (parent === undefined) {
+              reject(entry, "ParentNotFound", "The parent row does not exist")
+              continue
+            }
+            if (parent.householdId !== input.householdId) {
+              reject(entry, "ParentForbidden", "The parent row belongs to another household")
+              continue
+            }
+            if (parent.deletedAt !== null) {
+              reject(entry, "ParentDeleted", "The parent row is in the trash")
+              continue
+            }
+            if (parent.visibility === "private" && parent.ownerId !== input.userId) {
+              reject(entry, "ParentForbidden", "The parent row is private")
+              continue
+            }
+            if (parentRule.inheritVisibility) {
+              // The client sends the habit's visibility with a tap, but the
+              // server is the authority: forcing it keeps a private habit's log
+              // private even when the tap omits or flips it.
+              patch.visibility = parent.visibility
+              updatePatch.visibility = parent.visibility
+            }
+          }
 
           if (entry.op === "delete") {
             if (current === undefined) {
