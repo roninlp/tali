@@ -225,6 +225,60 @@ describe("event sync", () => {
     expect(item!.data).toMatchObject({ title: "قرار تازه" })
   })
 
+  it("keeps the newer server edit when a stale offline edit arrives", async () => {
+    const h = makeHarness()
+    const id = uuidV7()
+
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({ entityId: id, baseVersion: 0, patch: { title: "قرار", timing: timed } })
+      ]
+    })
+
+    // The other device moves the event: a newer edit, already stored.
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityId: id,
+          baseVersion: 1,
+          patch: { timing: { _tag: "timed", start: "2026-10-22T10:00:00.000Z", end: "2026-10-22T11:00:00.000Z" } }
+        })
+      ]
+    })
+    const moved = h.db.prepare("SELECT start_at AS startAt FROM events WHERE id = ?").get(id) as {
+      readonly startAt: string
+    }
+    expect(moved.startAt).toBe("2026-10-22T10:00:00.000Z")
+
+    // A stale offline edit (written before the move) arrives on top.
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        {
+          ...entry({
+            entityId: id,
+            baseVersion: 1,
+            patch: {
+              timing: { _tag: "timed", start: "2026-10-23T10:00:00.000Z", end: "2026-10-23T11:00:00.000Z" }
+            }
+          }),
+          clientUpdatedAt: "2026-01-01T00:00:00.000Z"
+        }
+      ]
+    })
+
+    // Field-level LWW: the stale edit lost, so the stored timing stands.
+    const after = h.db.prepare("SELECT start_at AS startAt FROM events WHERE id = ?").get(id) as {
+      readonly startAt: string
+    }
+    expect(after.startAt).toBe("2026-10-22T10:00:00.000Z")
+  })
+
   it("tombstones an event the server never saw without breaking the row shape", async () => {
     const h = makeHarness()
     const id = uuidV7()

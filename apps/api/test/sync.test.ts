@@ -828,7 +828,8 @@ describe("sync engine", () => {
       tag: uuidV7(),
       list: uuidV7(),
       listItem: uuidV7(),
-      note: uuidV7()
+      note: uuidV7(),
+      event: uuidV7()
     }
     const patches: Record<string, Record<string, unknown>> = {
       task: { title: "کار", dueDate: "2026-10-22" },
@@ -836,7 +837,12 @@ describe("sync engine", () => {
       tag: { name: "فوری" },
       list: { title: "هفتگی" },
       listItem: { title: "شیر", checked: false, sortOrder: 0 },
-      note: { title: "ایده", body: { type: "doc" }, plainText: "ایده" }
+      note: { title: "ایده", body: { type: "doc" }, plainText: "ایده" },
+      event: {
+        title: "قرار",
+        timing: { _tag: "allDay", date: "2026-10-22" },
+        timeZone: "Asia/Tehran"
+      }
     }
     const types = Object.keys(ids) as ReadonlyArray<SyncEntityType>
 

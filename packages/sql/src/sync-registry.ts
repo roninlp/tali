@@ -1264,19 +1264,21 @@ const eventDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     visibility: asVisibility(patch.visibility),
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
   }),
-  merge: (input) => {
-    const next = mergeFields({}, input)
-    // The timing is one unit: a patch that carries a new timing replaces the
-    // whole union. A malformed timing is left as written so the schema
-    // rejects the entry instead of silently moving the event to another day.
-    if (input.patch.timing !== undefined) {
-      next.timing = input.patch.timing
-    }
-    // The rule and the exception list are separate units: clearing the rule
-    // clears nothing else, and an exception list is replaced wholesale.
-    if (input.patch.recurrence === null) next.recurrence = null
-    return next
-  },
+  /**
+   * The shared field-level LWW merge — the same one every other aggregate
+   * uses (`docs/sync-protocol-draft.md` §6).
+   *
+   * The timing is one unit: a patch that carries a timing replaces the whole
+   * union (the merge applies the patch field by field, and `timing` is one
+   * field), and a `null` rule clears the rule and nothing else.
+   *
+   * It has to stay the *shared* merge: a field the patch lost the conflict
+   * over — the client edit is older than the stored one — keeps the stored
+   * value. An event-specific merge that re-applied the patch's timing or rule
+   * would let a stale offline device move an event to another day, which is
+   * exactly the data loss the LWW rule exists to prevent.
+   */
+  merge: (input) => mergeFields({}, input),
   insert: (state) => {
     const timing = eventTimingColumns(state.data)
     return sql`
