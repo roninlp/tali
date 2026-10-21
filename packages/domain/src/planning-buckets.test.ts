@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { taskBucketBounds, taskBucketOf } from "./planning/buckets.js"
+import { localDateTimeInstant, taskBucketBounds, taskBucketOf } from "./planning/buckets.js"
 
 /**
  * Ticket #36 bucket boundaries: Today must follow the viewer's wall clock,
@@ -77,5 +77,36 @@ describe("task bucket bounds", () => {
     expect(taskBucketOf(task({ dueDate: "2026-03-21", status: "done" }), bounds)).toBe(
       "done"
     )
+  })
+})
+
+describe("local wall time to instant", () => {
+  it("combines a local date and time in the given zone", () => {
+    expect(localDateTimeInstant("2026-03-21", "09:30", "Asia/Tehran")).toBe(
+      "2026-03-21T06:00:00Z"
+    )
+    expect(localDateTimeInstant("2026-03-21", "00:00", "UTC")).toBe(
+      "2026-03-21T00:00:00Z"
+    )
+  })
+
+  it("moves a nonexistent spring-forward wall time forward", () => {
+    // 02:30 does not exist in New York on 8 March 2026; the clock jumps to 03:00.
+    expect(localDateTimeInstant("2026-03-08", "02:30", "America/New_York")).toBe(
+      "2026-03-08T07:30:00Z"
+    )
+  })
+
+  it("resolves an ambiguous fall-back wall time to the first occurrence", () => {
+    // 01:30 happens twice in New York on 1 November 2026. `compatible` takes
+    // the earlier (EDT, UTC-4) instant, the same way `localDateAt` does.
+    expect(localDateTimeInstant("2026-11-01", "01:30", "America/New_York")).toBe(
+      "2026-11-01T05:30:00Z"
+    )
+  })
+
+  it("refuses an unreadable date or time instead of inventing one", () => {
+    expect(() => localDateTimeInstant("2026-02-30", "09:00", "UTC")).toThrow()
+    expect(() => localDateTimeInstant("2026-03-21", "25:00", "UTC")).toThrow()
   })
 })

@@ -11,6 +11,8 @@ import {
   type CalendarTaskSource
 } from "./planning/calendar.js"
 import type { RecurrenceRule } from "./recurrence.js"
+import type { CalendarEventSource, CalendarOccasionSource } from "./planning/calendar.js"
+import { toJalaliDate, toJalaliFields } from "./jalali.js"
 
 /**
  * Ticket #43 at the domain seam: the week/month builders are the single
@@ -92,6 +94,7 @@ describe("week read model", () => {
     expect(model.empty).toEqual({
       tasks: false,
       events: true,
+      occasions: true,
       reminders: true,
       habits: true
     })
@@ -217,8 +220,14 @@ describe("month read model", () => {
       busyLevel: 1,
       inMonth: true
     })
-    expect(second.counts).toEqual({ tasks: 2, events: 0, reminders: 0, habits: 0 })
-    expect(model.totals).toEqual({ busyDays: 2, tasks: 3, events: 0 })
+    expect(second.counts).toEqual({
+      tasks: 2,
+      events: 0,
+      occasions: 0,
+      reminders: 0,
+      habits: 0
+    })
+    expect(model.totals).toEqual({ busyDays: 2, tasks: 3, events: 0, occasions: 0 })
     expect(model.day?.date).toBe("2026-03-22")
     expect(model.day?.tasks.map((item) => item.title)).toEqual(["سه", "دو"])
   })
@@ -242,7 +251,7 @@ describe("month read model", () => {
       inMonth: false,
       isBusy: true
     })
-    expect(model.totals).toEqual({ busyDays: 1, tasks: 1, events: 0 })
+    expect(model.totals).toEqual({ busyDays: 1, tasks: 1, events: 0, occasions: 0 })
   })
 
   it("scales the busy mark to three dots", () => {
@@ -264,6 +273,165 @@ describe("month read model", () => {
     expect(model.days.some((cell) => cell.date === "2026-06-01")).toBe(false)
     expect(model.day?.date).toBe("2026-06-01")
     expect(model.day?.tasks.map((item) => item.id)).toEqual(["far"])
-    expect(model.totals).toEqual({ busyDays: 0, tasks: 0, events: 0 })
+    expect(model.totals).toEqual({ busyDays: 0, tasks: 0, events: 0, occasions: 0 })
+  })
+})
+
+describe("event and occasion lanes (#58/#62)", () => {
+  const event = (
+    input: Partial<CalendarEventSource> & { readonly id: string }
+  ): CalendarEventSource => ({
+    title: input.title ?? input.id,
+    description: input.description ?? null,
+    location: input.location ?? null,
+    category: input.category ?? null,
+    color: input.color ?? null,
+    people: input.people ?? [],
+    timing: input.timing ?? { _tag: "allDay", date: "2026-03-22" },
+    timeZone: input.timeZone ?? "UTC",
+    recurrence: input.recurrence ?? null,
+    exceptions: input.exceptions ?? [],
+    id: input.id
+  })
+
+  const occasion = (
+    input: Partial<CalendarOccasionSource> & { readonly id: string }
+  ): CalendarOccasionSource => ({
+    title: input.title ?? input.id,
+    color: input.color ?? null,
+    originDate: input.originDate ?? "2020-04-01",
+    timeZone: input.timeZone ?? "Asia/Tehran",
+    yearly: input.yearly ?? true,
+    advanceReminderDays: input.advanceReminderDays ?? null,
+    id: input.id
+  })
+
+  it("paints an all-day event on its day and a timed event by its start", () => {
+    const model = buildWeekReadModel({
+      anchor: "2026-03-22",
+      weekStart: "sunday",
+      timeZone: "UTC",
+      tasks: [],
+      events: [
+        // 2026-03-22 is a Sunday; the all-day event stays on its own date.
+        event({ id: "all-day", title: "سفر", timing: { _tag: "allDay", date: "2026-03-22" } }),
+        event({
+          id: "timed",
+          title: "جلسه",
+          timing: {
+            _tag: "timed",
+            start: "2026-03-23T09:00:00.000Z",
+            end: "2026-03-23T10:00:00.000Z"
+          }
+        })
+      ]
+    })
+    const sunday = model.days.find((day) => day.date === "2026-03-22")!
+    const monday = model.days.find((day) => day.date === "2026-03-23")!
+    expect(sunday.events.map((item) => item.title)).toEqual(["سفر"])
+    expect(sunday.events[0]!.timing._tag).toBe("allDay")
+    expect(monday.events.map((item) => item.title)).toEqual(["جلسه"])
+    expect(model.totals.events).toBe(2)
+    expect(model.empty.events).toBe(false)
+    expect(model.events.map((row) => row.id)).toEqual(["all-day", "timed"])
+  })
+
+  it("project a yearly occasion onto its Jalali date in a later year", () => {
+    const origin = occasion({ id: "birthday", title: "تولد", originDate: "2020-04-01" })
+    const originFields = toJalaliFields(toJalaliDate(origin.originDate))
+    const { year, month } = jalaliMonthOf("2026-04-01")
+    const model = buildMonthReadModel({
+      year,
+      month,
+      weekStart: "saturday",
+      timeZone: "Asia/Tehran",
+      tasks: [],
+      occasions: [origin]
+    })
+
+    const chip = model.days.find((cell) => cell.occasions === 1)!
+    // The drill-down carries the occurrence itself (the month grid only counts).
+    const drilled = buildMonthReadModel({
+      year,
+      month,
+      weekStart: "saturday",
+      timeZone: "Asia/Tehran",
+      day: chip.date,
+      tasks: [],
+      occasions: [origin]
+    })
+    const occurrence = drilled.day!.occasions[0]!
+    expect(occurrence.jalali).toEqual({
+      year,
+      month: originFields.month,
+      day: originFields.day
+    })
+    expect(occurrence.date).not.toBe(origin.originDate)
+    expect(occurrence.projected).toBe(true)
+    expect(chip.date).toBe(occurrence.date)
+    expect(model.totals.occasions).toBe(1)
+    expect(model.occasions.map((row) => row.id)).toEqual(["birthday"])
+  })
+
+  it("counts events and occasions as busy days and in the drill-down", () => {
+    const model = buildMonthReadModel({
+      year: 1405,
+      month: 1,
+      weekStart: "saturday",
+      timeZone: "UTC",
+      day: "2026-03-22",
+      tasks: [],
+      events: [
+        event({ id: "e", title: "رویداد", timing: { _tag: "allDay", date: "2026-03-22" } })
+      ],
+      occasions: [occasion({ id: "o", title: "سالگرد", originDate: "2026-03-23" })]
+    })
+
+    const eventDay = model.days.find((cell) => cell.date === "2026-03-22")!
+    const occasionDay = model.days.find((cell) => cell.date === "2026-03-23")!
+    expect(eventDay).toMatchObject({ isBusy: true, tasks: 0, events: 1, occasions: 0 })
+    expect(occasionDay).toMatchObject({ isBusy: true, tasks: 0, events: 0, occasions: 1 })
+    expect(eventDay.busyLevel).toBe(1)
+    expect(model.totals).toMatchObject({ busyDays: 2, tasks: 0, events: 1, occasions: 1 })
+    expect(model.day?.events.map((item) => item.title)).toEqual(["رویداد"])
+    expect(model.day?.occasions).toEqual([])
+  })
+
+  it("keeps an occasion out of a window that does not contain its date", () => {
+    const model = buildWeekReadModel({
+      anchor: "2026-03-22",
+      weekStart: "sunday",
+      timeZone: "UTC",
+      tasks: [],
+      occasions: [occasion({ id: "far", originDate: "2020-08-01" })]
+    })
+    expect(model.totals.occasions).toBe(0)
+    expect(model.empty.occasions).toBe(true)
+    // The source row still travels, so the client can overlay a local edit.
+    expect(model.occasions.map((row) => row.id)).toEqual(["far"])
+  })
+
+  it("dedupes duplicated source rows and paints each occurrence once", () => {
+    const repeatedEvent = event({
+      id: "same",
+      title: "یک رویداد",
+      timing: { _tag: "allDay", date: "2026-03-22" }
+    })
+    const repeatedOccasion = occasion({ id: "same-occasion", originDate: "2020-03-22" })
+    const model = buildWeekReadModel({
+      anchor: "2026-03-22",
+      weekStart: "sunday",
+      timeZone: "UTC",
+      tasks: [],
+      // A range query and the recurring query can return the same row; the
+      // client overlay can add it again.
+      events: [repeatedEvent, repeatedEvent],
+      occasions: [repeatedOccasion, repeatedOccasion]
+    })
+
+    expect(model.events.map((row) => row.id)).toEqual(["same"])
+    expect(model.occasions.map((row) => row.id)).toEqual(["same-occasion"])
+    expect(model.totals.events).toBe(1)
+    expect(model.totals.occasions).toBe(1)
   })
 })

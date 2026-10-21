@@ -10,13 +10,20 @@ import {
 import {
   JALALI_MONTHS,
   JALALI_WEEKDAYS,
+  eventOccurrences,
   localizeDigits,
   toJalaliDate,
+  type CalendarOccasionSource,
   type CalendarTaskItem,
   type Digits,
+  type Event,
+  type EventEditScope,
+  type EventExceptionOverrides,
+  type EventOccurrence,
   type MonthReadModel,
   type WeekReadModel
 } from "@tali/domain"
+import { useAuth } from "../../lib/auth"
 import { usePreferences } from "../../lib/preferences"
 import { useLocalStore } from "../../lib/local-store"
 import type { MirrorRecord } from "../../lib/local-store"
@@ -39,6 +46,7 @@ import {
   monthFromSources,
   monthTitle,
   overlayCalendarSources,
+  overlayOccasionSources,
   shiftDay,
   shiftMonth,
   taskCountLabel,
@@ -48,13 +56,38 @@ import {
   weekTitle
 } from "../../lib/calendar/model"
 import {
+  asOccasionSource,
   formatOccasionDate,
-  monthOccasions,
+  monthOccasionsFromSources,
   occasionsByDate,
   toOccasionRow,
   type OccasionRow
 } from "../../lib/occasions/model"
+import {
+  createEventInMirror,
+  isAnchorOccurrence,
+  overlayEventSources,
+  occurrenceTimeLabel,
+  timingOfDraft
+} from "../../lib/events/model"
+import {
+  commitEventScope,
+  eventFromMirror,
+  newScopedIds,
+  type EventScopeIds
+} from "../../lib/events/scope"
+import { api } from "../../lib/rpc"
 import { OccasionsPanel } from "../occasions/occasions-panel"
+import {
+  EventChip,
+  EventEditor,
+  EventQuickAdd,
+  EventRow,
+  EventScopePrompt,
+  TimeGrid,
+  hasTimedEvents,
+  type EventDraftFields
+} from "./events"
 import { CALENDAR_MAIN } from "./ui"
 
 /**
@@ -68,7 +101,19 @@ import { CALENDAR_MAIN } from "./ui"
  *
  * Weekly planning is a review-and-prioritise workflow, not a second data model:
  * it lists the week's real rows, sets their priority and shifts them a day at a
- * time. Projected recurrence occurrences are visibly read-only everywhere.
+ * time. Projected recurrence occurrences stay visibly read-only in that lane.
+ *
+ * Since #62 the same grid carries the event and occasion lanes:
+ *
+ * - all-day events paint as a full-width strip on their day cell, timed events
+ *   sit on the day's time grid, and an event can be quick-added from any cell
+ *   (local-first, like a task);
+ * - occasions show as chips on their annual date, projected from the origin
+ *   date by the same builder #59's panel uses;
+ * - opening an occurrence asks the #58 edit-scope question — "this event" or
+ *   "this and following". A series split uses the server mutation while online
+ *   (its gated two-row batch); the single-row scopes stay local-first and a
+ *   split is refused offline with an explanation.
  */
 
 type CalendarViewName = "week" | "month"
@@ -85,6 +130,7 @@ const isPriority = (value: string): value is keyof typeof PRIORITY_LABELS =>
   value === "high" || value === "medium" || value === "low"
 
 export function CalendarScreen() {
+  const auth = useAuth()
   const preferences = usePreferences()
   const local = useLocalStore()
 
@@ -95,8 +141,18 @@ export function CalendarScreen() {
   const [selectedDay, setSelectedDay] = createSignal<string>()
   const [planning, setPlanning] = createSignal(false)
   const [mirrorTasks, setMirrorTasks] = createSignal<ReadonlyArray<MirrorRecord>>([])
+  const [mirrorEvents, setMirrorEvents] = createSignal<ReadonlyArray<MirrorRecord>>([])
   const [pendingIds, setPendingIds] = createSignal<ReadonlySet<string>>(new Set<string>())
+  const [pendingEvents, setPendingEvents] = createSignal<ReadonlySet<string>>(new Set<string>())
+  const [pendingOccasions, setPendingOccasions] = createSignal<ReadonlySet<string>>(
+    new Set<string>()
+  )
+  const [trashedEvents, setTrashedEvents] = createSignal<ReadonlySet<string>>(new Set<string>())
+  const [trashedOccasions, setTrashedOccasions] = createSignal<ReadonlySet<string>>(
+    new Set<string>()
+  )
   const [dirtyKeys, setDirtyKeys] = createSignal<ReadonlySet<string>>(new Set<string>())
+  const [dirtyEvents, setDirtyEvents] = createSignal<ReadonlySet<string>>(new Set<string>())
   const [serverWeek, setServerWeek] = createSignal<WeekReadModel>()
   const [serverWeekEtag, setServerWeekEtag] = createSignal<string>()
   const [serverMonth, setServerMonth] = createSignal<MonthReadModel>()
@@ -107,6 +163,17 @@ export function CalendarScreen() {
   const [pageError, setPageError] = createSignal<string>()
   const [occasions, setOccasions] = createSignal<ReadonlyArray<OccasionRow>>([])
   const [announcement, setAnnouncement] = createSignal("")
+  const [editingEvent, setEditingEvent] = createSignal<EventOccurrence>()
+  const [pendingAction, setPendingAction] = createSignal<{
+    readonly action: "edit" | "delete"
+    readonly occurrence: EventOccurrence
+    readonly draft: EventDraftFields | null
+    /** Minted once per prompt so an RPC retry is exactly-once. */
+    readonly ids: EventScopeIds
+  }>()
+  const [scope, setScope] = createSignal<EventEditScope>("thisOccurrence")
+  const [eventBusy, setEventBusy] = createSignal(false)
+  const [editorError, setEditorError] = createSignal<string>()
 
   let refreshGeneration = 0
 
@@ -123,9 +190,15 @@ export function CalendarScreen() {
   })
   const today = createMemo(() => todayIn(timeZone()))
 
+  const occasionSources = createMemo<ReadonlyArray<CalendarOccasionSource>>(() =>
+    occasions().map(asOccasionSource)
+  )
+
   const mirrorWeek = createMemo<WeekReadModel>(() =>
     weekFromMirror({
       tasks: mirrorTasks(),
+      events: mirrorEvents(),
+      occasions: occasionSources(),
       anchor: anchor(),
       weekStart: weekStart(),
       timeZone: timeZone()
@@ -135,6 +208,8 @@ export function CalendarScreen() {
   const mirrorMonth = createMemo<MonthReadModel>(() =>
     monthFromMirror({
       tasks: mirrorTasks(),
+      events: mirrorEvents(),
+      occasions: occasionSources(),
       anchor: anchor(),
       weekStart: weekStart(),
       timeZone: timeZone(),
@@ -149,6 +224,10 @@ export function CalendarScreen() {
    * completion, move or priority never blanks server-only tasks.
    */
   const overlayIds = () => new Set<string>([...pendingIds(), ...dirtyKeys()])
+  const eventOverlayIds = () => new Set<string>([...pendingEvents(), ...dirtyEvents()])
+  const occasionOverlayIds = () => pendingOccasions()
+  const deletedEventIds = () => trashedEvents()
+  const deletedOccasionIds = () => trashedOccasions()
 
   const weekHasServer = (): boolean => {
     const model = serverWeek()
@@ -165,12 +244,26 @@ export function CalendarScreen() {
     const model = serverWeek()
     if (!weekHasServer() || model === undefined) return mirrorWeek()
     const ids = overlayIds()
-    if (ids.size === 0) return model
+    const eventIds = eventOverlayIds()
+    const occasionIds = occasionOverlayIds()
+    if (ids.size === 0 && eventIds.size === 0 && occasionIds.size === 0) return model
     return weekFromSources({
       tasks: overlayCalendarSources({
         base: model.tasks,
         mirror: mirrorTasks(),
         overlayIds: ids
+      }),
+      events: overlayEventSources({
+        base: model.events,
+        mirror: mirrorEvents(),
+        overlayIds: eventIds,
+        deletedIds: deletedEventIds()
+      }),
+      occasions: overlayOccasionSources({
+        base: model.occasions,
+        mirror: occasionSources(),
+        overlayIds: occasionIds,
+        deletedIds: deletedOccasionIds()
       }),
       anchor: model.start,
       weekStart: model.weekStart,
@@ -194,12 +287,33 @@ export function CalendarScreen() {
     const model = serverMonth()
     if (!monthHasServer() || model === undefined) return mirrorMonth()
     const ids = overlayIds()
-    if (ids.size === 0 && (model.day?.date ?? undefined) === selectedDay()) return model
+    const eventIds = eventOverlayIds()
+    const occasionIds = occasionOverlayIds()
+    if (
+      ids.size === 0 &&
+      eventIds.size === 0 &&
+      occasionIds.size === 0 &&
+      (model.day?.date ?? undefined) === selectedDay()
+    ) {
+      return model
+    }
     return monthFromSources({
       tasks: overlayCalendarSources({
         base: model.tasks,
         mirror: mirrorTasks(),
         overlayIds: ids
+      }),
+      events: overlayEventSources({
+        base: model.events,
+        mirror: mirrorEvents(),
+        overlayIds: eventIds,
+        deletedIds: deletedEventIds()
+      }),
+      occasions: overlayOccasionSources({
+        base: model.occasions,
+        mirror: occasionSources(),
+        overlayIds: occasionIds,
+        deletedIds: deletedOccasionIds()
       }),
       year: model.year,
       month: model.month,
@@ -210,13 +324,34 @@ export function CalendarScreen() {
   })
 
   /**
-   * The month's annual occasions, projected from the mirror with the shared
-   * domain builder. This lane is independent of the server `/month` read model
-   * (#43): an occasion is a yearly date, and the chip must stay correct offline.
+   * The month's annual occasion chips. The `/month` payload ships the source
+   * rows (not the occurrences) because the grid's busy marks only need a count;
+   * the chips re-project the same rows — server rows plus an unsent local write
+   * — with the shared annual builder, so the chip is correct offline too.
    */
   const monthOccasionMap = createMemo(() =>
-    occasionsByDate(monthOccasions(occasions(), month().start, month().end))
+    occasionsByDate(
+      monthOccasionsFromSources(month().occasions, month().start, month().end)
+    )
   )
+
+  /** The event chips for the month grid, re-projected the same way. */
+  const monthEventMap = createMemo(() => {
+    const model = month()
+    const occurrences = eventOccurrences({
+      events: model.events,
+      from: model.start,
+      to: model.end,
+      timeZone: model.timeZone
+    })
+    const map = new Map<string, Array<EventOccurrence>>()
+    for (const occurrence of occurrences) {
+      const bucket = map.get(occurrence.date) ?? []
+      bucket.push(occurrence)
+      map.set(occurrence.date, bucket)
+    }
+    return map
+  })
 
   const source = createMemo<"server" | "mirror">(() =>
     view() === "week" ? (weekHasServer() ? "server" : "mirror") : monthHasServer() ? "server" : "mirror"
@@ -229,23 +364,36 @@ export function CalendarScreen() {
     (store) => {
       if (store === undefined) {
         setMirrorTasks([])
+        setMirrorEvents([])
         setOccasions([])
         return
       }
       let cancelled = false
       const reload = () => {
-        void Promise.all([store.list("task"), store.list("occasion"), store.pending()])
-          .then(([tasks, occasionRows, queued]) => {
+        void Promise.all([
+          store.list("task"),
+          store.list("event"),
+          store.list("occasion"),
+          store.listTrashed("event"),
+          store.listTrashed("occasion"),
+          store.pending()
+        ])
+          .then(([tasks, events, occasionRows, trashedEventRows, trashedOccasionRows, queued]) => {
             if (cancelled) return
             setMirrorTasks(tasks)
+            setMirrorEvents(events)
             setOccasions(occasionRows.map(toOccasionRow))
-            setPendingIds(
+            setTrashedEvents(new Set(trashedEventRows.map((row) => row.entityId)))
+            setTrashedOccasions(new Set(trashedOccasionRows.map((row) => row.entityId)))
+            const pendingOf = (type: string) =>
               new Set(
                 queued
-                  .filter((entry) => entry.entityType === "task")
+                  .filter((entry) => entry.entityType === type)
                   .map((entry) => entry.entityId)
               )
-            )
+            setPendingIds(pendingOf("task"))
+            setPendingEvents(pendingOf("event"))
+            setPendingOccasions(pendingOf("occasion"))
           })
           .catch(() => {
             // The store closed (sign-out) while the read was in flight.
@@ -264,9 +412,22 @@ export function CalendarScreen() {
     setDirtyKeys((current) => new Set([...current, id]))
   }
 
+  const markEventDirty = (id: string) => {
+    setDirtyEvents((current) => new Set([...current, id]))
+  }
+
   const clearDirty = (ids: ReadonlySet<string>) => {
     if (ids.size === 0) return
     setDirtyKeys((current) => {
+      const next = new Set(current)
+      for (const id of ids) next.delete(id)
+      return next
+    })
+  }
+
+  const clearDirtyEvents = (ids: ReadonlySet<string>) => {
+    if (ids.size === 0) return
+    setDirtyEvents((current) => {
       const next = new Set(current)
       for (const id of ids) next.delete(id)
       return next
@@ -290,7 +451,10 @@ export function CalendarScreen() {
     setServerMonthEtag(undefined)
   }
 
-  const refreshWeek = async (inFlightDirty: ReadonlySet<string>): Promise<void> => {
+  const refreshWeek = async (
+    inFlightDirty: ReadonlySet<string>,
+    inFlightDirtyEvents: ReadonlySet<string>
+  ): Promise<void> => {
     const ticket = ++refreshGeneration
     const result = await fetchWeek(untrack(anchor), untrack(serverWeekEtag))
     if (ticket !== refreshGeneration) return
@@ -308,9 +472,13 @@ export function CalendarScreen() {
     setServerWeekEtag(result.etag)
     setFetchState("ready")
     clearDirty(inFlightDirty)
+    clearDirtyEvents(inFlightDirtyEvents)
   }
 
-  const refreshMonth = async (inFlightDirty: ReadonlySet<string>): Promise<void> => {
+  const refreshMonth = async (
+    inFlightDirty: ReadonlySet<string>,
+    inFlightDirtyEvents: ReadonlySet<string>
+  ): Promise<void> => {
     const ticket = ++refreshGeneration
     const result = await fetchMonth(
       untrack(anchor),
@@ -332,6 +500,7 @@ export function CalendarScreen() {
     setServerMonthEtag(result.etag)
     setFetchState("ready")
     clearDirty(inFlightDirty)
+    clearDirtyEvents(inFlightDirtyEvents)
   }
 
   // Revalidate on boot, reconnect, view/window changes and an empty outbox.
@@ -342,7 +511,8 @@ export function CalendarScreen() {
       view: view(),
       anchor: anchor(),
       day: selectedDay(),
-      dirty: dirtyKeys().size
+      dirty: dirtyKeys().size,
+      dirtyEvents: dirtyEvents().size
     }),
     (state) => {
       if (!state.online) {
@@ -356,8 +526,9 @@ export function CalendarScreen() {
         return
       }
       const inFlightDirty = untrack(dirtyKeys)
-      if (state.view === "week") void refreshWeek(inFlightDirty)
-      else void refreshMonth(inFlightDirty)
+      const inFlightDirtyEvents = untrack(dirtyEvents)
+      if (state.view === "week") void refreshWeek(inFlightDirty, inFlightDirtyEvents)
+      else void refreshMonth(inFlightDirty, inFlightDirtyEvents)
     }
   )
 
@@ -373,8 +544,9 @@ export function CalendarScreen() {
         }))
         if (!state.online || state.pending > 0) return
         const inFlightDirty = untrack(dirtyKeys)
-        if (state.view === "week") void refreshWeek(inFlightDirty)
-        else void refreshMonth(inFlightDirty)
+        const inFlightDirtyEvents = untrack(dirtyEvents)
+        if (state.view === "week") void refreshWeek(inFlightDirty, inFlightDirtyEvents)
+        else void refreshMonth(inFlightDirty, inFlightDirtyEvents)
       }, 60_000)
       return () => clearInterval(poll)
     }
@@ -523,9 +695,234 @@ export function CalendarScreen() {
     </li>
   )
 
-  const lanes = () => (
+  // ── Events and occasions (#62) ─────────────────────────────────────────
+
+  /** The mirrored series row an occurrence belongs to, or `null` when absent. */
+  const seriesOf = (occurrence: EventOccurrence): Event | null => {
+    const record = mirrorEvents().find((entry) => entry.entityId === occurrence.id)
+    const userId = auth.session()?.user.id
+    const householdId = auth.householdId()
+    if (record === undefined || userId === undefined || householdId === undefined) {
+      return null
+    }
+    return eventFromMirror(record, { userId, householdId })
+  }
+
+  /** Create an all-day or timed event from a day cell, local-first. */
+  const addEvent = async (date: string, draft: EventDraftFields) => {
+    const store = local.store()
+    if (store === undefined || eventBusy()) return
+    setEventBusy(true)
+    setPageError(undefined)
+    try {
+      const id = await createEventInMirror(store, {
+        title: draft.title,
+        date: draft.date,
+        allDay: draft.allDay,
+        startTime: draft.startTime,
+        endTime: draft.endTime,
+        timeZone: timeZone()
+      })
+      markEventDirty(id)
+      setAnnouncement(`رویداد تازه برای ${dayLabel(date, digits())}: ${draft.title}`)
+    } catch (cause) {
+      reportError(cause)
+    } finally {
+      setEventBusy(false)
+    }
+  }
+
+  const openEvent = (occurrence: EventOccurrence) => {
+    setEditorError(undefined)
+    setEditingEvent(occurrence)
+  }
+
+  const closeEditor = () => {
+    setEditingEvent(undefined)
+    setPendingAction(undefined)
+    setEditorError(undefined)
+  }
+
+  const missingEventCopy =
+    "این رویداد هنوز در حافظهٔ محلی نیست؛ کمی بعد دوباره تلاش کنید."
+
+  /** Save from the editor; a recurring series asks the scope question first. */
+  const saveEvent = (draft: EventDraftFields) => {
+    const occurrence = editingEvent()
+    if (occurrence === undefined) return
+    const series = seriesOf(occurrence)
+    if (series === null) {
+      setEditorError(missingEventCopy)
+      return
+    }
+    if (series.recurrence !== null) {
+      setScope("thisOccurrence")
+      setPendingAction({ action: "edit", occurrence, draft, ids: newScopedIds() })
+      return
+    }
+    void commitEventChange("thisOccurrence", {
+      action: "edit",
+      occurrence,
+      draft,
+      ids: newScopedIds()
+    })
+  }
+
+  /** Delete from the editor; a recurring series asks the scope question first. */
+  const askDeleteEvent = () => {
+    const occurrence = editingEvent()
+    if (occurrence === undefined) return
+    const series = seriesOf(occurrence)
+    if (series === null) {
+      setEditorError(missingEventCopy)
+      return
+    }
+    if (series.recurrence !== null) {
+      setScope("thisOccurrence")
+      setPendingAction({ action: "delete", occurrence, draft: null, ids: newScopedIds() })
+      return
+    }
+    void commitEventChange("thisOccurrence", {
+      action: "delete",
+      occurrence,
+      draft: null,
+      ids: newScopedIds()
+    })
+  }
+
+  const scopeAnnouncement = (
+    action: "edit" | "delete",
+    chosen: EventEditScope,
+    title: string
+  ): string => {
+    const following = chosen === "thisAndFollowing"
+    if (action === "edit") {
+      return following
+        ? `این رویداد و رویدادهای بعدی ویرایش شد: ${title}`
+        : `رویداد ویرایش شد: ${title}`
+    }
+    return following
+      ? `این رویداد و رویدادهای بعدی حذف شد: ${title}`
+      : `رویداد حذف شد: ${title}`
+  }
+
+  /**
+   * The one write path for both scopes.
+   *
+   * `commitEventScope` decides the transport: a recurring series on a connected
+   * device goes through `Edit/DeleteEventOccurrence` so #58's CAS gate and its
+   * gated tail stay in the path; a one-off, an offline series, or a head with an
+   * unsent mutation stays local-first. A split edit offline is refused rather
+   * than queued as two independent LWW rows.
+   */
+  const commitEventChange = async (
+    chosen: EventEditScope,
+    target: {
+      readonly action: "edit" | "delete"
+      readonly occurrence: EventOccurrence
+      readonly draft: EventDraftFields | null
+      readonly ids: EventScopeIds
+    }
+  ): Promise<void> => {
+    const store = local.store()
+    const series = seriesOf(target.occurrence)
+    if (store === undefined || series === null || eventBusy()) {
+      if (series === null) setEditorError(missingEventCopy)
+      return
+    }
+    setEventBusy(true)
+    setPageError(undefined)
+    setEditorError(undefined)
+    try {
+      const overrides: EventExceptionOverrides = target.draft === null
+        ? {}
+        : {
+          title: target.draft.title,
+          timing: timingOfDraft({ ...target.draft, timeZone: target.occurrence.timeZone })
+        }
+      const change = await commitEventScope({
+        store,
+        online: local.online(),
+        server: {
+          editOccurrence: api.editEventOccurrence,
+          deleteOccurrence: api.deleteEventOccurrence
+        },
+        event: series,
+        instanceId: target.occurrence.instanceId,
+        action: target.action,
+        scope: chosen,
+        overrides,
+        ids: target.ids
+      })
+      markEventDirty(change.series.id)
+      if (change.following !== null) markEventDirty(change.following.id)
+      setAnnouncement(
+        scopeAnnouncement(
+          target.action,
+          chosen,
+          target.draft?.title ?? target.occurrence.title
+        )
+      )
+      setPendingAction(undefined)
+      setEditingEvent(undefined)
+    } catch (cause) {
+      setEditorError(
+        cause instanceof Error ? cause.message : "ذخیرهٔ رویداد در حافظهٔ محلی ناموفق بود"
+      )
+    } finally {
+      setEventBusy(false)
+    }
+  }
+
+  /** The all-day strip and the timed time grid for one day. */
+  const eventLanes = (day: WeekReadModel["days"][number], label: string) => {
+    const allDay = day.events.filter((occurrence) => occurrence.timing._tag === "allDay")
+    const timed = day.events.filter((occurrence) => occurrence.timing._tag === "timed")
+    return (
+      <>
+        <Show when={allDay.length > 0 || day.occasions.length > 0}>
+          <div class="calendar-allday" aria-label={`تمام‌روزها و مناسبت‌های ${label}`}>
+            <For each={allDay}>
+              {(occurrence) => (
+                <EventChip
+                  occurrence={occurrence}
+                  digits={digits()}
+                  timeZone={timeZone()}
+                  onOpen={openEvent}
+                />
+              )}
+            </For>
+            <For each={day.occasions}>
+              {(occasion) => (
+                <span
+                  class="calendar-occasion-chip calendar-occasion-chip-week"
+                  data-occasion={occasion.id}
+                  aria-label={`مناسبت ${occasion.title} — ${formatOccasionDate(occasion, digits())}`}
+                >
+                  {occasion.title}
+                </span>
+              )}
+            </For>
+          </div>
+        </Show>
+        <Show
+          when={hasTimedEvents(timed)}
+          fallback={<p class="calendar-lane" data-lane="events-timed">رویداد زمانی — خالی</p>}
+        >
+          <TimeGrid
+            occurrences={timed}
+            digits={digits()}
+            timeZone={timeZone()}
+            onOpen={openEvent}
+          />
+        </Show>
+      </>
+    )
+  }
+
+  /** Reminder and habit lanes stay quiet until their screens land (#61/#66). */
+  const quietLanes = () => (
     <ul class="calendar-lanes" aria-label="مسیرهای دیگر">
-      <li class="calendar-lane" data-lane="events">رویداد — خالی</li>
       <li class="calendar-lane" data-lane="reminders">یادآوری — خالی</li>
       <li class="calendar-lane" data-lane="habits">عادت — خالی</li>
     </ul>
@@ -553,13 +950,32 @@ export function CalendarScreen() {
         </header>
 
         {quickAdd(day.date, label)}
+        <EventQuickAdd
+          date={day.date}
+          label={label}
+          digits={digits()}
+          disabled={local.store() === undefined}
+          busy={eventBusy()}
+          onSubmit={(draft) => void addEvent(day.date, draft)}
+        />
 
-        <Show when={day.tasks.length > 0} fallback={<p class="calendar-empty">{emptyDayCopy}</p>}>
+        {eventLanes(day, label)}
+
+        <Show when={day.tasks.length > 0}>
           <ul class="calendar-tasks" aria-label={`کارهای ${label}`}>
             <For each={day.tasks}>{(item) => taskRow(item)}</For>
           </ul>
         </Show>
-        {lanes()}
+        <Show
+          when={
+            day.tasks.length === 0 &&
+            day.events.length === 0 &&
+            day.occasions.length === 0
+          }
+        >
+          <p class="calendar-empty">{emptyDayCopy}</p>
+        </Show>
+        {quietLanes()}
       </section>
     )
   }
@@ -672,14 +1088,63 @@ export function CalendarScreen() {
         </header>
 
         {quickAdd(detail.date, label)}
+        <EventQuickAdd
+          date={detail.date}
+          label={label}
+          digits={digits()}
+          disabled={local.store() === undefined}
+          busy={eventBusy()}
+          onSubmit={(draft) => void addEvent(detail.date, draft)}
+        />
 
-        <Show
-          when={detail.tasks.length > 0}
-          fallback={<p class="calendar-empty">{emptyDayCopy}</p>}
-        >
+        <Show when={detail.occasions.length > 0}>
+          <ul class="calendar-occasions-list" aria-label={`مناسبت‌های ${label}`}>
+            <For each={detail.occasions}>
+              {(occasion) => (
+                <li class="calendar-occasion-row" data-occasion-date={occasion.date}>
+                  <span
+                    class="calendar-occasion-chip"
+                    data-color={occasion.color ?? undefined}
+                  >
+                    {occasion.title}
+                  </span>
+                  <span class="calendar-occasion-date">
+                    {formatOccasionDate(occasion, digits())}
+                  </span>
+                </li>
+              )}
+            </For>
+          </ul>
+        </Show>
+
+        <Show when={detail.events.length > 0}>
+          <ul class="calendar-events" aria-label={`رویدادهای ${label}`}>
+            <For each={detail.events}>
+              {(occurrence) => (
+                <EventRow
+                  occurrence={occurrence}
+                  digits={digits()}
+                  timeZone={timeZone()}
+                  onOpen={openEvent}
+                />
+              )}
+            </For>
+          </ul>
+        </Show>
+
+        <Show when={detail.tasks.length > 0}>
           <ul class="calendar-tasks" aria-label={`کارهای ${label}`}>
             <For each={detail.tasks}>{(item) => taskRow(item)}</For>
           </ul>
+        </Show>
+        <Show
+          when={
+            detail.tasks.length === 0 &&
+            detail.events.length === 0 &&
+            detail.occasions.length === 0
+          }
+        >
+          <p class="calendar-empty">{emptyDayCopy}</p>
         </Show>
       </section>
     )
@@ -789,11 +1254,18 @@ export function CalendarScreen() {
               // change live.
               const isToday = createMemo(() => cell.date === today())
               const dayOccasions = createMemo(() => monthOccasionMap().get(cell.date) ?? [])
+              const dayEvents = createMemo(() => monthEventMap().get(cell.date) ?? [])
               const label = createMemo(() => {
-                const count = dayOccasions().length
-                const occasionCount =
-                  count === 0 ? "" : ` — ${localizeDigits(count, digits())} مناسبت`
-                return `${dayLabel(cell.date, digits())} — ${taskCountLabel(cell.tasks, digits())}${occasionCount}`
+                const parts = [
+                  `${dayLabel(cell.date, digits())} — ${taskCountLabel(cell.tasks, digits())}`
+                ]
+                if (cell.events > 0) {
+                  parts.push(`${localizeDigits(cell.events, digits())} رویداد`)
+                }
+                if (cell.occasions > 0) {
+                  parts.push(`${localizeDigits(cell.occasions, digits())} مناسبت`)
+                }
+                return parts.join(" — ")
               })
               return (
                 <li class="calendar-month-cell">
@@ -815,6 +1287,35 @@ export function CalendarScreen() {
                         {() => <span class="calendar-month-dot" />}
                       </For>
                     </span>
+                    <Show when={dayEvents().length > 0}>
+                      <span class="calendar-event-chips" aria-hidden="true">
+                        <For each={dayEvents().slice(0, 2)}>
+                          {(occurrence) => (
+                            <span
+                              class="calendar-event-chip calendar-event-chip-month"
+                              data-allday={occurrence.timing._tag === "allDay" ? "true" : undefined}
+                              title={occurrence.title}
+                            >
+                              <Show
+                                when={occurrenceTimeLabel(occurrence, timeZone(), digits())}
+                              >
+                                {(time) => (
+                                  <span class="calendar-event-chip-time">{time()}</span>
+                                )}
+                              </Show>
+                              <span class="calendar-event-chip-title">
+                                {occurrence.title}
+                              </span>
+                            </span>
+                          )}
+                        </For>
+                        <Show when={dayEvents().length > 2}>
+                          <span class="calendar-event-chip" data-more="true">
+                            +{localizeDigits(dayEvents().length - 2, digits())}
+                          </span>
+                        </Show>
+                      </span>
+                    </Show>
                     <Show when={dayOccasions().length > 0}>
                       <span class="calendar-occasion-chips" aria-hidden="true">
                         <For each={dayOccasions().slice(0, 2)}>
@@ -844,6 +1345,18 @@ export function CalendarScreen() {
       </>
     )
   }
+
+  /**
+   * The split option's availability is a hint; `commitEventScope` re-checks it
+   * against the store. Delete-this-and-following is a single truncate row, so
+   * it keeps working offline. A split edit needs the server's gated batch.
+   */
+  const splitAvailable = (target: {
+    readonly action: "edit" | "delete"
+    readonly occurrence: EventOccurrence
+  }): boolean =>
+    target.action === "delete" ||
+    (local.online() && !pendingEvents().has(target.occurrence.id))
 
   const habitTrendReserve = () => (
     <section class="calendar-trend" aria-label="روند عادت‌ها" data-reserved="habits">
@@ -908,13 +1421,24 @@ export function CalendarScreen() {
               برنامه‌ریزی هفته
             </button>
             <p class="calendar-nav-title">
-              {localizeDigits(week().totals.tasks, digits())} کار در این هفته
+              {localizeDigits(week().totals.tasks, digits())} کار،{" "}
+              {localizeDigits(week().totals.events, digits())} رویداد،{" "}
+              {localizeDigits(week().totals.occasions, digits())} مناسبت در این هفته
             </p>
           </div>
           <Show when={planning()}>
             <div id="calendar-planning-panel">{planningPanel()}</div>
           </Show>
-          <Show when={!week().days.some((day) => day.tasks.length > 0)}>
+          <Show
+            when={
+              !week().days.some(
+                (day) =>
+                  day.tasks.length > 0 ||
+                  day.events.length > 0 ||
+                  day.occasions.length > 0
+              )
+            }
+          >
             <p class="calendar-empty">{emptyWeekCopy}</p>
           </Show>
           <div class="calendar-week">
@@ -933,6 +1457,42 @@ export function CalendarScreen() {
           <p class="calendar-alert" role="alert">
             {pageError()}
           </p>
+        </Show>
+
+        <Show when={editingEvent()}>
+          {(occurrence) => (
+            <EventEditor
+              occurrence={occurrence()}
+              digits={digits()}
+              canEdit={seriesOf(occurrence()) !== null}
+              busy={eventBusy()}
+              error={editorError()}
+              inactive={pendingAction() !== undefined}
+              onSave={saveEvent}
+              onDelete={askDeleteEvent}
+              onClose={closeEditor}
+            />
+          )}
+        </Show>
+
+        <Show when={pendingAction()}>
+          {(target) => (
+            <EventScopePrompt
+              action={target().action}
+              title={target().draft?.title ?? target().occurrence.title}
+              scope={scope()}
+              busy={eventBusy()}
+              splitAvailable={splitAvailable(target())}
+              firstOccurrence={isAnchorOccurrence(target().occurrence)}
+              error={editorError()}
+              onScopeChange={setScope}
+              onConfirm={() => void commitEventChange(scope(), target())}
+              onCancel={() => {
+                setPendingAction(undefined)
+                setEditorError(undefined)
+              }}
+            />
+          )}
         </Show>
 
         <p class="calendar-sr" role="status" aria-live="polite">

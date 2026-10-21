@@ -9,6 +9,8 @@ import {
   toIsoDate,
   toJalaliDate,
   toJalaliDateInZone,
+  type CalendarEventSource,
+  type CalendarOccasionSource,
   type CalendarTaskSource,
   type Digits,
   type MonthReadModel,
@@ -20,6 +22,7 @@ import {
   type WeekStart
 } from "@tali/domain"
 import type { MirrorRecord } from "../local-store"
+import { eventSourcesFromMirror } from "../events/model"
 
 /**
  * The `/calendar` client model (ticket #43).
@@ -81,12 +84,16 @@ export const taskSourcesFromMirror = (
 
 export const weekFromMirror = (input: {
   readonly tasks: ReadonlyArray<MirrorRecord>
+  readonly events?: ReadonlyArray<MirrorRecord>
+  readonly occasions?: ReadonlyArray<CalendarOccasionSource>
   readonly anchor: string
   readonly weekStart: WeekStart
   readonly timeZone: string
 }): WeekReadModel =>
   buildWeekReadModel({
     tasks: taskSourcesFromMirror(input.tasks),
+    events: eventSourcesFromMirror(input.events ?? []),
+    occasions: input.occasions ?? [],
     anchor: input.anchor,
     weekStart: input.weekStart,
     timeZone: input.timeZone
@@ -94,6 +101,8 @@ export const weekFromMirror = (input: {
 
 export const monthFromMirror = (input: {
   readonly tasks: ReadonlyArray<MirrorRecord>
+  readonly events?: ReadonlyArray<MirrorRecord>
+  readonly occasions?: ReadonlyArray<CalendarOccasionSource>
   readonly anchor: string
   readonly weekStart: WeekStart
   readonly timeZone: string
@@ -102,6 +111,8 @@ export const monthFromMirror = (input: {
   const { year, month } = jalaliMonthOf(input.anchor)
   return buildMonthReadModel({
     tasks: taskSourcesFromMirror(input.tasks),
+    events: eventSourcesFromMirror(input.events ?? []),
+    occasions: input.occasions ?? [],
     year,
     month,
     weekStart: input.weekStart,
@@ -166,12 +177,16 @@ export const overlayCalendarSources = (input: {
 
 export const weekFromSources = (input: {
   readonly tasks: ReadonlyArray<CalendarTaskSource>
+  readonly events?: ReadonlyArray<CalendarEventSource>
+  readonly occasions?: ReadonlyArray<CalendarOccasionSource>
   readonly anchor: string
   readonly weekStart: WeekStart
   readonly timeZone: string
 }): WeekReadModel =>
   buildWeekReadModel({
     tasks: input.tasks,
+    events: input.events ?? [],
+    occasions: input.occasions ?? [],
     anchor: input.anchor,
     weekStart: input.weekStart,
     timeZone: input.timeZone
@@ -179,6 +194,8 @@ export const weekFromSources = (input: {
 
 export const monthFromSources = (input: {
   readonly tasks: ReadonlyArray<CalendarTaskSource>
+  readonly events?: ReadonlyArray<CalendarEventSource>
+  readonly occasions?: ReadonlyArray<CalendarOccasionSource>
   readonly year: number
   readonly month: number
   readonly weekStart: WeekStart
@@ -187,12 +204,42 @@ export const monthFromSources = (input: {
 }): MonthReadModel =>
   buildMonthReadModel({
     tasks: input.tasks,
+    events: input.events ?? [],
+    occasions: input.occasions ?? [],
     year: input.year,
     month: input.month,
     weekStart: input.weekStart,
     timeZone: input.timeZone,
     day: input.day ?? null
   })
+
+/**
+ * Overlay local occasion writes the server snapshot has not seen yet, exactly
+ * like the task and event lanes. Occasion rows are few, so the merge is by id
+ * over the full set rather than a range query.
+ */
+export const overlayOccasionSources = (input: {
+  readonly base: ReadonlyArray<CalendarOccasionSource>
+  readonly mirror: ReadonlyArray<CalendarOccasionSource>
+  readonly overlayIds: ReadonlySet<string>
+  /** Overlaid ids deleted locally: the server's chip must disappear at once. */
+  readonly deletedIds?: ReadonlySet<string>
+}): ReadonlyArray<CalendarOccasionSource> => {
+  const byId = new Map(input.base.map((occasion) => [occasion.id, occasion] as const))
+  const mirrorById = new Map(
+    input.mirror.map((occasion) => [occasion.id, occasion] as const)
+  )
+  for (const id of input.overlayIds) {
+    if (input.deletedIds?.has(id) === true) {
+      byId.delete(id)
+      continue
+    }
+    const local = mirrorById.get(id)
+    if (local === undefined) continue
+    byId.set(id, local)
+  }
+  return [...byId.values()]
+}
 
 // ── Display helpers (preference-driven) ──────────────────────────────────
 

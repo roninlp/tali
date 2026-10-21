@@ -3,6 +3,9 @@ import { FetchHttpClient } from "effect/http"
 import { RpcClient, RpcSerialization } from "effect/rpc"
 import { ApiRpcs, type ApiClient } from "@tali/rpc"
 import type {
+  EventOccurrenceChange,
+  EventOccurrenceDeleteInput,
+  EventOccurrenceEditInput,
   Habit,
   HabitEntry,
   HabitEntryLogInput,
@@ -164,6 +167,22 @@ export const api = {
 
   listTrashNotes: (): Promise<ReadonlyArray<Note>> =>
     Effect.runPromise(withClient((client) => client.ListTrashNotes())),
+
+  // ── Events (#57/#58) ───────────────────────────────────────────────────
+  // Quick adds and one-off edits ride the mirror + outbox. A **recurring**
+  // occurrence edit is the one multi-row write: it uses these service calls so
+  // #58's CAS gate, its gated tail insert and its replay keys stay in the path
+  // (see `lib/events/scope.ts`).
+
+  editEventOccurrence: (
+    input: EventOccurrenceEditInput
+  ): Promise<EventOccurrenceChange> =>
+    Effect.runPromise(withClient((client) => client.EditEventOccurrence(input))),
+
+  deleteEventOccurrence: (
+    input: EventOccurrenceDeleteInput
+  ): Promise<EventOccurrenceChange> =>
+    Effect.runPromise(withClient((client) => client.DeleteEventOccurrence(input))),
 
   // ── Habit entries (#64) ────────────────────────────────────────────────
   // The tap writes the mirror first (`lib/habits/log.ts`); this is the server
