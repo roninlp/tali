@@ -12,6 +12,8 @@ import {
 } from "@tali/sql"
 import { AuthServiceLive } from "./auth-service.js"
 import { AuthRoutes } from "./auth-routes.js"
+import { CalendarRoutes } from "./calendar-routes.js"
+import { CalendarServiceLive } from "./calendar-service.js"
 import { ListServiceLive } from "./list-service.js"
 import { ListItemServiceLive } from "./list-item-service.js"
 import { NoteServiceLive } from "./note-service.js"
@@ -47,6 +49,7 @@ export const AppLayer = Layer.mergeAll(
   AuthRoutes,
   PreferencesRoutes,
   TodayRoutes,
+  CalendarRoutes,
   PushRoutes,
   RpcLayer
 ).pipe(
@@ -58,6 +61,7 @@ export const AppLayer = Layer.mergeAll(
   Layer.provide(TaskServiceLive),
   Layer.provide(NoteServiceLive),
   Layer.provide(TodayServiceLive),
+  Layer.provide(CalendarServiceLive),
   Layer.provide(ListItemRepoLive),
   Layer.provide(NoteRepoLive),
   Layer.provide(ProjectRepoLive),

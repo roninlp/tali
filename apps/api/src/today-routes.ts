@@ -8,8 +8,13 @@ import {
 } from "@tali/domain"
 import { AuthService } from "./auth-service.js"
 import { SESSION_COOKIE } from "./auth-routes.js"
-import { sha256Hex } from "./bytes.js"
 import { PreferencesService } from "./preferences-service.js"
+import {
+  cacheHeaders,
+  etagOf,
+  fail,
+  matchesIfNoneMatch
+} from "./read-model-http.js"
 import { TodayService, type TodayViewer } from "./today-service.js"
 
 /**
@@ -29,47 +34,6 @@ import { TodayService, type TodayViewer } from "./today-service.js"
  * is encoded through `TodayReadModel` below, so a service regression fails the
  * typed boundary instead of leaking a malformed shape.
  */
-
-const CACHE_CONTROL = "private, no-cache"
-
-const json = (
-  status: number,
-  body: unknown
-): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
-  HttpServerResponse.json(body, { status }).pipe(
-    Effect.map(HttpServerResponse.setHeader("cache-control", "no-store")),
-    Effect.orDie
-  )
-
-const fail = (
-  status: number,
-  code: "Unauthorized" | "Forbidden" | "BadRequest" | "InternalError",
-  message: string,
-  retryable = false
-): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
-  json(status, { error: { code, message, retryable, details: {} } })
-
-/** A strong hash of the encoded payload; the body alone determines the tag. */
-const etagOf = (body: unknown): Effect.Effect<string> =>
-  sha256Hex(JSON.stringify(body)).pipe(Effect.map((hex) => `"${hex}"`))
-
-/**
- * `If-None-Match` uses the weak comparison function even for strong tags, so
- * `W/"x"` matches `"x"`. A comma-separated list and `*` are both legal.
- */
-const matchesIfNoneMatch = (header: string, etag: string): boolean => {
-  const opaque = (value: string): string => value.trim().replace(/^W\//, "")
-  return header
-    .split(",")
-    .some((candidate) => candidate.trim() === "*" || opaque(candidate) === opaque(etag))
-}
-
-const cacheHeaders = (etag: string): Record<string, string> => ({
-  etag,
-  "cache-control": CACHE_CONTROL,
-  // The body is per-session; make that explicit for any intermediary.
-  vary: "cookie"
-})
 
 export const TodayRoutes = HttpRouter.use((router) =>
   Effect.gen(function*() {
