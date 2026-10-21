@@ -48,6 +48,7 @@ import {
   TaskRepoLive,
   type TaskQuery
 } from "@tali/sql"
+import { loadAssignableTags } from "./tag-guard.js"
 
 /**
  * `TaskService` — create, patch, organise, bucket, complete/undo (ticket #36;
@@ -548,24 +549,9 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       viewer: TaskViewer,
       tagIds: ReadonlyArray<TagId>
     ): Effect.Effect<ReadonlyArray<Tag>, TaskValidationError> =>
-      Effect.gen(function*() {
-        const result: Array<Tag> = []
-        for (const tagId of tagIds) {
-          const found = yield* tags.findById(tagId).pipe(Effect.orDie)
-          if (Option.isNone(found) || found.value.deletedAt !== null) {
-            return yield* invalid("tagIds", `tag does not exist: ${tagId}`)
-          }
-          const tag = found.value
-          if (tag.householdId !== viewer.householdId) {
-            return yield* invalid("tagIds", `tag is not in this household: ${tagId}`)
-          }
-          if (tag.visibility === "private" && tag.ownerId !== viewer.userId) {
-            return yield* invalid("tagIds", `tag is private: ${tagId}`)
-          }
-          result.push(tag)
-        }
-        return result
-      })
+      loadAssignableTags(tags, viewer, tagIds).pipe(
+        Effect.mapError((issue) => new TaskValidationError({ issues: [issue] }))
+      )
 
     const validateDue = (dueAt: string | null, dueDate: string | null) =>
       Effect.gen(function*() {

@@ -60,6 +60,39 @@ export class NoteRepo extends Context.Service<NoteRepo>()("NoteRepo", {
         (rows) => rows.map(toNote)
       )
 
+    /** The default notes list: live, not archived. Pinned first (FR-NOTE-03). */
+    const listActive = (input: {
+      readonly householdId: string
+      readonly userId: UserId
+    }) =>
+      Effect.map(
+        sql<NoteRow>`
+          SELECT ${sql.literal(NOTE_COLUMNS)} FROM notes
+          WHERE household_id = ${input.householdId}
+            AND deleted_at IS NULL
+            AND is_archived = 0
+            AND (owner_id = ${input.userId} OR visibility = 'shared')
+          ORDER BY is_pinned DESC, updated_at DESC, id ASC
+        `,
+        (rows) => rows.map(toNote)
+      )
+
+    /** Trash view (FR-NOTE-03): soft-deleted notes, most recently trashed first. */
+    const listTrashed = (input: {
+      readonly householdId: string
+      readonly userId: UserId
+    }) =>
+      Effect.map(
+        sql<NoteRow>`
+          SELECT ${sql.literal(NOTE_COLUMNS)} FROM notes
+          WHERE household_id = ${input.householdId}
+            AND deleted_at IS NOT NULL
+            AND (owner_id = ${input.userId} OR visibility = 'shared')
+          ORDER BY deleted_at DESC, id ASC
+        `,
+        (rows) => rows.map(toNote)
+      )
+
     /** Dashboard pinned section (pinned notes first, then recency). */
     const listPinned = (input: { readonly householdId: string; readonly userId: UserId }) =>
       Effect.map(
@@ -113,7 +146,15 @@ export class NoteRepo extends Context.Service<NoteRepo>()("NoteRepo", {
         (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toNote)
       )
 
-    return { findById, listVisible, listPinned, insert, update } as const
+    return {
+      findById,
+      listVisible,
+      listActive,
+      listTrashed,
+      listPinned,
+      insert,
+      update
+    } as const
   })
 }) {}
 

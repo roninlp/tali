@@ -4,6 +4,7 @@ import { RpcServer, RpcSerialization } from "effect/rpc"
 import { ApiRpcs } from "@tali/rpc"
 import {
   ListItemRepoLive,
+  NoteRepoLive,
   ProjectRepoLive,
   PushSubscriptionRepoLive,
   TagRepoLive,
@@ -12,6 +13,7 @@ import {
 import { AuthServiceLive } from "./auth-service.js"
 import { AuthRoutes } from "./auth-routes.js"
 import { ListItemServiceLive } from "./list-item-service.js"
+import { NoteServiceLive } from "./note-service.js"
 import { PreferencesRoutes } from "./preferences-routes.js"
 import { PreferencesServiceLive } from "./preferences-service.js"
 import { PushRoutes } from "./push-routes.js"
@@ -49,7 +51,9 @@ export const AppLayer = Layer.mergeAll(
   Layer.provide(SyncServiceLive),
   Layer.provide(ListItemServiceLive),
   Layer.provide(TaskServiceLive),
+  Layer.provide(NoteServiceLive),
   Layer.provide(ListItemRepoLive),
+  Layer.provide(NoteRepoLive),
   Layer.provide(ProjectRepoLive),
   Layer.provide(TagRepoLive),
   Layer.provide(TaskRepoLive),

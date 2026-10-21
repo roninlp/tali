@@ -1,9 +1,10 @@
 import { Effect } from "effect"
 import type { Headers } from "effect/http/Headers"
 import { ApiRpcs } from "@tali/rpc"
-import { TaskForbidden, Unauthorized } from "@tali/domain"
+import { NoteForbidden, TaskForbidden, Unauthorized } from "@tali/domain"
 import { AuthService } from "./auth-service.js"
 import { ListItemService } from "./list-item-service.js"
+import { NoteService } from "./note-service.js"
 import { PreferencesService } from "./preferences-service.js"
 import { TaskService, type TaskViewer } from "./task-service.js"
 import { SESSION_COOKIE } from "./auth-routes.js"
@@ -54,14 +55,33 @@ export const viewerFromHeaders = (
     } as const
   })
 
-const withViewer = <A, E>(
+const withViewer = <A, E, R>(
   headers: Headers,
-  run: (viewer: TaskViewer) => Effect.Effect<A, E, TaskService>
-): Effect.Effect<A, E | Unauthorized | TaskForbidden, AuthService | PreferencesService | TaskService> =>
+  run: (viewer: TaskViewer) => Effect.Effect<A, E, R>
+): Effect.Effect<A, E | Unauthorized | TaskForbidden, AuthService | PreferencesService | R> =>
   Effect.gen(function*() {
     const viewer = yield* viewerFromHeaders(headers)
     return yield* run(viewer)
   })
+
+/**
+ * Notes have their own typed forbidden error, so the edge's "no household"
+ * failure is mapped into `NoteForbidden` before the handler runs. This keeps
+ * each aggregate's wire union self-contained instead of leaking a task-named
+ * tag into the note contract.
+ */
+const withNoteViewer = <A, E, R>(
+  headers: Headers,
+  run: (viewer: TaskViewer) => Effect.Effect<A, E, R>
+): Effect.Effect<A, E | Unauthorized | NoteForbidden, AuthService | PreferencesService | R> =>
+  viewerFromHeaders(headers).pipe(
+    Effect.mapError((error) =>
+      error._tag === "TaskForbidden"
+        ? new NoteForbidden({ id: error.id, reason: error.reason })
+        : error
+    ),
+    Effect.flatMap(run)
+  )
 
 export const RpcHandlers = ApiRpcs.toLayer({
   CreateListItem: (input) =>
@@ -117,5 +137,44 @@ export const RpcHandlers = ApiRpcs.toLayer({
       TaskService.pipe(Effect.flatMap((svc) => svc.renameTag(viewer, input)))),
   ListTags: (_input, { headers }) =>
     withViewer(headers, (viewer) =>
-      TaskService.pipe(Effect.flatMap((svc) => svc.listTags(viewer))))
+      TaskService.pipe(Effect.flatMap((svc) => svc.listTags(viewer)))),
+
+  // ── Notes ─────────────────────────────────────────────────────────────
+
+  CreateNote: (input, { headers }) =>
+    withNoteViewer(headers, (viewer) =>
+      NoteService.pipe(Effect.flatMap((svc) => svc.create(viewer, input)))),
+  GetNote: ({ id }, { headers }) =>
+    withNoteViewer(headers, (viewer) =>
+      NoteService.pipe(Effect.flatMap((svc) => svc.get(viewer, id)))),
+  SaveNote: (input, { headers }) =>
+    withNoteViewer(headers, (viewer) =>
+      NoteService.pipe(Effect.flatMap((svc) => svc.save(viewer, input)))),
+  UpdateNote: (input, { headers }) =>
+    withNoteViewer(headers, (viewer) =>
+      NoteService.pipe(Effect.flatMap((svc) => svc.update(viewer, input)))),
+  SetNotePinned: (input, { headers }) =>
+    withNoteViewer(headers, (viewer) =>
+      NoteService.pipe(Effect.flatMap((svc) => svc.setPinned(viewer, input)))),
+  SetNoteArchived: (input, { headers }) =>
+    withNoteViewer(headers, (viewer) =>
+      NoteService.pipe(Effect.flatMap((svc) => svc.setArchived(viewer, input)))),
+  SetNoteTags: (input, { headers }) =>
+    withNoteViewer(headers, (viewer) =>
+      NoteService.pipe(Effect.flatMap((svc) => svc.setTags(viewer, input)))),
+  TrashNote: (input, { headers }) =>
+    withNoteViewer(headers, (viewer) =>
+      NoteService.pipe(Effect.flatMap((svc) => svc.trash(viewer, input)))),
+  RestoreNote: (input, { headers }) =>
+    withNoteViewer(headers, (viewer) =>
+      NoteService.pipe(Effect.flatMap((svc) => svc.restore(viewer, input)))),
+  ListNotes: (input, { headers }) =>
+    withNoteViewer(headers, (viewer) =>
+      NoteService.pipe(Effect.flatMap((svc) => svc.list(viewer, input)))),
+  ListPinnedNotes: (_input, { headers }) =>
+    withNoteViewer(headers, (viewer) =>
+      NoteService.pipe(Effect.flatMap((svc) => svc.listPinned(viewer)))),
+  ListTrashNotes: (_input, { headers }) =>
+    withNoteViewer(headers, (viewer) =>
+      NoteService.pipe(Effect.flatMap((svc) => svc.listTrash(viewer))))
 })
