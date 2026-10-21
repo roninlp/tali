@@ -26,6 +26,23 @@ describe("note body", () => {
     expect(noteTextFromData({ body, plainText: "ignored" })).toBe(text)
   })
 
+  it("round-trips unicode, ZWNJ, emoji, quotes, and JSON-ish text", () => {
+    const text = [
+      "می‌خواهم (ZWNJ) بنویسم",
+      "\"نقل قول\" و 'تک کوتیشن'",
+      '{ "type": "doc", "content": [] }',
+      "emoji: 😀 👩‍👩‍👧‍👦 — RTL/123",
+      "backslash \\ and tab\there"
+    ].join("\n")
+    expect(noteTextFromBody(textToNoteBody(text))).toBe(text)
+  })
+
+  it("round-trips whitespace-only text and blank edges exactly", () => {
+    for (const text of ["\n", "\n\n", "  ", "  \n\n  ", "\n leading", "trailing \n", "a\rb"]) {
+      expect(noteTextFromBody(textToNoteBody(text))).toBe(text)
+    }
+  })
+
   it("falls back to plainText for a legacy/rich body it cannot read", () => {
     expect(noteTextFromData({ body: null, plainText: "متن ذخیره‌شده" })).toBe("متن ذخیره‌شده")
     expect(noteTextFromBody({ type: "doc", content: [{ type: "heading", content: [{ type: "text", text: "تیتر" }] }] })).toBe(
@@ -50,6 +67,10 @@ describe("draft reconciliation", () => {
 
   it("parses only well-formed drafts", () => {
     expect(parseNoteDraft(serializeNoteDraft(draft(2, "متن")))).toEqual(draft(2, "متن"))
+    expect(parseNoteDraft(serializeNoteDraft({ ...draft(2, "متن"), baseText: "قبلی" }))).toEqual({
+      ...draft(2, "متن"),
+      baseText: "قبلی"
+    })
     expect(parseNoteDraft("not json")).toBeUndefined()
     expect(parseNoteDraft(JSON.stringify({ version: 1, text: "x" }))).toBeUndefined()
     expect(parseNoteDraft(undefined)).toBeUndefined()
@@ -86,6 +107,60 @@ describe("draft reconciliation", () => {
         hasPending: false
       })
     ).toEqual({ apply: false, reason: "server-newer" })
+  })
+
+  it("keeps a draft when the version moved but the text did not (own ack)", () => {
+    // The draft was typed over "" and our create/edit was acked before the
+    // 120 ms re-anchor ran: version 1 is ours, not a remote text change.
+    expect(
+      reconcileDraft({
+        draft: { ...draft(0, "نیمه‌نوشته"), baseText: "" },
+        serverVersion: 1,
+        serverText: "",
+        hasPending: false
+      })
+    ).toEqual({ apply: true, text: "نیمه‌نوشته" })
+
+    // A later keystroke over text T1, acked to version N+1 with the same T1.
+    expect(
+      reconcileDraft({
+        draft: { ...draft(4, "T1 و یک کلید"), baseText: "T1" },
+        serverVersion: 5,
+        serverText: "T1",
+        hasPending: false
+      })
+    ).toEqual({ apply: true, text: "T1 و یک کلید" })
+
+    // A remote edit changed the text: the draft must lose.
+    expect(
+      reconcileDraft({
+        draft: { ...draft(4, "T1 و یک کلید"), baseText: "T1" },
+        serverVersion: 5,
+        serverText: "متن دستگاه دیگر",
+        hasPending: false
+      })
+    ).toEqual({ apply: false, reason: "server-newer" })
+  })
+
+  it("applies an empty draft when the user cleared the note", () => {
+    expect(
+      reconcileDraft({
+        draft: { ...draft(4, ""), baseText: "متن قبلی" },
+        serverVersion: 4,
+        serverText: "متن قبلی",
+        hasPending: false
+      })
+    ).toEqual({ apply: true, text: "" })
+
+    // An empty legacy draft still may not overwrite stored text.
+    expect(
+      reconcileDraft({
+        draft: draft(4, ""),
+        serverVersion: 4,
+        serverText: "متن",
+        hasPending: false
+      })
+    ).toEqual({ apply: false, reason: "empty" })
   })
 
   it("ignores an identical or empty draft", () => {

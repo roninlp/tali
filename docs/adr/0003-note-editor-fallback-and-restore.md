@@ -35,9 +35,13 @@ resurrect it.
   server's `SaveNote` RPC keeps the same rule for direct callers — identical
   text is a no-op and stale `baseVersion` is a typed `NoteConflict`.
 - A crash draft lives in the local store's `drafts` object store keyed by note
-  id plus the version the text was based on. On reopen a queued local mutation
-  or a draft at/after the mirrored version wins; an older draft loses to newer
-  server text.
+  id, and records both the version and the exact durable text (`baseText`) the
+  draft extends. On reopen a queued local mutation wins; otherwise the draft
+  wins when the mirror still shows `baseText` (the version bump was our own
+  ack), and loses when the mirror text changed underneath it (a remote edit).
+  An empty draft is a real edit (the user cleared the note) and is preserved.
+  Archive/trash flush the debounced text before writing the flag/tombstone, so
+  a screen action cannot drop the last keystrokes.
 - **Restore is online-only.** `RestoreNote` runs on the server and the returned
   row is merged into the mirror. A queued local upsert cannot undelete a
   tombstone, so the trash screen flushes the outbox before restoring and says

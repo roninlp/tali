@@ -125,6 +125,49 @@ export class NoteRepo extends Context.Service<NoteRepo>()("NoteRepo", {
         (rows) => toNote(rows[0]!)
       )
 
+    /**
+     * Tag-join maintenance is version-gated like the task service's (#36): the
+     * statements only touch `item_tags` when the note row carries the exact
+     * version/updatedAt this mutation wrote. A lost CAS therefore leaves the
+     * join and the denormalized `tag_ids` column in agreement instead of
+     * drifting when the whole batch is retried or reports a conflict.
+     */
+    const detachTagsIfVersion = (input: {
+      readonly noteId: NoteId
+      readonly version: number
+      readonly updatedAt: string
+    }) =>
+      sql`
+        DELETE FROM item_tags
+        WHERE item_id = ${input.noteId} AND item_type = 'note'
+          AND EXISTS (
+            SELECT 1 FROM notes
+            WHERE id = ${input.noteId}
+              AND version = ${input.version}
+              AND updated_at = ${input.updatedAt}
+          )
+      `
+
+    const attachTagIfVersion = (input: {
+      readonly noteId: NoteId
+      readonly tagId: TagId
+      readonly householdId: string
+      readonly createdAt: string
+      readonly version: number
+      readonly updatedAt: string
+    }) =>
+      sql`
+        INSERT INTO item_tags (item_id, item_type, tag_id, household_id, created_at)
+        SELECT ${input.noteId}, 'note', ${input.tagId}, ${input.householdId}, ${input.createdAt}
+        WHERE EXISTS (
+          SELECT 1 FROM notes
+          WHERE id = ${input.noteId}
+            AND version = ${input.version}
+            AND updated_at = ${input.updatedAt}
+        )
+        ON CONFLICT DO NOTHING
+      `
+
     const update = (note: Note) =>
       Effect.map(
         sql<NoteRow>`
@@ -153,7 +196,9 @@ export class NoteRepo extends Context.Service<NoteRepo>()("NoteRepo", {
       listTrashed,
       listPinned,
       insert,
-      update
+      update,
+      detachTagsIfVersion,
+      attachTagIfVersion
     } as const
   })
 }) {}

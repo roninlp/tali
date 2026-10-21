@@ -70,6 +70,14 @@ function NoteEditor() {
   let bodyRef: HTMLTextAreaElement | undefined
   let draftTimer: ReturnType<typeof setTimeout> | undefined
   let saveTimer: ReturnType<typeof setTimeout> | undefined
+  /**
+   * The text of the most recent autosave request (not yet necessarily acked).
+   * A draft typed while that save was in flight extends this text, so it is
+   * the right `baseText` for reopen reconciliation.
+   */
+  let lastSaveRequest: string | undefined
+  /** The note id currently loaded into the editor (for param-change flushes). */
+  let loadedId: string | undefined
   let generation = 0
   let suppressSave = false
 
@@ -84,16 +92,22 @@ function NoteEditor() {
     if (store === undefined || loadState() !== "ready") return
     const key = noteDraftKey(noteId())
     const value = text()
-    if (value === "") {
+    const savedText = saver?.lastSaved().text
+    const baseText = lastSaveRequest ?? savedText
+    // Nothing typed beyond the durable text: any stored draft is stale.
+    if (savedText !== undefined && value === savedText) {
       void store.clearDraft(key).catch(() => undefined)
       return
     }
+    // Persist even an empty value: clearing the note is a real edit, and a
+    // sudden close before the next autosave must not resurrect the old text.
     void store
       .saveDraft(
         key,
         serializeNoteDraft({
           version: baseVersion(),
           text: value,
+          ...(baseText === undefined ? {} : { baseText }),
           savedAt: new Date().toISOString()
         })
       )
@@ -103,11 +117,41 @@ function NoteEditor() {
   const runSave = async () => {
     if (saver === undefined || loadState() !== "ready" || suppressSave) return
     setSaveState("saving")
+    const textNow = text()
+    lastSaveRequest = textNow
     try {
-      await saver.save({ title: title(), text: text() })
+      await saver.save({ title: title(), text: textNow })
       setSaveState("saved")
     } catch {
+      // The request did not commit: the durable text is still the old one.
+      lastSaveRequest = saver.lastSaved().text
       setSaveState("error")
+    }
+  }
+
+  /**
+   * Save the current text before a screen action leaves the editor (archive,
+   * trash). Returns false when the mirror write failed, so the caller can stay
+   * put instead of discarding the keystrokes buffered by the 700 ms debounce.
+   */
+  const flushBeforeLeaving = async (): Promise<boolean> => {
+    clearTimeout(draftTimer)
+    clearTimeout(saveTimer)
+    if (saver === undefined || loadState() !== "ready") return true
+    setSaveState("saving")
+    const textNow = text()
+    lastSaveRequest = textNow
+    try {
+      await saver.save({ title: title(), text: textNow })
+      setSaveState("saved")
+      return true
+    } catch {
+      // The mirror still holds the previous text; anchor the crash draft to it.
+      lastSaveRequest = saver.lastSaved().text
+      setSaveState("error")
+      writeDraftNow()
+      setActionError("ذخیره‌ی متن انجام نشد؛ دوباره تلاش کنید.")
+      return false
     }
   }
 
@@ -182,6 +226,44 @@ function NoteEditor() {
     () => ({ store: local.store(), id: params.id }),
     ({ store, id }) => {
       if (store === undefined || id === undefined) return
+      // A param change (e.g. Alt+N while typing) reuses this component rather
+      // than unmounting it, so `onCleanup` does not run. Flush the note we are
+      // leaving under its own id before the editor state is replaced.
+      if (loadedId !== undefined && loadedId !== id && saver !== undefined && !suppressSave) {
+        const previousSaver = saver
+        const previousId = loadedId
+        const previousText = text()
+        const previousTitle = title()
+        const previousVersion = baseVersion()
+        const previousBase = previousSaver.lastSaved().text
+        void (async () => {
+          if (previousText !== previousBase) {
+            try {
+              await store.saveDraft(
+                noteDraftKey(previousId),
+                serializeNoteDraft({
+                  version: previousVersion,
+                  text: previousText,
+                  baseText: previousBase,
+                  savedAt: new Date().toISOString()
+                })
+              )
+            } catch {
+              // The save below is still the durable path.
+            }
+          }
+          try {
+            await previousSaver.save({ title: previousTitle, text: previousText })
+          } catch {
+            // The draft above keeps the text for the next open.
+          }
+        })()
+      }
+      clearTimeout(draftTimer)
+      clearTimeout(saveTimer)
+      saver = undefined
+      lastSaveRequest = undefined
+      suppressSave = false
       const ticket = ++generation
       setLoadState("loading")
       setLoadHint(undefined)
@@ -223,6 +305,7 @@ function NoteEditor() {
         setIsPinned(row.isPinned)
         setIsArchived(row.isArchived)
         setIsTrashed(record.deletedAt !== null)
+        loadedId = id
         setLoadState("ready")
         // Open-to-type: the caret is already in the body, no extra tap.
         queueMicrotask(() => bodyRef?.focus())
@@ -250,7 +333,14 @@ function NoteEditor() {
             title: typeof record.data.title === "string" ? record.data.title : "",
             text: serverText
           })
-          if (decision.reason === "server-newer" || decision.reason === "empty") {
+          if (
+            decision.reason === "server-newer" ||
+            decision.reason === "empty" ||
+            decision.reason === "unchanged"
+          ) {
+            // Redundant (text already durable), legacy-empty, or beaten by
+            // newer server text: the draft has been consumed and must not
+            // resurface on the next open.
             void store.clearDraft(noteDraftKey(id)).catch(() => undefined)
           }
         }
@@ -279,11 +369,18 @@ function NoteEditor() {
     })
   }
 
-  // Title edits are discrete, so they commit immediately (no title loss).
+  // Title edits are discrete, so they commit immediately (no title loss). The
+  // saver baseline follows the committed title, otherwise the next body
+  // autosave would re-write an unchanged title and mint a duplicate version.
   const onTitleInput = (value: string) => {
     setTitle(value)
+    const saverAtInput = saver
     void patch({ title: value })
-    scheduleSave()
+      .then(() => {
+        // Ignore a patch that resolves after navigating to another note.
+        if (saver === saverAtInput && title() === value) saverAtInput?.markTitleSaved(value)
+      })
+      .catch(() => undefined)
   }
 
   const toggleTag = async (tagId: string) => {
@@ -307,17 +404,19 @@ function NoteEditor() {
       await patch({ isArchived: false })
       return
     }
+    // Archive is not delete: flush the debounced text first, or the last
+    // keystrokes would vanish from the archived note.
+    if (!(await flushBeforeLeaving())) return
     suppressSave = true
-    clearTimeout(draftTimer)
-    clearTimeout(saveTimer)
     await patch({ isArchived: true })
     navigate("/notes")
   }
 
   const trash = async () => {
+    // The trashed note stays restorable for 30 days, so the current text must
+    // reach the mirror before the tombstone is written.
+    if (!(await flushBeforeLeaving())) return
     suppressSave = true
-    clearTimeout(draftTimer)
-    clearTimeout(saveTimer)
     const store = local.store()
     if (store === undefined) return
     await store.writeLocal({ entityType: "note", entityId: noteId(), op: "delete", patch: {} })

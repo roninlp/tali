@@ -256,14 +256,19 @@ export class NoteService extends Context.Service<NoteService>()("NoteService", {
           !sameTags(input.tagChanges.previous, input.tagChanges.next)
         ) {
           statements.push(
-            tags.detachAllForItem({ itemType: "note", itemId: input.state.entityId }),
+            notes.detachTagsIfVersion({
+              noteId: input.state.entityId as NoteId,
+              version: input.state.version,
+              updatedAt: input.state.updatedAt
+            }),
             ...input.tagChanges.next.map((tagId) =>
-              tags.attach({
-                itemType: "note",
-                itemId: input.state.entityId,
+              notes.attachTagIfVersion({
+                noteId: input.state.entityId as NoteId,
                 tagId,
                 householdId: input.viewer.householdId,
-                createdAt: input.now
+                createdAt: input.now,
+                version: input.state.version,
+                updatedAt: input.state.updatedAt
               })
             )
           )

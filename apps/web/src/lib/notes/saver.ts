@@ -1,5 +1,5 @@
 import { textToNoteBody } from "./body"
-import { noteDraftKey } from "./draft"
+import { noteDraftKey, parseNoteDraft } from "./draft"
 import type { LocalStore } from "../local-store/types"
 
 /**
@@ -28,6 +28,12 @@ export interface NoteSaver {
   readonly lastSaved: () => NoteText
   /** Commit the current text/title; identical input is a no-op. */
   readonly save: (input: NoteText) => Promise<NoteSaveOutcome>
+  /**
+   * Record a title that was already persisted to the mirror by a direct patch.
+   * Without this, the next body autosave would treat the (stale) baseline
+   * title as a change and mint a duplicate version for an unchanged note.
+   */
+  readonly markTitleSaved: (title: string) => void
 }
 
 export const createNoteSaver = (
@@ -52,8 +58,19 @@ export const createNoteSaver = (
         }
       })
       saved = { title: input.title, text: input.text }
-      // The mirror now holds the text durably; the draft is redundant.
-      await store.clearDraft(noteDraftKey(noteId))
+      // The mirror now holds this text durably, so the draft for it is
+      // redundant. But a keystroke typed while this save was in flight wrote a
+      // newer draft: clearing that unconditionally would lose it on a sudden
+      // close. Only drop a draft that matches what we just committed.
+      try {
+        const draft = parseNoteDraft(await store.readDraft(noteDraftKey(noteId)))
+        if (draft === undefined || draft.text === input.text) {
+          await store.clearDraft(noteDraftKey(noteId))
+        }
+      } catch {
+        // The mirror write already committed; a draft-read failure must not
+        // turn a successful save into a failure (or delete the draft).
+      }
       return "saved"
     }
     const next = queue.then(run, run)
@@ -64,6 +81,9 @@ export const createNoteSaver = (
 
   return {
     lastSaved: () => saved,
-    save
+    save,
+    markTitleSaved: (title) => {
+      saved = { title, text: saved.text }
+    }
   }
 }

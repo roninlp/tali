@@ -49,22 +49,40 @@ export const noteTextFromBody = (body: unknown): string => {
   if (typeof body === "object" && !Array.isArray(body)) {
     const content = (body as { content?: unknown }).content
     if (Array.isArray(content)) {
-      const lines = content.map((block) => {
-        if (block === null || typeof block !== "object") return ""
+      const lines: Array<string> = []
+      // A block-shaped node (paragraph/list item/heading) is one editor line,
+      // even when it is empty. Anything else (a bare text node, a hard break)
+      // is not representable in the textarea, so fall back to the shared
+      // extractor rather than silently dropping its text.
+      let unrepresentable = false
+      for (const block of content) {
+        if (block === null || typeof block !== "object") {
+          lines.push("")
+          continue
+        }
         const nodes = (block as { content?: unknown }).content
-        if (!Array.isArray(nodes)) return ""
-        return nodes
-          .map((node) =>
-            node !== null && typeof node === "object" && typeof (node as { text?: unknown }).text === "string"
-              ? (node as { text: string }).text
-              : ""
+        const text = (block as { text?: unknown }).text
+        if (Array.isArray(nodes)) {
+          lines.push(
+            nodes
+              .map((node) =>
+                node !== null && typeof node === "object" && typeof (node as { text?: unknown }).text === "string"
+                  ? (node as { text: string }).text
+                  : ""
+              )
+              .join("")
           )
-          .join("")
-      })
-      // A rich doc with non-paragraph blocks still yields readable text via the
-      // shared extractor rather than dropping the note.
+          continue
+        }
+        if (typeof text === "string") unrepresentable = true
+        lines.push("")
+      }
       const joined = lines.join("\n")
-      return joined.trim() === "" ? extractNotePlainText(body) : joined
+      // Whitespace-only text is still the user's text: preserve it exactly.
+      // Only an unrepresentable doc shape (which yields nothing readable) uses
+      // the extractor, and never at the cost of blank-line round-tripping.
+      if (unrepresentable && joined.trim() === "") return extractNotePlainText(body)
+      return joined
     }
   }
   return extractNotePlainText(body)

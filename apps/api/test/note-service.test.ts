@@ -244,6 +244,8 @@ describe("NoteService round-trip", () => {
 
     const trashFeed = await h.pull(USER_A)
     expect(noteIn(trashFeed, id)).toMatchObject({ version: 5, deletedAt: NOW })
+    // The tombstone reaches the other member's feed too (shared note).
+    expect(noteIn(await h.pull(USER_B), id)).toMatchObject({ version: 5, deletedAt: NOW })
 
     const restored = await h.svc((svc) =>
       svc.restore(viewer(), { id, clientMutationId: "n-restore" }, NOW)
@@ -257,6 +259,8 @@ describe("NoteService round-trip", () => {
 
     const restoredFeed = await h.pull(USER_A)
     expect(noteIn(restoredFeed, id)?.version).toBe(6)
+    // Restore is a normal versioned upsert, so the other device converges.
+    expect(noteIn(await h.pull(USER_B), id)).toMatchObject({ version: 6, deletedAt: null })
   })
 
   it("keeps the 30-day trash window and rejects an older restore", async () => {
@@ -392,6 +396,144 @@ describe("NoteService round-trip", () => {
         .pipe(Effect.flip)
     )
     expect(deletedRejected._tag).toBe("NoteValidationError")
+  })
+
+  it("keeps the tag join in step when a tag write loses the CAS", async () => {
+    const h = makeHarness()
+    const work = h.seedTag({ name: "کار" })
+    const home = h.seedTag({ name: "خانه" })
+    const note = await h.svc((svc) =>
+      svc.create(
+        viewer(),
+        { clientMutationId: "tc-create", title: "خرید", tagIds: [work] },
+        NOW
+      )
+    )
+    expect(h.joinTagIds(note.id)).toEqual([work])
+
+    // Every retry loses the CAS after the service's pre-read. The version-gated
+    // join statements must not touch item_tags when the note row did not move
+    // to this mutation's version — otherwise the join and tag_ids drift.
+    let bumps = 0
+    h.fake.beforeBatch = () => {
+      bumps += 1
+      h.db
+        .prepare("UPDATE notes SET version = version + 1, updated_at = ? WHERE id = ?")
+        .run(new Date(Date.parse(NOW) + bumps * 1000).toISOString(), note.id)
+    }
+
+    const failed = await h.svc((svc) =>
+      svc
+        .setTags(
+          viewer(),
+          { id: note.id, clientMutationId: "tc-retag", tagIds: [home] },
+          NOW
+        )
+        .pipe(Effect.flip)
+    )
+    expect(failed._tag).toBe("NoteConflict")
+    h.fake.beforeBatch = undefined
+
+    expect(h.joinTagIds(note.id)).toEqual([work])
+    const stored = await h.svc((svc) => svc.get(viewer(), note.id))
+    expect(stored.tagIds).toEqual([work])
+  })
+
+  it("scopes the pinned and trash queries and restore to the viewer", async () => {
+    const h = makeHarness()
+    const sharedPinned = uuidV7() as NoteId
+    const privatePinned = uuidV7() as NoteId
+    const sharedTrashed = uuidV7() as NoteId
+    const privateTrashed = uuidV7() as NoteId
+
+    await h.svc((svc) =>
+      svc.create(
+        viewer(),
+        { id: sharedPinned, clientMutationId: "s-pin", title: "مشترک", isPinned: true },
+        NOW
+      )
+    )
+    await h.svc((svc) =>
+      svc.create(
+        viewer(),
+        {
+          id: privatePinned,
+          clientMutationId: "p-pin",
+          title: "خصوصی",
+          isPinned: true,
+          visibility: "private"
+        },
+        NOW
+      )
+    )
+    await h.svc((svc) =>
+      svc.create(
+        viewer(),
+        { id: sharedTrashed, clientMutationId: "s-trash", title: "مشترک حذف‌شده" },
+        NOW
+      )
+    )
+    await h.svc((svc) =>
+      svc.trash(viewer(), { id: sharedTrashed, clientMutationId: "s-trash-2" }, NOW)
+    )
+    await h.svc((svc) =>
+      svc.create(
+        viewer(),
+        {
+          id: privateTrashed,
+          clientMutationId: "p-trash",
+          title: "خصوصی حذف‌شده",
+          visibility: "private"
+        },
+        NOW
+      )
+    )
+    await h.svc((svc) =>
+      svc.trash(viewer(), { id: privateTrashed, clientMutationId: "p-trash-2" }, NOW)
+    )
+
+    // The other member sees only household-shared pinned/trashed rows.
+    const viewerB = viewer({ userId: USER_B })
+    expect((await h.svc((svc) => svc.listPinned(viewerB))).map((note) => note.id)).toEqual([
+      sharedPinned
+    ])
+    expect((await h.svc((svc) => svc.listTrash(viewerB))).map((note) => note.id)).toEqual([
+      sharedTrashed
+    ])
+    // A trashed private row cannot be revealed or resurrected by id.
+    const forbidden = await h.svc((svc) =>
+      svc.restore(viewerB, { id: privateTrashed, clientMutationId: "p-restore" }).pipe(Effect.flip)
+    )
+    expect(forbidden).toMatchObject({ _tag: "NoteForbidden", reason: "private" })
+    expect(
+      await h.svc((svc) => svc.listTrash(viewer())).then((rows) => rows.map((note) => note.id))
+    ).toEqual(expect.arrayContaining([privateTrashed, sharedTrashed]))
+    // The private row is still trashed, not restored by the failed attempt.
+    const stillTrashed = await h.svc((svc) => svc.listTrash(viewer()))
+    expect(stillTrashed.map((note) => note.id)).toContain(privateTrashed)
+  })
+
+  it("rejects a mutation id already spent on another aggregate", async () => {
+    const h = makeHarness()
+    h.db
+      .prepare(
+        `INSERT INTO applied_mutations
+          (client_mutation_id, household_id, entity_type, entity_id, server_version, seq, created_at)
+         VALUES ('cross-aggregate', ?, 'task', 'task-1', 1, 0, ?)`
+      )
+      .run(HOUSEHOLD, NOW)
+    const feedBefore = h.pullFeed()
+
+    const failed = await h.svc((svc) =>
+      svc
+        .create(viewer(), { clientMutationId: "cross-aggregate", title: "نباید نوشته شود" })
+        .pipe(Effect.flip)
+    )
+    expect(failed._tag).toBe("NoteValidationError")
+    expect(failed.issues[0]?.field).toBe("clientMutationId")
+    // Nothing was written: no feed row and no note row.
+    expect(h.pullFeed()).toBe(feedBefore)
+    expect((h.db.prepare("SELECT COUNT(*) AS n FROM notes").get() as { readonly n: number }).n).toBe(0)
   })
 
   it("orders the pinned query and reuses mutation ids exactly once per row", async () => {
