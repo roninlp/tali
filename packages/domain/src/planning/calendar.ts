@@ -14,17 +14,25 @@ import {
   TaskRecurrenceMode
 } from "../recurrence.js"
 import {
+  EventId,
   LocalDate,
+  OccasionId,
   Priority,
   TaskId,
   TaskStatus,
   TimeZone
 } from "./common.js"
+import { EventException, EventTiming } from "./event.js"
 import {
   eventOccurrences,
   EventOccurrence,
   type EventOccurrenceSource
 } from "./event-recurrence.js"
+import {
+  occasionOccurrences,
+  OccasionOccurrence,
+  type OccasionSource
+} from "./occasion-projection.js"
 
 /**
  * Week and month read models (ticket #43; FR-VIEW-02/03).
@@ -59,18 +67,24 @@ import {
  * day. Date arithmetic stays in `jalali.ts`/Temporal — this module never
  * reimplements Jalali month lengths or week starts.
  *
- * Event, reminder and habit lanes are part of the shape from day one
- * (`counts`/`empty`), but stay zero/quiet until their slices land. The month
- * model reserves the same shape for the Slice 4 habit trend strip.
+ * Event, occasion, reminder and habit lanes are part of the shape from day one
+ * (`counts`/`empty`), and the reminder/habit lanes stay zero/quiet until their
+ * screens land. The month model reserves the same shape for the Slice 4 habit
+ * trend strip.
  *
- * ## Events (#58)
+ * ## Events (#58) and occasions (#59/#62)
  *
  * Since ticket #58 the event lane is real: `eventOccurrences` expands a series
  * with the same #38 engine (and the same read-only `projected` rule), and the
- * week/month builders paint the occurrences on their display day. The optional
- * `events` input keeps every existing caller working (an omitted lane is
- * empty), which is what lets the offline client project its mirror through the
- * same builders.
+ * week/month builders paint the occurrences on their display day. Ticket #62
+ * adds the occasion lane, projected from the origin date alone by the same
+ * annual builder #59 uses (`occasionOccurrences`), so the chip on the grid and
+ * the occasions panel can never disagree.
+ *
+ * Every optional input lane (`events`, `occasions`) defaults to empty and is
+ * shipped back as deduped **source rows** for the offline client, which is what
+ * lets the client overlay unsent local writes and re-project the grid through
+ * these same builders.
  */
 
 // ── Read-model schemas ───────────────────────────────────────────────────
@@ -78,6 +92,7 @@ import {
 export const CalendarLaneCounts = Schema.Struct({
   tasks: Schema.Int,
   events: Schema.Int,
+  occasions: Schema.Int,
   reminders: Schema.Int,
   habits: Schema.Int
 })
@@ -86,6 +101,7 @@ export type CalendarLaneCounts = Schema.Schema.Type<typeof CalendarLaneCounts>
 export const CalendarLaneEmpty = Schema.Struct({
   tasks: Schema.Boolean,
   events: Schema.Boolean,
+  occasions: Schema.Boolean,
   reminders: Schema.Boolean,
   habits: Schema.Boolean
 })
@@ -131,11 +147,52 @@ export const CalendarSourceTask = Schema.Struct({
 })
 export type CalendarSourceTask = Schema.Schema.Type<typeof CalendarSourceTask>
 
+/**
+ * The live event rows the read model was projected from (#58/#62).
+ *
+ * The structural occurrence-source shape is on the wire for the same reason
+ * the task source rows are: the offline client merges its unsent local event
+ * patch over this row and re-runs `eventOccurrences`, so a quick-added or
+ * edited event paints immediately without a second aggregation.
+ */
+export const CalendarSourceEvent = Schema.Struct({
+  id: EventId,
+  title: Schema.String,
+  description: Schema.NullOr(Schema.String),
+  location: Schema.NullOr(Schema.String),
+  category: Schema.NullOr(Schema.String),
+  color: Schema.NullOr(Schema.String),
+  people: Schema.Array(Schema.String),
+  timing: EventTiming,
+  timeZone: TimeZone,
+  recurrence: Schema.NullOr(RecurrenceRule),
+  exceptions: Schema.Array(EventException)
+})
+export type CalendarSourceEvent = Schema.Schema.Type<typeof CalendarSourceEvent>
+
+/**
+ * The live occasion rows the read model was projected from (#59/#62). All
+ * visible occasions travel (they are few) so the client can overlay a local
+ * occasion write without asking the server again.
+ */
+export const CalendarSourceOccasion = Schema.Struct({
+  id: OccasionId,
+  title: Schema.String,
+  color: Schema.NullOr(Schema.String),
+  originDate: LocalDate,
+  timeZone: TimeZone,
+  yearly: Schema.Boolean,
+  advanceReminderDays: Schema.NullOr(Schema.Int)
+})
+export type CalendarSourceOccasion = Schema.Schema.Type<typeof CalendarSourceOccasion>
+
 export const CalendarDayView = Schema.Struct({
   date: LocalDate,
   tasks: Schema.Array(CalendarTaskItem),
   /** The event lane, expanded from every visible series (#58). */
   events: Schema.Array(EventOccurrence),
+  /** The occasion lane, projected from the origin date alone (#59/#62). */
+  occasions: Schema.Array(OccasionOccurrence),
   counts: CalendarLaneCounts,
   empty: CalendarLaneEmpty
 })
@@ -151,14 +208,17 @@ export const WeekReadModel = Schema.Struct({
   totals: CalendarLaneCounts,
   empty: CalendarLaneEmpty,
   /** The live rows this week was projected from (for local-first overlays). */
-  tasks: Schema.Array(CalendarSourceTask)
+  tasks: Schema.Array(CalendarSourceTask),
+  events: Schema.Array(CalendarSourceEvent),
+  occasions: Schema.Array(CalendarSourceOccasion)
 })
 export type WeekReadModel = Schema.Schema.Type<typeof WeekReadModel>
 
 /**
- * One month-grid cell. Busy marks are driven by the number of active tasks
- * (real + projected); `busyLevel` is the 0–3 dot scale the UI paints, while
- * `tasks` stays available to assistive technology and to a future tooltip.
+ * One month-grid cell. Busy marks are driven by the active items in every lane
+ * (real + projected tasks, events and occasions); `busyLevel` is the 0–3 dot
+ * scale the UI paints, while the counts stay available to assistive technology
+ * and to a future tooltip.
  */
 export const MonthDaySummary = Schema.Struct({
   date: LocalDate,
@@ -167,6 +227,8 @@ export const MonthDaySummary = Schema.Struct({
   tasks: Schema.Int,
   /** Busy day marks count events too (#58/#62). */
   events: Schema.Int,
+  /** Busy day marks count annual occasions too (#62). */
+  occasions: Schema.Int,
   busyLevel: Schema.Int,
   counts: CalendarLaneCounts
 })
@@ -184,10 +246,13 @@ export const MonthReadModel = Schema.Struct({
   totals: Schema.Struct({
     busyDays: Schema.Int,
     tasks: Schema.Int,
-    events: Schema.Int
+    events: Schema.Int,
+    occasions: Schema.Int
   }),
   /** The live rows this month was projected from (for local-first overlays). */
   tasks: Schema.Array(CalendarSourceTask),
+  events: Schema.Array(CalendarSourceEvent),
+  occasions: Schema.Array(CalendarSourceOccasion),
   /** Drill-down for the requested day; `null` when none was asked for. */
   day: Schema.NullOr(CalendarDayView)
 })
@@ -216,6 +281,9 @@ export interface CalendarTaskSource {
  * expansion (#58) is structural for the same reason the task projection is.
  */
 export type CalendarEventSource = EventOccurrenceSource
+
+/** The fields a server `Occasion` and a mirrored occasion row both provide. */
+export type CalendarOccasionSource = OccasionSource
 
 export interface CalendarRange {
   /** Inclusive first day. */
@@ -399,14 +467,20 @@ export const taskOccurrences = (input: {
 const EMPTY_COUNTS: CalendarLaneCounts = {
   tasks: 0,
   events: 0,
+  occasions: 0,
   reminders: 0,
   habits: 0
 }
 
-const emptyFlags = (tasks: number, events: number): CalendarLaneEmpty => ({
+const emptyFlags = (
+  tasks: number,
+  events: number,
+  occasions: number
+): CalendarLaneEmpty => ({
   tasks: tasks === 0,
   events: events === 0,
-  // Quiet until Slice 4 supplies real aggregates.
+  occasions: occasions === 0,
+  // Quiet until the reminder/habit lanes get their own screens (#61/#66).
   reminders: true,
   habits: true
 })
@@ -414,13 +488,20 @@ const emptyFlags = (tasks: number, events: number): CalendarLaneEmpty => ({
 const dayViewFrom = (
   date: LocalDate,
   items: ReadonlyArray<CalendarTaskItem>,
-  events: ReadonlyArray<EventOccurrence>
+  events: ReadonlyArray<EventOccurrence>,
+  occasions: ReadonlyArray<OccasionOccurrence>
 ): CalendarDayView => ({
   date,
   tasks: items,
   events,
-  counts: { ...EMPTY_COUNTS, tasks: items.length, events: events.length },
-  empty: emptyFlags(items.length, events.length)
+  occasions,
+  counts: {
+    ...EMPTY_COUNTS,
+    tasks: items.length,
+    events: events.length,
+    occasions: occasions.length
+  },
+  empty: emptyFlags(items.length, events.length, occasions.length)
 })
 
 const itemsByDate = (
@@ -447,6 +528,18 @@ const eventsByDate = (
   return map
 }
 
+const occasionsByDate = (
+  occurrences: ReadonlyArray<OccasionOccurrence>
+): ReadonlyMap<string, ReadonlyArray<OccasionOccurrence>> => {
+  const map = new Map<string, Array<OccasionOccurrence>>()
+  for (const occurrence of occurrences) {
+    const bucket = map.get(occurrence.date)
+    if (bucket === undefined) map.set(occurrence.date, [occurrence])
+    else bucket.push(occurrence)
+  }
+  return map
+}
+
 /** Deduped source rows, in the wire shape the client overlays. */
 const sourceRows = (
   tasks: ReadonlyArray<CalendarTaskSource>
@@ -465,12 +558,51 @@ const sourceRows = (
   }))
 }
 
+/** Deduped event rows, in the wire shape the client overlays. */
+const sourceEvents = (
+  events: ReadonlyArray<CalendarEventSource>
+): ReadonlyArray<CalendarSourceEvent> => {
+  const byId = new Map<string, CalendarEventSource>()
+  for (const event of events) byId.set(event.id, event)
+  return [...byId.values()].map((event) => ({
+    id: event.id as EventId,
+    title: event.title,
+    description: event.description,
+    location: event.location,
+    category: event.category,
+    color: event.color,
+    people: [...event.people],
+    timing: event.timing,
+    timeZone: event.timeZone as TimeZone,
+    recurrence: event.recurrence,
+    exceptions: [...event.exceptions]
+  }))
+}
+
+/** Deduped occasion rows, in the wire shape the client overlays. */
+const sourceOccasions = (
+  occasions: ReadonlyArray<CalendarOccasionSource>
+): ReadonlyArray<CalendarSourceOccasion> => {
+  const byId = new Map<string, CalendarOccasionSource>()
+  for (const occasion of occasions) byId.set(occasion.id, occasion)
+  return [...byId.values()].map((occasion) => ({
+    id: occasion.id as OccasionId,
+    title: occasion.title,
+    color: occasion.color,
+    originDate: occasion.originDate as LocalDate,
+    timeZone: occasion.timeZone as TimeZone,
+    yearly: occasion.yearly,
+    advanceReminderDays: occasion.advanceReminderDays
+  }))
+}
+
 const addCounts = (
   total: CalendarLaneCounts,
   day: CalendarLaneCounts
 ): CalendarLaneCounts => ({
   tasks: total.tasks + day.tasks,
   events: total.events + day.events,
+  occasions: total.occasions + day.occasions,
   reminders: total.reminders + day.reminders,
   habits: total.habits + day.habits
 })
@@ -488,13 +620,15 @@ export interface BuildWeekInput {
   readonly tasks: ReadonlyArray<CalendarTaskSource>
   /** The event lane; omitted means "no events" (the offline default). */
   readonly events?: ReadonlyArray<CalendarEventSource>
+  /** The annual occasion lane; omitted means "no occasions". */
+  readonly occasions?: ReadonlyArray<CalendarOccasionSource>
   /** Any date in the week; defaults to the range's own start. */
   readonly anchor: string | Temporal.PlainDate
   readonly weekStart: WeekStart
   readonly timeZone: string
 }
 
-/** Build the seven-day read model from any set of live task/event rows. */
+/** Build the seven-day read model from any set of live task/event/occasion rows. */
 export const buildWeekReadModel = (input: BuildWeekInput): WeekReadModel => {
   const range = weekRange(input.anchor, input.weekStart)
   const occurrences = taskOccurrences({
@@ -508,10 +642,20 @@ export const buildWeekReadModel = (input: BuildWeekInput): WeekReadModel => {
     to: range.end,
     timeZone: input.timeZone
   })
+  const occasions = occasionOccurrences({
+    occasions: input.occasions ?? [],
+    range: { from: range.start, to: range.end }
+  })
   const grouped = itemsByDate(occurrences)
   const eventsGrouped = eventsByDate(events)
+  const occasionsGrouped = occasionsByDate(occasions)
   const days = weekDates(input.anchor, input.weekStart).map((date) =>
-    dayViewFrom(date, grouped.get(date) ?? [], eventsGrouped.get(date) ?? [])
+    dayViewFrom(
+      date,
+      grouped.get(date) ?? [],
+      eventsGrouped.get(date) ?? [],
+      occasionsGrouped.get(date) ?? []
+    )
   )
   const totals = days.reduce(
     (sum, day) => addCounts(sum, day.counts),
@@ -524,8 +668,10 @@ export const buildWeekReadModel = (input: BuildWeekInput): WeekReadModel => {
     weekStart: input.weekStart,
     days,
     totals,
-    empty: emptyFlags(totals.tasks, totals.events),
-    tasks: sourceRows(input.tasks)
+    empty: emptyFlags(totals.tasks, totals.events, totals.occasions),
+    tasks: sourceRows(input.tasks),
+    events: sourceEvents(input.events ?? []),
+    occasions: sourceOccasions(input.occasions ?? [])
   }
 }
 
@@ -533,6 +679,8 @@ export interface BuildMonthInput {
   readonly tasks: ReadonlyArray<CalendarTaskSource>
   /** The event lane; omitted means "no events" (the offline default). */
   readonly events?: ReadonlyArray<CalendarEventSource>
+  /** The annual occasion lane; omitted means "no occasions". */
+  readonly occasions?: ReadonlyArray<CalendarOccasionSource>
   readonly year: number
   readonly month: number
   readonly weekStart: WeekStart
@@ -555,19 +703,31 @@ export const buildMonthReadModel = (input: BuildMonthInput): MonthReadModel => {
     to: range.end,
     timeZone: input.timeZone
   })
+  const occasions = occasionOccurrences({
+    occasions: input.occasions ?? [],
+    range: { from: range.start, to: range.end }
+  })
   const grouped = itemsByDate(occurrences)
   const eventsGrouped = eventsByDate(events)
+  const occasionsGrouped = occasionsByDate(occasions)
   const days: Array<MonthDaySummary> = range.days.map((cell) => {
     const tasks = grouped.get(cell.date)?.length ?? 0
-    const events = eventsGrouped.get(cell.date)?.length ?? 0
-    const busy = tasks + events
-    const counts = { ...EMPTY_COUNTS, tasks, events }
+    const dayEvents = eventsGrouped.get(cell.date)?.length ?? 0
+    const dayOccasions = occasionsGrouped.get(cell.date)?.length ?? 0
+    const busy = tasks + dayEvents + dayOccasions
+    const counts = {
+      ...EMPTY_COUNTS,
+      tasks,
+      events: dayEvents,
+      occasions: dayOccasions
+    }
     return {
       date: cell.date,
       inMonth: cell.inMonth,
       isBusy: busy > 0,
       tasks,
-      events,
+      events: dayEvents,
+      occasions: dayOccasions,
       busyLevel: busyLevelOf(busy),
       counts
     }
@@ -577,7 +737,8 @@ export const buildMonthReadModel = (input: BuildMonthInput): MonthReadModel => {
   const totals = {
     busyDays: inMonthDays.filter((day) => day.isBusy).length,
     tasks: inMonthDays.reduce((sum, day) => sum + day.tasks, 0),
-    events: inMonthDays.reduce((sum, day) => sum + day.events, 0)
+    events: inMonthDays.reduce((sum, day) => sum + day.events, 0),
+    occasions: inMonthDays.reduce((sum, day) => sum + day.occasions, 0)
   }
 
   let day: CalendarDayView | null = null
@@ -595,6 +756,10 @@ export const buildMonthReadModel = (input: BuildMonthInput): MonthReadModel => {
         from: drillRange.start,
         to: drillRange.end,
         timeZone: input.timeZone
+      }),
+      occasionOccurrences({
+        occasions: input.occasions ?? [],
+        range: { from: drillRange.start, to: drillRange.end }
       })
     )
   }
@@ -609,6 +774,8 @@ export const buildMonthReadModel = (input: BuildMonthInput): MonthReadModel => {
     days,
     totals,
     tasks: sourceRows(input.tasks),
+    events: sourceEvents(input.events ?? []),
+    occasions: sourceOccasions(input.occasions ?? []),
     day
   }
 }

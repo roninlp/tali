@@ -70,6 +70,26 @@ export const localDateStartInstant = (date: string, timeZone: string): string =>
   localDateAt(Temporal.PlainDate.from(date), timeZone)
 
 /**
+ * UTC instant of a wall time (`HH:MM`, optional `:SS`) on a local date in
+ * `timeZone`.
+ *
+ * This is the inverse of the display path the calendar uses: a quick-added
+ * timed event is authored as "09:00 on this day, in this zone", so the instant
+ * is stored absolutely while the wall time survives. A nonexistent
+ * spring-forward wall time moves forward (`compatible`), exactly like a clock.
+ */
+export const localDateTimeInstant = (
+  date: string,
+  time: string,
+  timeZone: string
+): string =>
+  Temporal.PlainDate.from(date)
+    .toPlainDateTime(Temporal.PlainTime.from(time))
+    .toZonedDateTime(timeZone, { disambiguation: "compatible" })
+    .toInstant()
+    .toString()
+
+/**
  * The boundary set a bucket query and `taskBucketOf` must share. Computing it
  * once per request keeps the SQL range query and the in-memory grouping from
  * disagreeing across a midnight/DST edge.

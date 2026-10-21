@@ -9,6 +9,7 @@ import {
   taskBucketBounds,
   weekRange,
   type CalendarEventSource,
+  type CalendarOccasionSource,
   type CalendarRange,
   type CalendarTaskSource,
   type HouseholdId,
@@ -19,7 +20,14 @@ import {
   type WeekReadModel,
   type WeekStart
 } from "@tali/domain"
-import { EventRepo, EventRepoLive, TaskRepo, TaskRepoLive } from "@tali/sql"
+import {
+  EventRepo,
+  EventRepoLive,
+  OccasionRepo,
+  OccasionRepoLive,
+  TaskRepo,
+  TaskRepoLive
+} from "@tali/sql"
 
 /**
  * `CalendarService` — the week and month read models (ticket #43;
@@ -43,9 +51,13 @@ import { EventRepo, EventRepoLive, TaskRepo, TaskRepoLive } from "@tali/sql"
  * Since #58 the event lane is real, with the same three steps: the events
  * anchored inside the range plus every live recurring series, expanded by the
  * pure `eventOccurrences` builder (which reuses the same #38 engine and marks
- * generated occurrences read-only). Reminder and habit lanes stay honest zeros
- * until their slices land; the read-model shape reserves them so no client code
- * has to change later.
+ * generated occurrences read-only). Ticket #62 adds the occasion lane: every
+ * visible occasion row is projected into the range by the annual builder #59
+ * ships (`occasionOccurrences`), so a birthday paints on its Jalali date in
+ * the same grid as tasks and events.
+ *
+ * Reminder and habit lanes stay honest zeros until their screens land; the
+ * read-model shape reserves them so no client code has to change later.
  */
 
 export interface CalendarViewer {
@@ -81,6 +93,7 @@ export class CalendarService extends Context.Service<CalendarService>()(
     make: Effect.gen(function*() {
       const tasks = yield* TaskRepo
       const events = yield* EventRepo
+      const occasions = yield* OccasionRepo
 
       /**
        * The rows a range needs: tasks due inside it plus live recurring rows.
@@ -144,6 +157,21 @@ export class CalendarService extends Context.Service<CalendarService>()(
           return [...byId.values()]
         })
 
+      /**
+       * Every occasion visible to the viewer. An occasion is an annual date
+       * derived from its origin, so there is no range query to run: the same
+       * rows project onto any window (#59), and the set is small.
+       */
+      const loadOccasions = (
+        viewer: CalendarViewer
+      ): Effect.Effect<ReadonlyArray<CalendarOccasionSource>> =>
+        occasions
+          .listVisible({
+            householdId: viewer.householdId,
+            userId: viewer.userId
+          })
+          .pipe(Effect.orDie)
+
       const week = (
         viewer: CalendarViewer,
         anchor?: LocalDate,
@@ -154,9 +182,11 @@ export class CalendarService extends Context.Service<CalendarService>()(
           const range = weekRange(date, viewer.weekStart)
           const rows = yield* loadRangeTasks(viewer, range)
           const eventRows = yield* loadRangeEvents(viewer, range)
+          const occasionRows = yield* loadOccasions(viewer)
           return buildWeekReadModel({
             tasks: rows,
             events: eventRows,
+            occasions: occasionRows,
             anchor: date,
             weekStart: viewer.weekStart,
             timeZone: viewer.timeZone
@@ -186,9 +216,11 @@ export class CalendarService extends Context.Service<CalendarService>()(
             drillRows = yield* loadRangeTasks(viewer, drillRange)
             drillEvents = yield* loadRangeEvents(viewer, drillRange)
           }
+          const occasionRows = yield* loadOccasions(viewer)
           return buildMonthReadModel({
             tasks: [...rows, ...drillRows],
             events: [...eventRows, ...drillEvents],
+            occasions: occasionRows,
             year,
             month: monthOfYear,
             weekStart: viewer.weekStart,
@@ -205,4 +237,8 @@ export class CalendarService extends Context.Service<CalendarService>()(
 export const CalendarServiceLive = Layer.effect(
   CalendarService,
   CalendarService.make
-).pipe(Layer.provide(TaskRepoLive), Layer.provide(EventRepoLive))
+).pipe(
+  Layer.provide(TaskRepoLive),
+  Layer.provide(EventRepoLive),
+  Layer.provide(OccasionRepoLive)
+)

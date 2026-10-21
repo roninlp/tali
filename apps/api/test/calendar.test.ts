@@ -155,6 +155,39 @@ const seedEvent = (db: DatabaseSync, event: EventSeed): void => {
   )
 }
 
+interface OccasionSeed {
+  readonly id: string
+  readonly title: string
+  readonly originDate: string
+  readonly ownerId?: string
+  readonly householdId?: string
+  readonly visibility?: "shared" | "private"
+  readonly timeZone?: string
+  readonly yearly?: boolean
+  readonly advanceReminderDays?: number | null
+}
+
+const seedOccasion = (db: DatabaseSync, occasion: OccasionSeed): void => {
+  db.prepare(
+    `INSERT INTO occasions
+      (id, title, owner_id, household_id, visibility, origin_date, time_zone,
+       yearly, advance_reminder_days, created_at, updated_at, version)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
+  ).run(
+    occasion.id,
+    occasion.title,
+    occasion.ownerId ?? USER_A,
+    occasion.householdId ?? HOUSEHOLD,
+    occasion.visibility ?? "shared",
+    occasion.originDate,
+    occasion.timeZone ?? TZ,
+    occasion.yearly === false ? 0 : 1,
+    occasion.advanceReminderDays ?? null,
+    NOW,
+    NOW
+  )
+}
+
 const makeHarness = async (): Promise<Harness> => {
   const db = new DatabaseSync(":memory:")
   for (const file of migrationFiles()) {
@@ -421,7 +454,7 @@ describe("GET /week", () => {
     }
     expect(sundayTitles).toHaveLength(4)
     expect(sunday.tasks.every((item) => !item.projected)).toBe(true)
-    expect(sunday.counts).toEqual({ tasks: 4, events: 0, reminders: 0, habits: 0 })
+    expect(sunday.counts).toEqual({ tasks: 4, events: 0, occasions: 0, reminders: 0, habits: 0 })
 
     // A timed task is placed by the viewer's wall date, not the UTC date.
     expect(dayOf(model, "2026-03-26").tasks.map((item) => item.id)).toContain(ids.timed)
@@ -517,6 +550,7 @@ describe("GET /week", () => {
     expect(dayOf(model, "2026-10-21").counts).toEqual({
       tasks: 0,
       events: 1,
+      occasions: 0,
       reminders: 0,
       habits: 0
     })
@@ -734,7 +768,7 @@ describe("GET /month", () => {
     const cell = model.days.find((day) => day.date === "2026-10-21")!
     expect(cell).toMatchObject({ inMonth: true, isBusy: true, tasks: 0, events: 1 })
     expect(cell.busyLevel).toBe(1)
-    expect(cell.counts).toEqual({ tasks: 0, events: 1, reminders: 0, habits: 0 })
+    expect(cell.counts).toEqual({ tasks: 0, events: 1, occasions: 0, reminders: 0, habits: 0 })
 
     // 10-19 and 10-21 are inside Mehr; 10-23 is a borrowed trailing cell.
     expect(model.totals.events).toBe(2)
@@ -750,6 +784,47 @@ describe("GET /month", () => {
       projected: true,
       title: "جلسهٔ هفتگی"
     })
+  })
+
+
+  it("paints a yearly occasion on its Jalali date and counts it as busy", async () => {
+    const h = await setup()
+    // Nowruz 1399 (2020-03-20). The month read for a later year must paint the
+    // same Jalali month/day, not the same Gregorian date.
+    seedOccasion(h.db, { id: uuidV7(), title: "سالگرد", originDate: "2020-03-20" })
+
+    const first = (await month(h, { token: TOKEN_A, anchor: "2026-03-21" })).model!
+    const chip = first.days.find((cell) => cell.occasions === 1)!
+    expect(chip.date).not.toBe("2020-03-20")
+    expect(chip).toMatchObject({ tasks: 0, events: 0, occasions: 1, isBusy: true })
+    expect(first.totals.occasions).toBe(1)
+
+    const drilled = (await month(h, {
+      token: TOKEN_A,
+      anchor: "2026-03-21",
+      day: chip.date
+    })).model!
+    expect(drilled.day?.occasions).toHaveLength(1)
+    expect(drilled.day?.occasions[0]).toMatchObject({
+      title: "سالگرد",
+      projected: true,
+      jalali: { year: 1405, month: 1, day: 1 }
+    })
+    expect(drilled.day?.occasions[0]!.gregorian).toMatchObject({ month: 3 })
+
+    // A private occasion belongs to its owner only.
+    const mine = uuidV7()
+    seedOccasion(h.db, {
+      id: mine,
+      title: "خصوصی",
+      originDate: "2020-03-20",
+      ownerId: USER_A,
+      visibility: "private"
+    })
+    const a = (await week(h, { token: TOKEN_A, anchor: "2026-03-21" })).model!
+    const b = (await week(h, { token: TOKEN_B, anchor: "2026-03-21" })).model!
+    expect(a.occasions.map((row) => row.title)).toContain("خصوصی")
+    expect(b.occasions.map((row) => row.title)).not.toContain("خصوصی")
   })
 
   it("does not expand a series twice when the drill-down day is outside the grid", async () => {
@@ -807,7 +882,7 @@ describe("GET /month", () => {
       isBusy: true
     })
     // Totals ignore cells borrowed from either neighbour.
-    expect(farvardin.totals).toEqual({ busyDays: 1, tasks: 1, events: 0 })
+    expect(farvardin.totals).toEqual({ busyDays: 1, tasks: 1, events: 0, occasions: 0 })
   })
 
   it("scopes by household and hides another member's private rows", async () => {
@@ -848,7 +923,7 @@ describe("GET /month", () => {
 
     expect(model.day?.date).toBe("2026-06-01")
     expect(model.day?.tasks.map((item) => item.title)).toEqual(["روز دور"])
-    expect(model.totals).toEqual({ busyDays: 0, tasks: 0, events: 0 })
+    expect(model.totals).toEqual({ busyDays: 0, tasks: 0, events: 0, occasions: 0 })
     expect(model.days.some((cell) => cell.date === "2026-06-01")).toBe(false)
   })
 
@@ -863,6 +938,24 @@ describe("GET /month", () => {
       ifNoneMatch: first.etag!
     })
     expect(cached.status).toBe(304)
+
+    // The occasion lane is part of the encoded body: a new occasion invalidates
+    // the validator, and the next read carries the chip's data (#62).
+    seedOccasion(h.db, {
+      id: uuidV7(),
+      title: "سالگرد تازه",
+      originDate: "2020-03-21"
+    })
+    const afterOccasion = await month(h, {
+      token: TOKEN_A,
+      anchor: "2026-03-21",
+      ifNoneMatch: first.etag!
+    })
+    expect(afterOccasion.status).toBe(200)
+    expect(afterOccasion.model!.totals.occasions).toBe(1)
+    expect(
+      afterOccasion.model!.days.find((day) => day.date === "2026-03-22")?.occasions
+    ).toBe(1)
 
     // A drill-down is a different body, so an ETag without it cannot revalidate.
     const withDay = await month(h, {

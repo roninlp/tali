@@ -11,7 +11,8 @@ import {
   uuidV7,
   type Digits,
   type LocalDate,
-  type OccasionOccurrence
+  type OccasionOccurrence,
+  type OccasionSource
 } from "@tali/domain"
 import type { LocalStore, MirrorRecord } from "../local-store"
 
@@ -178,6 +179,20 @@ export const monthOccasions = (
 ): ReadonlyArray<OccasionOccurrence> =>
   occasionOccurrences({
     occasions: occasions.map(asOccasionSource),
+    range: { from: from as LocalDate, to: to as LocalDate }
+  })
+
+/**
+ * The occurrences painted in a window, from wire/read-model source rows (the
+ * calendar's lane, #62) rather than mirror `OccasionRow`s.
+ */
+export const monthOccasionsFromSources = (
+  sources: ReadonlyArray<OccasionSource>,
+  from: string,
+  to: string
+): ReadonlyArray<OccasionOccurrence> =>
+  occasionOccurrences({
+    occasions: sources,
     range: { from: from as LocalDate, to: to as LocalDate }
   })
 
