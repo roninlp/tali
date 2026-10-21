@@ -7,6 +7,7 @@ export * from "./error"
 export * from "./auth"
 export * from "./list-item"
 export * from "./push"
+export * from "./preferences"
 export {
   ItemType,
   ListCheckedPlacement,
