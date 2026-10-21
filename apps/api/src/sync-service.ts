@@ -394,7 +394,11 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
               entityId: state.entityId,
               version: state.version,
               createdAt: now
-            })
+            }),
+            // Derived indexes ride the same batch (#41): the note search
+            // index is written by the same statements that write the row, so
+            // a committed note is findable straight away.
+            ...repo.indexStatements(state)
           ]
 
           // A server-generated successor (task recurrence, #38) joins this

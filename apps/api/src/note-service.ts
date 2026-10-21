@@ -248,7 +248,11 @@ export class NoteService extends Context.Service<NoteService>()("NoteService", {
             entityId: input.state.entityId,
             version: input.state.version,
             createdAt: input.now
-          })
+          }),
+          // The search index rides the same batch (#41): a note that is
+          // committed is findable, and a note that lost the CAS keeps the
+          // index entry it already had.
+          ...sync.indexStatements(input.state)
         ]
 
         if (

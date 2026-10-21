@@ -10,6 +10,8 @@ export * from "./push"
 export * from "./preferences"
 export * from "./today"
 export * from "./recurrence"
+export * from "./persian"
+export * from "./note-search"
 export {
   ItemType,
   ListCheckedPlacement,
