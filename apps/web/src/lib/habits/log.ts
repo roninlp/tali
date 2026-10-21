@@ -2,6 +2,7 @@ import {
   type HabitEntryStatus,
   HabitEntryOutOfWindow,
   habitLogWindow,
+  isHabitLogDateInWindow,
   localDateIn,
   nextHabitEntryStatus,
   uuidV7
@@ -89,9 +90,9 @@ export const tapHabitEntry = async (
 ): Promise<MirrorRecord> => {
   const now = input.now ?? new Date().toISOString()
   const today = localDateIn(now, input.timeZone)
-  const window = habitLogWindow(today)
 
-  if (input.localDate < window.earliest || input.localDate > window.latest) {
+  if (!isHabitLogDateInWindow(input.localDate as HabitEntryOutOfWindow["localDate"], today)) {
+    const window = habitLogWindow(today)
     throw new HabitEntryOutOfWindow({
       localDate: input.localDate as HabitEntryOutOfWindow["localDate"],
       earliest: window.earliest,

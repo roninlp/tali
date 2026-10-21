@@ -720,4 +720,77 @@ describe("client sync engine", () => {
     })
     store.close()
   })
+
+  it("converges two queued taps when the repair adopts a different server id (#64)", async () => {
+    const store = await open()
+    const habitId = uuidV7()
+    const localId = uuidV7()
+    const serverId = uuidV7()
+    const now = "2026-10-20T09:30:00.000Z"
+
+    // Two taps on the same day: the mirror keeps one id, the outbox two patches.
+    await store.writeLocal({
+      entityType: "habitEntry",
+      entityId: localId,
+      op: "upsert",
+      patch: { habitId, localDate: "2026-10-20", timeZone: "Asia/Tehran", status: "done" },
+      now
+    })
+    await store.writeLocal({
+      entityType: "habitEntry",
+      entityId: localId,
+      op: "upsert",
+      patch: { habitId, localDate: "2026-10-20", timeZone: "Asia/Tehran", status: "partial" },
+      now
+    })
+
+    const revived: Array<HabitEntryLogInput> = []
+    let version = 2
+    const engine = createSyncEngine(
+      transport({
+        // The day is owned by another device under `serverId`, so every push of
+        // the local id is refused as a duplicate day.
+        push: async (entries) => ({
+          results: entries.map((entry) => ({
+            _tag: "rejected" as const,
+            clientMutationId: entry.clientMutationId,
+            entityType: entry.entityType,
+            entityId: entry.entityId,
+            code: "UniqueViolation",
+            message: "Insert conflicted with a row that is already live"
+          })),
+          cursor: 0
+        }),
+        logHabitEntry: async (input) => {
+          revived.push(input)
+          version += 1
+          return {
+            id: serverId,
+            habitId,
+            ownerId: "user",
+            householdId: "household",
+            visibility: "shared",
+            localDate: "2026-10-20",
+            timeZone: "Asia/Tehran",
+            status: input.status,
+            createdAt: now,
+            updatedAt: now,
+            version,
+            deletedAt: null
+          } as HabitEntry
+        }
+      })
+    )
+
+    await engine.sync(store)
+
+    // The repair runs for each queued tap and never loops: both patches land on
+    // the server's row, the outbox drains, and the mirror holds exactly one row.
+    expect(revived.map((input) => input.status)).toEqual(["done", "partial"])
+    expect(await store.pending()).toHaveLength(0)
+    const live = await store.list("habitEntry")
+    expect(live.map((row) => row.entityId)).toEqual([serverId])
+    expect(live[0]).toMatchObject({ version: 4, deletedAt: null, data: { status: "partial" } })
+    store.close()
+  })
 })

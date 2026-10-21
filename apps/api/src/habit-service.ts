@@ -23,6 +23,7 @@ import {
   type HouseholdId,
   habitFrequencyHistoryAfter,
   habitLogWindow,
+  isHabitLogDateInWindow,
   LocalDate,
   localDateIn,
   sameHabitFrequency,
@@ -645,10 +646,7 @@ export class HabitService extends Context.Service<HabitService>()("HabitService"
           if (
             reusedMutationId(replayed.value, { entityType: "habitEntry", id: input.id })
           ) {
-            return yield* invalid(
-              "clientMutationId",
-              "this mutation id was already applied to a different change"
-            )
+            return yield* reusedMutationIdError(input.id ?? replayed.value.entityId)
           }
           const found = yield* entries
             .findById(replayed.value.entityId as HabitEntryId)
@@ -657,6 +655,17 @@ export class HabitService extends Context.Service<HabitService>()("HabitService"
             return yield* Effect.fail(
               new HabitEntryNotFound({ id: replayed.value.entityId as HabitEntryId })
             )
+          }
+          // A mutation id is one day's log. When the caller minted no id (the
+          // usual service path), the id guard above cannot tell a reused id
+          // from a replay, so the resolved row is checked against the request:
+          // a mutation id reused for another habit or day is refused instead of
+          // silently handing back the wrong row.
+          if (
+            found.value.habitId !== input.habitId ||
+            found.value.localDate !== input.localDate
+          ) {
+            return yield* reusedMutationIdError(found.value.id)
           }
           yield* ensureEntryVisible(viewer, found.value)
           return found.value
@@ -674,10 +683,12 @@ export class HabitService extends Context.Service<HabitService>()("HabitService"
 
         // The window is the viewer's local calendar: "yesterday" is the day
         // they experienced, not a UTC instant. It is checked before any read or
-        // write, so an old day can never be silently clamped to today.
+        // write, so an old day can never be silently clamped to today. The
+        // boundary is the same pure helper the client tap uses, so the two
+        // cannot drift.
         const today = localDateIn(now, viewer.timeZone)
-        const window = habitLogWindow(today)
-        if (localDate.value < window.earliest || localDate.value > window.latest) {
+        if (!isHabitLogDateInWindow(localDate.value, today)) {
+          const window = habitLogWindow(today)
           return yield* Effect.fail(
             new HabitEntryOutOfWindow({
               localDate: localDate.value,

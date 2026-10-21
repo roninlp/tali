@@ -558,4 +558,148 @@ describe("habit entry logging (#64)", () => {
     )
     expect(logged.localDate).toBe("2026-10-21")
   })
+
+  it("adopts the day's row when the caller mints a different id for a logged day", async () => {
+    const h = makeHarness()
+    const habitId = await createHabit(h)
+
+    const first = await h.svc((svc) =>
+      svc.logEntry(
+        viewer(),
+        {
+          id: uuidV7() as HabitEntryId,
+          clientMutationId: "m-first-id",
+          habitId,
+          localDate: "2026-10-20",
+          status: "done"
+        },
+        NOW
+      )
+    )
+    // The second device minted its own id for the same day. The day, not the
+    // id, is the key: the tap lands on the existing row, so the unique index
+    // can never hold two rows for one day.
+    const second = await h.svc((svc) =>
+      svc.logEntry(
+        viewer(),
+        {
+          id: uuidV7() as HabitEntryId,
+          clientMutationId: "m-second-id",
+          habitId,
+          localDate: "2026-10-20",
+          status: "partial"
+        },
+        NOW
+      )
+    )
+
+    expect(second.id).toBe(first.id)
+    expect(second.version).toBe(2)
+    expect(second.status).toBe("partial")
+    expect(h.entryRows(habitId)).toHaveLength(1)
+  })
+
+  it("refuses a mutation id reused for another habit's day", async () => {
+    const h = makeHarness()
+    const firstHabit = await createHabit(h)
+    const secondHabit = await createHabit(h)
+
+    await h.svc((svc) =>
+      svc.logEntry(
+        viewer(),
+        { clientMutationId: "m-one-day", habitId: firstHabit, localDate: "2026-10-20", status: "done" },
+        NOW
+      )
+    )
+    // Same id, a different day's log: the replay guard must not hand back the
+    // first habit's row as if this write had happened.
+    const reused = await h.run(
+      Effect.gen(function*() {
+        const svc = yield* HabitService
+        return yield* Effect.result(
+          svc.logEntry(
+            viewer(),
+            { clientMutationId: "m-one-day", habitId: secondHabit, localDate: "2026-10-20", status: "done" },
+            NOW
+          )
+        )
+      })
+    )
+    expect(reused._tag).toBe("Failure")
+    if (reused._tag === "Failure") {
+      expect(reused.failure).toMatchObject({
+        _tag: "HabitValidationError",
+        issues: [{ field: "clientMutationId" }]
+      })
+    }
+    expect(h.entryRows(secondHabit)).toEqual([])
+  })
+
+  it("hides a habit's days from the range read once the habit is private or trashed", async () => {
+    const h = makeHarness()
+    const habitId = await createHabit(h, { visibility: "shared" })
+
+    // The partner logs a day while the habit is shared.
+    await h.svc((svc) =>
+      svc.logEntry(
+        viewer({ userId: USER_B }),
+        { clientMutationId: "m-partner-day", habitId, localDate: "2026-10-20", status: "done" },
+        NOW
+      )
+    )
+    const partnerViewer = viewer({ userId: USER_B })
+    const shared = await h.svc((svc) =>
+      svc.entries(partnerViewer, { from: "2026-10-20", before: "2026-10-21" })
+    )
+    expect(shared).toHaveLength(1)
+
+    // The owner makes the habit private: the day logged while it was shared
+    // must stop leaking to the partner, even though the entry's denormalized
+    // visibility is still `shared`.
+    await h.svc((svc) =>
+      svc.update(viewer(), { id: habitId, clientMutationId: "m-make-private", patch: { visibility: "private" } }, NOW)
+    )
+    expect(
+      await h.svc((svc) => svc.entries(partnerViewer, { from: "2026-10-20", before: "2026-10-21" }))
+    ).toEqual([])
+    // The owner still reads their own day.
+    expect(
+      await h.svc((svc) => svc.entries(viewer(), { from: "2026-10-20", before: "2026-10-21" }))
+    ).toHaveLength(1)
+
+    // Trashing the habit hides its days from the partner too.
+    await h.svc((svc) =>
+      svc.update(viewer(), { id: habitId, clientMutationId: "m-make-shared", patch: { visibility: "shared" } }, NOW)
+    )
+    await h.svc((svc) => svc.delete(viewer(), { id: habitId, clientMutationId: "m-trash" }, NOW))
+    expect(
+      await h.svc((svc) => svc.entries(partnerViewer, { from: "2026-10-20", before: "2026-10-21" }))
+    ).toEqual([])
+  })
+
+  it("lets the generic sync push write a day older than the tap window", async () => {
+    const h = makeHarness()
+    const habitId = await createHabit(h)
+    const entryId = uuidV7()
+
+    // The ≤ 7-day window is a **tap** rule: the local helper and `logEntry`
+    // refuse an old day, while `/sync/push` accepts it so a tap made inside the
+    // window is never refused because it synced late. This test pins that
+    // deliberate split rather than treating it as an accident.
+    const pushed = await h.syncPush({
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        syncEntry({
+          entityId: entryId,
+          baseVersion: 0,
+          patch: { habitId, localDate: "2026-10-01", timeZone: TZ, status: "done" },
+          clientMutationId: "m-late-sync"
+        })
+      ]
+    })
+
+    expect(pushed.results[0]).toMatchObject({ _tag: "applied" })
+    expect(h.entryRows(habitId)[0]).toMatchObject({ id: entryId, local_date: "2026-10-01" })
+  })
 })

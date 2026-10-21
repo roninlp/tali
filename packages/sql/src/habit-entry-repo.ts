@@ -98,6 +98,31 @@ export class HabitEntryRepo extends Context.Service<HabitEntryRepo>()("HabitEntr
         AND (owner_id = ${input.userId} OR visibility = 'shared')
       `
 
+    /**
+     * The entry's *habit* must be visible to the viewer right now.
+     *
+     * The entry's own `visibility` is the habit's visibility **at write time**
+     * (ADR-0006), so it goes stale the moment a habit is flipped to private or
+     * trashed: a day logged while the habit was shared would otherwise keep
+     * leaking through a read after the owner made the habit private. Resolving
+     * the parent here — the same own-or-shared rule and the same
+     * `deleted_at IS NULL` the habit list uses — is the read-side half of the
+     * #63 parent rule ("the entry inherits the habit's visibility"); the write
+     * path already forces the column on every tap.
+     */
+    const visibleParent = (input: {
+      readonly householdId: string
+      readonly userId: UserId
+    }): Statement.Fragment =>
+      sql`
+        habit_id IN (
+          SELECT id FROM habits
+          WHERE household_id = ${input.householdId}
+            AND deleted_at IS NULL
+            AND (owner_id = ${input.userId} OR visibility = 'shared')
+        )
+      `
+
     const findById = (id: HabitEntry["id"]) =>
       Effect.map(
         sql<HabitEntryRow>`
@@ -126,12 +151,16 @@ export class HabitEntryRepo extends Context.Service<HabitEntryRepo>()("HabitEntr
      * A member's entries in `[from, before)`.
      *
      * One query serves the Today lane, the streak windows and the heatmap; the
-     * caller passes the habit filter when it wants one habit only.
+     * caller passes the habit filter when it wants one habit only. Both the
+     * entry's own scope columns and the **habit's current** scope are applied,
+     * so a day logged while a habit was shared stops leaking once the habit is
+     * made private or trashed (see `visibleParent`).
      */
     const listInRange = (input: HabitEntryQuery) =>
       Effect.gen(function*() {
         const conditions: Array<Statement.Fragment> = [
           visibleScope(input),
+          visibleParent(input),
           sql`local_date >= ${input.from}`,
           sql`local_date < ${input.before}`
         ]
