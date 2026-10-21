@@ -46,6 +46,13 @@ import {
   PlanningListItem,
   Project,
   ProjectCreateInput,
+  Reminder,
+  ReminderCreateInput,
+  ReminderId,
+  ReminderListInput,
+  ReminderMutationInput,
+  ReminderServiceError,
+  ReminderUpdateInput,
   ProjectRenameInput,
   Tag,
   TagCreateInput,
@@ -410,6 +417,40 @@ class ListHabits extends Rpc.make("ListHabits", {
   error: HabitRpcError
 }) {}
 
+// ── Reminders (ticket #60; FR-REM-01/03) ─────────────────────────────────
+
+const ReminderRpcError = Schema.Union([ReminderServiceError, Unauthorized])
+
+class CreateReminder extends Rpc.make("CreateReminder", {
+  payload: ReminderCreateInput,
+  success: Reminder,
+  error: ReminderRpcError
+}) {}
+
+class GetReminder extends Rpc.make("GetReminder", {
+  payload: Schema.Struct({ id: ReminderId }),
+  success: Reminder,
+  error: ReminderRpcError
+}) {}
+
+class UpdateReminder extends Rpc.make("UpdateReminder", {
+  payload: ReminderUpdateInput,
+  success: Reminder,
+  error: ReminderRpcError
+}) {}
+
+class DeleteReminder extends Rpc.make("DeleteReminder", {
+  payload: ReminderMutationInput,
+  success: Reminder,
+  error: ReminderRpcError
+}) {}
+
+class ListReminders extends Rpc.make("ListReminders", {
+  payload: ReminderListInput,
+  success: Schema.Array(Reminder),
+  error: ReminderRpcError
+}) {}
+
 export const ApiRpcs = RpcGroup.make(
   CreateList,
   GetList,
@@ -464,6 +505,12 @@ export const ApiRpcs = RpcGroup.make(
   DeleteHabit,
   RestoreHabit,
   ListHabits
+,
+  CreateReminder,
+  GetReminder,
+  UpdateReminder,
+  DeleteReminder,
+  ListReminders
 )
 
 /** The derived, shared client type the web app imports. */

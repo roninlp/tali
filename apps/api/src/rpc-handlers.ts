@@ -5,6 +5,7 @@ import {
   EventForbidden,
   HabitForbidden,
   ListForbidden,
+  ReminderForbidden,
   NoteForbidden,
   TaskForbidden,
   Unauthorized
@@ -15,6 +16,7 @@ import { HabitService, type HabitViewer } from "./habit-service.js"
 import { ListService, type ListViewer } from "./list-service.js"
 import { NoteService } from "./note-service.js"
 import { PreferencesService } from "./preferences-service.js"
+import { ReminderService, type ReminderViewer } from "./reminder-service.js"
 import { TaskService, type TaskViewer } from "./task-service.js"
 import { SESSION_COOKIE } from "./auth-routes.js"
 
@@ -139,6 +141,20 @@ const withHabitViewer = <A, E, R>(
     Effect.mapError((error) =>
       error._tag === "TaskForbidden"
         ? new HabitForbidden({ id: error.id, reason: error.reason })
+
+
+ * Reminders have their own typed forbidden error (same pattern as notes,
+ * lists and events), so the edge's "no household" failure is mapped before
+ * the handler runs.
+ */
+const withReminderViewer = <A, E, R>(
+  headers: Headers,
+  run: (viewer: ReminderViewer) => Effect.Effect<A, E, R>
+): Effect.Effect<A, E | Unauthorized | ReminderForbidden, AuthService | PreferencesService | R> =>
+  viewerFromHeaders(headers).pipe(
+    Effect.mapError((error) =>
+      error._tag === "TaskForbidden"
+        ? new ReminderForbidden({ id: error.id, reason: error.reason })
         : error
     ),
     Effect.flatMap(run)
@@ -317,4 +333,22 @@ export const RpcHandlers = ApiRpcs.toLayer({
   ListHabits: (_input, { headers }) =>
     withHabitViewer(headers, (viewer) =>
       HabitService.pipe(Effect.flatMap((svc) => svc.list(viewer))))
+,
+
+  // ── Reminders ──────────────────────────────────────────────────────────
+  CreateReminder: (input, { headers }) =>
+    withReminderViewer(headers, (viewer) =>
+      ReminderService.pipe(Effect.flatMap((svc) => svc.create(viewer, input)))),
+  GetReminder: ({ id }, { headers }) =>
+    withReminderViewer(headers, (viewer) =>
+      ReminderService.pipe(Effect.flatMap((svc) => svc.get(viewer, id)))),
+  UpdateReminder: (input, { headers }) =>
+    withReminderViewer(headers, (viewer) =>
+      ReminderService.pipe(Effect.flatMap((svc) => svc.update(viewer, input)))),
+  DeleteReminder: (input, { headers }) =>
+    withReminderViewer(headers, (viewer) =>
+      ReminderService.pipe(Effect.flatMap((svc) => svc.delete(viewer, input)))),
+  ListReminders: (input, { headers }) =>
+    withReminderViewer(headers, (viewer) =>
+      ReminderService.pipe(Effect.flatMap((svc) => svc.list(viewer, input))))
 })

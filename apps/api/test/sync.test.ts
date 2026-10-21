@@ -39,6 +39,8 @@ const MIGRATIONS = [
   "0009_note_search.sql",
   "0010_events.sql",
   "0011_habits.sql"
+,
+  "0012_reminders.sql"
 ]
 const NOW = (): string => new Date().toISOString()
 const PAST = "2020-01-01T00:00:00.000Z"
@@ -963,14 +965,14 @@ describe("sync engine", () => {
         householdId: HOUSEHOLD,
         entries: [
           entry({
-            entityType: "reminder",
+            entityType: "habit",
             entityId: uuidV7(),
             baseVersion: 0,
             patch: { title: "یادآور" }
           })
         ]
       })
-    ).rejects.toMatchObject({ _tag: "UnsupportedSyncEntity", entityType: "reminder" })
+    ).rejects.toMatchObject({ _tag: "UnsupportedSyncEntity", entityType: "habit" })
   })
 
   it("guards patch values and rejects an insert the aggregate cannot accept", async () => {

@@ -11,6 +11,8 @@ import {
   NoteSearchRepoLive,
   ProjectRepoLive,
   PushSubscriptionRepoLive,
+  ReminderDispatchRepoLive,
+  ReminderRepoLive,
   TagRepoLive,
   TaskRepoLive
 } from "@tali/sql"
@@ -28,6 +30,8 @@ import { NoteServiceLive } from "./note-service.js"
 import { PreferencesRoutes } from "./preferences-routes.js"
 import { PreferencesServiceLive } from "./preferences-service.js"
 import { PushRoutes } from "./push-routes.js"
+import { ReminderRoutes } from "./reminder-routes.js"
+import { ReminderServiceLive } from "./reminder-service.js"
 import { RpcHandlers } from "./rpc-handlers.js"
 import { SyncRoutes } from "./sync.js"
 import { SyncServiceLive } from "./sync-service.js"
@@ -61,7 +65,8 @@ const ServiceLayers = Layer.mergeAll(
   TodayServiceLive,
   CalendarServiceLive,
   EventServiceLive,
-  HabitServiceLive
+  HabitServiceLive,
+  ReminderServiceLive
 )
 
 /** The aggregate repositories (each service also provides the ones it owns). */
@@ -75,6 +80,8 @@ const RepoLayers = Layer.mergeAll(
   EventRepoLive,
   HabitRepoLive,
   HabitEntryRepoLive,
+  ReminderRepoLive,
+  ReminderDispatchRepoLive,
   PushSubscriptionRepoLive
 )
 
@@ -93,6 +100,7 @@ export const AppLayer = Layer.mergeAll(
   CalendarRoutes,
   NoteSearchRoutes,
   PushRoutes,
+  ReminderRoutes,
   RpcLayer
 ).pipe(
   Layer.provide(ServiceLayers),
