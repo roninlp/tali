@@ -117,8 +117,11 @@ edited, deleted or synced.
 ### Occasion
 
 An annual important date (a birthday, an anniversary) that usually needs
-preparation. It is not an event: it recurs every year on its own month/day and
-events may be created from it.
+preparation. It is not an event: it is one **origin local date** plus its zone,
+projected onto its Jalali month/day every year (Esfand 30 clamps to Esfand 29 in
+a common year), and events may be created from it. Its **advance reminder** is
+an offset expanded at read time, not a stored per-year rule; the reminder row is
+the Reminder aggregate's. See [ADR-0008](docs/adr/0008-occasion-origin-date-and-advance-reminder.md).
 
 ### Recurrence Rule
 

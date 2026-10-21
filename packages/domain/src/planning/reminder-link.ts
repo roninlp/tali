@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { EventId, HabitId, TaskId } from "./common.js"
+import { EventId, HabitId, OccasionId, TaskId } from "./common.js"
 
 /**
  * The discriminated link a reminder hangs off (docs/domain-model-draft.md
@@ -19,11 +19,21 @@ import { EventId, HabitId, TaskId } from "./common.js"
  * is the first aggregate that needs it: the `event` variant carries the
  * `EventId` brand. The reminder aggregate (#60) consumes the union as-is, so
  * the reminder slice needs no migration and no redefinition.
+ *
+ * ## The `occasion` variant (#59)
+ *
+ * An occasion's advance reminder ("seven days before the birthday") is a
+ * reminder *about the occasion*, not about an event created from it: the
+ * occurrence is projected, so there is no event row to point at. The variant is
+ * therefore part of the union from the occasions slice, and the advance
+ * reminder's fire instant is computed by `occasion-projection.ts`. #60
+ * materialises the reminder row; it never needs a second link type.
  */
 export const ReminderLink = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal("none") }),
   Schema.Struct({ _tag: Schema.Literal("habit"), habitId: HabitId }),
   Schema.Struct({ _tag: Schema.Literal("task"), taskId: TaskId }),
-  Schema.Struct({ _tag: Schema.Literal("event"), eventId: EventId })
+  Schema.Struct({ _tag: Schema.Literal("event"), eventId: EventId }),
+  Schema.Struct({ _tag: Schema.Literal("occasion"), occasionId: OccasionId })
 ])
 export type ReminderLink = Schema.Schema.Type<typeof ReminderLink>

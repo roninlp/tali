@@ -7,6 +7,7 @@ import {
   ListForbidden,
   ReminderForbidden,
   NoteForbidden,
+  OccasionForbidden,
   TaskForbidden,
   Unauthorized
 } from "@tali/domain"
@@ -15,6 +16,7 @@ import { EventService, type EventViewer } from "./event-service.js"
 import { HabitService, type HabitViewer } from "./habit-service.js"
 import { ListService, type ListViewer } from "./list-service.js"
 import { NoteService } from "./note-service.js"
+import { OccasionService, type OccasionViewer } from "./occasion-service.js"
 import { PreferencesService } from "./preferences-service.js"
 import { ReminderService, type ReminderViewer } from "./reminder-service.js"
 import { TaskService, type TaskViewer } from "./task-service.js"
@@ -159,6 +161,23 @@ const withReminderViewer = <A, E, R>(
     Effect.mapError((error) =>
       error._tag === "TaskForbidden"
         ? new ReminderForbidden({ id: error.id, reason: error.reason })
+        : error
+    ),
+    Effect.flatMap(run)
+  )
+
+/**
+ * Occasions have their own typed forbidden error, so the edge's "no household"
+ * failure is mapped before the handler runs (same pattern as events).
+ */
+const withOccasionViewer = <A, E, R>(
+  headers: Headers,
+  run: (viewer: OccasionViewer) => Effect.Effect<A, E, R>
+): Effect.Effect<A, E | Unauthorized | OccasionForbidden, AuthService | PreferencesService | R> =>
+  viewerFromHeaders(headers).pipe(
+    Effect.mapError((error) =>
+      error._tag === "TaskForbidden"
+        ? new OccasionForbidden({ id: error.id, reason: error.reason })
         : error
     ),
     Effect.flatMap(run)
@@ -359,5 +378,32 @@ export const RpcHandlers = ApiRpcs.toLayer({
       ReminderService.pipe(Effect.flatMap((svc) => svc.delete(viewer, input)))),
   ListReminders: (input, { headers }) =>
     withReminderViewer(headers, (viewer) =>
-      ReminderService.pipe(Effect.flatMap((svc) => svc.list(viewer, input))))
+      ReminderService.pipe(Effect.flatMap((svc) => svc.list(viewer, input)))),
+
+  // ── Occasions ─────────────────────────────────────────────────────────
+
+  CreateOccasion: (input, { headers }) =>
+    withOccasionViewer(headers, (viewer) =>
+      OccasionService.pipe(Effect.flatMap((svc) => svc.create(viewer, input)))),
+  GetOccasion: ({ id }, { headers }) =>
+    withOccasionViewer(headers, (viewer) =>
+      OccasionService.pipe(Effect.flatMap((svc) => svc.get(viewer, id)))),
+  UpdateOccasion: (input, { headers }) =>
+    withOccasionViewer(headers, (viewer) =>
+      OccasionService.pipe(Effect.flatMap((svc) => svc.update(viewer, input)))),
+  DeleteOccasion: (input, { headers }) =>
+    withOccasionViewer(headers, (viewer) =>
+      OccasionService.pipe(Effect.flatMap((svc) => svc.delete(viewer, input)))),
+  ListOccasions: (_input, { headers }) =>
+    withOccasionViewer(headers, (viewer) =>
+      OccasionService.pipe(Effect.flatMap((svc) => svc.list(viewer)))),
+  ListOccasionOccurrences: (input, { headers }) =>
+    withOccasionViewer(headers, (viewer) =>
+      OccasionService.pipe(Effect.flatMap((svc) => svc.occurrences(viewer, input)))),
+  ListOccasionReminders: (input, { headers }) =>
+    withOccasionViewer(headers, (viewer) =>
+      OccasionService.pipe(Effect.flatMap((svc) => svc.advanceReminders(viewer, input)))),
+  PrepareOccasionTask: (input, { headers }) =>
+    withOccasionViewer(headers, (viewer) =>
+      OccasionService.pipe(Effect.flatMap((svc) => svc.prepareTask(viewer, input))))
 })
