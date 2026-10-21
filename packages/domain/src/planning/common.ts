@@ -91,6 +91,16 @@ export const HabitEntryId = Schema.String.check(Schema.isUUID(7)).pipe(
 )
 export type HabitEntryId = Schema.Schema.Type<typeof HabitEntryId>
 
+/** `Reminder` aggregate id (Slice 3 / ticket #60). */
+export const ReminderId = Schema.String.check(Schema.isUUID(7)).pipe(Schema.brand("ReminderId"))
+export type ReminderId = Schema.Schema.Type<typeof ReminderId>
+
+/** One dispatch-ledger row (ADR-0005); also the address of a notification action. */
+export const ReminderDispatchId = Schema.String.check(Schema.isUUID(7)).pipe(
+  Schema.brand("ReminderDispatchId")
+)
+export type ReminderDispatchId = Schema.Schema.Type<typeof ReminderDispatchId>
+
 // ── Enums (docs/domain-model-draft.md §2.3) ───────────────────────────────
 
 /**
