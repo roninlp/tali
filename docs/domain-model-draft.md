@@ -201,6 +201,14 @@ export class HabitEntry extends Model.Class<HabitEntry>("HabitEntry")({
 
 > `HabitEntry` is the one entity that also needs a **unique** `(habitId, date)` — modeled as a D1 `UNIQUE` index, not a schema invariant (schemas validate shape, not cross-row uniqueness).
 
+> **Decision [#65](https://github.com/roninlp/tali/issues/65):** the shape above
+> needs two additions when #63 lands — a **`startedOn: LocalDate`** (the owner's
+> local creation date; `createdAt` is an instant and must not decide which day a
+> habit began) and **eras** in `frequencyHistory` whose `effectiveFrom` is the
+> first counting period of that frequency, never a back-dated date. The streak
+> itself has no columns: it is a pure function over `HabitEntry` +
+> `frequencyHistory` + `startedOn`, specified in `docs/streak-algorithm.md`.
+
 ### 3.3 `Event` (+ occurrence exceptions)
 
 > **Implemented in ticket [#57](https://github.com/roninlp/tali/issues/57)** — `packages/domain/src/planning/event.ts`,
@@ -560,5 +568,5 @@ Each is phrased as a crisp question with a recommendation. **These are the real 
 - The **typed error hierarchy** (`HabitError`, `SyncError`, …) — a separate "Not yet specified" item on the map; the `Schema.TaggedError` shape is established here but not enumerated.
 - **FTS backend** (FTS5 vs trigram) for Persian note search — noted as a placeholder on `Note.plainText`.
 - **Reminder quiet-hours rules / medication tier rules / snooze semantics** — reminder *data* is modeled; the *scheduling policy* is a later ticket.
-- **Streak/heatmap algorithm** (frequency-aware streak over 7/30/90) — `HabitEntry` + `frequencyHistory` give the algorithm what it needs; the algorithm is out of scope here.
+- **Streak/heatmap algorithm** (frequency-aware streak over 7/30/90) — **decided in [#65](https://github.com/roninlp/tali/issues/65)**: `docs/streak-algorithm.md` (rules + pure function + worked examples) and ADR-0006. Heatmap bucketing remains #66's.
 - **Wire/HTTP contracts** for `/sync/pull`, `/sync/push`, SSE — this document defines the *entities* those endpoints move.

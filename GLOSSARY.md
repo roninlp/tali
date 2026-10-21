@@ -128,6 +128,81 @@ JSON object, **never** an RRULE string: the month and year fields are Jalali,
 which string RRULE parsers do not implement. See
 [ADR-0004](docs/adr/0004-event-timing-and-exception-storage.md).
 
+## Habits
+
+### Habit
+
+A behaviour its owner wants to keep up — exercise, reading, water, medication —
+with a **Frequency** and a daily log. A habit is not a task: it is never
+"completed", it is kept up over time.
+
+_Avoid:_ "routine" or "tracker" for the thing itself — those are the feature, not
+the habit.
+
+### Habit Entry
+
+One day's answer for one habit: **Done**, **Partial** or **Missed**, for one
+local date. A day with no entry is **blank**; blank and Missed are different
+records (one is silence, the other an answer), even though neither earns credit.
+
+_Avoid:_ "log row" or "check-in" in user-facing language.
+
+### Frequency
+
+The commitment a habit makes: **daily**, a set of **weekdays**, or **X times a
+week**. It is the input to every statistic; a habit's frequency history is kept
+as eras so that changing it never rewrites the past.
+
+### Expected Day
+
+A day on which a habit is due: every day for a daily habit, the selected days for
+a weekday habit. Only expected days can extend or break a **Streak**; every other
+day is transparent. An X-times-a-week habit has no expected days — its commitment
+is a quota over a **Streak Period**.
+
+_Avoid:_ "scheduled day" for the X-times-a-week case — nothing is scheduled.
+
+### Streak Period
+
+The unit a **Streak** counts: one local day for daily and weekday habits, one
+Saturday–Friday week for X-times-a-week habits. The counting week is fixed by the
+product and is **not** the display **Week Start**.
+
+_Avoid:_ "week" unqualified when the counting week is meant; say **Streak
+Period** or "counting week".
+
+### Satisfied Period
+
+A period that met its commitment: one Done or Partial on an expected day, or X
+Done/Partial days inside a counting week. A closed period that is not satisfied
+breaks the streak; the open period can be neither a break nor an advance until it
+is satisfied.
+
+### Streak
+
+The number of consecutive **Satisfied Periods**, in the unit of the habit's
+current frequency — days for daily/weekday habits, weeks for X-times-a-week
+habits — ending with the open period once it is satisfied, or with the last
+closed satisfied period while the open one is still short. It always travels with
+its unit.
+
+_Avoid:_ "chain", "run" and "combo" in UI copy; and never a bare number whose
+unit is unspecified.
+
+### Best Streak
+
+The longest **Streak** ever reached, kept **per unit** (best days, best weeks),
+because a day run and a week run are not comparable. It survives a frequency
+change even when the current streak does not.
+
+### Success Rate
+
+How much of the commitment was met inside a window: the weighted share of
+expected days (daily/weekday habits) or of the weekly quota (X-times-a-week
+habits), with Partial counting half and the result capped at 100%. It answers
+"how fully", while the **Streak** answers "did you keep it up at all". The two
+may disagree on purpose.
+
 ## Reminders
 
 ### Reminder
