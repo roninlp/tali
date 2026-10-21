@@ -8,6 +8,7 @@
 export * from "./common"
 export * from "./buckets"
 export * from "./task"
+export * from "./task-recurrence"
 export * from "./task-service"
 export * from "./project"
 export * from "./tag"

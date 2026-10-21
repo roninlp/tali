@@ -1,4 +1,5 @@
 import { Context, Data, DateTime, Effect, Layer, Option, Schema } from "effect"
+import type { Statement } from "effect/sql"
 import {
   type ChangeFeedEntry,
   type SyncBootstrapResponse,
@@ -361,34 +362,69 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           state: SyncEntityState,
           expectedVersion: number | null,
           op: "upsert" | "delete",
-          tag: WriteTag
+          tag: WriteTag,
+          previous?: SyncEntityState
         ) => {
+          const statements: Array<Statement.Statement<unknown>> = [
+            repo.writeEntity({ state, expectedVersion }),
+            repo.appendFeed({
+              householdId: input.householdId,
+              entityType: state.entityType,
+              entityId: state.entityId,
+              op,
+              version: state.version,
+              updatedAt: state.updatedAt,
+              ownerId: state.ownerId,
+              visibility: state.visibility
+            }),
+            repo.recordApplied({
+              clientMutationId: entry.clientMutationId,
+              householdId: input.householdId,
+              entityType: state.entityType,
+              entityId: state.entityId,
+              version: state.version,
+              createdAt: now
+            })
+          ]
+
+          // A server-generated successor (task recurrence, #38) joins this
+          // entry's batch. Its INSERT is gated on the parent write landing at
+          // `state.version`; the child feed/ledger are gated on that INSERT
+          // (`changes()`), so a lost CAS or an already-spawned series appends
+          // nothing. The next `/sync/pull` delivers the child row normally.
+          const definition = entityTypeOf(state.entityType)!
+          const spawn = definition.spawn?.({ previous, next: state, now })
+          if (spawn !== undefined) {
+            statements.push(
+              spawn.insert(spawn.state),
+              repo.appendFeed({
+                householdId: input.householdId,
+                entityType: spawn.state.entityType,
+                entityId: spawn.state.entityId,
+                op: "upsert",
+                version: spawn.state.version,
+                updatedAt: spawn.state.updatedAt,
+                ownerId: spawn.state.ownerId,
+                visibility: spawn.state.visibility
+              }),
+              repo.recordApplied({
+                clientMutationId: `recurrence:${spawn.parentId}`,
+                householdId: input.householdId,
+                entityType: spawn.state.entityType,
+                entityId: spawn.state.entityId,
+                version: spawn.state.version,
+                createdAt: now
+              }),
+              ...(spawn.joins?.(spawn.state) ?? [])
+            )
+          }
+
           const group: WriteGroup = {
             index: groups.length,
             entry,
             state,
             expectedVersion,
-            statements: [
-              repo.writeEntity({ state, expectedVersion }),
-              repo.appendFeed({
-                householdId: input.householdId,
-                entityType: state.entityType,
-                entityId: state.entityId,
-                op,
-                version: state.version,
-                updatedAt: state.updatedAt,
-                ownerId: state.ownerId,
-                visibility: state.visibility
-              }),
-              repo.recordApplied({
-                clientMutationId: entry.clientMutationId,
-                householdId: input.householdId,
-                entityType: state.entityType,
-                entityId: state.entityId,
-                version: state.version,
-                createdAt: now
-              })
-            ]
+            statements
           }
           groups.push(group)
           planned.set(entityKey(state), state)
@@ -483,7 +519,7 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
               updatedAt: now,
               deletedAt: now
             }
-            write(entry, state, current.version, "delete", "applied")
+            write(entry, state, current.version, "delete", "applied", current)
             continue
           }
 
@@ -545,7 +581,7 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
               version: current.version + 1,
               updatedAt: now
             }
-            write(entry, state, current.version, "upsert", "applied")
+            write(entry, state, current.version, "upsert", "applied", current)
             continue
           }
 
@@ -585,7 +621,7 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
             version: current.version + 1,
             updatedAt: now
           }
-          write(entry, state, current.version, "upsert", "conflict")
+          write(entry, state, current.version, "upsert", "conflict", current)
         }
 
         // Parents before children (stable within a type), so a project/tag/list

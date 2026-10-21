@@ -4,6 +4,7 @@ import {
   List,
   Note,
   Project,
+  successorTask,
   Tag,
   Task,
   type SyncEntityType,
@@ -145,6 +146,36 @@ export interface SyncEntityDefinition {
     state: SyncEntityState,
     expectedVersion: number
   ) => Statement.Statement<unknown>
+  /**
+   * Optional server-side successor for a write (task recurrence, #38).
+   *
+   * The push calls this **once per entry**, with the row state before and after
+   * the merge, and appends the returned insert + feed + ledger in the same
+   * batch. `insert` must be gated on the parent reaching `parentVersion`, so a
+   * completion whose CAS lost can never leave an orphan successor.
+   */
+  readonly spawn?: (input: SyncSpawnInput) => SyncSpawn | undefined
+}
+
+export interface SyncSpawnInput {
+  /** The row before this entry; `undefined` for an insert. */
+  readonly previous: SyncEntityState | undefined
+  /** The row this entry writes (already merged and validated). */
+  readonly next: SyncEntityState
+  readonly now: string
+}
+
+export interface SyncSpawn {
+  /** The already-validated successor row. */
+  readonly state: SyncEntityState
+  /** The completed instance this successor belongs to. */
+  readonly parentId: string
+  /** The parent version the insert is gated on (the write's new version). */
+  readonly parentVersion: number
+  /** Gated child INSERT; must run immediately before the child feed append. */
+  readonly insert: (state: SyncEntityState) => Statement.Statement<unknown>
+  /** Child `item_tags` joins, run after the feed/ledger (gated on the child row). */
+  readonly joins?: (state: SyncEntityState) => ReadonlyArray<Statement.Statement<unknown>>
 }
 
 export interface SyncRegistry {
@@ -193,6 +224,8 @@ const isStringArray: SyncFieldGuard = (value) =>
   Array.isArray(value) && value.every((entry) => typeof entry === "string")
 const isOneOf = (...allowed: ReadonlyArray<string>): SyncFieldGuard => (value) =>
   typeof value === "string" && allowed.includes(value)
+const isNullableOneOf = (...allowed: ReadonlyArray<string>): SyncFieldGuard => (value) =>
+  value === null || (typeof value === "string" && allowed.includes(value))
 const isJson: SyncFieldGuard = (value) => {
   if (value === null || value === undefined) return true
   const kind = typeof value
@@ -276,6 +309,7 @@ const TASK_COLUMNS =
   `${META_COLUMNS}, type, title, description, status, priority, ` +
   `due_at AS dueAt, due_date AS dueDate, time_zone AS timeZone, ` +
   `project_id AS projectId, tag_ids AS tagIds, color, ` +
+  `recurrence, recurrence_mode AS recurrenceMode, ` +
   `started_at AS startedAt, completed_at AS completedAt, created_at AS createdAt`
 
 const taskCodec = withSchema<Task>(Task, (row) => ({
@@ -291,6 +325,8 @@ const taskCodec = withSchema<Task>(Task, (row) => ({
   projectId: asText(row.projectId),
   tagIds: asStringArray(row.tagIds),
   color: asText(row.color),
+  recurrence: parseJson(row.recurrence),
+  recurrenceMode: asText(row.recurrenceMode),
   startedAt: asText(row.startedAt),
   completedAt: asText(row.completedAt),
   ownerId: encodeText(row.ownerId),
@@ -298,6 +334,47 @@ const taskCodec = withSchema<Task>(Task, (row) => ({
   visibility: asVisibility(row.visibility),
   createdAt: encodeText(row.createdAt)
 }))
+
+/**
+ * The gated child `INSERT` for a spawn (task recurrence, #38). It only lands
+ * when the parent row really reached `done` at the write's new version; a lost
+ * CAS leaves no orphan. `recurrence_parent_id` is not part of the wire schema,
+ * so this statement is the only writer of that internal column on the push
+ * path. The partial unique index on the column makes it at-most-once.
+ */
+const insertSpawnedTask = (
+  sql: SqlClient.SqlClient,
+  state: SyncEntityState,
+  parentId: string,
+  parentVersion: number
+) => sql`
+  INSERT INTO tasks
+    (id, type, title, description, owner_id, household_id, visibility,
+     status, priority, due_at, due_date, time_zone, project_id, tag_ids,
+     color, recurrence, recurrence_mode, recurrence_parent_id,
+     started_at, completed_at, created_at, updated_at, version, deleted_at)
+  SELECT
+    ${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
+    ${encodeNullableText(state.data.description)}, ${state.ownerId},
+    ${state.householdId}, ${state.visibility}, ${encodeText(state.data.status)},
+    ${encodeText(state.data.priority)}, ${encodeNullableText(state.data.dueAt)},
+    ${encodeNullableText(state.data.dueDate)}, ${encodeText(state.data.timeZone)},
+    ${encodeNullableText(state.data.projectId)}, ${encodeJson(state.data.tagIds)},
+    ${encodeNullableText(state.data.color)},
+    ${encodeJsonOrNull(state.data.recurrence)},
+    ${encodeNullableText(state.data.recurrenceMode)}, ${parentId},
+    ${encodeNullableText(state.data.startedAt)},
+    ${encodeNullableText(state.data.completedAt)},
+    ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
+    ${state.updatedAt}, ${state.version}, ${state.deletedAt}
+  WHERE EXISTS (
+    SELECT 1 FROM tasks
+    WHERE id = ${parentId}
+      AND version = ${parentVersion}
+      AND status = 'done'
+  )
+  ON CONFLICT DO NOTHING
+`
 
 const TASK_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
   ["title", isString],
@@ -310,8 +387,34 @@ const TASK_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
   ["projectId", isNullableString],
   ["tagIds", isStringArray],
   ["color", isNullableString],
+  // The rule object is validated structurally by the Task schema below; the
+  // guard only rejects non-JSON scalars.
+  ["recurrence", isJson],
+  ["recurrenceMode", isNullableOneOf("onCompletion", "onDueDate")],
   ["visibility", isOneOf("private", "shared")]
 ])
+
+/** Tag joins for a freshly spawned successor, gated on the inserted row. */
+const spawnedTaskTagJoins = (
+  sql: SqlClient.SqlClient,
+  state: SyncEntityState
+): ReadonlyArray<Statement.Statement<unknown>> =>
+  state.householdId === null
+    ? []
+    : asStringArray(state.data.tagIds).flatMap((tagId) => [
+      sql`
+        INSERT INTO item_tags (item_id, item_type, tag_id, household_id, created_at)
+        SELECT ${state.entityId}, 'task', ${tagId}, ${state.householdId}, ${state.updatedAt}
+        WHERE EXISTS (
+          SELECT 1 FROM tasks
+          WHERE id = ${state.entityId}
+            AND version = ${state.version}
+            AND updated_at = ${state.updatedAt}
+        )
+        AND EXISTS (SELECT 1 FROM tags WHERE id = ${tagId})
+        ON CONFLICT DO NOTHING
+      `
+    ])
 
 // A completed task beats a concurrent rename, like a checked list item.
 const TASK_COMPLETION = { field: "status", value: "done" } as const
@@ -338,6 +441,12 @@ const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     projectId: asText(patch.projectId),
     tagIds: Array.isArray(patch.tagIds) ? patch.tagIds : [],
     color: asText(patch.color),
+    recurrence: patch.recurrence ?? null,
+    recurrenceMode: patch.recurrence === null || patch.recurrence === undefined
+      ? null
+      : patch.recurrenceMode === "onCompletion" || patch.recurrenceMode === "onDueDate"
+      ? patch.recurrenceMode
+      : "onDueDate",
     startedAt: null,
     completedAt: null,
     ownerId: context.userId,
@@ -347,6 +456,15 @@ const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   }),
   merge: (input) => {
     const next = mergeFields({ completion: TASK_COMPLETION }, input)
+    // Recurrence rule and mode are one unit: a rule without a mode defaults to
+    // the fixed schedule, and clearing the rule clears the mode. This keeps a
+    // partial client patch from leaving a half-configured series.
+    if (next.recurrence === null || next.recurrence === undefined) {
+      next.recurrence = null
+      next.recurrenceMode = null
+    } else if (next.recurrenceMode !== "onCompletion" && next.recurrenceMode !== "onDueDate") {
+      next.recurrenceMode = "onDueDate"
+    }
     // Lifecycle stamps are server-side (FR-TASK-02). #36 owns the task
     // service; sync keeps the same rule so an offline completion is coherent.
     if (next.status === "done") {
@@ -357,11 +475,54 @@ const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     if (next.status === "doing" && next.startedAt === null) next.startedAt = input.now
     return next
   },
+  /**
+   * Server-side successor generation for an offline completion (#38). Runs
+   * only on a live transition into `done`; `successorTask` is the same builder
+   * `TaskService` uses, so the date/mode semantics cannot drift between the
+   * RPC and sync paths.
+   */
+  spawn: ({ previous, next, now }) => {
+    if (next.deletedAt !== null) return undefined
+    if (previous === undefined) return undefined
+    if (previous.data.status === "done" || next.data.status !== "done") return undefined
+
+    const completed = new Task({
+      ...next.data,
+      id: next.entityId,
+      version: next.version,
+      updatedAt: next.updatedAt,
+      deletedAt: next.deletedAt
+    } as never)
+    const child = successorTask(completed, now)
+    if (child === null) return undefined
+    const state: SyncEntityState = {
+      entityType: "task",
+      entityId: child.id,
+      householdId: child.householdId,
+      ownerId: child.ownerId,
+      visibility: child.visibility,
+      version: child.version,
+      updatedAt: child.updatedAt,
+      deletedAt: null,
+      data: taskCodec.validate(
+        { ...child } as Record<string, unknown>,
+        { version: child.version, updatedAt: child.updatedAt, deletedAt: null }
+      )
+    }
+    return {
+      parentId: next.entityId,
+      parentVersion: next.version,
+      state,
+      insert: (childState) => insertSpawnedTask(sql, childState, next.entityId, next.version),
+      joins: (childState) => spawnedTaskTagJoins(sql, childState)
+    }
+  },
   insert: (state) => sql`
     INSERT INTO tasks
       (id, type, title, description, owner_id, household_id, visibility,
        status, priority, due_at, due_date, time_zone, project_id, tag_ids,
-       color, started_at, completed_at, created_at, updated_at, version, deleted_at)
+       color, recurrence, recurrence_mode, started_at, completed_at,
+       created_at, updated_at, version, deleted_at)
     VALUES
       (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
        ${encodeNullableText(state.data.description)}, ${state.ownerId},
@@ -370,6 +531,8 @@ const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
        ${encodeNullableText(state.data.dueDate)}, ${encodeText(state.data.timeZone)},
        ${encodeNullableText(state.data.projectId)}, ${encodeJson(state.data.tagIds)},
        ${encodeNullableText(state.data.color)},
+       ${encodeJsonOrNull(state.data.recurrence)},
+       ${encodeNullableText(state.data.recurrenceMode)},
        ${encodeNullableText(state.data.startedAt)},
        ${encodeNullableText(state.data.completedAt)},
        ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
@@ -389,6 +552,8 @@ const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
       project_id = ${encodeNullableText(state.data.projectId)},
       tag_ids = ${encodeJson(state.data.tagIds)},
       color = ${encodeNullableText(state.data.color)},
+      recurrence = ${encodeJsonOrNull(state.data.recurrence)},
+      recurrence_mode = ${encodeNullableText(state.data.recurrenceMode)},
       started_at = ${encodeNullableText(state.data.startedAt)},
       completed_at = ${encodeNullableText(state.data.completedAt)},
       updated_at = ${state.updatedAt},
