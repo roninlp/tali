@@ -3,15 +3,24 @@ import { FetchHttpClient } from "effect/http"
 import { RpcClient, RpcSerialization } from "effect/rpc"
 import { ApiRpcs, type ApiClient } from "@tali/rpc"
 import type {
-  ListItem,
-  ListItemInsert,
+  List,
+  ListCreateInput,
+  ListItemCheckInput,
+  ListItemCreateInput,
+  ListItemMutationInput,
+  ListItemUpdateInput,
+  ListItemsAppendInput,
+  ListMutationInput,
+  ListReorderInput,
+  ListUpdateInput,
   Note,
   NoteCreateInput,
   NoteFlagInput,
   NoteListInput,
   NoteSaveInput,
   NoteTagInput,
-  NoteUpdateInput
+  NoteUpdateInput,
+  PlanningListItem
 } from "@tali/domain"
 import { API_URL } from "./config"
 
@@ -45,14 +54,47 @@ function withClient<A, E>(
 
 /** Promise-returning wrappers for use from Solid components. */
 export const api = {
-  listListItems: (): Promise<ReadonlyArray<ListItem>> =>
-    Effect.runPromise(withClient((client) => client.ListListItems())),
+  // ── Lists (#39) ────────────────────────────────────────────────────────
+  // The screens render from the local mirror; these are the online/RPC
+  // equivalents used by tests and any future server-backed view.
 
-  createListItem: (input: ListItemInsert): Promise<ListItem> =>
+  createList: (input: ListCreateInput): Promise<List> =>
+    Effect.runPromise(withClient((client) => client.CreateList(input))),
+
+  getList: (id: string): Promise<List> =>
+    Effect.runPromise(withClient((client) => client.GetList({ id: id as List["id"] }))),
+
+  updateList: (input: ListUpdateInput): Promise<List> =>
+    Effect.runPromise(withClient((client) => client.UpdateList(input))),
+
+  deleteList: (input: ListMutationInput): Promise<List> =>
+    Effect.runPromise(withClient((client) => client.DeleteList(input))),
+
+  listLists: (): Promise<ReadonlyArray<List>> =>
+    Effect.runPromise(withClient((client) => client.ListLists())),
+
+  listListItems: (listId: string): Promise<ReadonlyArray<PlanningListItem>> =>
+    Effect.runPromise(
+      withClient((client) => client.ListListItems({ listId: listId as List["id"] }))
+    ),
+
+  createListItem: (input: ListItemCreateInput): Promise<PlanningListItem> =>
     Effect.runPromise(withClient((client) => client.CreateListItem(input))),
 
-  toggleListItem: (id: string, checked: boolean): Promise<ListItem> =>
-    Effect.runPromise(withClient((client) => client.ToggleListItem({ id, checked }))),
+  appendListItems: (input: ListItemsAppendInput): Promise<ReadonlyArray<PlanningListItem>> =>
+    Effect.runPromise(withClient((client) => client.AppendListItems(input))),
+
+  updateListItem: (input: ListItemUpdateInput): Promise<PlanningListItem> =>
+    Effect.runPromise(withClient((client) => client.UpdateListItem(input))),
+
+  setListItemChecked: (input: ListItemCheckInput): Promise<PlanningListItem> =>
+    Effect.runPromise(withClient((client) => client.SetListItemChecked(input))),
+
+  deleteListItem: (input: ListItemMutationInput): Promise<PlanningListItem> =>
+    Effect.runPromise(withClient((client) => client.DeleteListItem(input))),
+
+  reorderListItems: (input: ListReorderInput): Promise<ReadonlyArray<PlanningListItem>> =>
+    Effect.runPromise(withClient((client) => client.ReorderListItems(input))),
 
   // ── Notes (#40) ────────────────────────────────────────────────────────
   // The editor writes through the local mirror; these are the server paths

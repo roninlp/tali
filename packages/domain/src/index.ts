@@ -33,6 +33,7 @@ export * from "./planning/task-service"
 export * from "./planning/project"
 export * from "./planning/tag"
 export * from "./planning/list"
+export * from "./planning/list-service"
 export * from "./planning/note"
 export * from "./planning/note-service"
 // The real `ListItem` aggregate collides with the pre-Slice-2 scaffold stub

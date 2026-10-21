@@ -108,6 +108,8 @@ export interface TaskViewer {
   readonly householdId: HouseholdId
   /** Preferences time zone, falling back to the profile zone at the RPC edge. */
   readonly timeZone: string
+  /** Global checked-item default, adopted by a new list (#39). */
+  readonly defaultCheckedPlacement?: "inPlace" | "bottom"
 }
 
 export interface TaskServiceApi {

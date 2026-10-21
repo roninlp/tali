@@ -22,8 +22,9 @@ import {
  * the pre-Slice-2 `list_items` table, and #34 keeps that scaffold wire shape
  * for sync so the web mirror needs no change. This real aggregate is re-exported
  * from `@tali/domain` as `PlanningListItem` (and under the `Planning`
- * namespace); sync dual-writes both column sets. Retiring the stub is #39's UI
- * work.
+ * namespace); sync dual-writes both column sets. Ticket #39's list UI speaks
+ * this aggregate through the registry's `name`/`done`/`ordering` aliases; the
+ * stub remains only for the scaffold repo and the `/today` quick list.
  */
 export class ListItem extends Model.Class<ListItem>("ListItem")({
   ...commonItemFields("listItem", ListItemId),

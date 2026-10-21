@@ -81,6 +81,26 @@ export class PlanningListItemRepo extends Context.Service<PlanningListItemRepo>(
           (rows) => rows.map(toListItem)
         )
 
+      /**
+       * Every live item under a list, without the per-viewer visibility filter.
+       * Used by `deleteList` to cascade a soft delete over the whole list, so a
+       * spouse's private items cannot outlive it in their mirror.
+       */
+      const listAllForList = (input: {
+        readonly listId: ListId
+        readonly householdId: string
+      }) =>
+        Effect.map(
+          sql<ListItemRow>`
+            SELECT ${sql.literal(LIST_ITEM_COLUMNS)} FROM list_items
+            WHERE list_id = ${input.listId}
+              AND household_id = ${input.householdId}
+              AND deleted_at IS NULL
+            ORDER BY ordering ASC, id ASC
+          `,
+          (rows) => rows.map(toListItem)
+        )
+
       const insert = (item: ListItem) =>
         Effect.map(
           sql<ListItemRow>`
@@ -122,7 +142,56 @@ export class PlanningListItemRepo extends Context.Service<PlanningListItemRepo>(
           (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toListItem)
         )
 
-      return { findById, listByList, insert, update } as const
+      /**
+       * Item tag-join statements for a service mutation. Gated on the item's
+       * new version + update timestamp, so a lost CAS cannot leave `item_tags`
+       * ahead of the row. Mirrors TaskRepo's helpers.
+       */
+      const detachTagsIfVersion = (input: {
+        readonly itemId: ListItemId
+        readonly version: number
+        readonly updatedAt: string
+      }) =>
+        sql`
+          DELETE FROM item_tags
+          WHERE item_id = ${input.itemId} AND item_type = 'listItem'
+            AND EXISTS (
+              SELECT 1 FROM list_items
+              WHERE id = ${input.itemId}
+                AND version = ${input.version}
+                AND updated_at = ${input.updatedAt}
+            )
+        `
+
+      const attachTagIfVersion = (input: {
+        readonly itemId: ListItemId
+        readonly tagId: TagId
+        readonly householdId: string
+        readonly createdAt: string
+        readonly version: number
+        readonly updatedAt: string
+      }) =>
+        sql`
+          INSERT INTO item_tags (item_id, item_type, tag_id, household_id, created_at)
+          SELECT ${input.itemId}, 'listItem', ${input.tagId}, ${input.householdId}, ${input.createdAt}
+          WHERE EXISTS (
+            SELECT 1 FROM list_items
+            WHERE id = ${input.itemId}
+              AND version = ${input.version}
+              AND updated_at = ${input.updatedAt}
+          )
+          ON CONFLICT DO NOTHING
+        `
+
+      return {
+        findById,
+        listByList,
+        listAllForList,
+        insert,
+        update,
+        detachTagsIfVersion,
+        attachTagIfVersion
+      } as const
     })
   }
 ) {}

@@ -45,9 +45,9 @@ import {
  * `data.sortOrder`, and #34 must not change the web app. So the `listItem`
  * entry stays on the **scaffold wire shape** and every sync write **dual-writes
  * both column sets**. Reads use the scaffold columns, which every writer keeps
- * current. This retires #33's one-way dual-write for sync-authored rows; the
- * real ListItem columns are written but not yet part of the wire payload
- * (#39's list UI can extend the allowlist with `listId`).
+ * current. Ticket #39 additionally accepts and hydrates the real aggregate
+ * names (`name`/`done`/`ordering`), so `/lists` can speak the #33 vocabulary
+ * without breaking the legacy `listItem` wire shape.
  */
 
 // ── Row state ─────────────────────────────────────────────────────────────
@@ -692,9 +692,10 @@ const tagDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
 
 const LIST_COLUMNS =
   `${META_COLUMNS}, type, title, description, color, icon, sort, ` +
-  `checked_placement AS checkedPlacement, created_at AS createdAt`
+  `checked_placement AS checkedPlacement, last_writer_id AS lastWriterId, ` +
+  `created_at AS createdAt`
 
-const listCodec = withSchema<List>(List, (row) => ({
+const listSchemaCodec = withSchema<List>(List, (row) => ({
   id: String(row.id),
   type: "list",
   title: encodeText(row.title),
@@ -708,6 +709,26 @@ const listCodec = withSchema<List>(List, (row) => ({
   checkedPlacement: encodeText(row.checkedPlacement),
   createdAt: encodeText(row.createdAt)
 }))
+
+/**
+ * `lastWriterId` is server-managed attribution (#39). It is carried in the
+ * hydrated list data for the "updated by" label but is not in the List model or
+ * the client-writable allowlist, so a patch can never forge it.
+ */
+const listCodec = {
+  validate: (data: Record<string, unknown>, meta: SyncEntityMeta): Record<string, unknown> => {
+    const encoded = listSchemaCodec.validate(data, meta)
+    // The List model has no attribution field; keep the server-managed value
+    // across the codec so a merge of an untouched row is still a no-op.
+    return typeof data.lastWriterId === "string"
+      ? { ...encoded, lastWriterId: data.lastWriterId }
+      : encoded
+  },
+  hydrate: (row: SyncRawRow): Record<string, unknown> => ({
+    ...listSchemaCodec.hydrate(row),
+    lastWriterId: asText(row.lastWriterId)
+  })
+}
 
 const listDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: "list",
@@ -737,19 +758,22 @@ const listDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     icon: asText(patch.icon),
     sort: encodeText(patch.sort) || "manual",
     checkedPlacement: encodeText(patch.checkedPlacement) || "bottom",
+    lastWriterId: context.userId,
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
   }),
   merge: (input) => mergeFields({}, input),
   insert: (state) => sql`
     INSERT INTO lists
       (id, type, title, description, owner_id, household_id, visibility,
-       color, icon, sort, checked_placement, created_at, updated_at, version, deleted_at)
+       color, icon, sort, checked_placement, last_writer_id,
+       created_at, updated_at, version, deleted_at)
     VALUES
       (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
        ${encodeNullableText(state.data.description)}, ${state.ownerId},
        ${state.householdId}, ${state.visibility},
        ${encodeNullableText(state.data.color)}, ${encodeNullableText(state.data.icon)},
        ${encodeText(state.data.sort)}, ${encodeText(state.data.checkedPlacement)},
+       ${encodeNullableText(state.data.lastWriterId)},
        ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
        ${state.updatedAt}, ${state.version}, ${state.deletedAt})
     ON CONFLICT DO NOTHING
@@ -763,6 +787,7 @@ const listDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
       icon = ${encodeNullableText(state.data.icon)},
       sort = ${encodeText(state.data.sort)},
       checked_placement = ${encodeText(state.data.checkedPlacement)},
+      last_writer_id = ${encodeNullableText(state.data.lastWriterId)},
       updated_at = ${state.updatedAt},
       version = ${state.version},
       deleted_at = ${state.deletedAt}
@@ -774,7 +799,59 @@ const listDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
 
 const LIST_ITEM_COLUMNS =
   `${META_COLUMNS}, type, title, checked, sort_order AS sortOrder, list_id AS listId, ` +
-  `checked_at AS checkedAt, color, tag_ids AS tagIds, created_at AS createdAt`
+  `checked_at AS checkedAt, color, tag_ids AS tagIds, ` +
+  `last_writer_id AS lastWriterId, created_at AS createdAt`
+
+/**
+ * Keep the scaffold wire names (`title`/`checked`/`sortOrder`) and the real
+ * #33 names (`name`/`done`/`ordering`) in lockstep. #39 adds the real names to
+ * the allowlist so a list screen can speak either vocabulary without breaking
+ * the legacy mirror/sync shape.
+ */
+const listItemTitle = (data: Record<string, unknown>): string =>
+  typeof data.title === "string"
+    ? data.title
+    : typeof data.name === "string"
+    ? data.name
+    : ""
+
+const listItemChecked = (data: Record<string, unknown>): boolean =>
+  typeof data.checked === "boolean" ? data.checked : data.done === true
+
+const listItemOrder = (data: Record<string, unknown>): number =>
+  typeof data.sortOrder === "number" && Number.isInteger(data.sortOrder)
+    ? data.sortOrder
+    : encodeInt(data.ordering)
+
+const normalizeListItem = (data: Record<string, unknown>): Record<string, unknown> => {
+  const title = listItemTitle(data)
+  const checked = listItemChecked(data)
+  const order = listItemOrder(data)
+  return {
+    ...data,
+    title,
+    name: title,
+    checked,
+    done: checked,
+    sortOrder: order,
+    ordering: order
+  }
+}
+
+/**
+ * Translate the #39 aliases into the canonical wire fields **before** the merge
+ * runs, so done-wins still sees `checked: true` even when a client wrote
+ * `done: true`.
+ */
+const normalizeListItemPatch = (patch: Record<string, unknown>): Record<string, unknown> => {
+  const next = { ...patch }
+  if (next.title === undefined && typeof next.name === "string") next.title = next.name
+  if (next.checked === undefined && typeof next.done === "boolean") next.checked = next.done
+  if (next.sortOrder === undefined && typeof next.ordering === "number") {
+    next.sortOrder = next.ordering
+  }
+  return next
+}
 
 /**
  * The scaffold columns are authoritative for the wire shape: every writer
@@ -782,20 +859,22 @@ const LIST_ITEM_COLUMNS =
  * The real ListItem columns are carried alongside so the dual-write preserves
  * them (`listId`, `checkedAt`, `color`, `tagIds`).
  */
-const listItemNormalize = (row: SyncRawRow): Record<string, unknown> => ({
-  id: String(row.id),
-  type: "listItem",
-  title: encodeText(row.title),
-  checked: asBit(row.checked),
-  sortOrder: encodeInt(row.sortOrder),
-  listId: asText(row.listId),
-  checkedAt: asText(row.checkedAt),
-  color: asText(row.color),
-  tagIds: asStringArray(row.tagIds),
-  ownerId: encodeText(row.ownerId),
-  visibility: asVisibility(row.visibility),
-  createdAt: encodeText(row.createdAt)
-})
+const listItemNormalize = (row: SyncRawRow): Record<string, unknown> =>
+  normalizeListItem({
+    id: String(row.id),
+    type: "listItem",
+    title: encodeText(row.title),
+    checked: asBit(row.checked),
+    sortOrder: encodeInt(row.sortOrder),
+    listId: asText(row.listId),
+    checkedAt: asText(row.checkedAt),
+    color: asText(row.color),
+    tagIds: asStringArray(row.tagIds),
+    lastWriterId: asText(row.lastWriterId),
+    ownerId: encodeText(row.ownerId),
+    visibility: asVisibility(row.visibility),
+    createdAt: encodeText(row.createdAt)
+  })
 
 const LIST_ITEM_COMPLETION = { field: "checked", value: true } as const
 
@@ -815,7 +894,10 @@ const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
       ["title", isString],
       ["checked", isBoolean],
       ["sortOrder", isInt],
-      // Extended allowlist; the web client never sends it (#39 will).
+      // #39 real-aggregate aliases; both vocabularies are accepted.
+      ["name", isString],
+      ["done", isBoolean],
+      ["ordering", isInt],
       ["listId", isNullableString],
       ["color", isNullableString],
       ["tagIds", isStringArray],
@@ -823,36 +905,49 @@ const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
     ]),
     // Checklist done-wins: "I ticked it" beats "I renamed it" (§6.3).
     completion: LIST_ITEM_COMPLETION,
-    defaults: (patch, context) => ({
-      id: context.entityId,
-      type: "listItem",
-      title: encodeText(patch.title),
-      checked: patch.checked === true,
-      sortOrder: encodeInt(patch.sortOrder),
-      listId: asText(patch.listId),
-      checkedAt: patch.checked === true ? context.now : null,
-      color: asText(patch.color),
-      tagIds: Array.isArray(patch.tagIds) ? patch.tagIds : [],
-      ownerId: context.userId,
-      visibility: asVisibility(patch.visibility),
-      createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
-    }),
+    defaults: (patch, context) => {
+      const raw = normalizeListItemPatch(patch)
+      const title = listItemTitle(raw)
+      const checked = listItemChecked(raw)
+      const order = listItemOrder(raw)
+      return normalizeListItem({
+        id: context.entityId,
+        type: "listItem",
+        title,
+        checked,
+        sortOrder: order,
+        listId: asText(raw.listId),
+        checkedAt: checked ? context.now : null,
+        color: asText(raw.color),
+        tagIds: Array.isArray(raw.tagIds) ? raw.tagIds : [],
+        lastWriterId: context.userId,
+        ownerId: context.userId,
+        visibility: asVisibility(raw.visibility),
+        createdAt: asText(raw.createdAt) ?? context.clientUpdatedAt
+      })
+    },
     hydrate: (row) => listItemNormalize(row),
     validate: validateIdentity,
     merge: (input) => {
-      const next = mergeFields({ completion: LIST_ITEM_COMPLETION }, input)
-      // Mirror the checked flag onto the real completion audit column.
+      const current = normalizeListItem(input.current)
+      const patch = normalizeListItemPatch(input.patch)
+      const next = mergeFields(
+        { completion: LIST_ITEM_COMPLETION },
+        { ...input, current, patch }
+      )
+      // Mirror the checked flag onto the real completion audit column. On a
+      // ticked-wins conflict the original `checkedAt` is preserved.
       next.checkedAt = next.checked === true
-        ? (input.current.checked === true ? input.current.checkedAt ?? null : input.now)
+        ? (current.checked === true ? current.checkedAt ?? null : input.now)
         : null
-      return next
+      return normalizeListItem(next)
     },
     // Dual-write: scaffold columns (wire) + real ListItem columns (#33/#39).
     insert: (state) => sql`
       INSERT INTO list_items
         (id, title, checked, sort_order, version, created_at, updated_at, deleted_at,
          owner_id, visibility, household_id,
-         type, list_id, name, done, ordering, checked_at, color, tag_ids)
+         type, list_id, name, done, ordering, checked_at, color, tag_ids, last_writer_id)
       VALUES
         (${state.entityId}, ${encodeText(state.data.title)},
          ${encodeBit(state.data.checked)}, ${encodeInt(state.data.sortOrder)},
@@ -862,7 +957,8 @@ const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
          ${encodeNullableText(state.data.listId)}, ${encodeText(state.data.title)},
          ${encodeBit(state.data.checked)}, ${encodeInt(state.data.sortOrder)},
          ${encodeNullableText(state.data.checkedAt)},
-         ${encodeNullableText(state.data.color)}, ${encodeJson(state.data.tagIds)})
+         ${encodeNullableText(state.data.color)}, ${encodeJson(state.data.tagIds)},
+         ${encodeNullableText(state.data.lastWriterId)})
       ON CONFLICT DO NOTHING
     `,
     update: (state, expectedVersion) => sql`
@@ -880,7 +976,8 @@ const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
         ordering = ${encodeInt(state.data.sortOrder)},
         checked_at = ${encodeNullableText(state.data.checkedAt)},
         color = ${encodeNullableText(state.data.color)},
-        tag_ids = ${encodeJson(state.data.tagIds)}
+        tag_ids = ${encodeJson(state.data.tagIds)},
+        last_writer_id = ${encodeNullableText(state.data.lastWriterId)}
       WHERE id = ${state.entityId} AND version = ${expectedVersion}
     `
   }

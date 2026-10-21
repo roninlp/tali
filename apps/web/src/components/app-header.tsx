@@ -18,11 +18,12 @@ import { FormError } from "./form"
  * note, then the editor opens immediately — no network round trip.
  */
 
-export type AppSection = "today" | "tasks" | "notes" | "reminders" | "settings"
+export type AppSection = "today" | "tasks" | "lists" | "notes" | "reminders" | "settings"
 
 const NAV: ReadonlyArray<{ section: AppSection; href: string; label: string }> = [
   { section: "today", href: "/today", label: "امروز" },
   { section: "tasks", href: "/tasks", label: "کارها" },
+  { section: "lists", href: "/lists", label: "فهرست‌ها" },
   { section: "notes", href: "/notes", label: "یادداشت‌ها" },
   { section: "reminders", href: "/reminders", label: "یادآورها" },
   { section: "settings", href: "/settings", label: "تنظیمات" }
