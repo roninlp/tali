@@ -27,6 +27,12 @@ import type {
  * - Snooze presets are fixed: 5, 10, 15, 30, 60 minutes. A snooze is
  *   this-occurrence-only; its child ledger row carries the original
  *   `rootScheduledFor`, so the on-time window does not restart.
+ * - **Quiet hours never hold a snooze** (#79): a snooze target inside the
+ *   window fires at its target. The choice is settled, not incidental — a
+ *   snooze is a fresh instruction bounded by the presets, so it outranks the
+ *   standing quiet-hours preference, and chains (each link a new tap) stay
+ *   uncapped for the same reason. Never route a snooze through
+ *   `reminderDeliverAt`.
  * - A dispatch is **on time** when it is answered `done` within 30 minutes of
  *   the *root* fire (early counts). `dismiss` and silence are never on time.
  * - A dispatch is **missed** when it is unanswered and its scheduled instant
@@ -138,6 +144,11 @@ export const isSnoozeMinutes = (minutes: number): minutes is SnoozeMinutes =>
 
 /**
  * When a snoozed occurrence re-fires: `respondedAt + minutes`.
+ *
+ * The result is the child dispatch's `deliver_at` as-is: quiet hours do not
+ * move it (#79, ADR-0005 §5). A 23:50 tap with a 10-minute preset rings at
+ * 00:00, and a chain of taps can walk through the night — each link needs the
+ * owner awake at that moment, which is the consent the exemption rests on.
  *
  * Returns `null` for a length outside the preset set, so the caller can answer
  * with a typed validation error instead of inventing a schedule.
