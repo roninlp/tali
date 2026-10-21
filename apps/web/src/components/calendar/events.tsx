@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal, onSettled } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onSettled } from "solid-js"
 import {
   localizeDigits,
   type Digits,
@@ -146,6 +146,36 @@ export function EventQuickAdd(props: EventQuickAddProps) {
 
 // ── Editor ───────────────────────────────────────────────────────────────
 
+const focusableIn = (root: HTMLElement | undefined): ReadonlyArray<HTMLElement> =>
+  root === undefined
+    ? []
+    : [
+      ...root.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+      )
+    ]
+
+/** Keep Tab inside a modal dialog (the page behind it is not `inert`). */
+const trapTabWithin = (event: KeyboardEvent, root: HTMLElement | undefined): void => {
+  if (event.key !== "Tab") return
+  const items = focusableIn(root)
+  if (items.length === 0) return
+  const first = items[0]!
+  const last = items[items.length - 1]!
+  const active = document.activeElement
+  if (event.shiftKey) {
+    if (active === first || !items.includes(active as HTMLElement)) {
+      event.preventDefault()
+      last.focus()
+    }
+    return
+  }
+  if (active === last || !items.includes(active as HTMLElement)) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
 export interface EventEditorProps {
   readonly occurrence: EventOccurrence
   readonly digits: Digits
@@ -153,6 +183,12 @@ export interface EventEditorProps {
   readonly canEdit: boolean
   readonly busy: boolean
   readonly error: string | undefined
+  /**
+   * True while the edit-scope prompt is on top of this editor. The editor stays
+   * mounted so its draft survives a cancel, but it becomes `inert` and ignores
+   * Escape: otherwise one Escape would dismiss both dialogs and lose the edit.
+   */
+  readonly inactive?: boolean
   readonly onSave: (draft: EventDraftFields) => void
   readonly onDelete: () => void
   readonly onClose: () => void
@@ -201,9 +237,19 @@ export function EventEditor(props: EventEditorProps) {
   )
 
   let heading: HTMLHeadingElement | undefined
+  let dialog: HTMLElement | undefined
   onSettled(() => heading?.focus())
+  // Returning from the scope prompt restores focus to the editor it came from.
+  createEffect(
+    () => props.inactive === true,
+    (inactive) => {
+      if (!inactive) heading?.focus()
+    }
+  )
 
   const closeOnEscape = (event: KeyboardEvent) => {
+    // The scope prompt is the active dialog while it is open; it owns Escape.
+    if (props.inactive === true) return
     if (event.key === "Escape") {
       event.preventDefault()
       props.onClose()
@@ -227,12 +273,18 @@ export function EventEditor(props: EventEditorProps) {
   }
 
   return (
-    <div class="calendar-dialog-backdrop">
+    <div
+      class="calendar-dialog-backdrop"
+      inert={props.inactive === true}
+      aria-hidden={props.inactive === true ? "true" : undefined}
+    >
       <section
         class="calendar-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="calendar-event-editor-title"
+        ref={(element) => (dialog = element)}
+        onKeyDown={(event) => trapTabWithin(event, dialog)}
       >
         <h2
           id="calendar-event-editor-title"
@@ -347,6 +399,16 @@ export interface EventScopePromptProps {
   readonly title: string
   readonly scope: EventEditScope
   readonly busy: boolean
+  /**
+   * False when the chosen split cannot be written: offline, or the series has
+   * an unsent mutation. Delete-this-and-following is a single row and stays
+   * available offline.
+   */
+  readonly splitAvailable: boolean
+  /** The clicked occurrence is the series' own first occurrence (whole-series). */
+  readonly firstOccurrence: boolean
+  /** A write failure to show inside this dialog, not behind it. */
+  readonly error: string | undefined
   readonly onScopeChange: (scope: EventEditScope) => void
   readonly onConfirm: () => void
   readonly onCancel: () => void
@@ -354,6 +416,7 @@ export interface EventScopePromptProps {
 
 export function EventScopePrompt(props: EventScopePromptProps) {
   let selected: HTMLInputElement | undefined
+  let dialog: HTMLElement | undefined
   onSettled(() => selected?.focus())
 
   const closeOnEscape = (event: KeyboardEvent) => {
@@ -366,8 +429,13 @@ export function EventScopePrompt(props: EventScopePromptProps) {
     return () => document.removeEventListener("keydown", closeOnEscape)
   })
 
-  const heading = () =>
-    props.action === "delete" ? "این رویداد یا کل مجموعه؟" : "ویرایش این رویداد یا مجموعه؟"
+  const confirmDisabled = () =>
+    props.busy ||
+    (!props.splitAvailable && props.scope === "thisAndFollowing")
+
+  // The second option never means "the whole series" once the occurrence is
+  // past the anchor: it means this one and the ones after it.
+  const heading = () => "این رویداد یا این رویداد و رویدادهای بعدی؟"
 
   return (
     <div class="calendar-dialog-backdrop">
@@ -377,6 +445,8 @@ export function EventScopePrompt(props: EventScopePromptProps) {
         aria-modal="true"
         aria-labelledby="calendar-scope-title"
         aria-describedby="calendar-scope-body"
+        ref={(element) => (dialog = element)}
+        onKeyDown={(event) => trapTabWithin(event, dialog)}
       >
         <h2 id="calendar-scope-title" tabindex="-1">
           {heading()}
@@ -406,26 +476,49 @@ export function EventScopePrompt(props: EventScopePromptProps) {
               </small>
             </span>
           </label>
-          <label class="calendar-scope-option" data-selected={props.scope === "thisAndFollowing" ? "true" : undefined}>
+          <label
+            class="calendar-scope-option"
+            data-selected={props.scope === "thisAndFollowing" ? "true" : undefined}
+            data-disabled={!props.splitAvailable ? "true" : undefined}
+          >
             <input
               type="radio"
               name="calendar-event-scope"
               value="thisAndFollowing"
               checked={props.scope === "thisAndFollowing"}
+              disabled={!props.splitAvailable || props.busy}
+              aria-describedby="calendar-scope-following-hint"
               onChange={() => props.onScopeChange("thisAndFollowing")}
             />
             <span>
               <strong>این رویداد و رویدادهای بعدی</strong>
-              <small>
-                مجموعه از همین روز به بعد جدا می‌شود؛ روزهای پیش از آن دست‌نخورده
-                می‌مانند.
+              <small id="calendar-scope-following-hint">
+                {props.firstOccurrence
+                  ? props.action === "delete"
+                    ? "این رویداد اولین رویداد مجموعه است؛ این انتخاب کل مجموعه را حذف می‌کند."
+                    : "این رویداد اولین رویداد مجموعه است؛ این انتخاب کل مجموعه را تغییر می‌دهد."
+                  : "مجموعه از همین روز به بعد جدا می‌شود؛ روزهای پیش از آن دست‌نخورده می‌مانند."}
+                {!props.splitAvailable
+                  ? " برای جدا کردن مجموعه باید به سرور متصل باشید و این رویداد همگام شده باشد."
+                  : ""}
               </small>
             </span>
           </label>
         </div>
 
+        <Show when={props.error}>
+          <p class="calendar-alert" role="alert">
+            {props.error}
+          </p>
+        </Show>
+
         <div class="calendar-dialog-actions">
-          <button type="button" class="calendar-primary" disabled={props.busy} onClick={() => props.onConfirm()}>
+          <button
+            type="button"
+            class="calendar-primary"
+            disabled={confirmDisabled()}
+            onClick={() => props.onConfirm()}
+          >
             {props.busy ? "در حال اعمال…" : "ادامه"}
           </button>
           <button type="button" class="calendar-nav-button" onClick={() => props.onCancel()}>

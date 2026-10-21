@@ -692,6 +692,33 @@ describe("GET /week", () => {
     expect(
       changed.model!.days.flatMap((day) => day.tasks.map((item) => item.title))
     ).toContain("تازه")
+
+    // The event lane is part of the body too: adding one invalidates the
+    // validator, and removing it invalidates the new one as well (#62).
+    const eventId = uuidV7()
+    seedEvent(h.db, { id: eventId, title: "رویداد تازه", allDayDate: "2026-03-24" })
+    const afterEvent = await week(h, {
+      token: TOKEN_A,
+      anchor: ANCHOR,
+      ifNoneMatch: changed.etag!
+    })
+    expect(afterEvent.status).toBe(200)
+    expect(afterEvent.etag).not.toBe(changed.etag)
+    expect(
+      afterEvent.model!.days.flatMap((day) => day.events.map((item) => item.title))
+    ).toContain("رویداد تازه")
+
+    h.db.prepare("UPDATE events SET deleted_at = ? WHERE id = ?").run(NOW, eventId)
+    const afterEventRemoval = await week(h, {
+      token: TOKEN_A,
+      anchor: ANCHOR,
+      ifNoneMatch: afterEvent.etag!
+    })
+    expect(afterEventRemoval.status).toBe(200)
+    expect(afterEventRemoval.etag).not.toBe(afterEvent.etag)
+    expect(
+      afterEventRemoval.model!.days.flatMap((day) => day.events.map((item) => item.title))
+    ).not.toContain("رویداد تازه")
   })
 
   it("requires a session, a household and a real anchor", async () => {
@@ -941,8 +968,9 @@ describe("GET /month", () => {
 
     // The occasion lane is part of the encoded body: a new occasion invalidates
     // the validator, and the next read carries the chip's data (#62).
+    const occasionId = uuidV7()
     seedOccasion(h.db, {
-      id: uuidV7(),
+      id: occasionId,
       title: "سالگرد تازه",
       originDate: "2020-03-21"
     })
@@ -956,6 +984,18 @@ describe("GET /month", () => {
     expect(
       afterOccasion.model!.days.find((day) => day.date === "2026-03-22")?.occasions
     ).toBe(1)
+
+    // Removing the occasion changes the body as well; the old validator must
+    // not turn that into a 304 that hides the chip's disappearance.
+    h.db.prepare("UPDATE occasions SET deleted_at = ? WHERE id = ?").run(NOW, occasionId)
+    const afterRemoval = await month(h, {
+      token: TOKEN_A,
+      anchor: "2026-03-21",
+      ifNoneMatch: afterOccasion.etag!
+    })
+    expect(afterRemoval.status).toBe(200)
+    expect(afterRemoval.etag).not.toBe(afterOccasion.etag)
+    expect(afterRemoval.model!.totals.occasions).toBe(0)
 
     // A drill-down is a different body, so an ETag without it cannot revalidate.
     const withDay = await month(h, {

@@ -139,7 +139,7 @@ const CALENDAR_CSS = `
 .calendar-time-grid { position: relative; margin-block: 2px; border-inline-start: 1px solid ${tokens.color.line}; }
 .calendar-hour { block-size: 40px; border-top: 1px solid #eef1f7; }
 .calendar-hour:first-child { border-top: 0; }
-.calendar-hour-label { position: absolute; inset-inline-start: -30px; font-size: 0.56rem; color: #98a1b3; font-variant-numeric: tabular-nums; transform: translateY(-0.6em); }
+.calendar-hour-label { position: absolute; inset-inline-start: 0; font-size: 0.56rem; color: #98a1b3; font-variant-numeric: tabular-nums; transform: translateY(-0.6em); }
 .calendar-time-grid { padding-inline-start: 34px; }
 .calendar-time-event { position: absolute; inset-inline-start: 34px; inset-inline-end: 2px; display: grid; align-content: start; gap: 0; overflow: hidden; padding: 1px 5px; border: 1px solid #bfd7c7; border-radius: ${tokens.radius.md}; background: #eef7f1; color: #14532d; font-family: ${tokens.font.sans}; text-align: start; }
 .calendar-time-event-time { font-size: 0.6rem; font-variant-numeric: tabular-nums; }
@@ -162,6 +162,7 @@ const CALENDAR_CSS = `
 .calendar-scope-options { display: grid; gap: 6px; }
 .calendar-scope-option { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 6px; padding: 8px; border: 1px solid ${tokens.color.line}; border-radius: ${tokens.radius.md}; background: ${tokens.color.surface}; cursor: pointer; }
 .calendar-scope-option[data-selected="true"] { border-color: ${tokens.color.brand}; background: #eef4ff; }
+.calendar-scope-option[data-disabled="true"] { opacity: 0.62; cursor: not-allowed; }
 .calendar-scope-option span { display: grid; gap: 2px; min-width: 0; }
 .calendar-scope-option strong { font-size: 0.82rem; line-height: 1.6; }
 .calendar-scope-option small { font-size: 0.68rem; line-height: 1.75; color: ${tokens.color.inkSoft}; }

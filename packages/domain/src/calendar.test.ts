@@ -410,4 +410,28 @@ describe("event and occasion lanes (#58/#62)", () => {
     // The source row still travels, so the client can overlay a local edit.
     expect(model.occasions.map((row) => row.id)).toEqual(["far"])
   })
+
+  it("dedupes duplicated source rows and paints each occurrence once", () => {
+    const repeatedEvent = event({
+      id: "same",
+      title: "یک رویداد",
+      timing: { _tag: "allDay", date: "2026-03-22" }
+    })
+    const repeatedOccasion = occasion({ id: "same-occasion", originDate: "2020-03-22" })
+    const model = buildWeekReadModel({
+      anchor: "2026-03-22",
+      weekStart: "sunday",
+      timeZone: "UTC",
+      tasks: [],
+      // A range query and the recurring query can return the same row; the
+      // client overlay can add it again.
+      events: [repeatedEvent, repeatedEvent],
+      occasions: [repeatedOccasion, repeatedOccasion]
+    })
+
+    expect(model.events.map((row) => row.id)).toEqual(["same"])
+    expect(model.occasions.map((row) => row.id)).toEqual(["same-occasion"])
+    expect(model.totals.events).toBe(1)
+    expect(model.totals.occasions).toBe(1)
+  })
 })

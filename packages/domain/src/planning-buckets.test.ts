@@ -96,4 +96,17 @@ describe("local wall time to instant", () => {
       "2026-03-08T07:30:00Z"
     )
   })
+
+  it("resolves an ambiguous fall-back wall time to the first occurrence", () => {
+    // 01:30 happens twice in New York on 1 November 2026. `compatible` takes
+    // the earlier (EDT, UTC-4) instant, the same way `localDateAt` does.
+    expect(localDateTimeInstant("2026-11-01", "01:30", "America/New_York")).toBe(
+      "2026-11-01T05:30:00Z"
+    )
+  })
+
+  it("refuses an unreadable date or time instead of inventing one", () => {
+    expect(() => localDateTimeInstant("2026-02-30", "09:00", "UTC")).toThrow()
+    expect(() => localDateTimeInstant("2026-03-21", "25:00", "UTC")).toThrow()
+  })
 })

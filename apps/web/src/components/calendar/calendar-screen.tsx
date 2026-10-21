@@ -65,17 +65,18 @@ import {
 } from "../../lib/occasions/model"
 import {
   createEventInMirror,
+  isAnchorOccurrence,
   overlayEventSources,
   occurrenceTimeLabel,
   timingOfDraft
 } from "../../lib/events/model"
 import {
-  applyEventScopeInMirror,
-  deleteEventWithinScope,
-  editEventWithinScope,
+  commitEventScope,
   eventFromMirror,
-  newScopedIds
+  newScopedIds,
+  type EventScopeIds
 } from "../../lib/events/scope"
+import { api } from "../../lib/rpc"
 import { OccasionsPanel } from "../occasions/occasions-panel"
 import {
   EventChip,
@@ -110,7 +111,9 @@ import { CALENDAR_MAIN } from "./ui"
  * - occasions show as chips on their annual date, projected from the origin
  *   date by the same builder #59's panel uses;
  * - opening an occurrence asks the #58 edit-scope question — "this event" or
- *   "this and following" — before the split writes to the mirror/outbox.
+ *   "this and following". A series split uses the server mutation while online
+ *   (its gated two-row batch); the single-row scopes stay local-first and a
+ *   split is refused offline with an explanation.
  */
 
 type CalendarViewName = "week" | "month"
@@ -165,6 +168,8 @@ export function CalendarScreen() {
     readonly action: "edit" | "delete"
     readonly occurrence: EventOccurrence
     readonly draft: EventDraftFields | null
+    /** Minted once per prompt so an RPC retry is exactly-once. */
+    readonly ids: EventScopeIds
   }>()
   const [scope, setScope] = createSignal<EventEditScope>("thisOccurrence")
   const [eventBusy, setEventBusy] = createSignal(false)
@@ -734,6 +739,7 @@ export function CalendarScreen() {
 
   const closeEditor = () => {
     setEditingEvent(undefined)
+    setPendingAction(undefined)
     setEditorError(undefined)
   }
 
@@ -751,10 +757,15 @@ export function CalendarScreen() {
     }
     if (series.recurrence !== null) {
       setScope("thisOccurrence")
-      setPendingAction({ action: "edit", occurrence, draft })
+      setPendingAction({ action: "edit", occurrence, draft, ids: newScopedIds() })
       return
     }
-    void commitEventChange("thisOccurrence", { action: "edit", occurrence, draft })
+    void commitEventChange("thisOccurrence", {
+      action: "edit",
+      occurrence,
+      draft,
+      ids: newScopedIds()
+    })
   }
 
   /** Delete from the editor; a recurring series asks the scope question first. */
@@ -768,10 +779,15 @@ export function CalendarScreen() {
     }
     if (series.recurrence !== null) {
       setScope("thisOccurrence")
-      setPendingAction({ action: "delete", occurrence, draft: null })
+      setPendingAction({ action: "delete", occurrence, draft: null, ids: newScopedIds() })
       return
     }
-    void commitEventChange("thisOccurrence", { action: "delete", occurrence, draft: null })
+    void commitEventChange("thisOccurrence", {
+      action: "delete",
+      occurrence,
+      draft: null,
+      ids: newScopedIds()
+    })
   }
 
   const scopeAnnouncement = (
@@ -791,9 +807,13 @@ export function CalendarScreen() {
   }
 
   /**
-   * The one write path for both scopes. It computes the rows with the #58 pure
-   * functions and commits them to the mirror + outbox, so the calendar works
-   * offline and the next sync carries the split.
+   * The one write path for both scopes.
+   *
+   * `commitEventScope` decides the transport: a recurring series on a connected
+   * device goes through `Edit/DeleteEventOccurrence` so #58's CAS gate and its
+   * gated tail stay in the path; a one-off, an offline series, or a head with an
+   * unsent mutation stays local-first. A split edit offline is refused rather
+   * than queued as two independent LWW rows.
    */
   const commitEventChange = async (
     chosen: EventEditScope,
@@ -801,45 +821,39 @@ export function CalendarScreen() {
       readonly action: "edit" | "delete"
       readonly occurrence: EventOccurrence
       readonly draft: EventDraftFields | null
+      readonly ids: EventScopeIds
     }
   ): Promise<void> => {
     const store = local.store()
     const series = seriesOf(target.occurrence)
-    if (store === undefined || series === null) {
-      setEditorError(missingEventCopy)
+    if (store === undefined || series === null || eventBusy()) {
+      if (series === null) setEditorError(missingEventCopy)
       return
     }
     setEventBusy(true)
     setPageError(undefined)
     setEditorError(undefined)
     try {
-      const ids = newScopedIds()
-      const now = new Date().toISOString()
       const overrides: EventExceptionOverrides = target.draft === null
         ? {}
         : {
           title: target.draft.title,
           timing: timingOfDraft({ ...target.draft, timeZone: target.occurrence.timeZone })
         }
-      const change = target.action === "edit"
-        ? editEventWithinScope({
-          event: series,
-          instanceId: target.occurrence.instanceId,
-          overrides,
-          scope: chosen,
-          exceptionId: ids.exceptionId,
-          followingId: ids.followingId,
-          now
-        })
-        : deleteEventWithinScope({
-          event: series,
-          instanceId: target.occurrence.instanceId,
-          scope: chosen,
-          exceptionId: ids.exceptionId,
-          followingId: ids.followingId,
-          now
-        })
-      await applyEventScopeInMirror(store, change, now)
+      const change = await commitEventScope({
+        store,
+        online: local.online(),
+        server: {
+          editOccurrence: api.editEventOccurrence,
+          deleteOccurrence: api.deleteEventOccurrence
+        },
+        event: series,
+        instanceId: target.occurrence.instanceId,
+        action: target.action,
+        scope: chosen,
+        overrides,
+        ids: target.ids
+      })
       markEventDirty(change.series.id)
       if (change.following !== null) markEventDirty(change.following.id)
       setAnnouncement(
@@ -1332,6 +1346,18 @@ export function CalendarScreen() {
     )
   }
 
+  /**
+   * The split option's availability is a hint; `commitEventScope` re-checks it
+   * against the store. Delete-this-and-following is a single truncate row, so
+   * it keeps working offline. A split edit needs the server's gated batch.
+   */
+  const splitAvailable = (target: {
+    readonly action: "edit" | "delete"
+    readonly occurrence: EventOccurrence
+  }): boolean =>
+    target.action === "delete" ||
+    (local.online() && !pendingEvents().has(target.occurrence.id))
+
   const habitTrendReserve = () => (
     <section class="calendar-trend" aria-label="روند عادت‌ها" data-reserved="habits">
       <h2>روند عادت‌ها</h2>
@@ -1441,6 +1467,7 @@ export function CalendarScreen() {
               canEdit={seriesOf(occurrence()) !== null}
               busy={eventBusy()}
               error={editorError()}
+              inactive={pendingAction() !== undefined}
               onSave={saveEvent}
               onDelete={askDeleteEvent}
               onClose={closeEditor}
@@ -1455,9 +1482,15 @@ export function CalendarScreen() {
               title={target().draft?.title ?? target().occurrence.title}
               scope={scope()}
               busy={eventBusy()}
+              splitAvailable={splitAvailable(target())}
+              firstOccurrence={isAnchorOccurrence(target().occurrence)}
+              error={editorError()}
               onScopeChange={setScope}
               onConfirm={() => void commitEventChange(scope(), target())}
-              onCancel={() => setPendingAction(undefined)}
+              onCancel={() => {
+                setPendingAction(undefined)
+                setEditorError(undefined)
+              }}
             />
           )}
         </Show>

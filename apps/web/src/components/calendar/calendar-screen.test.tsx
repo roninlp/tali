@@ -8,6 +8,7 @@ import {
   buildWeekReadModel,
   defaultPreferences,
   jalaliMonthOf,
+  localizeDigits,
   toIsoDate,
   toJalaliDate,
   uuidV7,
@@ -143,6 +144,12 @@ const stubNetwork = (next: typeof plan = {}): void => {
   }) as unknown as typeof fetch
 }
 
+/** The browser's connectivity flag is what the store's `online()` reads. */
+const setOnline = (value: boolean): void => {
+  Object.defineProperty(navigator, "onLine", { configurable: true, value })
+  window.dispatchEvent(new Event(value ? "online" : "offline"))
+}
+
 const eventually = async (assert: () => void | Promise<void>): Promise<void> => {
   await waitFor(async () => {
     flush()
@@ -212,6 +219,7 @@ describe("Calendar week view", () => {
     sources = []
     eventSources = []
     occasionSources = []
+    setOnline(true)
     stubNetwork()
   })
 
@@ -412,6 +420,7 @@ describe("Calendar month view", () => {
     sources = []
     eventSources = []
     occasionSources = []
+    setOnline(true)
     stubNetwork()
   })
 
@@ -618,6 +627,7 @@ describe("Calendar event and occasion lanes (#62)", () => {
     sources = []
     eventSources = []
     occasionSources = []
+    setOnline(true)
     stubNetwork()
   })
 
@@ -795,6 +805,26 @@ describe("Calendar event and occasion lanes (#62)", () => {
     screen.unmount()
   })
 
+  it("paints an occasion chip on the week's annual date", async () => {
+    const today = todayIn(TIME_ZONE)
+    occasionSources = [
+      occasion({ id: uuidV7(), originDate: today, title: "سالگرد هفته" })
+    ]
+    const screen = mountCalendar()
+    await waitForSource(screen, "server")
+
+    const card = dayCard(screen.container, today)
+    await eventually(() => {
+      const chip = card.querySelector(".calendar-occasion-chip-week")
+      expect(chip?.textContent).toBe("سالگرد هفته")
+      expect(chip?.getAttribute("aria-label")).toContain("·")
+      expect(screen.getByText(/مناسبت در این هفته/).textContent).toContain(
+        localizeDigits(1, "persian")
+      )
+    })
+    screen.unmount()
+  })
+
   it("paints an annual occasion on this year's Jalali date", async () => {
     const today = todayIn(TIME_ZONE)
     // The same Jalali month/day three years earlier: a different Gregorian day.
@@ -931,6 +961,8 @@ describe("Calendar event and occasion lanes (#62)", () => {
     await withStore(async (store) => {
       await seedRecurringEvent(store, { anchor, title: "جلسهٔ هفتگی" })
     })
+    // A single-row occurrence edit is the safe offline path.
+    setOnline(false)
     stubNetwork({ week: "fail", month: "fail" })
 
     const screen = mountCalendar()
@@ -960,7 +992,7 @@ describe("Calendar event and occasion lanes (#62)", () => {
     )
     flush()
 
-    const prompt = await screen.findByRole("dialog", { name: "ویرایش این رویداد یا مجموعه؟" })
+    const prompt = await screen.findByRole("dialog", { name: "این رویداد یا این رویداد و رویدادهای بعدی؟" })
     expect(within(prompt).getByRole("radiogroup")).toBeTruthy()
     expect(
       within(prompt).getByRole("radio", { name: /فقط این رویداد/ })
@@ -989,12 +1021,13 @@ describe("Calendar event and occasion lanes (#62)", () => {
     screen.unmount()
   })
 
-  it("splits the series for 'this and following'", async () => {
+  it("does not offer a split edit offline (two LWW rows cannot be gated)", async () => {
     const today = todayIn(TIME_ZONE)
     const anchor = shiftFrom(today, -14)
     await withStore(async (store) => {
       await seedRecurringEvent(store, { anchor, title: "جلسهٔ هفتگی" })
     })
+    setOnline(false)
     stubNetwork({ week: "fail", month: "fail" })
 
     const screen = mountCalendar()
@@ -1021,34 +1054,25 @@ describe("Calendar event and occasion lanes (#62)", () => {
       })
     )
 
-    const prompt = await screen.findByRole("dialog", { name: "ویرایش این رویداد یا مجموعه؟" })
-    fireEvent.click(
-      within(prompt).getByRole("radio", { name: /این رویداد و رویدادهای بعدی/ })
-    )
-    flush()
-    expect(
-      (within(prompt).getByRole("radio", {
-        name: /این رویداد و رویدادهای بعدی/
-      }) as HTMLInputElement).checked
-    ).toBe(true)
-    fireEvent.click(within(prompt).getByRole("button", { name: "ادامه" }))
+    const prompt = await screen.findByRole("dialog", { name: "این رویداد یا این رویداد و رویدادهای بعدی؟" })
+    const split = within(prompt).getByRole("radio", {
+      name: /این رویداد و رویدادهای بعدی/
+    }) as HTMLInputElement
+    expect(split.disabled).toBe(true)
+    expect(within(prompt).getByText(/به سرور متصل باشید/)).toBeTruthy()
 
-    await eventually(async () => {
-      await withStore(async (store) => {
-        const events = await store.list("event")
-        expect(events).toHaveLength(2)
-        const tail = events.find((entry) => entry.data.title === "نسخهٔ دوم")
-        const head = events.find((entry) => entry.entityId !== tail?.entityId)
-        expect(tail).toBeTruthy()
-        expect(head?.data.recurrence).toMatchObject({
-          end: { _tag: "until", date: shiftFrom(today, -1) }
-        })
-        expect(tail?.data.timing).toEqual({ _tag: "allDay", date: today })
-        expect(tail?.data.recurrence).toMatchObject({ frequency: "weekly" })
-      })
-    })
+    // Escape closes only the prompt: the editor (and the draft) stay open.
+    fireEvent.keyDown(document, { key: "Escape" })
     await eventually(() => {
-      expect(screen.getByText("این رویداد و رویدادهای بعدی ویرایش شد: نسخهٔ دوم")).toBeTruthy()
+      expect(screen.queryByRole("dialog", { name: "این رویداد یا این رویداد و رویدادهای بعدی؟" })).toBeNull()
+      expect(screen.getByRole("dialog", { name: "رویداد" })).toBeTruthy()
+    })
+
+    // Nothing was split while the option was refused: still the one seeded
+    // series (and only its original outbox entry).
+    await withStore(async (store) => {
+      expect(await store.list("event")).toHaveLength(1)
+      expect(await store.pending()).toHaveLength(1)
     })
     screen.unmount()
   })

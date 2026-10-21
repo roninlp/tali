@@ -100,8 +100,9 @@ Which part of a recurring series an occurrence edit applies to: **this
 occurrence** (one exception on the same row) or **this and following** (a
 [series split](#series-split)). A one-off event has no series, so both scopes
 edit the event itself. The calendar asks the question with two explained radio
-options before writing, and both scopes commit the resulting series row(s) to
-the local mirror and outbox first, so the choice also works offline.
+options before writing. A split is the one two-row write: it goes through the
+server's gated occurrence mutation when online, and is refused offline (the
+single-row scopes still commit to the local mirror and outbox first).
 
 ### Series split
 
