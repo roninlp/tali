@@ -3,6 +3,7 @@ import { HttpRouter, HttpServerResponse } from "effect/http"
 import { RpcServer, RpcSerialization } from "effect/rpc"
 import { ApiRpcs } from "@tali/rpc"
 import {
+  EventRepoLive,
   ListItemRepoLive,
   NoteRepoLive,
   NoteSearchRepoLive,
@@ -15,6 +16,7 @@ import { AuthServiceLive } from "./auth-service.js"
 import { AuthRoutes } from "./auth-routes.js"
 import { CalendarRoutes } from "./calendar-routes.js"
 import { CalendarServiceLive } from "./calendar-service.js"
+import { EventServiceLive } from "./event-service.js"
 import { ListServiceLive } from "./list-service.js"
 import { ListItemServiceLive } from "./list-item-service.js"
 import { NoteSearchRoutes } from "./note-search-routes.js"
@@ -67,11 +69,13 @@ export const AppLayer = Layer.mergeAll(
   Layer.provide(NoteSearchServiceLive),
   Layer.provide(TodayServiceLive),
   Layer.provide(CalendarServiceLive),
+  Layer.provide(EventServiceLive),
   Layer.provide(ListItemRepoLive),
   Layer.provide(NoteRepoLive),
   Layer.provide(NoteSearchRepoLive),
   Layer.provide(ProjectRepoLive),
   Layer.provide(TagRepoLive),
   Layer.provide(TaskRepoLive),
+  Layer.provide(EventRepoLive),
   Layer.provide(PushSubscriptionRepoLive)
 )

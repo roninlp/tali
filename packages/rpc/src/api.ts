@@ -2,6 +2,18 @@ import { Schema } from "effect"
 import { Rpc, RpcClient, RpcGroup } from "effect/rpc"
 import type { RpcClientError } from "effect/rpc/RpcClientError"
 import {
+  Event,
+  EventCreateInput,
+  EventId,
+  EventListInput,
+  EventMutationInput,
+  EventOccurrence,
+  EventOccurrenceChange,
+  EventOccurrenceDeleteInput,
+  EventOccurrenceEditInput,
+  EventOccurrenceQuery,
+  EventServiceError,
+  EventUpdateInput,
   List,
   ListCreateInput,
   ListId,
@@ -296,6 +308,61 @@ class ListTrashNotes extends Rpc.make("ListTrashNotes", {
   error: NoteRpcError
 }) {}
 
+// ── Events (tickets #57/#58; FR-CAL-01/03) ───────────────────────────────
+
+const EventRpcError = Schema.Union([EventServiceError, Unauthorized])
+
+class CreateEvent extends Rpc.make("CreateEvent", {
+  payload: EventCreateInput,
+  success: Event,
+  error: EventRpcError
+}) {}
+
+class GetEvent extends Rpc.make("GetEvent", {
+  payload: Schema.Struct({ id: EventId }),
+  success: Event,
+  error: EventRpcError
+}) {}
+
+class UpdateEvent extends Rpc.make("UpdateEvent", {
+  payload: EventUpdateInput,
+  success: Event,
+  error: EventRpcError
+}) {}
+
+class DeleteEvent extends Rpc.make("DeleteEvent", {
+  payload: EventMutationInput,
+  success: Event,
+  error: EventRpcError
+}) {}
+
+class ListEvents extends Rpc.make("ListEvents", {
+  payload: EventListInput,
+  success: Schema.Array(Event),
+  error: EventRpcError
+}) {}
+
+/** Expand every visible series into a window (`before` exclusive). */
+class ListEventOccurrences extends Rpc.make("ListEventOccurrences", {
+  payload: EventOccurrenceQuery,
+  success: Schema.Array(EventOccurrence),
+  error: EventRpcError
+}) {}
+
+/** "This occurrence" / "this and following" edit. */
+class EditEventOccurrence extends Rpc.make("EditEventOccurrence", {
+  payload: EventOccurrenceEditInput,
+  success: EventOccurrenceChange,
+  error: EventRpcError
+}) {}
+
+/** "This occurrence" / "this and following" delete. */
+class DeleteEventOccurrence extends Rpc.make("DeleteEventOccurrence", {
+  payload: EventOccurrenceDeleteInput,
+  success: EventOccurrenceChange,
+  error: EventRpcError
+}) {}
+
 export const ApiRpcs = RpcGroup.make(
   CreateList,
   GetList,
@@ -335,7 +402,15 @@ export const ApiRpcs = RpcGroup.make(
   RestoreNote,
   ListNotes,
   ListPinnedNotes,
-  ListTrashNotes
+  ListTrashNotes,
+  CreateEvent,
+  GetEvent,
+  UpdateEvent,
+  DeleteEvent,
+  ListEvents,
+  ListEventOccurrences,
+  EditEventOccurrence,
+  DeleteEventOccurrence
 )
 
 /** The derived, shared client type the web app imports. */

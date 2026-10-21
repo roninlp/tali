@@ -4,11 +4,16 @@ import {
   EventConflict,
   EventCreateInput,
   type EventException,
+  type EventExceptionId,
+  type EventExceptionOverrides,
   EventForbidden,
   type EventId,
   EventListInput,
   EventMutationInput,
   EventNotFound,
+  EventOccurrenceDeleteInput,
+  EventOccurrenceEditInput,
+  EventOccurrenceQuery,
   EventPatch,
   type EventServiceError,
   EventValidationError,
@@ -19,9 +24,20 @@ import {
   type EventTiming,
   type UserId,
   type Visibility,
+  deleteEventOccurrence,
+  eventAnchorDate,
+  eventOccurrences,
+  isEventOccurrence,
   localDateStartInstant,
+  localDayBefore,
+  overrideEventOccurrence,
+  patchEventSeries,
+  splitEventSeries,
+  trashEvent,
+  truncateEventSeries,
   uuidV7
 } from "@tali/domain"
+import type { EventOccurrence, EventOccurrenceChange } from "@tali/domain"
 import {
   type EventQuery,
   EventRepo,
@@ -64,10 +80,21 @@ import {
  *
  * The rule and the exception list are stored as they are handed in — the
  * service validates their *shape* (the shared `RecurrenceRule` schema, unique
- * occurrence keys) but never expands them. The expansion engine, the
- * "this occurrence only" edit and the "this and following" split are ticket
- * #58; the shape they work on is already here, so that ticket needs no
- * migration.
+ * occurrence keys) and never expands them here. Expansion is the pure
+ * `eventOccurrences` builder, served over `ListEventOccurrences` and reused by
+ * the week/month read models (#43/#62).
+ *
+ * ## Occurrence edits (ticket #58)
+ *
+ * `editOccurrence` / `deleteOccurrence` implement the two edit scopes:
+ *
+ * - **this occurrence** appends (or replaces) one exception on the series row;
+ * - **this and following** splits the series — the old row is truncated and a
+ *   new row is inserted, **both in one batch**, each with its own feed row and
+ *   `applied_mutations` entry, so a retry stays exactly-once.
+ *
+ * A one-off event has no exceptions: an occurrence edit is a plain series edit
+ * and a delete is the shared tombstone.
  */
 
 /** How many CAS retries a service mutation makes before reporting contention. */
@@ -101,6 +128,23 @@ export interface EventServiceApi {
     viewer: EventViewer,
     input?: Schema.Schema.Type<typeof EventListInput>
   ) => Effect.Effect<ReadonlyArray<Event>, EventServiceError>
+  /** Expand every visible series into a window (`before` exclusive). */
+  readonly occurrences: (
+    viewer: EventViewer,
+    input: Schema.Schema.Type<typeof EventOccurrenceQuery>
+  ) => Effect.Effect<ReadonlyArray<EventOccurrence>, EventServiceError>
+  /** "This occurrence" / "this and following" edit. */
+  readonly editOccurrence: (
+    viewer: EventViewer,
+    input: Schema.Schema.Type<typeof EventOccurrenceEditInput>,
+    now?: string
+  ) => Effect.Effect<EventOccurrenceChange, EventServiceError>
+  /** "This occurrence" / "this and following" delete. */
+  readonly deleteOccurrence: (
+    viewer: EventViewer,
+    input: Schema.Schema.Type<typeof EventOccurrenceDeleteInput>,
+    now?: string
+  ) => Effect.Effect<EventOccurrenceChange, EventServiceError>
 }
 
 const invalid = (field: string, message: string): Effect.Effect<never, EventValidationError> =>
@@ -179,11 +223,98 @@ export class EventService extends Context.Service<EventService>()("EventService"
     const reusedMutationIdError = (id: string) =>
       invalid("clientMutationId", "this mutation id was already applied to a different change")
 
+    interface CommitEntry {
+      readonly state: SyncEntityState
+      readonly expectedVersion: number | null
+      readonly clientMutationId: string
+      readonly op?: "upsert" | "delete"
+      /**
+       * A gated insert for a row that must not land unless another row in the
+       * same batch did (a split's new tail row). Defaults to the registry's
+       * plain insert.
+       */
+      readonly insert?: (state: SyncEntityState) => ReturnType<typeof sync.writeEntity>
+    }
+
     /**
-     * One event mutation: the CAS entity write, the gated feed append and the
-     * gated ledger row — one D1 batch. Returns whether this `clientMutationId`
-     * is now recorded, i.e. the CAS won.
+     * One event mutation (or a split's pair of mutations): each CAS entity
+     * write with its gated feed append and gated ledger row, all in one D1
+     * batch. Returns whether every `clientMutationId` is now recorded, i.e. the
+     * batch won; a lost CAS in any write records nothing for that write.
      */
+    const commitEntries = (input: {
+      readonly viewer: EventViewer
+      readonly entries: ReadonlyArray<CommitEntry>
+      readonly now: string
+    }): Effect.Effect<boolean, EventServiceError> =>
+      Effect.gen(function*() {
+        if (input.entries.length === 0) return true
+        const ids = input.entries.map((entry) => entry.clientMutationId)
+        if (new Set(ids).size !== ids.length) {
+          return yield* invalid(
+            "clientMutationId",
+            "a split needs two distinct mutation ids"
+          )
+        }
+
+        // A mutation id is one mutation for its whole retention window. If the
+        // ledger already maps it to a different row/aggregate, `recordApplied`
+        // below would be an `INSERT OR IGNORE` no-op: the write would land with
+        // no replay guard. Refuse before writing.
+        const prior = yield* sync
+          .findApplied({
+            householdId: input.viewer.householdId,
+            clientMutationIds: ids
+          })
+          .pipe(Effect.orDie)
+        for (const entry of input.entries) {
+          const row = Option.fromUndefinedOr(prior.get(entry.clientMutationId))
+          if (
+            Option.isSome(row) &&
+            reusedMutationId(row.value, {
+              entityType: entry.state.entityType,
+              id: entry.state.entityId
+            })
+          ) {
+            return yield* reusedMutationIdError(entry.state.entityId)
+          }
+        }
+
+        const statements = input.entries.flatMap((entry) => [
+          entry.insert === undefined
+            ? sync.writeEntity({ state: entry.state, expectedVersion: entry.expectedVersion })
+            : entry.insert(entry.state),
+          sync.appendFeed({
+            householdId: input.viewer.householdId,
+            entityType: entry.state.entityType,
+            entityId: entry.state.entityId,
+            op: entry.op ?? "upsert",
+            version: entry.state.version,
+            updatedAt: entry.state.updatedAt,
+            ownerId: entry.state.ownerId,
+            visibility: entry.state.visibility
+          }),
+          sync.recordApplied({
+            clientMutationId: entry.clientMutationId,
+            householdId: input.viewer.householdId,
+            entityType: entry.state.entityType,
+            entityId: entry.state.entityId,
+            version: entry.state.version,
+            createdAt: input.now
+          })
+        ])
+        yield* sync.commit(statements).pipe(Effect.orDie)
+
+        const applied = yield* sync
+          .findApplied({
+            householdId: input.viewer.householdId,
+            clientMutationIds: ids
+          })
+          .pipe(Effect.orDie)
+        return ids.every((id) => applied.has(id))
+      })
+
+    /** The single-row case of `commitEntries`. */
     const commitEvent = (input: {
       readonly viewer: EventViewer
       readonly state: SyncEntityState
@@ -192,51 +323,17 @@ export class EventService extends Context.Service<EventService>()("EventService"
       readonly now: string
       readonly op?: "upsert" | "delete"
     }): Effect.Effect<boolean, EventServiceError> =>
-      Effect.gen(function*() {
-        // A mutation id is one mutation for its whole retention window. If the
-        // ledger already maps it to a different row/aggregate, `recordApplied`
-        // below would be an `INSERT OR IGNORE` no-op: the write would land with
-        // no replay guard. Refuse before writing.
-        const prior = yield* appliedMutation(input.viewer, input.clientMutationId)
-        if (
-          Option.isSome(prior) &&
-          reusedMutationId(prior.value, {
-            entityType: input.state.entityType,
-            id: input.state.entityId
-          })
-        ) {
-          return yield* reusedMutationIdError(input.state.entityId)
-        }
-
-        yield* sync.commit([
-          sync.writeEntity({ state: input.state, expectedVersion: input.expectedVersion }),
-          sync.appendFeed({
-            householdId: input.viewer.householdId,
-            entityType: input.state.entityType,
-            entityId: input.state.entityId,
-            op: input.op ?? "upsert",
-            version: input.state.version,
-            updatedAt: input.state.updatedAt,
-            ownerId: input.state.ownerId,
-            visibility: input.state.visibility
-          }),
-          sync.recordApplied({
+      commitEntries({
+        viewer: input.viewer,
+        now: input.now,
+        entries: [
+          {
+            state: input.state,
+            expectedVersion: input.expectedVersion,
             clientMutationId: input.clientMutationId,
-            householdId: input.viewer.householdId,
-            entityType: input.state.entityType,
-            entityId: input.state.entityId,
-            version: input.state.version,
-            createdAt: input.now
-          })
-        ]).pipe(Effect.orDie)
-
-        const applied = yield* sync
-          .findApplied({
-            householdId: input.viewer.householdId,
-            clientMutationIds: [input.clientMutationId]
-          })
-          .pipe(Effect.orDie)
-        return applied.has(input.clientMutationId)
+            op: input.op
+          }
+        ]
       })
 
     /**
@@ -528,6 +625,31 @@ export class EventService extends Context.Service<EventService>()("EventService"
         return yield* Effect.fail(new EventConflict({ id: input.id }))
       })
 
+    /**
+     * A local date range as the repository query: an instant range for timed
+     * rows and a date range for all-day ones, both bounded in the viewer's
+     * zone so a DST transition cannot move an event to another day.
+     */
+    const rangeQuery = (
+      viewer: EventViewer,
+      from?: string,
+      before?: string
+    ): EventQuery => {
+      const query: { -readonly [K in keyof EventQuery]: EventQuery[K] } = {
+        householdId: viewer.householdId,
+        userId: viewer.userId
+      }
+      if (from !== undefined) {
+        query.dateFrom = from
+        query.instantFrom = localDateStartInstant(from, viewer.timeZone)
+      }
+      if (before !== undefined) {
+        query.dateBefore = before
+        query.instantBefore = localDateStartInstant(before, viewer.timeZone)
+      }
+      return query
+    }
+
     const list = (
       viewer: EventViewer,
       input?: Schema.Schema.Type<typeof EventListInput>
@@ -537,21 +659,315 @@ export class EventService extends Context.Service<EventService>()("EventService"
         if (input?.from === undefined && input?.before === undefined) {
           return yield* events.listVisible(scope).pipe(Effect.orDie)
         }
-        // A local date range is an instant range for a timed event and a date
-        // range for an all-day one. Both bounds are computed in the viewer's
-        // zone, so a DST transition cannot move an event to another day.
-        const query: {
-          -readonly [K in keyof EventQuery]: EventQuery[K]
-        } = { ...scope }
-        if (input?.from !== undefined) {
-          query.dateFrom = input.from
-          query.instantFrom = localDateStartInstant(input.from, viewer.timeZone)
+        return yield* events
+          .listInRange(rangeQuery(viewer, input.from, input.before))
+          .pipe(Effect.orDie)
+      })
+
+    /**
+     * Expand every visible series into `[from, before)`.
+     *
+     * Two indexed reads — the rows whose anchor falls inside the window and
+     * the live recurring rows (whose anchor may be months earlier) — are merged
+     * by id and handed to the shared pure builder, which uses the #38 engine
+     * and marks generated occurrences read-only. `before` is exclusive, like
+     * every other query input; the builder's `to` is inclusive.
+     */
+    const occurrences = (
+      viewer: EventViewer,
+      input: Schema.Schema.Type<typeof EventOccurrenceQuery>
+    ): Effect.Effect<ReadonlyArray<EventOccurrence>, EventServiceError> =>
+      Effect.gen(function*() {
+        if (!validLocalDate(input.from) || !validLocalDate(input.before)) {
+          return yield* invalid("from", "the occurrence window needs real calendar dates")
         }
-        if (input?.before !== undefined) {
-          query.dateBefore = input.before
-          query.instantBefore = localDateStartInstant(input.before, viewer.timeZone)
+        if (input.before <= input.from) {
+          return [];
         }
-        return yield* events.listInRange(query).pipe(Effect.orDie)
+        const scope = { householdId: viewer.householdId, userId: viewer.userId }
+        const inRange = yield* events
+          .listInRange(rangeQuery(viewer, input.from, input.before))
+          .pipe(Effect.orDie)
+        const recurring = yield* events.listRecurringLive(scope).pipe(Effect.orDie)
+        const byId = new Map<string, Event>()
+        for (const event of [...inRange, ...recurring]) byId.set(event.id, event)
+        return eventOccurrences({
+          events: [...byId.values()],
+          from: input.from,
+          to: localDayBefore(input.before),
+          timeZone: viewer.timeZone
+        })
+      })
+
+    /**
+     * Validate the occurrence-level overrides: at least one field, a non-empty
+     * title, and the timing union checked exactly like a series timing (so an
+     * override can never smuggle in "an instant and an all-day date").
+     */
+    const validateOverrides = (
+      overrides: EventExceptionOverrides
+    ): Effect.Effect<EventExceptionOverrides, EventValidationError> =>
+      Effect.gen(function*() {
+        const changed =
+          overrides.title !== undefined ||
+          overrides.description !== undefined ||
+          overrides.location !== undefined ||
+          overrides.color !== undefined ||
+          overrides.timing !== undefined ||
+          overrides.timeZone !== undefined
+        if (!changed) {
+          return yield* invalid("overrides", "an occurrence edit must change at least one field")
+        }
+        if (overrides.title !== undefined && overrides.title.trim().length === 0) {
+          return yield* invalid("title", "an event needs a title")
+        }
+        if (overrides.timing !== undefined) {
+          const timing = yield* validateTiming(overrides.timing)
+          return { ...overrides, timing }
+        }
+        return overrides
+      })
+
+    /**
+     * Resolve one occurrence edit against the stored row.
+     *
+     * Returns `null` for a no-op, otherwise the row(s) to write. The split path
+     * needs `followingId`/`followingMutationId` because it writes a second row;
+     * everything else stays on the same row.
+     */
+    const applyOccurrenceEdit = (
+      current: Event,
+      input: Schema.Schema.Type<typeof EventOccurrenceEditInput>,
+      now: string
+    ): Effect.Effect<EventOccurrenceChange | null, EventServiceError> =>
+      Effect.gen(function*() {
+        if (!validLocalDate(input.instanceId)) {
+          return yield* invalid("instanceId", "an occurrence needs a real calendar date")
+        }
+        const overrides = yield* validateOverrides(input.overrides)
+        const anchor = eventAnchorDate(current)
+
+        if (current.recurrence === null) {
+          // A one-off event has no series to drift from: the edit is the event.
+          if (input.instanceId !== anchor) {
+            return yield* invalid(
+              "instanceId",
+              "a one-off event has only its own occurrence"
+            )
+          }
+          return { series: patchEventSeries(current, overrides, now), following: null }
+        }
+
+        if (!isEventOccurrence(current, input.instanceId)) {
+          return yield* invalid(
+            "instanceId",
+            "instanceId is not an occurrence of this series"
+          )
+        }
+
+        // A split cannot start from an occurrence that was deleted: the new
+        // series would begin with a hole it never had.
+        const stored = current.exceptions.find(
+          (exception) => exception.instanceId === input.instanceId
+        )
+        if (input.scope === "thisAndFollowing" && stored?.action === "delete") {
+          return yield* invalid(
+            "instanceId",
+            "a series cannot start at a deleted occurrence"
+          )
+        }
+
+        // Splitting at the first occurrence leaves nothing before it, so
+        // "this and following" is a whole-series edit: the rule keeps running
+        // and every later occurrence takes the new values.
+        if (input.scope === "thisAndFollowing" && input.instanceId === anchor) {
+          return { series: patchEventSeries(current, overrides, now), following: null }
+        }
+
+        // "This occurrence" is one exception on the row, at the anchor too: the
+        // series (and every other occurrence) stays exactly as it was.
+        if (input.scope === "thisOccurrence") {
+          return {
+            series: overrideEventOccurrence({
+              event: current,
+              instanceId: input.instanceId,
+              overrides,
+              exceptionId: (input.exceptionId ?? uuidV7()) as EventExceptionId,
+              now
+            }),
+            following: null
+          }
+        }
+
+        if (input.followingId === undefined || input.followingMutationId === undefined) {
+          return yield* invalid(
+            "followingId",
+            "this and following needs a new series id and mutation id"
+          )
+        }
+        const split = splitEventSeries({
+          event: current,
+          instanceId: input.instanceId,
+          overrides,
+          followingId: input.followingId,
+          now
+        })
+        if (split === null) {
+          return yield* invalid("instanceId", "the series cannot be split here")
+        }
+        return { series: split.previous, following: split.following }
+      })
+
+    /** Replay guard for an occurrence edit (the split has two ledger rows). */
+    const replayOccurrenceChange = (
+      viewer: EventViewer,
+      input: {
+        readonly id: EventId
+        readonly clientMutationId: string
+        readonly followingId?: EventId
+        readonly followingMutationId?: string
+      }
+    ): Effect.Effect<Option.Option<EventOccurrenceChange>, EventServiceError> =>
+      Effect.gen(function*() {
+        const row = yield* appliedMutation(viewer, input.clientMutationId)
+        if (Option.isNone(row)) return Option.none()
+        if (reusedMutationId(row.value, { entityType: "event", id: input.id })) {
+          return yield* reusedMutationIdError(input.id)
+        }
+        const series = yield* readEvent(viewer, row.value.entityId as EventId, true)
+        let following: Event | null = null
+        if (input.followingMutationId !== undefined) {
+          const tail = yield* appliedMutation(viewer, input.followingMutationId)
+          if (Option.isSome(tail)) {
+            if (
+              reusedMutationId(tail.value, {
+                entityType: "event",
+                id: input.followingId
+              })
+            ) {
+              return yield* reusedMutationIdError(tail.value.entityId)
+            }
+            following = yield* readEvent(viewer, tail.value.entityId as EventId, true)
+          }
+        }
+        return Option.some({ series, following })
+      })
+
+    const editOccurrence = (
+      viewer: EventViewer,
+      input: Schema.Schema.Type<typeof EventOccurrenceEditInput>,
+      now: string = new Date().toISOString()
+    ): Effect.Effect<EventOccurrenceChange, EventServiceError> =>
+      Effect.gen(function*() {
+        const replayed = yield* replayOccurrenceChange(viewer, input)
+        if (Option.isSome(replayed)) return replayed.value
+
+        // A split inserts its new half under a client-minted id. An id that is
+        // already a row would be swallowed by the insert's `ON CONFLICT DO
+        // NOTHING` while the old row is still truncated in the same batch —
+        // the series would lose its future with no continuation. Refuse before
+        // writing anything.
+        if (input.scope === "thisAndFollowing" && input.followingId !== undefined) {
+          if (input.followingId === input.id) {
+            return yield* invalid("followingId", "the new series needs its own id")
+          }
+          const taken = yield* events.findById(input.followingId).pipe(Effect.orDie)
+          if (Option.isSome(taken)) {
+            return yield* invalid("followingId", "this series id is already in use")
+          }
+        }
+
+        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
+          const current = yield* readEvent(viewer, input.id, false)
+          const change = yield* applyOccurrenceEdit(current, input, now)
+          if (change === null) return { series: current, following: null }
+          const entries: Array<CommitEntry> = [
+            {
+              state: eventState(change.series),
+              expectedVersion: current.version,
+              clientMutationId: input.clientMutationId,
+              op: "upsert"
+            }
+          ]
+          if (change.following !== null) {
+            const following = change.following
+            if (input.followingMutationId === undefined) {
+              return yield* invalid(
+                "followingMutationId",
+                "a split needs a replay key for the new series"
+              )
+            }
+            entries.push({
+              state: eventState(following),
+              expectedVersion: null,
+              clientMutationId: input.followingMutationId,
+              op: "upsert",
+              // The tail is only written when the old row is exactly the
+              // truncated row this batch wrote: a lost CAS — including one a
+              // competing writer masks with the same next version — must not
+              // leave two live halves.
+              insert: () => events.insertStatementGated(following, change.series)
+            })
+          }
+          const applied = yield* commitEntries({ viewer, entries, now })
+          if (applied) return change
+        }
+        return yield* Effect.fail(new EventConflict({ id: input.id }))
+      })
+
+    const deleteOccurrence = (
+      viewer: EventViewer,
+      input: Schema.Schema.Type<typeof EventOccurrenceDeleteInput>,
+      now: string = new Date().toISOString()
+    ): Effect.Effect<EventOccurrenceChange, EventServiceError> =>
+      Effect.gen(function*() {
+        const replayed = yield* replayOccurrenceChange(viewer, input)
+        if (Option.isSome(replayed)) return replayed.value
+
+        if (!validLocalDate(input.instanceId)) {
+          return yield* invalid("instanceId", "an occurrence needs a real calendar date")
+        }
+
+        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
+          const current = yield* readEvent(viewer, input.id, false)
+          const anchor = eventAnchorDate(current)
+          let next: Event
+
+          if (current.recurrence === null) {
+            if (input.instanceId !== anchor) {
+              return yield* invalid(
+                "instanceId",
+                "a one-off event has only its own occurrence"
+              )
+            }
+            next = trashEvent(current, now)
+          } else if (!isEventOccurrence(current, input.instanceId)) {
+            return yield* invalid(
+              "instanceId",
+              "instanceId is not an occurrence of this series"
+            )
+          } else if (input.scope === "thisAndFollowing") {
+            next = truncateEventSeries({ event: current, instanceId: input.instanceId, now })
+          } else {
+            next = deleteEventOccurrence({
+              event: current,
+              instanceId: input.instanceId,
+              exceptionId: (input.exceptionId ?? uuidV7()) as EventExceptionId,
+              now
+            })
+          }
+
+          const applied = yield* commitEvent({
+            viewer,
+            state: eventState(next),
+            expectedVersion: current.version,
+            clientMutationId: input.clientMutationId,
+            now,
+            op: next.deletedAt === null ? "upsert" : "delete"
+          })
+          if (applied) return { series: next, following: null }
+        }
+        return yield* Effect.fail(new EventConflict({ id: input.id }))
       })
 
     return {
@@ -559,7 +975,10 @@ export class EventService extends Context.Service<EventService>()("EventService"
       get,
       update,
       delete: deleteEvent,
-      list
+      list,
+      occurrences,
+      editOccurrence,
+      deleteOccurrence
     } as const
   })
 }) {}

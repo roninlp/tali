@@ -234,6 +234,29 @@ export class EventRepo extends Context.Service<EventRepo>()("EventRepo", {
         return rows.map(toEvent)
       })
 
+    /**
+     * Every live recurring series visible to one member, regardless of its
+     * anchor date.
+     *
+     * A calendar window reads the rows whose anchor falls inside it, but a
+     * series anchored months earlier still has occurrences inside the window —
+     * so the expansion (#58) needs the live series once, exactly like the #43
+     * task read model. One-off events are not repeated here; the range query
+     * already returns them.
+     */
+    const listRecurringLive = (input: {
+      readonly householdId: string
+      readonly userId: UserId
+    }) =>
+      Effect.map(
+        sql<EventRow>`
+          SELECT ${sql.literal(EVENT_SELECT)} FROM events
+          WHERE ${visibleScope(input)} AND recurrence IS NOT NULL
+          ORDER BY all_day_date IS NULL, all_day_date ASC, start_at ASC, id ASC
+        `,
+        (rows) => rows.map(toEvent)
+      )
+
     const insert = (event: Event) =>
       Effect.map(
         sql<EventRow>`
@@ -290,34 +313,66 @@ export class EventRepo extends Context.Service<EventRepo>()("EventRepo", {
         (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toEvent)
       )
 
-    /** Statement form so the sync engine can put the write in one batch. */
-    const insertStatement = (event: Event) => sql`
+    /**
+     * Statement form so the sync engine can put the write in one batch.
+     *
+     * It is an `INSERT … SELECT` so the same row list can carry a gate: a
+     * series split inserts the new tail **only if** the old row is exactly the
+     * truncated row this batch wrote. Matching the whole shape matters, not
+     * just the version: a concurrent writer that bumps the series to the same
+     * next version would otherwise open the gate while our truncation lost its
+     * compare-and-set, and the two halves would both claim the future. The
+     * `notes_fts` index hook uses the same version+`updated_at` gate for the
+     * same reason. `1 = 1` is the ungated form.
+     */
+    const insertEvent = (event: Event, gate: Statement.Fragment) => sql`
       INSERT INTO events
         (id, type, title, description, location, category, people,
          owner_id, household_id, visibility, color, start_at, end_at,
          all_day_date, time_zone, recurrence, exceptions, occasion_id,
          created_at, updated_at, version, deleted_at)
-      VALUES
-        (${event.id}, ${event.type}, ${event.title}, ${event.description},
-         ${event.location}, ${event.category}, ${encodePeople(event.people)},
-         ${event.ownerId}, ${event.householdId}, ${event.visibility},
-         ${event.color},
-         ${event.timing._tag === "timed" ? event.timing.start : null},
-         ${event.timing._tag === "timed" ? event.timing.end : null},
-         ${event.timing._tag === "allDay" ? event.timing.date : null},
-         ${event.timeZone}, ${encodeRecurrence(event.recurrence)},
-         ${encodeExceptions(event.exceptions)}, ${event.occasionId},
-         ${event.createdAt}, ${event.updatedAt}, ${event.version}, ${event.deletedAt})
+      SELECT
+        ${event.id}, ${event.type}, ${event.title}, ${event.description},
+        ${event.location}, ${event.category}, ${encodePeople(event.people)},
+        ${event.ownerId}, ${event.householdId}, ${event.visibility},
+        ${event.color},
+        ${event.timing._tag === "timed" ? event.timing.start : null},
+        ${event.timing._tag === "timed" ? event.timing.end : null},
+        ${event.timing._tag === "allDay" ? event.timing.date : null},
+        ${event.timeZone}, ${encodeRecurrence(event.recurrence)},
+        ${encodeExceptions(event.exceptions)}, ${event.occasionId},
+        ${event.createdAt}, ${event.updatedAt}, ${event.version}, ${event.deletedAt}
+      WHERE ${gate}
       ON CONFLICT DO NOTHING
     `
+
+    const insertStatement = (event: Event) => insertEvent(event, sql`1 = 1`)
+
+    const insertStatementGated = (
+      event: Event,
+      gate: Pick<Event, "id" | "version" | "updatedAt" | "recurrence">
+    ) =>
+      insertEvent(
+        event,
+        sql`EXISTS (
+          SELECT 1 FROM events
+          WHERE id = ${gate.id}
+            AND version = ${gate.version}
+            AND updated_at = ${gate.updatedAt}
+            AND recurrence IS ${encodeRecurrence(gate.recurrence)}
+            AND deleted_at IS NULL
+        )`
+      )
 
     return {
       findById,
       listVisible,
       listInRange,
+      listRecurringLive,
       insert,
       update,
-      insertStatement
+      insertStatement,
+      insertStatementGated
     } as const
   })
 }) {}
