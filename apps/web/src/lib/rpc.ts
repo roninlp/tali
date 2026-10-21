@@ -20,7 +20,12 @@ import type {
   NoteSaveInput,
   NoteTagInput,
   NoteUpdateInput,
-  PlanningListItem
+  PlanningListItem,
+  Reminder,
+  ReminderCreateInput,
+  ReminderListInput,
+  ReminderMutationInput,
+  ReminderUpdateInput
 } from "@tali/domain"
 import { API_URL } from "./config"
 
@@ -143,5 +148,25 @@ export const api = {
     Effect.runPromise(withClient((client) => client.ListPinnedNotes())),
 
   listTrashNotes: (): Promise<ReadonlyArray<Note>> =>
-    Effect.runPromise(withClient((client) => client.ListTrashNotes()))
+    Effect.runPromise(withClient((client) => client.ListTrashNotes())),
+
+  // ── Reminders (#60) ────────────────────────────────────────────────────
+  // The reminder screens write through the local mirror; these are the
+  // online/RPC equivalents used for linked-reminder creation and hydration.
+  // The inbox/response log deliberately rides plain HTTP (`lib/reminders/api`).
+
+  createReminder: (input: ReminderCreateInput): Promise<Reminder> =>
+    Effect.runPromise(withClient((client) => client.CreateReminder(input))),
+
+  getReminder: (id: string): Promise<Reminder> =>
+    Effect.runPromise(withClient((client) => client.GetReminder({ id: id as Reminder["id"] }))),
+
+  updateReminder: (input: ReminderUpdateInput): Promise<Reminder> =>
+    Effect.runPromise(withClient((client) => client.UpdateReminder(input))),
+
+  deleteReminder: (input: ReminderMutationInput): Promise<Reminder> =>
+    Effect.runPromise(withClient((client) => client.DeleteReminder(input))),
+
+  listReminders: (input: ReminderListInput = {}): Promise<ReadonlyArray<Reminder>> =>
+    Effect.runPromise(withClient((client) => client.ListReminders(input)))
 }

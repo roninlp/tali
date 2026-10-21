@@ -26,6 +26,8 @@ export {
   OccasionId,
   Priority,
   ProjectId,
+  ReminderDispatchId,
+  ReminderId,
   TagId,
   TagIds,
   TaskId,
@@ -51,6 +53,9 @@ export * from "./planning/event-service"
 export * from "./planning/habit"
 export * from "./planning/habit-service"
 export * from "./planning/reminder-link"
+export * from "./planning/reminder"
+export * from "./planning/reminder-policy"
+export * from "./planning/reminder-service"
 // The real `ListItem` aggregate collides with the pre-Slice-2 scaffold stub
 // (`./list-item`), which sync still speaks for the web mirror (#34). Re-export
 // it under an unambiguous alias plus the full `Planning` namespace.

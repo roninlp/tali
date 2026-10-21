@@ -14,6 +14,10 @@ import {
   normalizePersian,
   Project,
   sameHabitFrequency,
+  Reminder,
+  reminderFireAt,
+  type ReminderType,
+  reminderTierFor,
   successorTask,
   Tag,
   Task,
@@ -1627,6 +1631,246 @@ const habitEntryDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition =>
   `
 })
 
+// ── Reminder ──────────────────────────────────────────────────────────────
+
+const REMINDER_COLUMNS =
+  `${META_COLUMNS}, type, title, note, color, kind, tier, repeat, ` +
+  `offset_minutes AS offsetMinutes, fire_at AS fireAt, ` +
+  `link_type AS linkType, link_id AS linkId, silenced_until AS silencedUntil, ` +
+  `time_zone AS timeZone, created_at AS createdAt`
+
+/** Rebuild the link union from the flattened columns (malformed → none). */
+const reminderLinkOf = (type: unknown, id: unknown): Record<string, unknown> => {
+  const linkId = asText(id)
+  switch (type) {
+    case "task":
+      return linkId === null ? { _tag: "none" } : { _tag: "task", taskId: linkId }
+    case "event":
+      return linkId === null ? { _tag: "none" } : { _tag: "event", eventId: linkId }
+    case "habit":
+      return linkId === null ? { _tag: "none" } : { _tag: "habit", habitId: linkId }
+    default:
+      return { _tag: "none" }
+  }
+}
+
+/** Flatten the link union for the two columns (the only writer is trusted). */
+const reminderLinkColumns = (
+  data: Record<string, unknown>
+): { readonly linkType: string; readonly linkId: string | null } => {
+  const link = data.link
+  if (typeof link === "object" && link !== null) {
+    const record = link as Record<string, unknown>
+    switch (record._tag) {
+      case "task":
+        return { linkType: "task", linkId: asText(record.taskId) }
+      case "event":
+        return { linkType: "event", linkId: asText(record.eventId) }
+      case "habit":
+        return { linkType: "habit", linkId: asText(record.habitId) }
+      default:
+        return { linkType: "none", linkId: null }
+    }
+  }
+  return { linkType: "none", linkId: null }
+}
+
+const reminderRepeatOf = (value: unknown): Record<string, unknown> => {
+  const parsed = parseJson(value)
+  if (typeof parsed === "object" && parsed !== null) {
+    return parsed as Record<string, unknown>
+  }
+  // A delete-only tombstone may be inserted without a valid repeat; the model
+  // still has to be structurally valid, so fall back to a one-off.
+  return { _tag: "once" }
+}
+
+/**
+ * The sweep compares `fire_at` as TEXT, so a synced instant has to be
+ * canonical UTC — the same normalisation the service applies on its write path.
+ */
+const normalizeInstantText = (value: unknown): unknown => {
+  if (typeof value !== "string") return value
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : value
+}
+
+const reminderCodec = withSchema<Reminder>(Reminder, (row) => ({
+  id: String(row.id),
+  type: "reminder",
+  title: encodeText(row.title),
+  note: asText(row.note),
+  kind: encodeText(row.kind) || "general",
+  tier: encodeText(row.tier) || "normal",
+  repeat: reminderRepeatOf(row.repeat),
+  fireAt: encodeText(row.fireAt),
+  offsetMinutes: encodeInt(row.offsetMinutes),
+  link: reminderLinkOf(row.linkType, row.linkId),
+  silencedUntil: asText(row.silencedUntil),
+  timeZone: encodeText(row.timeZone) || "UTC",
+  ownerId: encodeText(row.ownerId),
+  householdId: encodeText(row.householdId),
+  visibility: asVisibility(row.visibility),
+  color: asText(row.color),
+  createdAt: encodeText(row.createdAt)
+}))
+
+const REMINDER_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
+  ["title", isString],
+  ["note", isNullableString],
+  ["color", isNullableString],
+  // The tier is derived from the kind at write time and is deliberately not
+  // writable: a client can never make a non-medication reminder critical.
+  ["kind", isOneOf("medication", "exercise", "chore", "general")],
+  // The repeat union is replaced as one unit; the shape is validated by the
+  // Reminder schema below.
+  ["repeat", isJson],
+  ["fireAt", isString],
+  ["offsetMinutes", isInt],
+  ["link", isJson],
+  ["silencedUntil", isNullableString],
+  ["timeZone", isString],
+  ["visibility", isOneOf("private", "shared")]
+])
+
+const reminderDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
+  entityType: "reminder",
+  table: "reminders",
+  select: REMINDER_COLUMNS,
+  scope: SYNC_SCOPE_COLUMNS,
+  softDeleteColumn: "deleted_at",
+  writable: REMINDER_WRITABLE,
+  ...reminderCodec,
+  defaults: (patch, context) => {
+    const kind = encodeText(patch.kind) || "general"
+    const repeat = reminderRepeatOf(patch.repeat)
+    const timeZone = encodeText(patch.timeZone) || "UTC"
+    const explicitFireAt = asText(patch.fireAt)
+    // The service derives a pattern reminder's first fire from its repeat; the
+    // offline-create path must do the same, or a daily/weekly reminder synced
+    // without a fireAt would fire at the edit instant instead of its local
+    // time. A one-off with neither an explicit fireAt nor a (sync-resolved)
+    // link keeps the edit instant as its best available anchor.
+    const fireAt = normalizeInstantText(
+      explicitFireAt ??
+        reminderFireAt({
+          repeat: repeat as Reminder["repeat"],
+          timeZone,
+          now: context.clientUpdatedAt,
+          explicitFireAt: null,
+          linkInstant: null
+        }) ??
+        context.clientUpdatedAt
+    )
+    return {
+      id: context.entityId,
+      type: "reminder",
+      title: encodeText(patch.title),
+      note: asText(patch.note),
+      color: asText(patch.color),
+      kind,
+      tier: reminderTierFor(kind as ReminderType),
+      repeat,
+      fireAt,
+      offsetMinutes: encodeInt(patch.offsetMinutes),
+      link: reminderLinkOf(
+        (patch.link as Record<string, unknown> | undefined)?._tag,
+        (patch.link as Record<string, unknown> | undefined)?.taskId ??
+          (patch.link as Record<string, unknown> | undefined)?.eventId ??
+          (patch.link as Record<string, unknown> | undefined)?.habitId
+      ),
+      silencedUntil: normalizeInstantText(asText(patch.silencedUntil)),
+      timeZone,
+      ownerId: context.userId,
+      householdId: context.householdId,
+      visibility: asVisibility(patch.visibility),
+      createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
+    }
+  },
+  merge: (input) => {
+    const next = mergeFields({}, input)
+    // Type drives tier: re-derive after every merge so a kind change cannot
+    // leave a stale critical/normal flag (and a patch cannot forge one).
+    next.tier = reminderTierFor(next.kind as ReminderType)
+    // Keep the scheduling columns canonical so the sweep's TEXT comparison is
+    // an instant ordering, whichever device wrote the patch.
+    next.fireAt = normalizeInstantText(next.fireAt)
+    next.silencedUntil = next.silencedUntil === null
+      ? null
+      : normalizeInstantText(next.silencedUntil)
+    return next
+  },
+  /**
+   * Silence and delete must also expire any dispatch already owed, so a held
+   * row cannot push after the owner changed their mind (ADR-0005 §5). The
+   * statement is gated on this write actually landing, so a lost CAS leaves
+   * the ledger untouched.
+   */
+  index: (state) => {
+    const silenced = typeof state.data.silencedUntil === "string"
+    if (state.deletedAt === null && !silenced) return []
+    return [
+      sql`
+        UPDATE reminder_dispatches SET push_outcome = 'expired'
+        WHERE reminder_id = ${state.entityId}
+          AND response IS NULL
+          AND push_outcome IN ('pending', 'failed')
+          AND EXISTS (
+            SELECT 1 FROM reminders
+            WHERE id = ${state.entityId}
+              AND version = ${state.version}
+              AND updated_at = ${state.updatedAt}
+          )
+      `
+    ]
+  },
+  insert: (state) => {
+    const link = reminderLinkColumns(state.data)
+    return sql`
+      INSERT INTO reminders
+        (id, type, title, note, owner_id, household_id, visibility, color,
+         kind, tier, repeat, offset_minutes, fire_at, link_type, link_id,
+         silenced_until, time_zone, created_at, updated_at, version, deleted_at)
+      VALUES
+        (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
+         ${encodeNullableText(state.data.note)}, ${state.ownerId},
+         ${state.householdId}, ${state.visibility},
+         ${encodeNullableText(state.data.color)}, ${encodeText(state.data.kind)},
+         ${encodeText(state.data.tier) || reminderTierFor(state.data.kind as ReminderType)},
+         ${encodeJson(state.data.repeat)}, ${encodeInt(state.data.offsetMinutes)},
+         ${encodeText(state.data.fireAt)}, ${link.linkType}, ${link.linkId},
+         ${encodeNullableText(state.data.silencedUntil)},
+         ${encodeText(state.data.timeZone) || "UTC"},
+         ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
+         ${state.updatedAt}, ${state.version}, ${state.deletedAt})
+      ON CONFLICT DO NOTHING
+    `
+  },
+  update: (state, expectedVersion) => {
+    const link = reminderLinkColumns(state.data)
+    return sql`
+      UPDATE reminders SET
+        title = ${encodeText(state.data.title)},
+        note = ${encodeNullableText(state.data.note)},
+        visibility = ${state.visibility},
+        color = ${encodeNullableText(state.data.color)},
+        kind = ${encodeText(state.data.kind)},
+        tier = ${encodeText(state.data.tier) || reminderTierFor(state.data.kind as ReminderType)},
+        repeat = ${encodeJson(state.data.repeat)},
+        offset_minutes = ${encodeInt(state.data.offsetMinutes)},
+        fire_at = ${encodeText(state.data.fireAt)},
+        link_type = ${link.linkType},
+        link_id = ${link.linkId},
+        silenced_until = ${encodeNullableText(state.data.silencedUntil)},
+        time_zone = ${encodeText(state.data.timeZone) || "UTC"},
+        updated_at = ${state.updatedAt},
+        version = ${state.version},
+        deleted_at = ${state.deletedAt}
+      WHERE id = ${state.entityId} AND version = ${expectedVersion}
+    `
+  }
+})
+
 // ── Registry ──────────────────────────────────────────────────────────────
 
 /** Aggregates that sync today. Other `ItemType`s still reject as unsupported. */
@@ -1640,6 +1884,8 @@ export const SYNC_ENTITY_TYPES = [
   "event",
   "habit",
   "habitEntry"
+,
+  "reminder"
 ] as const satisfies ReadonlyArray<SyncEntityType>
 
 export const makeSyncRegistry = (sql: SqlClient.SqlClient): SyncRegistry => {
@@ -1653,6 +1899,8 @@ export const makeSyncRegistry = (sql: SqlClient.SqlClient): SyncRegistry => {
     eventDefinition(sql),
     habitDefinition(sql),
     habitEntryDefinition(sql)
+,
+    reminderDefinition(sql)
   ]
   const byType = new Map<SyncEntityType, SyncEntityDefinition>(
     definitions.map((definition) => [definition.entityType, definition])
