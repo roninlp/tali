@@ -1,5 +1,5 @@
 import "fake-indexeddb/auto"
-import { flush } from "solid-js"
+import { createEffect, flush } from "solid-js"
 import { fireEvent, render, waitFor } from "@solidjs/testing-library"
 import { createRouter } from "@solidjs/router"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -12,7 +12,7 @@ import {
 } from "@tali/domain"
 import { AuthProvider } from "../lib/auth"
 import { PreferencesProvider } from "../lib/preferences"
-import { LocalStoreProvider } from "../lib/local-store"
+import { LocalStoreProvider, useLocalStore } from "../lib/local-store"
 import { openLocalStore } from "../lib/local-store/store"
 import type { LocalStore } from "../lib/local-store/types"
 import { cacheSession } from "../lib/session-cache"
@@ -200,11 +200,30 @@ const mountToday = () => {
     <AuthProvider>
       <PreferencesProvider>
         <LocalStoreProvider>
+          <StoreProbe />
           <Router>{(props) => props.children}</Router>
         </LocalStoreProvider>
       </PreferencesProvider>
     </AuthProvider>
   ))
+}
+
+/**
+ * The provider's own store instance. An IndexedDB connection opened elsewhere
+ * does not notify it, so tests that must simulate an outbox drain have to ack
+ * through the same store the screen is subscribed to.
+ */
+let providerStore: LocalStore | undefined
+
+function StoreProbe() {
+  const local = useLocalStore()
+  createEffect(
+    () => local.store(),
+    (store) => {
+      providerStore = store
+    }
+  )
+  return null
 }
 
 const withStore = async (run: (store: LocalStore) => Promise<void>): Promise<void> => {
@@ -348,6 +367,13 @@ describe("Today dashboard", () => {
     await withStore(async (store) => {
       const row = await store.get("task", first.id)
       expect(row?.data.status).toBe("done")
+      // The action is durable: it is queued for the server, not just painted.
+      const queued = await store.pending()
+      expect(
+        queued.some(
+          (entry) => entry.entityType === "task" && entry.entityId === first.id
+        )
+      ).toBe(true)
     })
 
     fireEvent.click(screen.getByRole("button", { name: "فردا کردن تماس با مادر" }))
@@ -355,7 +381,46 @@ describe("Today dashboard", () => {
     await withStore(async (store) => {
       const row = await store.get("task", second.id)
       expect(row?.data.dueDate).toBe(bounds().tomorrow)
+      const queued = await store.pending()
+      expect(
+        queued.some(
+          (entry) => entry.entityType === "task" && entry.entityId === second.id
+        )
+      ).toBe(true)
     })
+
+    screen.unmount()
+  })
+
+  it("keeps an optimistic write on screen after the outbox acks a stale read model", async () => {
+    const task = taskFixture("خرید نان")
+    stubNetwork({ today: readModel({ tasks: [task] }) })
+
+    const screen = mountToday()
+    await eventually(() => {
+      expect(screen.getByText("خرید نان")).toBeTruthy()
+      const input = screen.getByLabelText("کار تازه برای امروز") as HTMLInputElement
+      expect(input.disabled).toBe(false)
+    })
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "انجام خرید نان" }))
+    await eventually(() => expect(screen.queryByText("خرید نان")).toBeNull())
+
+    // The outbox drains before the read model does. `/today` still answers with
+    // the pre-write payload (a 304 for the ETag we already hold), so without
+    // the local-write overlay the completed row would flash back on screen.
+    const store = providerStore
+    expect(store).toBeTruthy()
+    const queued = await store!.pending()
+    expect(queued.length).toBeGreaterThan(0)
+    await store!.ack(queued.map((entry) => entry.clientMutationId))
+    expect(await store!.pending()).toEqual([])
+
+    await eventually(() => expect(screen.queryByText("خرید نان")).toBeNull())
+    // Give the post-drain revalidation a chance to resolve and re-render.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    flush()
+    expect(screen.queryByText("خرید نان")).toBeNull()
 
     screen.unmount()
   })

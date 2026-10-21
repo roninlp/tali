@@ -97,6 +97,15 @@ function TodayPage() {
   const [mirrorTasks, setMirrorTasks] = createSignal<ReadonlyArray<MirrorRecord>>([])
   const [mirrorNotes, setMirrorNotes] = createSignal<ReadonlyArray<MirrorRecord>>([])
   const [pendingKeys, setPendingKeys] = createSignal<ReadonlySet<string>>(new Set<string>())
+  /**
+   * Rows this screen wrote locally and has not yet seen come back from the
+   * read model. An outbox entry is only half the story: once the sync engine
+   * acks it, the pending set empties while `GET /today` (and its ETag) still
+   * describes the pre-write world, so the completed row would flash back until
+   * the refetch lands. These keys keep the optimistic state on screen across
+   * that window and are dropped only by a fresh 200.
+   */
+  const [dirtyKeys, setDirtyKeys] = createSignal<ReadonlySet<string>>(new Set<string>())
   const [server, setServer] = createSignal<TodayReadModel>()
   const [serverEtag, setServerEtag] = createSignal<string>()
   const [fetchState, setFetchState] = createSignal<"idle" | "ready" | "offline" | "error">("idle")
@@ -136,6 +145,7 @@ function TodayPage() {
         setMirrorTasks([])
         setMirrorNotes([])
         setPendingKeys(new Set<string>())
+        setDirtyKeys(new Set<string>())
         return
       }
       let cancelled = false
@@ -178,6 +188,7 @@ function TodayPage() {
     if (!online || pending > 0) return
     const ticket = ++refreshGeneration
     const existing = untrack(server)
+    const inFlightDirty = untrack(dirtyKeys)
     const result = await fetchToday(existing === undefined ? undefined : serverEtag())
     if (ticket !== refreshGeneration) return
     // A local write may have landed while this was in flight; the mirror is
@@ -189,12 +200,21 @@ function TodayPage() {
       return
     }
     if (result.notModified) {
+      // 304 means the server still describes the world before those writes
+      // (a rejected push, or a push that has not committed yet): keep them.
       setFetchState("ready")
       return
     }
     setServer(result.model)
     setServerEtag(result.etag)
     setFetchState("ready")
+    if (inFlightDirty.size > 0) {
+      setDirtyKeys((current) => {
+        const next = new Set(current)
+        for (const key of inFlightDirty) next.delete(key)
+        return next
+      })
+    }
   }
 
   // Revalidate on boot, reconnect, and once the outbox is empty again. While
@@ -240,13 +260,24 @@ function TodayPage() {
     refreshGeneration += 1
   })
 
+  const overlayKeys = (): ReadonlySet<string> => {
+    const keys = new Set(pendingKeys())
+    for (const key of dirtyKeys()) keys.add(key)
+    return keys
+  }
+
+  const markDirty = (entityType: string, entityId: string) => {
+    const key = `${entityType}\u0000${entityId}`
+    setDirtyKeys((current) => new Set([...current, key]))
+  }
+
   const view = createMemo<TodayView>(() => {
     const model = server()
     if (model !== undefined && local.online() && model.today === todayIso()) {
       return overlayPendingToday(fromServerToday(model), {
         tasks: mirrorTasks(),
         notes: mirrorNotes(),
-        pending: pendingKeys(),
+        pending: overlayKeys(),
         timeZone: timeZone(),
         now: now()
       })
@@ -285,7 +316,7 @@ function TodayPage() {
     setAddBusy(true)
     setPageError(undefined)
     try {
-      await createTaskInMirror(store, {
+      const id = await createTaskInMirror(store, {
         title,
         dueDate: todayIso(),
         priority: "medium",
@@ -293,6 +324,7 @@ function TodayPage() {
         tagIds: [],
         timeZone: timeZone()
       })
+      markDirty("task", id)
       clearTimeout(draftTimer)
       setDraft("")
       await store.clearDraft(DRAFT_KEY)
@@ -309,6 +341,7 @@ function TodayPage() {
     if (store === undefined) return
     try {
       await completeTaskInMirror(store, task.id)
+      markDirty("task", task.id)
       setAnnouncement(`انجام شد: ${task.title}`)
     } catch (cause) {
       reportError(cause)
@@ -321,6 +354,7 @@ function TodayPage() {
     const tomorrow = view().tomorrow
     try {
       await moveTaskInMirror(store, task.id, tomorrow, timeZone())
+      markDirty("task", task.id)
       setAnnouncement(`به فردا منتقل شد: ${task.title}`)
     } catch (cause) {
       reportError(cause)

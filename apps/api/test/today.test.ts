@@ -516,4 +516,53 @@ describe("GET /today", () => {
     expect(noHousehold.status).toBe(403)
     expect(noHousehold.body).toMatchObject({ error: { code: "Forbidden" } })
   })
+
+  /**
+   * The browser only sees an `ETag` that CORS exposes, and only sends an
+   * `If-None-Match` that CORS allows. The dev web app (:3000) calls the Worker
+   * (:8787) cross-origin, so without those headers revalidation never happens
+   * in the one environment where the dashboard is exercised by hand.
+   */
+  it("exposes the ETag cross-origin and never answers 304 from another user's body", async () => {
+    const h = await setup()
+    const worker = (await import("../src/index.js")).default
+    const env = { DB: new FakeD1(h.db).asD1Database() }
+    const call = async (headers: Record<string, string>) => {
+      const response = await worker.fetch(
+        new Request("http://localhost/today", {
+          headers: { origin: "http://localhost:3000", ...headers }
+        }),
+        env as never,
+        {} as never
+      )
+      const text = await response.text()
+      return { response, status: response.status, text }
+    }
+
+    const self = await call({ cookie: `tali_session=${TOKEN_A}` })
+    expect(self.status).toBe(200)
+    expect(self.response.headers.get("access-control-expose-headers")).toContain("etag")
+    expect(self.response.headers.get("access-control-allow-headers")).toContain("if-none-match")
+    const etag = self.response.headers.get("etag")
+    expect(etag).toBeTruthy()
+
+    // The other household member's picture differs, so their revalidation must
+    // not be answered with A's (private) body.
+    const other = await call({
+      cookie: `tali_session=${TOKEN_B}`,
+      "if-none-match": etag!
+    })
+    expect(other.status).toBe(200)
+    const otherModel = Schema.decodeUnknownSync(TodayReadModel)(JSON.parse(other.text))
+    expect(otherModel.tasks.map((task) => task.title)).toContain("کار خصوصی ب")
+    expect(other.text).not.toContain("کار خصوصی الف")
+
+    // ...while the same viewer revalidating the same picture does get a 304.
+    const revalidated = await call({
+      cookie: `tali_session=${TOKEN_A}`,
+      "if-none-match": etag!
+    })
+    expect(revalidated.status).toBe(304)
+    expect(revalidated.text).toBe("")
+  })
 })
