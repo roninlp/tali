@@ -127,7 +127,7 @@ describe("HabitsScreen", () => {
       expect(screen.getByRole("heading", { name: "کتاب خواندن" })).toBeTruthy()
     )
     await eventually(() =>
-      expect(screen.getByLabelText("زنجیره: بدون زنجیره")).toBeTruthy()
+      expect(screen.getByLabelText("زنجیره: بدون زنجیره · ۰ از ۳ این هفته")).toBeTruthy()
     )
     // The weekly unit names its counting period even before it is satisfied.
     await settle()

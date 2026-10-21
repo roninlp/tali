@@ -7,6 +7,7 @@ import { tapHabitEntry } from "./log"
 import {
   HABIT_WINDOW_DAYS,
   createHabitInMirror,
+  habitBadgeLabel,
   habitEntryOn,
   habitFrequencyLabel,
   habitHeatmapMonth,
@@ -201,6 +202,36 @@ describe("habit local-first model", () => {
     store.close()
   })
 
+  it("paints the same entries in the Jalali month each local day belongs to (E15)", async () => {
+    const store = await open()
+    const id = await createHabitInMirror(
+      store,
+      { title: "کتاب", frequency: { _tag: "weekly", times: 3 }, timeZone: TZ },
+      "2026-10-17T09:00:00.000Z"
+    )
+    for (const day of ["2026-10-17", "2026-10-19", "2026-10-21", "2026-10-23"]) {
+      await tapHabitEntry(store, {
+        habitId: id,
+        localDate: day,
+        timeZone: TZ,
+        now: "2026-10-23T09:30:00.000Z"
+      })
+    }
+    const entries = await readEntries(store)
+    // W0 is 25 Mehr – 1 Aban: one counting week, painted day-by-day in the month
+    // that owns each local date.
+    const mehr = habitHeatmapMonth({ habitId: id, entries, year: 1405, month: 7 })
+    const aban = habitHeatmapMonth({ habitId: id, entries, year: 1405, month: 8 })
+    const find = (month: typeof mehr, day: string) =>
+      month.weeks.flat().find((cell) => cell.date === day)!
+    expect(find(mehr, "2026-10-22").inMonth).toBe(true)
+    expect(find(mehr, "2026-10-23").inMonth).toBe(false)
+    expect(find(aban, "2026-10-23")).toMatchObject({ inMonth: true, status: "done" })
+    expect(find(aban, "2026-10-17").inMonth).toBe(false)
+
+    store.close()
+  })
+
   it("keeps one row per day and shows today's answer", async () => {
     const store = await open()
     const id = await createHabitInMirror(
@@ -252,6 +283,34 @@ describe("habit copy", () => {
     expect(habitFrequencyLabel({ _tag: "daily" })).toBe("هر روز")
     expect(habitFrequencyLabel({ _tag: "weekdays", days: [3, 1] })).toBe("دوشنبه، چهارشنبه")
     expect(habitFrequencyLabel({ _tag: "weekly", times: 3 })).toBe("۳ بار در هفته")
+  })
+
+  it("prints the open period's progress on the badge, not just the count", () => {
+    const result = {
+      current: { unit: "week" as const, count: 1, since: "2026-10-10" as LocalDate },
+      open: {
+        unit: "week" as const,
+        start: "2026-10-17" as LocalDate,
+        end: "2026-10-23" as LocalDate,
+        frequency: { _tag: "weekly" as const, times: 3 },
+        requirement: 3,
+        credit: 2,
+        weighted: 2,
+        satisfied: false,
+        open: true,
+        inWindow: false
+      },
+      best: { days: 0, weeks: 1 },
+      rate: 0.5,
+      periods: [],
+      unitChanges: []
+    }
+    expect(habitBadgeLabel(result)).toBe("۱ هفته پیاپی · ۲ از ۳ این هفته")
+    expect(habitBadgeLabel({
+      ...result,
+      open: { ...result.open, credit: 3, weighted: 3, satisfied: true }
+    })).toBe("۱ هفته پیاپی")
+    expect(habitBadgeLabel({ ...result, open: null })).toBe("۱ هفته پیاپی")
   })
 
   it("offers all three rate windows", () => {

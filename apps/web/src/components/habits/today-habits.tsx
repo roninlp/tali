@@ -4,6 +4,7 @@ import type { LocalStore } from "../../lib/local-store"
 import { habitEntryStatusOf, tapHabitEntry } from "../../lib/habits/log"
 import {
   HABIT_WINDOW_DAYS,
+  habitBadgeLabel,
   habitCountingPeriodLabel,
   habitEntryOn,
   habitFrequencyLabel,
@@ -11,7 +12,6 @@ import {
   habitStatsFor,
   habitStatusIcon,
   habitStatusLabel,
-  habitStreakLabel,
   liveHabitEntryRows,
   liveHabitRows,
   type HabitEntryRow,
@@ -158,10 +158,10 @@ export function TodayHabits(props: {
                       <strong>{habit.title}</strong>
                       <span
                         class="habit-badge"
-                        aria-label={`زنجیره: ${habitStreakLabel(stats(), props.digits)}`}
+                        aria-label={`زنجیره: ${habitBadgeLabel(stats(), props.digits)}`}
                       >
                         <span aria-hidden="true">🔥</span>
-                        {habitStreakLabel(stats(), props.digits)}
+                        {habitBadgeLabel(stats(), props.digits)}
                       </span>
                     </div>
                     <p class="habit-lane-meta">

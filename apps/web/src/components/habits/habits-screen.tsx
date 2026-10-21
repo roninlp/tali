@@ -11,6 +11,7 @@ import {
 import { useLocalStore } from "../../lib/local-store"
 import { usePreferences } from "../../lib/preferences"
 import { useAuth } from "../../lib/auth"
+import { HABIT_RESTORE_REFUSED } from "../../lib/sync-engine"
 import { habitEntryStatusOf, tapHabitEntry } from "../../lib/habits/log"
 import {
   HABIT_COLORS,
@@ -18,6 +19,7 @@ import {
   HABIT_WINDOW_DAYS,
   createHabitInMirror,
   deleteHabitInMirror,
+  habitBadgeLabel,
   habitBestLabel,
   habitCountingPeriodLabel,
   habitEntryOn,
@@ -26,7 +28,6 @@ import {
   habitStatsFor,
   habitStatusIcon,
   habitStatusLabel,
-  habitStreakLabel,
   liveHabitEntryRows,
   liveHabitRows,
   restoreHabitInMirror,
@@ -146,6 +147,17 @@ export function HabitsScreen() {
       return () => {
         cancelled = true
         unsubscribe()
+      }
+    }
+  )
+
+  // A permanent restore refusal drops the queued undo (it can never succeed),
+  // so the habit quietly disappears again on the next pull unless we say so.
+  createEffect(
+    () => local.error(),
+    (error) => {
+      if (error !== undefined && error.startsWith(HABIT_RESTORE_REFUSED)) {
+        setPageError("بازگردانی عادت انجام نشد؛ ممکن است حذف آن قطعی شده باشد.")
       }
     }
   )
@@ -563,10 +575,10 @@ export function HabitsScreen() {
                     <h3>{habit.title}</h3>
                     <span
                       class="habit-badge"
-                      aria-label={`زنجیره: ${habitStreakLabel(stats(), digits())}`}
+                      aria-label={`زنجیره: ${habitBadgeLabel(stats(), digits())}`}
                     >
                       <span aria-hidden="true">🔥</span>
-                      {habitStreakLabel(stats(), digits())}
+                      {habitBadgeLabel(stats(), digits())}
                     </span>
                     <Show when={pending(habit.id)}>
                       <span class="habit-action" aria-label="در انتظار همگام‌سازی">

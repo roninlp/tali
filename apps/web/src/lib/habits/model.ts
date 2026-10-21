@@ -427,6 +427,22 @@ export const habitOpenProgressLabel = (
   return `${localizeDigits(open.credit, digits)} از ${localizeDigits(open.requirement, digits)} ${suffix}`
 }
 
+/**
+ * The streak badge copy (`docs/streak-algorithm.md` §8).
+ *
+ * The badge always names the unit, and an open period that is not yet satisfied
+ * carries its progress too — otherwise a tap that earns credit toward a weekly
+ * quota would not be visible anywhere in the badge until the whole week filled.
+ */
+export const habitBadgeLabel = (
+  result: StreakResult,
+  digits: Digits = "persian"
+): string => {
+  const streak = habitStreakLabel(result, digits)
+  const progress = habitOpenProgressLabel(result, digits)
+  return progress === null ? streak : `${streak} · ${progress}`
+}
+
 export interface HabitRateCopy {
   readonly kind: "rate" | "progress" | "none"
   readonly label: string

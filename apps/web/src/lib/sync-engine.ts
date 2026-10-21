@@ -124,6 +124,27 @@ export class SyncRejected extends Error {
   }
 }
 
+/**
+ * The prefix of the error the engine raises when `RestoreHabit` permanently
+ * refuses a queued habit undo (the row was purged, or is no longer visible).
+ *
+ * The undo is acked first — keeping it would retry forever — so the engine
+ * reports the refusal after the batch so `syncNow` can surface it rather than
+ * leaving the user with a habit that silently disappears again.
+ */
+export const HABIT_RESTORE_REFUSED = "habit-restore-refused"
+
+export class HabitRestoreRefused extends Error {
+  override readonly name = "HabitRestoreRefused"
+
+  constructor(
+    readonly habitId: string,
+    readonly reason: string
+  ) {
+    super(`${HABIT_RESTORE_REFUSED}:${reason}`)
+  }
+}
+
 const request = async <A>(
   path: string,
   schema: Schema.ConstraintDecoder<A>,
@@ -282,6 +303,7 @@ export const createSyncEngine = (
       }
       const repairedRows: Array<SyncEntityRow> = []
       const repairedOriginalIds = new Set<string>()
+      let restoreRefusal: HabitRestoreRefused | undefined
 
       for (const result of response.results) {
         /**
@@ -318,6 +340,9 @@ export const createSyncEngine = (
                   cause instanceof Error ? cause.message : String(cause)
                 }`
               )
+              // Acked below like any other resolved result, so the refusal is
+              // reported after the batch instead of retrying forever.
+              restoreRefusal ??= new HabitRestoreRefused(queued.entityId, tag)
             }
             continue
           }
@@ -404,6 +429,10 @@ export const createSyncEngine = (
       for (const entityId of repairedOriginalIds) {
         await store.removeFromMirror("habitEntry", entityId)
       }
+      // The undo was acked (so it cannot loop), but the user asked to restore a
+      // habit the server permanently refused: report it now that the mirror is
+      // consistent. `syncNow` turns this into a visible error.
+      if (restoreRefusal !== undefined) throw restoreRefusal
       // Defensive: a server result set with no ids would otherwise spin.
       if (response.results.length === 0) return
     }

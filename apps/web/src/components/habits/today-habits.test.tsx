@@ -57,7 +57,7 @@ describe("TodayHabits", () => {
     const screen = renderLane(store)
 
     await eventually(() =>
-      expect(screen.getByLabelText("زنجیره: بدون زنجیره")).toBeTruthy()
+      expect(screen.getByLabelText("زنجیره: بدون زنجیره · ۰ از ۱ امروز")).toBeTruthy()
     )
 
     click(screen.getByRole("button", { name: "تغییر وضعیت آب" }))
@@ -74,7 +74,7 @@ describe("TodayHabits", () => {
     click(screen.getByRole("button", { name: "تغییر وضعیت آب" }))
     await eventually(() => expect(screen.getByText("✕")).toBeTruthy())
     expect(screen.getByText("از دست رفت")).toBeTruthy()
-    expect(screen.getByLabelText("زنجیره: بدون زنجیره")).toBeTruthy()
+    expect(screen.getByLabelText("زنجیره: بدون زنجیره · ۰ از ۱ امروز")).toBeTruthy()
 
     expect(network).not.toHaveBeenCalled()
     expect(await store.pending()).toHaveLength(4)
@@ -92,12 +92,18 @@ describe("TodayHabits", () => {
     )
     const screen = renderLane(store)
 
-    await eventually(() => expect(screen.getByText("۰ از ۳ این هفته")).toBeTruthy())
+    await eventually(() => {
+      expect(screen.getByText("۰ از ۳ این هفته")).toBeTruthy()
+      expect(screen.getByLabelText("زنجیره: بدون زنجیره · ۰ از ۳ این هفته")).toBeTruthy()
+    })
     expect(screen.queryByText("۰٪")).toBeNull()
     expect(screen.getAllByText("نرخ ۷ روزه").length).toBe(1)
 
     click(screen.getByRole("button", { name: "تغییر وضعیت ورزش" }))
-    await eventually(() => expect(screen.getByText("۱ از ۳ این هفته")).toBeTruthy())
+    await eventually(() => {
+      expect(screen.getByText("۱ از ۳ این هفته")).toBeTruthy()
+      expect(screen.getByLabelText("زنجیره: بدون زنجیره · ۱ از ۳ این هفته")).toBeTruthy()
+    })
     expect(screen.queryByText("۰٪")).toBeNull()
     // The counting week is named on the stats row (fixed Saturday–Friday).
     expect(screen.getByLabelText(/زنجیره:/)).toBeTruthy()

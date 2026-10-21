@@ -693,6 +693,96 @@ describe("client sync engine", () => {
     store.close()
   })
 
+  it("surfaces a permanent restore refusal instead of swallowing the undo (#66)", async () => {
+    const store = await open()
+    const habitId = uuidV7()
+    const now = "2026-10-21T09:30:00.000Z"
+    await store.writeLocal({
+      entityType: "habit",
+      entityId: habitId,
+      op: "upsert",
+      patch: {},
+      deletedAt: null,
+      now
+    })
+
+    const engine = createSyncEngine(
+      transport({
+        push: async (entries) => ({
+          results: [
+            {
+              _tag: "tombstone" as const,
+              clientMutationId: entries[0]!.clientMutationId,
+              entityType: "habit" as const,
+              entityId: habitId,
+              version: 2,
+              seq: 9,
+              item: {
+                entityType: "habit" as const,
+                entityId: habitId,
+                version: 2,
+                updatedAt: now,
+                deletedAt: now,
+                data: {}
+              }
+            }
+          ],
+          cursor: 9
+        }),
+        restoreHabit: async () => {
+          throw Object.assign(new Error("the habit was purged"), { _tag: "HabitNotFound" })
+        }
+      })
+    )
+
+    await expect(engine.sync(store)).rejects.toMatchObject({
+      name: "HabitRestoreRefused",
+      habitId,
+      reason: "HabitNotFound"
+    })
+    // The undo is acked (it can never succeed) and the tombstone is adopted...
+    expect(await store.pending()).toHaveLength(0)
+    expect((await store.get("habit", habitId))?.deletedAt).not.toBeNull()
+    store.close()
+  })
+
+  it("leaves the queued habit undo in place when RestoreHabit fails transiently (#66)", async () => {
+    const store = await open()
+    const habitId = uuidV7()
+    await store.writeLocal({
+      entityType: "habit",
+      entityId: habitId,
+      op: "upsert",
+      patch: {},
+      deletedAt: null
+    })
+
+    const engine = createSyncEngine(
+      transport({
+        push: async (entries) => ({
+          results: [
+            {
+              _tag: "tombstone" as const,
+              clientMutationId: entries[0]!.clientMutationId,
+              entityType: "habit" as const,
+              entityId: habitId,
+              version: 2,
+              seq: 9
+            }
+          ],
+          cursor: 9
+        }),
+        restoreHabit: async () => {
+          throw new Error("network")
+        }
+      })
+    )
+
+    await expect(engine.sync(store)).rejects.toThrow("network")
+    expect(await store.pending()).toHaveLength(1)
+    store.close()
+  })
+
   it("keeps a tap queued when the revive path fails transiently (#64)", async () => {
     const store = await open()
     const habitId = uuidV7()
