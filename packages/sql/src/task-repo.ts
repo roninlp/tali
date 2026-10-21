@@ -301,6 +301,29 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
       )
 
     /**
+     * Live recurring rows, regardless of due date (ticket #43).
+     *
+     * The week/month read models need the series' anchor — which may be months
+     * before the requested range — to project future occurrences with the #38
+     * engine. A due-date range query alone would miss it, so this is a narrow,
+     * index-friendly second read instead of scanning every past task.
+     */
+    const listRecurringLive = (input: {
+      readonly householdId: string
+      readonly userId: UserId
+    }) =>
+      Effect.map(
+        sql<TaskRow>`
+          SELECT ${sql.literal(TASK_COLUMNS)} FROM tasks
+          WHERE ${visibleScope(input)}
+            AND status != 'done'
+            AND recurrence IS NOT NULL
+          ORDER BY due_date IS NULL, due_date ASC, due_at ASC, id ASC
+        `,
+        (rows) => rows.map(toTask)
+      )
+
+    /**
      * "Today"/overdue buckets read by local due day, never by the server clock.
      *
      * `status` and `priority` are TEXT enums, so alphabetical order would put
@@ -487,6 +510,7 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
       listDueInstantRange,
       listNoDue,
       listDueOn,
+      listRecurringLive,
       detachTagsIfVersion,
       attachTagIfVersion,
       insert,
