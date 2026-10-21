@@ -127,6 +127,16 @@ export const openLocalStore = async (
       return rows.filter((row) => row.deletedAt === null)
     },
 
+    async listTrashed(entityType) {
+      ensureOpen()
+      const tx = db.transaction(MIRROR, "readonly")
+      const index = tx.objectStore(MIRROR).index("byEntityType")
+      const rows = await requestResult(index.getAll(entityType)) as ReadonlyArray<MirrorRecord>
+      return rows
+        .filter((row) => row.deletedAt !== null)
+        .sort((a, b) => (b.deletedAt ?? "").localeCompare(a.deletedAt ?? ""))
+    },
+
     async get(entityType, entityId) {
       ensureOpen()
       const tx = db.transaction(MIRROR, "readonly")
@@ -154,7 +164,11 @@ export const openLocalStore = async (
           // invents versions, it only invents patches.
           version: current?.version ?? 0,
           updatedAt: now,
-          deletedAt: write.op === "delete" ? now : (current?.deletedAt ?? null),
+          deletedAt: write.deletedAt !== undefined
+            ? write.deletedAt
+            : write.op === "delete"
+              ? now
+              : (current?.deletedAt ?? null),
           data: { ...current?.data, ...write.patch }
         }
         mirror.put(record)

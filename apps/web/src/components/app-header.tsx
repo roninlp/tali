@@ -1,31 +1,77 @@
-import { createSignal, For, Show } from "solid-js"
+import { createEffect, createSignal, For, Show } from "solid-js"
 import type { JSX } from "@solidjs/web"
 import { useNavigate } from "@solidjs/router"
 import { Button, tokens } from "@tali/ui"
 import { useAuth } from "../lib/auth"
 import { authErrorMessage } from "../lib/auth-copy"
+import { useLocalStore } from "../lib/local-store"
+import { createNoteInMirror } from "../lib/notes/mirror"
 import { SyncStatus } from "./sync-status"
 import { FormError } from "./form"
 
 /**
- * The signed-in app chrome shared by `/today`, `/reminders`, and `/settings`
- * (ticket #20). Keeping the header in one place means the new routes do not
- * clone today's session/offline/logout logic.
+ * The signed-in app chrome shared by `/today`, `/notes`, `/reminders`, and
+ * `/settings` (ticket #20; notes ticket #40).
+ *
+ * The "new note" action lives here rather than on one screen because FR-NOTE-01
+ * requires quick create from anywhere: one local-store transaction mints the
+ * note, then the editor opens immediately — no network round trip.
  */
 
-export type AppSection = "today" | "reminders" | "settings"
+export type AppSection = "today" | "notes" | "reminders" | "settings"
 
 const NAV: ReadonlyArray<{ section: AppSection; href: string; label: string }> = [
   { section: "today", href: "/today", label: "امروز" },
+  { section: "notes", href: "/notes", label: "یادداشت‌ها" },
   { section: "reminders", href: "/reminders", label: "یادآورها" },
   { section: "settings", href: "/settings", label: "تنظیمات" }
 ]
 
 export function AppHeader(props: { active: AppSection }) {
   const auth = useAuth()
+  const local = useLocalStore()
   const navigate = useNavigate()
   const [signOutBusy, setSignOutBusy] = createSignal(false)
   const [signOutError, setSignOutError] = createSignal<string>()
+  const [noteBusy, setNoteBusy] = createSignal(false)
+
+  const newNote = async () => {
+    if (noteBusy()) return
+    setNoteBusy(true)
+    try {
+      // The mirror opens once per session on first paint; a click in that
+      // window waits a beat instead of dropping the quick-create intent.
+      let store = local.store()
+      for (let attempt = 0; attempt < 30 && store === undefined; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+        store = local.store()
+      }
+      if (store === undefined) {
+        navigate("/notes")
+        return
+      }
+      const id = await createNoteInMirror(store)
+      navigate(`/notes/${id}`)
+    } finally {
+      setNoteBusy(false)
+    }
+  }
+
+  // Alt+N from any screen, the keyboard twin of the floating/quick action.
+  createEffect(
+    () => null,
+    () => {
+      if (typeof window === "undefined") return
+      const onKey = (event: KeyboardEvent) => {
+        if (event.altKey && event.key.toLowerCase() === "n") {
+          event.preventDefault()
+          void newNote()
+        }
+      }
+      window.addEventListener("keydown", onKey)
+      return () => window.removeEventListener("keydown", onKey)
+    }
+  )
 
   const signOut = async () => {
     if (signOutBusy()) return
@@ -75,6 +121,15 @@ export function AppHeader(props: { active: AppSection }) {
         </div>
         <div style={{ display: "flex", "align-items": "center", gap: tokens.space.sm }}>
           <SyncStatus />
+          <Button
+            type="button"
+            disabled={noteBusy()}
+            onClick={() => void newNote()}
+            aria-keyshortcuts="Alt+N"
+            title="یادداشت تازه (Alt+N)"
+          >
+            {noteBusy() ? "…" : "یادداشت تازه"}
+          </Button>
           <Button variant="ghost" type="button" disabled={signOutBusy()} onClick={() => void signOut()}>
             {signOutBusy() ? "در حال خروج…" : "خروج"}
           </Button>

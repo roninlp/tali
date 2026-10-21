@@ -59,6 +59,30 @@ declare module "virtual:file-routes" {
       $$route?: undefined;
     },
     {
+      path: "/notes";
+      page: true;
+      $component: FileRouteLazyRef<typeof import("./src/routes/notes")>;
+      $$route?: undefined;
+    },
+    {
+      path: "/notes/:id";
+      page: true;
+      $component: FileRouteLazyRef<typeof import("./src/routes/notes/[id]")>;
+      $$route?: undefined;
+    },
+    {
+      path: "/notes/";
+      page: true;
+      $component: FileRouteLazyRef<typeof import("./src/routes/notes/index")>;
+      $$route?: undefined;
+    },
+    {
+      path: "/notes/trash";
+      page: true;
+      $component: FileRouteLazyRef<typeof import("./src/routes/notes/trash")>;
+      $$route?: undefined;
+    },
+    {
       path: "/register";
       page: true;
       $component: FileRouteLazyRef<typeof import("./src/routes/register")>;
@@ -110,6 +134,39 @@ declare module "virtual:file-routes" {
       $component: FileRouteLazyRef<typeof import("./src/routes/login")>;
       $$route?: undefined;
       children?: undefined;
+    },
+    {
+      path: "/notes";
+      id: "/notes";
+      page: true;
+      $component: FileRouteLazyRef<typeof import("./src/routes/notes")>;
+      $$route?: undefined;
+      children: readonly [
+        {
+          path: "/";
+          id: "/";
+          page: true;
+          $component: FileRouteLazyRef<typeof import("./src/routes/notes/index")>;
+          $$route?: undefined;
+          children?: undefined;
+        },
+        {
+          path: "/:id";
+          id: "/:id";
+          page: true;
+          $component: FileRouteLazyRef<typeof import("./src/routes/notes/[id]")>;
+          $$route?: undefined;
+          children?: undefined;
+        },
+        {
+          path: "/trash";
+          id: "/trash";
+          page: true;
+          $component: FileRouteLazyRef<typeof import("./src/routes/notes/trash")>;
+          $$route?: undefined;
+          children?: undefined;
+        }
+      ];
     },
     {
       path: "/today";
