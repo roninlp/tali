@@ -45,6 +45,26 @@ export class TagRepo extends Context.Service<TagRepo>()("TagRepo", {
         (rows) => rows
       )
 
+    /**
+     * A live tag by name in a household. The unique index spans both members'
+     * tags (a private tag still occupies the vocabulary), so the duplicate
+     * check must not be visibility-filtered.
+     */
+    const findLiveByName = (input: {
+      readonly householdId: string
+      readonly name: string
+    }) =>
+      Effect.map(
+        sql<Tag>`
+          SELECT ${sql.literal(TAG_COLUMNS)} FROM tags
+          WHERE household_id = ${input.householdId}
+            AND name = ${input.name}
+            AND deleted_at IS NULL
+          LIMIT 1
+        `,
+        (rows) => Option.fromUndefinedOr(rows[0])
+      )
+
     const insert = (tag: Tag) =>
       Effect.map(
         sql<Tag>`
@@ -127,6 +147,7 @@ export class TagRepo extends Context.Service<TagRepo>()("TagRepo", {
 
     return {
       findById,
+      findLiveByName,
       listVisible,
       insert,
       update,
