@@ -38,6 +38,7 @@ const TODAY_CSS = `
 .today-root :focus-visible { outline: 2px solid ${tokens.color.brand}; outline-offset: 2px; }
 .today-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .today-head h1 { margin: 0; font-size: 1.22rem; line-height: 1.4; }
+.today-head-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-inline-start: auto; }
 .today-date { margin: 0; color: ${tokens.color.inkSoft}; font-size: 0.8rem; }
 .today-source { margin: 0; color: #8a5a12; font-size: 0.72rem; line-height: 1.6; }
 .today-week { list-style: none; margin: 0; padding: 4px 6px; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; background: ${tokens.color.surface}; border: 1px solid ${tokens.color.line}; border-radius: ${tokens.radius.lg}; }
@@ -46,6 +47,20 @@ const TODAY_CSS = `
 .today-week .today-weekday { font-size: 0.6rem; color: ${tokens.color.inkSoft}; line-height: 1.5; }
 .today-week .today-day { font-size: 0.88rem; line-height: 1.4; }
 .today-week li[aria-current="date"] .today-day { font-weight: 700; color: ${tokens.color.brand}; }
+.today-order { min-width: 0; background: ${tokens.color.surface}; border: 1px solid ${tokens.color.line}; border-radius: ${tokens.radius.lg}; padding: 8px 10px; }
+.today-order-toggle { flex: none; min-height: 44px; padding: 2px 12px; border-radius: 999px; border: 1px solid ${tokens.color.line}; background: ${tokens.color.surface}; color: ${tokens.color.inkSoft}; font-family: ${tokens.font.sans}; font-size: 0.76rem; }
+.today-order-toggle[aria-expanded="true"] { border-color: ${tokens.color.brand}; color: ${tokens.color.brand}; background: #eef4ff; }
+.today-order-title { margin: 0; font-size: 0.88rem; line-height: 1.5; }
+.today-order-hint { margin: 4px 0 6px; color: ${tokens.color.inkSoft}; font-size: 0.72rem; line-height: 1.7; }
+.today-order-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.today-order-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; border-top: 1px solid ${tokens.color.line}; }
+.today-order-row:first-child { border-top: 0; }
+.today-order-name { min-width: 0; font-size: 0.82rem; line-height: 1.6; }
+.today-order-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+.today-order-move { inline-size: 44px; block-size: 44px; display: grid; place-items: center; border-radius: ${tokens.radius.md}; border: 1px solid ${tokens.color.line}; background: ${tokens.color.surface}; color: ${tokens.color.inkSoft}; font-size: 1rem; }
+.today-order-move:hover:not(:disabled) { border-color: ${tokens.color.brand}; color: ${tokens.color.brand}; }
+.today-order-move:disabled { opacity: 0.4; cursor: not-allowed; }
+.today-order-status { margin: 4px 0 6px; color: ${tokens.color.inkSoft}; font-size: 0.72rem; }
 .today-section { min-width: 0; background: ${tokens.color.surface}; border: 1px solid ${tokens.color.line}; border-radius: ${tokens.radius.lg}; padding: 8px 10px; display: grid; gap: 6px; }
 .today-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .today-section-head h2 { margin: 0; font-size: 0.94rem; line-height: 1.5; }

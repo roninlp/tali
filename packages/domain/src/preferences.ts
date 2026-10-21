@@ -92,6 +92,30 @@ export const normalizeDashboardSectionOrder = (
   return result
 }
 
+export type DashboardSectionMove = "up" | "down"
+
+/**
+ * The one operation the reorder control needs: swap a section with its
+ * neighbour. Normalizing first means even a stale/duplicate cached order
+ * yields a full known permutation, and moving the first section up or the last
+ * one down is a no-op rather than an invalid array.
+ */
+export const moveDashboardSection = (
+  order: ReadonlyArray<string>,
+  section: DashboardSection,
+  direction: DashboardSectionMove
+): DashboardSectionOrder => {
+  const current = normalizeDashboardSectionOrder(order)
+  const from = current.indexOf(section)
+  if (from < 0) return current
+  const to = direction === "up" ? from - 1 : from + 1
+  if (to < 0 || to >= current.length) return current
+  const next = [...current]
+  next[from] = current[to]!
+  next[to] = current[from]!
+  return next
+}
+
 export class UserPreferences extends Model.Class<UserPreferences>("UserPreferences")({
   userId: UserId,
   /** IANA zone used for "today", week boundaries and all-day dates. */

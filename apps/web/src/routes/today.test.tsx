@@ -4,6 +4,7 @@ import { fireEvent, render, waitFor } from "@solidjs/testing-library"
 import { createRouter } from "@solidjs/router"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import {
+  DASHBOARD_SECTIONS,
   defaultPreferences,
   taskBucketBounds,
   uuidV7,
@@ -15,6 +16,7 @@ import { PreferencesProvider } from "../lib/preferences"
 import { LocalStoreProvider, useLocalStore } from "../lib/local-store"
 import { openLocalStore } from "../lib/local-store/store"
 import type { LocalStore } from "../lib/local-store/types"
+import { readCachedPreferences } from "../lib/preferences-cache"
 import { cacheSession } from "../lib/session-cache"
 import { createTaskInMirror } from "../lib/tasks/model"
 import TodayRoute from "./today"
@@ -154,6 +156,7 @@ interface NetworkPlan {
 }
 
 let plan: NetworkPlan
+let preferencePatches: Array<Record<string, unknown>> = []
 
 const stubNetwork = (next: NetworkPlan): void => {
   plan = next
@@ -161,6 +164,12 @@ const stubNetwork = (next: NetworkPlan): void => {
     const url = String(input)
     if (url.endsWith("/auth/me")) return json(200, session)
     if (url.endsWith("/preferences")) {
+      const method = init?.method ?? "GET"
+      if (method === "PATCH") {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+        preferencePatches.push(body)
+        preferences = { ...preferences, ...body } as UserPreferences
+      }
       return json(200, {
         preferences: {
           ...preferences,
@@ -284,6 +293,35 @@ const sectionsInOrder = (container: HTMLElement): ReadonlyArray<string> =>
     (section) => section.getAttribute("data-section") ?? ""
   )
 
+/** Open the reorder panel from its header toggle before clicking its buttons. */
+const openOrderControl = async (
+  screen: ReturnType<typeof mountToday>
+): Promise<void> => {
+  const toggle = screen.getByRole("button", { name: "ترتیب بخش‌ها" })
+  expect(toggle.getAttribute("aria-expanded")).toBe("false")
+  fireEvent.click(toggle)
+  await eventually(() => {
+    expect(toggle.getAttribute("aria-expanded")).toBe("true")
+    expect(screen.getByRole("region", { name: "ترتیب بخش‌ها" })).toBeTruthy()
+  })
+}
+
+const clickMove = async (
+  screen: ReturnType<typeof mountToday>,
+  name: string,
+  expectedPatches: number
+): Promise<void> => {
+  fireEvent.click(screen.getByRole("button", { name }))
+  await eventually(() => {
+    expect(preferencePatches.length).toBe(expectedPatches)
+    // The PATCH is recorded before its promise resolves; wait for the control
+    // to leave its saving state so the next click is not ignored.
+    expect((screen.getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(
+      false
+    )
+  })
+}
+
 describe("Today dashboard", () => {
   beforeEach(() => {
     localStorage.clear()
@@ -294,6 +332,7 @@ describe("Today dashboard", () => {
       weekStart: "saturday",
       digits: "persian"
     })
+    preferencePatches = []
     stubNetwork({})
   })
 
@@ -447,6 +486,69 @@ describe("Today dashboard", () => {
       expect(created?.data.dueDate).toBe(bounds().today)
     })
     expect((input as HTMLInputElement).value).toBe("")
+    screen.unmount()
+  })
+
+  it("reorders a section from the control, persists the full permutation, and re-renders live", async () => {
+    stubNetwork({ today: readModel() })
+
+    const screen = mountToday()
+    await eventually(() => {
+      expect(sectionsInOrder(screen.container)).toEqual([...DASHBOARD_SECTIONS])
+    })
+
+    await openOrderControl(screen)
+    await clickMove(screen, "انتقال یادداشت‌های پین‌شده به بالا", 1)
+
+    const expected = ["tasks", "events", "reminders", "notes", "habits"]
+    await eventually(() => {
+      expect(sectionsInOrder(screen.container)).toEqual(expected)
+    })
+    expect(preferencePatches.at(-1)).toEqual({ dashboardSectionOrder: expected })
+    // The same PATCH response updates the cache, so the order survives a
+    // reload/offline boot rather than only living in this render.
+    expect(readCachedPreferences(session.user.id)?.dashboardSectionOrder).toEqual(
+      expected
+    )
+    screen.unmount()
+  })
+
+  it("only produces full, unique permutations and disables impossible moves", async () => {
+    stubNetwork({ today: readModel() })
+
+    const screen = mountToday()
+    await eventually(() => {
+      expect(sectionsInOrder(screen.container)).toEqual([...DASHBOARD_SECTIONS])
+    })
+
+    await openOrderControl(screen)
+    expect(
+      (screen.getByRole("button", {
+        name: "انتقال کارهای امروز به بالا"
+      }) as HTMLButtonElement).disabled
+    ).toBe(true)
+    expect(
+      (screen.getByRole("button", {
+        name: "انتقال یادداشت‌های پین‌شده به پایین"
+      }) as HTMLButtonElement).disabled
+    ).toBe(true)
+
+    await clickMove(screen, "انتقال یادداشت‌های پین‌شده به بالا", 1)
+    await clickMove(screen, "انتقال یادداشت‌های پین‌شده به بالا", 2)
+    await clickMove(screen, "انتقال یادداشت‌های پین‌شده به پایین", 3)
+
+    expect(preferencePatches).toHaveLength(3)
+    for (const patch of preferencePatches) {
+      const order = patch.dashboardSectionOrder as ReadonlyArray<string>
+      expect(order).toHaveLength(DASHBOARD_SECTIONS.length)
+      expect(new Set(order).size).toBe(DASHBOARD_SECTIONS.length)
+      expect([...order].sort()).toEqual([...DASHBOARD_SECTIONS].sort())
+    }
+    // The last persisted order is exactly what `/today` is rendering.
+    const last = preferencePatches.at(-1)!.dashboardSectionOrder as ReadonlyArray<string>
+    await eventually(() => {
+      expect(sectionsInOrder(screen.container)).toEqual(last)
+    })
     screen.unmount()
   })
 

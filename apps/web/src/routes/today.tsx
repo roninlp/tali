@@ -13,6 +13,7 @@ import {
   DEFAULT_TIME_ZONE,
   formatJalaliDate,
   localizeDigits,
+  moveDashboardSection,
   normalizeDashboardSectionOrder,
   taskBucketBounds,
   taskBucketOf,
@@ -26,6 +27,7 @@ import { Guard } from "../components/guard"
 import { TextInput } from "../components/form"
 import { TodayStyles, TODAY_MAIN, TODAY_ROOT } from "../components/today/ui"
 import { usePreferences } from "../lib/preferences"
+import { authErrorMessage } from "../lib/auth-copy"
 import { weekDaysFor } from "../lib/preferences-format"
 import { useLocalStore } from "../lib/local-store"
 import type { MirrorRecord } from "../lib/local-store"
@@ -114,6 +116,9 @@ function TodayPage() {
   const [addBusy, setAddBusy] = createSignal(false)
   const [pageError, setPageError] = createSignal<string>()
   const [announcement, setAnnouncement] = createSignal("")
+  const [orderBusy, setOrderBusy] = createSignal(false)
+  const [orderError, setOrderError] = createSignal<string>()
+  const [orderOpen, setOrderOpen] = createSignal(false)
 
   let inputRef: HTMLInputElement | undefined
   let draftTimer: ReturnType<typeof setTimeout> | undefined
@@ -135,6 +140,32 @@ function TodayPage() {
   const bounds = () => taskBucketBounds(timeZone(), now())
   const order = () =>
     normalizeDashboardSectionOrder(preferences.preferences().dashboardSectionOrder)
+
+  /**
+   * Move one section and persist the whole order. The control can only swap
+   * adjacent items of the normalized permutation, so it can never send a
+   * duplicate or a missing section; an out-of-range move is disabled. The
+   * settings signal updates in the same tick, so the dashboard re-renders
+   * without a reload.
+   */
+  const moveSection = async (
+    section: DashboardSection,
+    direction: "up" | "down"
+  ): Promise<void> => {
+    if (orderBusy()) return
+    const current = order()
+    const next = moveDashboardSection(current, section, direction)
+    if (next.every((value, index) => value === current[index])) return
+    setOrderBusy(true)
+    setOrderError(undefined)
+    const result = await preferences.update({ dashboardSectionOrder: next })
+    setOrderBusy(false)
+    if (!result.ok) {
+      setOrderError(authErrorMessage(result.code))
+      return
+    }
+    setAnnouncement(`ترتیب بخش‌ها به‌روز شد: ${SECTION_TITLES[section]}`)
+  }
 
   // Reflect the mirror immediately; `subscribe` fires after local writes and
   // server acks, which is also how an offline action updates the picture.
@@ -510,11 +541,24 @@ function TodayPage() {
             <h1>امروز</h1>
             <p class="today-date">{formatJalaliDate(todayDate(), { digits: digits() })}</p>
           </div>
-          <Show when={!local.online() || fetchState() === "offline" || fetchState() === "error"}>
-            <p class="today-source" role="status">
-              {SOURCE_HINT[local.online() ? fetchState() : "offline"]}
-            </p>
-          </Show>
+          <div class="today-head-actions">
+            <Show
+              when={!local.online() || fetchState() === "offline" || fetchState() === "error"}
+            >
+              <p class="today-source" role="status">
+                {SOURCE_HINT[local.online() ? fetchState() : "offline"]}
+              </p>
+            </Show>
+            <button
+              type="button"
+              class="today-order-toggle"
+              aria-expanded={orderOpen() ? "true" : "false"}
+              aria-controls="today-order-panel"
+              onClick={() => setOrderOpen((open) => !open)}
+            >
+              ترتیب بخش‌ها
+            </button>
+          </div>
         </header>
 
         <ul class="today-week" aria-label="هفته‌ی جاری">
@@ -529,6 +573,61 @@ function TodayPage() {
             )}
           </For>
         </ul>
+
+        <Show when={orderOpen()}>
+          <section
+            id="today-order-panel"
+            class="today-order"
+            aria-labelledby="today-order-title"
+          >
+            <h2 id="today-order-title" class="today-order-title">
+              ترتیب بخش‌ها
+            </h2>
+            <p class="today-order-hint">
+              جای هر بخش را با دکمه‌های بالا و پایین تغییر دهید؛ تغییر بلافاصله ذخیره
+              می‌شود.
+            </p>
+            <ol class="today-order-list" aria-label="ترتیب بخش‌های امروز">
+              <For each={order()}>
+                {(section, index) => (
+                  <li class="today-order-row">
+                    <span class="today-order-name">{SECTION_TITLES[section]}</span>
+                    <span class="today-order-actions">
+                      <button
+                        type="button"
+                        class="today-order-move"
+                        aria-label={`انتقال ${SECTION_TITLES[section]} به بالا`}
+                        disabled={index() === 0 || orderBusy()}
+                        onClick={() => void moveSection(section, "up")}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        class="today-order-move"
+                        aria-label={`انتقال ${SECTION_TITLES[section]} به پایین`}
+                        disabled={index() === order().length - 1 || orderBusy()}
+                        onClick={() => void moveSection(section, "down")}
+                      >
+                        ↓
+                      </button>
+                    </span>
+                  </li>
+                )}
+              </For>
+            </ol>
+            <Show when={orderBusy()}>
+              <p class="today-order-status" role="status">
+                در حال ذخیره‌ی ترتیب…
+              </p>
+            </Show>
+            <Show when={orderError()}>
+              <p class="today-alert" role="alert">
+                {orderError()}
+              </p>
+            </Show>
+          </section>
+        </Show>
 
         <Show when={pageError()}>
           <p class="today-alert" role="alert">

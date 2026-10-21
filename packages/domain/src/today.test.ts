@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   DASHBOARD_SECTIONS,
   DEFAULT_DASHBOARD_SECTION_ORDER,
+  moveDashboardSection,
   normalizeDashboardSectionOrder
 } from "./preferences.js"
 
@@ -31,5 +32,35 @@ describe("normalizeDashboardSectionOrder", () => {
     expect(normalizeDashboardSectionOrder([])).toEqual([
       ...DEFAULT_DASHBOARD_SECTION_ORDER
     ])
+  })
+})
+
+describe("moveDashboardSection", () => {
+  it("swaps a section with its neighbour and returns a full permutation", () => {
+    expect(
+      moveDashboardSection(DEFAULT_DASHBOARD_SECTION_ORDER, "notes", "up")
+    ).toEqual(["tasks", "events", "reminders", "notes", "habits"])
+    expect(
+      moveDashboardSection(DEFAULT_DASHBOARD_SECTION_ORDER, "tasks", "down")
+    ).toEqual(["events", "tasks", "reminders", "habits", "notes"])
+  })
+
+  it("normalizes stale, duplicate or unknown input before moving", () => {
+    const next = moveDashboardSection(
+      ["notes", "notes", "search", "tasks"],
+      "tasks",
+      "up"
+    )
+    expect(next).toEqual(["tasks", "notes", "events", "reminders", "habits"])
+    expect(new Set(next).size).toBe(DASHBOARD_SECTIONS.length)
+  })
+
+  it("is a no-op at the ends, so the control cannot wrap into a duplicate", () => {
+    expect(
+      moveDashboardSection(DEFAULT_DASHBOARD_SECTION_ORDER, "tasks", "up")
+    ).toEqual([...DEFAULT_DASHBOARD_SECTION_ORDER])
+    expect(
+      moveDashboardSection(DEFAULT_DASHBOARD_SECTION_ORDER, "notes", "down")
+    ).toEqual([...DEFAULT_DASHBOARD_SECTION_ORDER])
   })
 })
