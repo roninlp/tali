@@ -20,6 +20,7 @@ import {
   nextItemOrder,
   pendingItemIds,
   pendingListIds,
+  stableItemRows,
   toListItemRow,
   toListRow,
   UPDATED_BY_OTHER_LABEL,
@@ -67,7 +68,15 @@ export function ListDetailScreen() {
 
   let titleRef: HTMLInputElement | undefined
   let inputRef: HTMLInputElement | undefined
+  let addForm: HTMLFormElement | undefined
   let toastTimer: ReturnType<typeof setTimeout> | undefined
+  /**
+   * The list id whose rows are already on screen. Only a *different* list may
+   * blank the detail: the loading branch unmounts the entry composer, so
+   * re-running this effect (e.g. the mirror provider re-opening after a
+   * session transition) must not throw away what is being typed.
+   */
+  let loadedId: string | undefined
 
   const digits = () => preferences.preferences().digits
   const userId = () => auth.session()?.user.id
@@ -91,7 +100,12 @@ export function ListDetailScreen() {
     () => ({ store: local.store(), id: params.id }),
     ({ store, id }) => {
       if (store === undefined) return
-      setLoadState("loading")
+      // Blank the screen only on a genuine first load / different list; a
+      // reload of the list already on screen keeps the composer mounted.
+      if (loadedId !== id) {
+        loadedId = undefined
+        setLoadState("loading")
+      }
       let cancelled = false
       const reload = () => {
         void Promise.all([
@@ -106,7 +120,9 @@ export function ListDetailScreen() {
               .map(toListItemRow)
               .filter((item) => item.listId === id)
             if (cancelled) return
-            setItems(itemRows)
+            // Keep unchanged rows' object identity so an ack does not remount
+            // them (focus, strike-through animation, drag state).
+            setItems((previous) => stableItemRows(previous, itemRows))
             setPending(pendingRows)
             if (listRow === undefined) {
               setList(undefined)
@@ -114,6 +130,7 @@ export function ListDetailScreen() {
               return
             }
             setList(listRow)
+            loadedId = id
             setLoadState("ready")
             if (document.activeElement !== titleRef) setTitleDraft(listRow.title)
           })
@@ -183,19 +200,31 @@ export function ListDetailScreen() {
     if (store === undefined || current === undefined || name === "" || busy()) return
     setBusy(true)
     setPageError(undefined)
+    // Keep the caret in the composer while the mirror transaction settles —
+    // but never pull focus away from a control the user moved to meanwhile.
+    const composerOwnsFocus = () => {
+      const active = document.activeElement
+      return (
+        active === null ||
+        active === document.body ||
+        (addForm !== undefined && active instanceof Node && addForm.contains(active))
+      )
+    }
+    const returnFocus = composerOwnsFocus()
     try {
       await createListItemInMirror(store, current.id, {
         name,
         order: nextItemOrder(items()),
         visibility: current.visibility === "private" ? "private" : "shared"
       })
-      setDraft("")
-      // Keep the caret in the entry field: the five-in-a-row acceptance path.
-      setTimeout(() => inputRef?.focus(), 0)
+      // Clear only what was submitted: the next item may already be typed
+      // while the mirror write settles (the five-Enters path).
+      setDraft((value) => (value.trim() === name ? "" : value))
     } catch (cause) {
       reportError(cause)
     } finally {
       setBusy(false)
+      if (returnFocus) inputRef?.focus()
     }
   }
 
@@ -435,7 +464,11 @@ export function ListDetailScreen() {
                 <h2 id="lists-entry-title" style={{ margin: 0, "font-size": "1.02rem" }}>
                   افزودن مورد
                 </h2>
-                <form class="lists-add" onSubmit={(event) => void addItem(event)}>
+                <form
+                  class="lists-add"
+                  ref={(element) => (addForm = element)}
+                  onSubmit={(event) => void addItem(event)}
+                >
                   <input
                     ref={(element) => (inputRef = element)}
                     name="itemName"
@@ -444,7 +477,6 @@ export function ListDetailScreen() {
                     autocomplete="off"
                     maxlength={200}
                     value={draft()}
-                    disabled={busy()}
                     onInput={(event) => setDraft(event.currentTarget.value)}
                     style={listsInputStyle}
                   />

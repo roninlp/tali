@@ -21,6 +21,15 @@ const checkedOf = (row: MirrorRecord): boolean => row.data.checked === true
 const sortOrderOf = (row: MirrorRecord): number =>
   typeof row.data.sortOrder === "number" ? row.data.sortOrder : 0
 
+/**
+ * The dashboard quick list only owns the legacy scaffold rows (no `listId`).
+ * Items created in a `/lists` list are ordinary `listItem` rows in the same
+ * mirror, and showing them here would dump every shopping list onto Today
+ * (#39 keeps the scaffold path intact by scoping it).
+ */
+const isQuickItem = (row: MirrorRecord): boolean =>
+  row.data.listId === undefined || row.data.listId === null || row.data.listId === ""
+
 export default function TodayRoute() {
   return (
     <>
@@ -78,7 +87,7 @@ function TodayPage() {
         void store
           .list("listItem")
           .then((rows) => {
-            if (!cancelled) setItems(rows)
+            if (!cancelled) setItems(rows.filter(isQuickItem))
           })
           .catch(() => {
             // The store closed (sign-out) while the read was in flight.

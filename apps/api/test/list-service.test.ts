@@ -378,6 +378,128 @@ describe("sharing and privacy", () => {
   })
 })
 
+describe("offline push (the web client's only write path)", () => {
+  it("persists listId/order/name/checked on insert and update with one feed row each", async () => {
+    const h = makeHarness()
+    const listId = uuidV7()
+    const itemId = uuidV7()
+    const entry = (
+      clientMutationId: string,
+      entityType: SyncPushEntry["entityType"],
+      entityId: string,
+      patch: Record<string, unknown>,
+      clientUpdatedAt = NOW
+    ): SyncPushEntry => ({
+      clientMutationId,
+      entityType,
+      entityId,
+      baseVersion: 0,
+      op: "upsert",
+      patch,
+      clientUpdatedAt
+    })
+
+    // Exactly what `createListInMirror` + `createListItemInMirror` queue.
+    const created = await h.push(USER_A, [
+      entry("offline-list", "list", listId, {
+        id: listId,
+        type: "list",
+        title: "خرید",
+        sort: "manual",
+        checkedPlacement: "bottom",
+        visibility: "shared",
+        createdAt: NOW
+      }),
+      entry("offline-item", "listItem", itemId, {
+        id: itemId,
+        type: "listItem",
+        listId,
+        title: "نان",
+        name: "نان",
+        checked: false,
+        done: false,
+        sortOrder: 1,
+        ordering: 1,
+        createdAt: NOW
+      })
+    ])
+    expect(created.results.map((result) => result._tag)).toEqual(["applied", "applied"])
+    expect(h.feedCount()).toBe(2)
+
+    const inserted = h.db
+      .prepare(
+        `SELECT list_id, name, title, done, checked, ordering, sort_order, version,
+                last_writer_id
+         FROM list_items WHERE id = ?`
+      )
+      .get(itemId) as Record<string, unknown>
+    expect(inserted).toMatchObject({
+      list_id: listId,
+      name: "نان",
+      title: "نان",
+      done: 0,
+      checked: 0,
+      ordering: 1,
+      sort_order: 1,
+      version: 1,
+      last_writer_id: USER_A
+    })
+    // The real aggregate's repo sees the pushed row.
+    const visible = await h.svc((svc) => svc.listItems(viewer(), { listId }))
+    expect(visible.map((item) => item.name)).toEqual(["نان"])
+
+    // The second mutation the entry field queues for the same row: rename,
+    // reorder and tick. Base version comes back from the first result.
+    const edited = await h.push(USER_A, [
+      {
+        ...entry("offline-edit", "listItem", itemId, {
+          id: itemId,
+          title: "نون",
+          name: "نون",
+          sortOrder: 4,
+          ordering: 4,
+          checked: true,
+          done: true
+        }, "2026-10-20T09:31:00.000Z"),
+        baseVersion: 1
+      }
+    ])
+    expect(edited.results[0]!._tag).toBe("applied")
+    expect(h.feedCount()).toBe(3)
+
+    const updated = h.db
+      .prepare(
+        `SELECT list_id, name, title, done, checked, ordering, sort_order,
+                checked_at, version, last_writer_id
+         FROM list_items WHERE id = ?`
+      )
+      .get(itemId) as Record<string, unknown>
+    expect(updated).toMatchObject({
+      list_id: listId,
+      name: "نون",
+      title: "نون",
+      done: 1,
+      checked: 1,
+      ordering: 4,
+      sort_order: 4,
+      version: 2,
+      last_writer_id: USER_A
+    })
+    expect(updated.checked_at).toBeTruthy()
+
+    // A replay of the same mutation ids writes nothing new.
+    const replay = await h.push(USER_A, [
+      entry("offline-list", "list", listId, { title: "خرید" }),
+      {
+        ...entry("offline-edit", "listItem", itemId, { name: "نون", ordering: 4 }),
+        baseVersion: 1
+      }
+    ])
+    expect(replay.results.every((result) => result._tag === "alreadyApplied")).toBe(true)
+    expect(h.feedCount()).toBe(3)
+  })
+})
+
 describe("reorder replay and delete", () => {
   it("replays a reorder without minting versions and cascades a delete", async () => {
     const h = makeHarness()

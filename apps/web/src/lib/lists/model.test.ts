@@ -8,6 +8,7 @@ import {
   orderPatch,
   pendingItemIds,
   pendingListIds,
+  stableItemRows,
   summarizeList,
   toListItemRow,
   toListRow,
@@ -109,8 +110,33 @@ describe("accessible reorder helpers", () => {
   })
 })
 
-describe("index summaries and pending state", () => {
-  it("counts open/checked and previews two open items", () => {
+describe("stable rows across mirror reloads", () => {
+  it("keeps unchanged rows by identity and replaces only the edited one", () => {
+    const a = item("a", "نان", 1)
+    const b = item("b", "شیر", 2)
+    // What a reload produces: brand-new objects, same content for `a`.
+    const next = [
+      { ...a },
+      { ...b, done: true, checkedAt: "2026-10-20T09:50:00.000Z", version: 2 }
+    ]
+
+    const stable = stableItemRows([a, b], next)
+    expect(stable[0]).toBe(a)
+    expect(stable[1]).not.toBe(b)
+    expect(stable[1]).toMatchObject({ id: "b", done: true })
+  })
+
+  it("drops rows that no longer exist and keeps new rows", () => {
+    const a = item("a", "نان", 1)
+    const b = item("b", "شیر", 2)
+    const stable = stableItemRows([a], [item("a", "نان", 1), b])
+    expect(stable[0]).toBe(a)
+    expect(stable[1]).toBe(b)
+    expect(stableItemRows([a, b], [])).toEqual([])
+  })
+})
+
+describe("index summaries and pending state", () => {  it("counts open/checked and previews two open items", () => {
     const summary = summarizeList(list(), [
       item("a", "نان", 1),
       item("b", "شیر", 2, true),

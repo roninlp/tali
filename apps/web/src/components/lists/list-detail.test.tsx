@@ -11,7 +11,7 @@ import {
 import { AuthProvider } from "../../lib/auth"
 import { PreferencesProvider } from "../../lib/preferences"
 import { LocalStoreProvider } from "../../lib/local-store"
-import { openLocalStore } from "../../lib/local-store/store"
+import * as storeModule from "../../lib/local-store/store"
 import { cacheSession } from "../../lib/session-cache"
 import {
   createListItemInMirror,
@@ -103,7 +103,7 @@ const mount = (listId: string) => {
 }
 
 const seedList = async (title = "خرید"): Promise<string> => {
-  const store = await openLocalStore(session.user.id)
+  const store = await storeModule.openLocalStore(session.user.id)
   try {
     return await createListInMirror(store, { title, checkedPlacement: "bottom" })
   } finally {
@@ -112,7 +112,7 @@ const seedList = async (title = "خرید"): Promise<string> => {
 }
 
 const addItem = async (listId: string, name: string, order: number): Promise<string> => {
-  const store = await openLocalStore(session.user.id)
+  const store = await storeModule.openLocalStore(session.user.id)
   try {
     return await createListItemInMirror(store, listId, { name, order })
   } finally {
@@ -121,7 +121,7 @@ const addItem = async (listId: string, name: string, order: number): Promise<str
 }
 
 const mirrorItems = async (listId: string) => {
-  const store = await openLocalStore(session.user.id)
+  const store = await storeModule.openLocalStore(session.user.id)
   try {
     return (await store.list("listItem"))
       .map(toListItemRow)
@@ -129,6 +129,51 @@ const mirrorItems = async (listId: string) => {
   } finally {
     store.close()
   }
+}
+
+/**
+ * Real IndexedDB resolves a read in a later task; fake-indexeddb resolves it in
+ * the same tick, which lets Solid coalesce "loading" and "ready" into one
+ * render and hide remount bugs. This wraps the store the provider opens with a
+ * small delay so a reload spans a painted frame, exactly like a browser.
+ */
+const slowMirror = (options: { readonly readMs?: number; readonly writeMs?: number } = {}) => {
+  const readMs = options.readMs ?? 20
+  const writeMs = options.writeMs ?? 0
+  const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+  const original = storeModule.openLocalStore
+  vi.spyOn(storeModule, "openLocalStore").mockImplementation(async (userId) => {
+    const store = await original(userId)
+      const wrapped = {
+      ...store,
+      get closed() {
+        return store.closed
+      },
+      get: async (entityType: never, entityId: string) => {
+        await pause(readMs)
+        const row = await store.get(entityType, entityId)
+        flush()
+        return row
+      },
+      list: async (entityType: never) => {
+        await pause(readMs)
+        const rows = await store.list(entityType)
+        flush()
+        return rows
+      },
+      pending: async () => {
+        await pause(readMs)
+        return store.pending()
+      },
+      writeLocal: async (write: Parameters<typeof store.writeLocal>[0]) => {
+        await pause(writeMs)
+        const result = await store.writeLocal(write)
+        flush()
+        return result
+      }
+    }
+    return wrapped as unknown as typeof store
+  })
 }
 
 describe("ListDetailScreen", () => {
@@ -216,7 +261,7 @@ describe("ListDetailScreen", () => {
 
   it("shows the updated-by label for the other member's edit", async () => {
     const listId = await seedList("مشترک")
-    const store = await openLocalStore(session.user.id)
+    const store = await storeModule.openLocalStore(session.user.id)
     try {
       // The server's pull would hydrate this acknowledged row; seed it with
       // version 3 and the other member as the last writer.
@@ -244,6 +289,77 @@ describe("ListDetailScreen", () => {
     await eventually(() =>
       expect(screen.getAllByText("توسط همخانه به‌روزرسانی شد").length).toBeGreaterThan(0)
     )
+    screen.unmount()
+  })
+
+  it("keeps the entry field focused and the draft intact while a row is written", async () => {
+    const listId = await seedList()
+    await addItem(listId, "ظرف‌ها", 1)
+
+    const screen = mount(listId)
+    const input = (await screen.findByLabelText("نام مورد تازه")) as HTMLInputElement
+    await eventually(() => expect(input.isConnected).toBe(true))
+
+    type(input, "شیر نیمه‌کاره")
+    input.focus()
+    expect(document.activeElement).toBe(input)
+
+    click(screen.getByRole("checkbox", { name: "تیک زدن ظرف‌ها" }))
+    await eventually(() =>
+      expect(screen.getByRole("checkbox", { name: "برداشتن تیک ظرف‌ها" })).toBeTruthy()
+    )
+
+    // Checking a row reloads the mirror; the composer must not be disturbed.
+    expect(screen.getByLabelText("نام مورد تازه")).toBe(input)
+    expect(document.activeElement).toBe(input)
+    expect(input.value).toBe("شیر نیمه‌کاره")
+    screen.unmount()
+  })
+
+  it("does not remount an unchanged row when another row is checked", async () => {
+    const listId = await seedList()
+    await addItem(listId, "نان", 1)
+    await addItem(listId, "ظرف‌ها", 2)
+    slowMirror({ readMs: 20 })
+
+    const screen = mount(listId)
+    const untouched = (await screen.findByRole("checkbox", {
+      name: "تیک زدن نان"
+    })) as HTMLButtonElement
+    await eventually(() =>
+      expect(screen.getByRole("checkbox", { name: "تیک زدن ظرف‌ها" })).toBeTruthy()
+    )
+
+    click(screen.getByRole("checkbox", { name: "تیک زدن ظرف‌ها" }))
+    await eventually(() =>
+      expect(screen.getByRole("checkbox", { name: "برداشتن تیک ظرف‌ها" })).toBeTruthy()
+    )
+    // Same DOM node: the re-render updated attributes instead of remounting.
+    expect(screen.getByRole("checkbox", { name: "تیک زدن نان" })).toBe(untouched)
+    screen.unmount()
+  })
+
+  it("keeps the next item typed while the previous write is still in flight", async () => {
+    const listId = await seedList()
+    slowMirror({ readMs: 10, writeMs: 60 })
+
+    const screen = mount(listId)
+    const input = (await screen.findByLabelText("نام مورد تازه")) as HTMLInputElement
+    await eventually(() => expect(input.isConnected).toBe(true))
+
+    type(input, "نان")
+    submit(input.closest("form")!)
+    // Continuous entry: the user is already on the next line while the first
+    // mirror transaction settles.
+    type(input, "شیر")
+
+    // Only after the first write has settled and its row is on screen is the
+    // pending draft meaningful.
+    await eventually(() => expect(screen.getAllByText("نان").length).toBeGreaterThan(0))
+    expect(input.value).toBe("شیر")
+    expect(
+      (await mirrorItems(listId)).map((item) => item.name)
+    ).toEqual(["نان"])
     screen.unmount()
   })
 })

@@ -97,6 +97,47 @@ export const toListRow = (record: MirrorRecord): ListRow => ({
   version: record.version
 })
 
+const sameStringArray = (
+  a: ReadonlyArray<string>,
+  b: ReadonlyArray<string>
+): boolean => a.length === b.length && a.every((entry, index) => entry === b[index])
+
+/** Structural equality for a decoded row (used to keep DOM identity across acks). */
+export const sameItemRow = (a: ListItemRow, b: ListItemRow): boolean =>
+  a.id === b.id &&
+  a.listId === b.listId &&
+  a.name === b.name &&
+  a.done === b.done &&
+  a.order === b.order &&
+  a.checkedAt === b.checkedAt &&
+  a.color === b.color &&
+  a.visibility === b.visibility &&
+  a.lastWriterId === b.lastWriterId &&
+  a.createdAt === b.createdAt &&
+  a.updatedAt === b.updatedAt &&
+  a.version === b.version &&
+  sameStringArray(a.tagIds, b.tagIds)
+
+/**
+ * Reuse the previous row object when nothing changed.
+ *
+ * The mirror reloads after every local write *and* every sync ack (3.5s), and
+ * `<For>` keys rows by reference: handing it fresh objects would remount every
+ * row, drop keyboard focus and restart the strike-through animation. Keeping
+ * the identity of unchanged rows is what makes an ack invisible (#37's
+ * remount class).
+ */
+export const stableItemRows = (
+  previous: ReadonlyArray<ListItemRow>,
+  next: ReadonlyArray<ListItemRow>
+): ReadonlyArray<ListItemRow> => {
+  const byId = new Map(previous.map((row) => [row.id, row]))
+  return next.map((row) => {
+    const before = byId.get(row.id)
+    return before !== undefined && sameItemRow(before, row) ? before : row
+  })
+}
+
 export const toListItemRow = (record: MirrorRecord): ListItemRow => ({
   id: record.entityId,
   listId: typeof record.data.listId === "string" ? record.data.listId : "",
