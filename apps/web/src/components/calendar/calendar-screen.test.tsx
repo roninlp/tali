@@ -20,6 +20,7 @@ import { openLocalStore } from "../../lib/local-store/store"
 import type { LocalStore } from "../../lib/local-store/types"
 import { cacheSession } from "../../lib/session-cache"
 import { createTaskInMirror } from "../../lib/tasks/model"
+import { createOccasionInMirror } from "../../lib/occasions/model"
 import {
   dayLabel,
   monthTitle,
@@ -475,6 +476,61 @@ describe("Calendar month view", () => {
     await withStore(async (store) => {
       const tasks = await store.list("task")
       expect(tasks.some((task) => task.data.title === "از نمای ماه")).toBe(true)
+    })
+    screen.unmount()
+  })
+
+  it("paints the annual occasion and prepares its task in one tap", async () => {
+    const today = todayIn(TIME_ZONE)
+    let occasionId = ""
+    await withStore(async (store) => {
+      occasionId = await createOccasionInMirror(store, {
+        title: "تولد مامان",
+        originDate: today,
+        timeZone: TIME_ZONE,
+        yearly: true,
+        advanceReminderDays: 7
+      })
+    })
+
+    const screen = mountCalendar()
+    await waitForSource(screen, "server")
+    fireEvent.click(screen.getByRole("button", { name: "ماه" }))
+    await waitForSource(screen, "server")
+    await eventually(() => {
+      const prepare = screen.getByRole("button", { name: "آماده‌سازی تولد مامان" })
+      expect(prepare.hasAttribute("disabled")).toBe(false)
+    })
+
+    await eventually(() => {
+      const chip = screen.container.querySelector(".calendar-occasion-chip")
+      expect(chip?.textContent).toBe("تولد مامان")
+    })
+
+    // Jalali and Gregorian share one line in the panel.
+    await eventually(() => {
+      expect(screen.container.querySelector("[data-occasion-id]")?.textContent).toContain("·")
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "آماده‌سازی تولد مامان" }))
+
+    await withStore(async (store) => {
+      await eventually(async () => {
+        const tasks = await store.list("task")
+        const prepared = tasks.find(
+          (task) => task.data.title === "آماده‌سازی برای تولد مامان"
+        )
+        expect(prepared).toBeTruthy()
+        expect(prepared?.data.dueDate).toBe(shiftFrom(today, -7))
+        const occasion = await store.get("occasion", occasionId)
+        expect(occasion?.data.preparationTaskId).toBe(prepared?.entityId)
+      })
+    })
+
+    await eventually(() => {
+      expect(
+        screen.getByText("کار آماده‌سازی برای «تولد مامان» ساخته شد")
+      ).toBeTruthy()
     })
     screen.unmount()
   })

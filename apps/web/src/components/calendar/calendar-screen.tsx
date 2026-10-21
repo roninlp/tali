@@ -47,6 +47,14 @@ import {
   weekFromSources,
   weekTitle
 } from "../../lib/calendar/model"
+import {
+  formatOccasionDate,
+  monthOccasions,
+  occasionsByDate,
+  toOccasionRow,
+  type OccasionRow
+} from "../../lib/occasions/model"
+import { OccasionsPanel } from "../occasions/occasions-panel"
 import { CALENDAR_MAIN } from "./ui"
 
 /**
@@ -97,6 +105,7 @@ export function CalendarScreen() {
   const [drafts, setDrafts] = createSignal<Readonly<Record<string, string>>>({})
   const [busyKey, setBusyKey] = createSignal<string>()
   const [pageError, setPageError] = createSignal<string>()
+  const [occasions, setOccasions] = createSignal<ReadonlyArray<OccasionRow>>([])
   const [announcement, setAnnouncement] = createSignal("")
 
   let refreshGeneration = 0
@@ -200,6 +209,15 @@ export function CalendarScreen() {
     })
   })
 
+  /**
+   * The month's annual occasions, projected from the mirror with the shared
+   * domain builder. This lane is independent of the server `/month` read model
+   * (#43): an occasion is a yearly date, and the chip must stay correct offline.
+   */
+  const monthOccasionMap = createMemo(() =>
+    occasionsByDate(monthOccasions(occasions(), month().start, month().end))
+  )
+
   const source = createMemo<"server" | "mirror">(() =>
     view() === "week" ? (weekHasServer() ? "server" : "mirror") : monthHasServer() ? "server" : "mirror"
   )
@@ -211,14 +229,16 @@ export function CalendarScreen() {
     (store) => {
       if (store === undefined) {
         setMirrorTasks([])
+        setOccasions([])
         return
       }
       let cancelled = false
       const reload = () => {
-        void Promise.all([store.list("task"), store.pending()])
-          .then(([tasks, queued]) => {
+        void Promise.all([store.list("task"), store.list("occasion"), store.pending()])
+          .then(([tasks, occasionRows, queued]) => {
             if (cancelled) return
             setMirrorTasks(tasks)
+            setOccasions(occasionRows.map(toOccasionRow))
             setPendingIds(
               new Set(
                 queued
@@ -762,8 +782,19 @@ export function CalendarScreen() {
         <ol class="calendar-month" aria-label={monthTitle(anchor(), digits())}>
           <For each={model.days}>
             {(cell) => {
-              const isToday = cell.date === today()
-              const label = `${dayLabel(cell.date, digits())} — ${taskCountLabel(cell.tasks, digits())}`
+              // Reactive memos: the occasion lane loads from the mirror after
+              // the grid paints, so neither the label nor the chips may capture
+              // the first (empty) map. Reading the preferences inside a memo
+              // (not the untracked `<For>` body) keeps a digits/week-start
+              // change live.
+              const isToday = createMemo(() => cell.date === today())
+              const dayOccasions = createMemo(() => monthOccasionMap().get(cell.date) ?? [])
+              const label = createMemo(() => {
+                const count = dayOccasions().length
+                const occasionCount =
+                  count === 0 ? "" : ` — ${localizeDigits(count, digits())} مناسبت`
+                return `${dayLabel(cell.date, digits())} — ${taskCountLabel(cell.tasks, digits())}${occasionCount}`
+              })
               return (
                 <li class="calendar-month-cell">
                   <button
@@ -771,8 +802,8 @@ export function CalendarScreen() {
                     class="calendar-month-day"
                     data-outside={cell.inMonth ? undefined : "true"}
                     data-busy={cell.isBusy ? "true" : undefined}
-                    data-today={isToday ? "true" : undefined}
-                    aria-label={label}
+                    data-today={isToday() ? "true" : undefined}
+                    aria-label={label()}
                     aria-pressed={selectedDay() === cell.date ? "true" : "false"}
                     onClick={() => setSelectedDay(cell.date)}
                   >
@@ -784,6 +815,26 @@ export function CalendarScreen() {
                         {() => <span class="calendar-month-dot" />}
                       </For>
                     </span>
+                    <Show when={dayOccasions().length > 0}>
+                      <span class="calendar-occasion-chips" aria-hidden="true">
+                        <For each={dayOccasions().slice(0, 2)}>
+                          {(occasion) => (
+                            <span
+                              class="calendar-occasion-chip"
+                              data-color={occasion.color ?? undefined}
+                              title={`${occasion.title} — ${formatOccasionDate(occasion, digits())}`}
+                            >
+                              {occasion.title}
+                            </span>
+                          )}
+                        </For>
+                        <Show when={dayOccasions().length > 2}>
+                          <span class="calendar-occasion-chip" data-more="true">
+                            +{localizeDigits(dayOccasions().length - 2, digits())}
+                          </span>
+                        </Show>
+                      </span>
+                    </Show>
                   </button>
                 </li>
               )
@@ -870,6 +921,13 @@ export function CalendarScreen() {
             <For each={week().days}>{(day) => weekDayCard(day)}</For>
           </div>
         </Show>
+
+        <OccasionsPanel
+          occasions={occasions()}
+          today={today()}
+          timeZone={timeZone()}
+          digits={digits()}
+        />
 
         <Show when={pageError()}>
           <p class="calendar-alert" role="alert">

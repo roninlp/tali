@@ -102,6 +102,9 @@ const CALENDAR_CSS = `
 .calendar-month-number { font-size: 0.8rem; line-height: 1.5; }
 .calendar-month-dots { display: flex; gap: 2px; min-height: 4px; }
 .calendar-month-dot { inline-size: 4px; block-size: 4px; border-radius: 50%; background: ${tokens.color.brand}; opacity: 0.75; }
+.calendar-occasion-chips { display: grid; gap: 1px; inline-size: 100%; min-width: 0; justify-items: stretch; }
+.calendar-occasion-chip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.52rem; line-height: 1.5; padding: 0 3px; border-radius: 999px; background: #fff1f4; color: #9f1239; }
+.calendar-occasion-chip[data-more="true"] { text-align: center; background: transparent; color: ${tokens.color.inkSoft}; }
 .calendar-detail { display: grid; gap: 6px; background: ${tokens.color.surface}; border: 1px solid ${tokens.color.line}; border-radius: ${tokens.radius.lg}; padding: 8px 10px; }
 .calendar-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .calendar-detail-head h2 { margin: 0; font-size: 0.94rem; line-height: 1.5; }
