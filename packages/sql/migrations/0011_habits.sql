@@ -17,10 +17,17 @@
 --
 -- FREQUENCY HISTORY
 --   `frequency_history` is a JSON array of {effectiveFrom, frequency}, oldest
---   first, each carrying the *local* date that version took effect. The last
---   entry always equals `frequency`. Changing the frequency appends a version
---   instead of rewriting the past, so the stats algorithm (#65) can ask what
---   the habit asked of the user last month. FR-HAB-03's edge case.
+--   first, each carrying the *local* date that era took effect. Era 0 starts on
+--   `started_on`; a change starts the first period of the new frequency after
+--   the period the change happened in has ended (Saturday–Friday for a weekly
+--   frequency, the next day for daily/weekdays). The boundary is computed when
+--   the change is applied and is never back-dated, so eras never overlap and
+--   never leave a gap. The last entry always equals `frequency`. This is what
+--   lets the stats algorithm (#65) ask what the habit asked of the user last
+--   month without reinterpreting the past. FR-HAB-03's edge case.
+--
+--   The domain model also rejects an empty history and duplicate/out-of-order
+--   boundaries; only the server ever writes the column.
 --
 -- TIME ZONE
 --   `time_zone` is the habit's own IANA zone. `reminder_time` is a local
@@ -52,8 +59,10 @@ CREATE TABLE IF NOT EXISTS habits (
   color              TEXT,
   -- The structured frequency union (JSON text).
   frequency          TEXT NOT NULL DEFAULT '{"_tag":"daily"}',
-  -- Every version of the frequency, oldest first (JSON array).
+  -- Every era of the frequency, oldest first (JSON array).
   frequency_history  TEXT NOT NULL DEFAULT '[]',
+  -- The owner's local date the habit began; statistics never look before it.
+  started_on         TEXT NOT NULL,
   -- Local wall-clock "HH:mm", or NULL for no reminder time.
   reminder_time      TEXT,
   -- The habit's IANA zone (reminder time + history effective dates).

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest"
 import { Effect, Layer, String as Str } from "effect"
 import { D1Client } from "@effect/sql-d1"
 import {
+  localDateIn,
   type SyncPullResponse,
   type SyncPushEntry,
   uuidV7
@@ -150,12 +151,14 @@ describe("habit sync", () => {
       title: "پیاده‌روی",
       description: "بیست دقیقه",
       icon: "🚶",
+      startedOn: "2026-10-20",
       frequency: { _tag: "weekdays", days: [1, 3, 5] },
       reminderTime: "07:30",
       timeZone: "Asia/Tehran",
       visibility: "shared"
     })
-    // The offline create seeds the frequency history, exactly like the service.
+    // The offline create seeds the habit's first era from its creation day,
+    // exactly like the service.
     expect(row.data.frequencyHistory).toEqual([
       { effectiveFrom: "2026-10-20", frequency: { _tag: "weekdays", days: [1, 3, 5] } }
     ])
@@ -167,7 +170,7 @@ describe("habit sync", () => {
     expect(JSON.parse(stored.frequency)).toEqual({ _tag: "weekdays", days: [1, 3, 5] })
   })
 
-  it("versions an offline frequency change through the push merge", async () => {
+  it("never back-dates an era from the client's edit day (#65)", async () => {
     const h = makeHarness()
     const id = uuidV7()
 
@@ -209,10 +212,20 @@ describe("habit sync", () => {
     const pulled = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
     const row = pulled.items.find((item) => item.entityId === id)!
     expect(row.data.frequency).toEqual({ _tag: "weekly", times: 3 })
-    expect(row.data.frequencyHistory).toEqual([
-      { effectiveFrom: "2026-10-20", frequency: { _tag: "daily" } },
-      { effectiveFrom: "2026-10-21", frequency: { _tag: "weekly", times: 3 } }
-    ])
+    const history = row.data.frequencyHistory as ReadonlyArray<{
+      readonly effectiveFrom: string
+      readonly frequency: unknown
+    }>
+    expect(history[0]).toEqual({ effectiveFrom: "2026-10-20", frequency: { _tag: "daily" } })
+    const era = history[1]!
+    expect(era.frequency).toEqual({ _tag: "weekly", times: 3 })
+    // The client said it edited on 20 Oct (21:30 UTC = the 21st in Tehran);
+    // the era is still dated from the server's apply day, and a weekly era can
+    // only open on the fixed Saturday boundary.
+    const today = localDateIn(new Date().toISOString(), "Asia/Tehran")
+    expect(era.effectiveFrom).not.toBe("2026-10-20")
+    expect(era.effectiveFrom >= today).toBe(true)
+    expect(new Date(`${era.effectiveFrom}T00:00:00.000Z`).getUTCDay()).toBe(6)
   })
 
   it("does not let a client patch rewrite the frequency history", async () => {
@@ -431,16 +444,13 @@ describe("habit sync", () => {
         })
       ]
     })
-    // The shared patch sanitizer drops a writable field whose guard fails
-    // (the RPC path rejects it instead), so the create falls back to its
-    // default status rather than storing an unknown value. The UI only ever
-    // sends the three enum values, so this is the offline-corruption path, not
-    // a user path.
-    expect(badStatus.results[1]).toMatchObject({ _tag: "applied" })
-    const stored = h.db
-      .prepare("SELECT status FROM habit_entries WHERE habit_id = ?")
-      .get(habitId) as { readonly status: string }
-    expect(stored.status).toBe("done")
+    // A status outside the enum is rejected, never coerced to `done`: the RPC
+    // and sync paths now agree that an unknown answer is an invalid patch.
+    expect(badStatus.results[1]).toMatchObject({ _tag: "rejected", code: "InvalidPatch" })
+    const count = h.db
+      .prepare("SELECT COUNT(*) AS n FROM habit_entries WHERE habit_id = ?")
+      .get(habitId) as { readonly n: number }
+    expect(count.n).toBe(0)
   })
 
   it("filters a private habit and its entries out of the other member's pull", async () => {
@@ -487,6 +497,274 @@ describe("habit sync", () => {
 
     const outsider = await pull(h, { userId: USER_A, householdId: HOUSEHOLD_B, cursor: 0 })
     expect(outsider.items).toEqual([])
+  })
+
+  it("keeps a private habit's log private even when the tap omits visibility", async () => {
+    const h = makeHarness()
+    const habitId = uuidV7()
+    const entryId = uuidV7()
+
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "habit",
+          entityId: habitId,
+          baseVersion: 0,
+          patch: {
+            title: "عادت خصوصی",
+            frequency: { _tag: "daily" },
+            timeZone: "UTC",
+            visibility: "private"
+          },
+          clientUpdatedAt: "2026-10-20T04:00:00.000Z"
+        })
+      ]
+    })
+
+    // The tap does not send visibility (or sends a wider one): the server must
+    // inherit the habit's, not trust the patch.
+    const pushed = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "habitEntry",
+          entityId: entryId,
+          baseVersion: 0,
+          patch: { habitId, localDate: "2026-10-20", timeZone: "UTC", status: "done" },
+          clientUpdatedAt: "2026-10-20T16:00:00.000Z"
+        })
+      ]
+    })
+    expect(pushed.results[0]).toMatchObject({ _tag: "applied" })
+
+    const stored = h.db
+      .prepare("SELECT visibility FROM habit_entries WHERE id = ?")
+      .get(entryId) as { readonly visibility: string }
+    expect(stored.visibility).toBe("private")
+
+    // The partner's mirror never receives the logged day.
+    const partner = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    expect(partner.items).toEqual([])
+    expect(partner.entries).toEqual([])
+  })
+
+  it("refuses an entry whose habit is missing, trashed, private to another member, or in another household", async () => {
+    const h = makeHarness()
+    const privateHabit = uuidV7()
+    const deletedHabit = uuidV7()
+    const foreignHabit = uuidV7()
+
+    await push(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "habit",
+          entityId: privateHabit,
+          baseVersion: 0,
+          patch: {
+            title: "خصوصی",
+            frequency: { _tag: "daily" },
+            timeZone: "UTC",
+            visibility: "private"
+          }
+        })
+      ]
+    })
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "habit",
+          entityId: deletedHabit,
+          baseVersion: 0,
+          patch: { title: "حذف‌شده", frequency: { _tag: "daily" }, timeZone: "UTC" }
+        })
+      ]
+    })
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "habit",
+          entityId: deletedHabit,
+          baseVersion: 1,
+          op: "delete"
+        })
+      ]
+    })
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD_B,
+      entries: [
+        entry({
+          entityType: "habit",
+          entityId: foreignHabit,
+          baseVersion: 0,
+          patch: { title: "خانه دیگر", frequency: { _tag: "daily" }, timeZone: "UTC" }
+        })
+      ]
+    })
+
+    const tap = (habitId: string, localDate: string) =>
+      entry({
+        entityType: "habitEntry",
+        entityId: uuidV7(),
+        baseVersion: 0,
+        patch: { habitId, localDate, timeZone: "UTC", status: "done" }
+      })
+
+    const result = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        tap(uuidV7(), "2026-10-20"), // no such habit
+        tap(deletedHabit, "2026-10-20"), // habit is in the trash
+        tap(privateHabit, "2026-10-20"), // another member's private habit
+        tap(foreignHabit, "2026-10-20") // another household's habit
+      ]
+    })
+    expect(result.results.map((row) => row._tag === "rejected" ? [row.code] : row._tag)).toEqual([
+      ["ParentNotFound"],
+      ["ParentDeleted"],
+      ["ParentForbidden"],
+      ["ParentForbidden"]
+    ])
+    const count = h.db.prepare("SELECT COUNT(*) AS n FROM habit_entries").get() as {
+      readonly n: number
+    }
+    expect(count.n).toBe(0)
+  })
+
+  it("rejects a bad IANA zone instead of throwing out of the push", async () => {
+    const h = makeHarness()
+    const habitId = uuidV7()
+
+    // A client-supplied zone that Intl cannot resolve must be an invalid patch
+    // for that entry, not a 500 that wedges the whole outbox.
+    const pushed = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "habit",
+          entityId: habitId,
+          baseVersion: 0,
+          patch: {
+            title: "کتاب",
+            frequency: { _tag: "daily" },
+            timeZone: "Mars/Olympus"
+          }
+        })
+      ]
+    })
+    expect(pushed.results[0]).toMatchObject({ _tag: "rejected", code: "InvalidPatch" })
+
+    // The same value on a frequency change is also rejected, not thrown.
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "habit",
+          entityId: habitId,
+          baseVersion: 0,
+          patch: { title: "کتاب", frequency: { _tag: "daily" }, timeZone: "UTC" }
+        })
+      ]
+    })
+    const changed = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "habit",
+          entityId: habitId,
+          baseVersion: 1,
+          patch: { frequency: { _tag: "weekly", times: 2 }, timeZone: "Mars/Olympus" }
+        })
+      ]
+    })
+    expect(changed.results[0]).toMatchObject({ _tag: "rejected", code: "InvalidPatch" })
+  })
+
+  it("rejects a malformed entry identity instead of silently substituting a default", async () => {
+    const h = makeHarness()
+    const habitId = uuidV7()
+
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "habit",
+          entityId: habitId,
+          baseVersion: 0,
+          patch: { title: "کتاب", frequency: { _tag: "daily" }, timeZone: "UTC" }
+        })
+      ]
+    })
+
+    // A day the client could not express must not be replaced by "today": the
+    // entry is rejected and the outbox drops it.
+    const badDay = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "habitEntry",
+          entityId: uuidV7(),
+          baseVersion: 0,
+          patch: { habitId, localDate: "2026/10/20", timeZone: "UTC", status: "done" }
+        })
+      ]
+    })
+    expect(badDay.results[0]).toMatchObject({ _tag: "rejected", code: "InvalidPatch" })
+    expect(h.db.prepare("SELECT COUNT(*) AS n FROM habit_entries").get()).toEqual({ n: 0 })
+  })
+
+  it("does not grow an era for a frequency that only differs in representation", async () => {
+    const h = makeHarness()
+    const habitId = uuidV7()
+
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "habit",
+          entityId: habitId,
+          baseVersion: 0,
+          patch: { title: "کتاب", frequency: { _tag: "daily" }, timeZone: "UTC" }
+        })
+      ]
+    })
+
+    // Extra keys decode away; the frequency is structurally unchanged, so the
+    // merge must not append a phantom era.
+    const pushed = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "habit",
+          entityId: habitId,
+          baseVersion: 1,
+          patch: { frequency: { _tag: "daily", days: [1] } }
+        })
+      ]
+    })
+    expect(pushed.results[0]).toMatchObject({ _tag: "applied", version: 2 })
+
+    const pulled = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
+    const row = pulled.items.find((item) => item.entityId === habitId)!
+    expect(row.data.frequencyHistory).toHaveLength(1)
+    expect(row.data.frequency).toEqual({ _tag: "daily" })
   })
 
   it("deletes a habit through the shared tombstone path", async () => {

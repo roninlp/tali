@@ -8,10 +8,12 @@ import {
   HabitEntry,
   HabitEntryStatus,
   HabitFrequency,
+  type HabitFrequencyChange,
   habitFrequencyHistoryAfter,
   HabitPatch,
   HabitReminderTime,
   localDateIn,
+  localDateInOption,
   sameHabitFrequency
 } from "./index.js"
 import type { HabitEntryId, HabitId } from "./common.js"
@@ -44,6 +46,7 @@ const dailyHabit = {
   title: "پیاده‌روی",
   description: "هر روز صبح",
   icon: "🚶",
+  startedOn: "2026-10-20",
   frequency: { _tag: "daily" as const },
   frequencyHistory: [{ effectiveFrom: "2026-10-20", frequency: { _tag: "daily" as const } }],
   reminderTime: "07:30",
@@ -136,6 +139,28 @@ describe("Habit model", () => {
         frequencyHistory: [{ effectiveFrom: "1403/07/28", frequency: { _tag: "daily" } }]
       })
     ).toThrow()
+    // #65: the era log is non-empty and strictly increasing (no overlap).
+    expect(() =>
+      Schema.decodeUnknownSync(Habit)({ ...dailyHabit, frequencyHistory: [] })
+    ).toThrow()
+    expect(() =>
+      Schema.decodeUnknownSync(Habit)({
+        ...dailyHabit,
+        frequencyHistory: [
+          { effectiveFrom: "2026-10-21", frequency: dailyHabit.frequency },
+          { effectiveFrom: "2026-10-21", frequency: dailyHabit.frequency }
+        ]
+      })
+    ).toThrow()
+    expect(() =>
+      Schema.decodeUnknownSync(Habit)({
+        ...dailyHabit,
+        frequencyHistory: [
+          { effectiveFrom: "2026-10-21", frequency: dailyHabit.frequency },
+          { effectiveFrom: "2026-10-20", frequency: dailyHabit.frequency }
+        ]
+      })
+    ).toThrow()
   })
 
   it("decodes the create and patch inputs", () => {
@@ -161,42 +186,108 @@ describe("Habit model", () => {
   })
 })
 
-describe("habit frequency history", () => {
+describe("habit frequency eras", () => {
   const daily = { _tag: "daily" as const }
+  const weekdays = { _tag: "weekdays" as const, days: [1, 3, 5] }
   const weekly = { _tag: "weekly" as const, times: 3 }
 
+  const historyFrom = (
+    startedOn: string,
+    frequency: HabitFrequency
+  ): ReadonlyArray<HabitFrequencyChange> => [{ effectiveFrom: startedOn, frequency }]
+
   it("is a no-op when the frequency did not change", () => {
-    const history = [{ effectiveFrom: "2026-10-20", frequency: daily }]
+    const history = historyFrom("2026-10-20", daily)
     expect(habitFrequencyHistoryAfter({
       history,
       frequency: { _tag: "daily" },
-      effectiveFrom: "2026-11-01"
+      changeDate: "2026-11-01"
     })).toBe(history)
   })
 
-  it("appends a new version on a later day", () => {
-    const history = [{ effectiveFrom: "2026-10-20", frequency: daily }]
+  it("starts a change on the next day for a day-unit frequency", () => {
     expect(habitFrequencyHistoryAfter({
-      history,
-      frequency: weekly,
-      effectiveFrom: "2026-11-01"
+      history: historyFrom("2026-10-20", daily),
+      frequency: weekdays,
+      changeDate: "2026-10-22"
     })).toEqual([
       { effectiveFrom: "2026-10-20", frequency: daily },
-      { effectiveFrom: "2026-11-01", frequency: weekly }
+      { effectiveFrom: "2026-10-23", frequency: weekdays }
     ])
   })
 
-  it("replaces the last version when the change lands on the same day", () => {
-    const history = [{ effectiveFrom: "2026-10-20", frequency: daily }]
+  it("keeps the current week under the old frequency when switching to a weekly unit (#65 E10/E11)", () => {
+    // daily → 3×/week on Wed 21 Oct: the daily era covers 21–23 Oct and the
+    // weekly era opens on Sat 24 Oct.
     expect(habitFrequencyHistoryAfter({
-      history,
+      history: historyFrom("2026-10-01", daily),
       frequency: weekly,
-      effectiveFrom: "2026-10-20"
-    })).toEqual([{ effectiveFrom: "2026-10-20", frequency: weekly }])
+      changeDate: "2026-10-21"
+    })).toEqual([
+      { effectiveFrom: "2026-10-01", frequency: daily },
+      { effectiveFrom: "2026-10-24", frequency: weekly }
+    ])
   })
 
-  it("seeds the history from an empty list", () => {
-    expect(habitFrequencyHistoryAfter({ history: [], frequency: daily, effectiveFrom: "2026-10-20" }))
+  it("keeps the current week under the old frequency when switching away from weekly (#65 E11)", () => {
+    // 3×/week → daily on Wed 21 Oct: the week 17–23 is judged at 3× and the
+    // daily era starts Sat 24 Oct, so no day is counted twice.
+    expect(habitFrequencyHistoryAfter({
+      history: historyFrom("2026-10-01", weekly),
+      frequency: daily,
+      changeDate: "2026-10-21"
+    })).toEqual([
+      { effectiveFrom: "2026-10-01", frequency: weekly },
+      { effectiveFrom: "2026-10-24", frequency: daily }
+    ])
+  })
+
+  it("starts a same-unit weekly change at the next counting week", () => {
+    expect(habitFrequencyHistoryAfter({
+      history: historyFrom("2026-10-03", weekly),
+      frequency: { _tag: "weekly", times: 2 },
+      changeDate: "2026-10-21"
+    })).toEqual([
+      { effectiveFrom: "2026-10-03", frequency: weekly },
+      { effectiveFrom: "2026-10-24", frequency: { _tag: "weekly", times: 2 } }
+    ])
+  })
+
+  it("never back-dates an era behind the previous boundary", () => {
+    // Two changes before the pending Saturday boundary: the second replaces
+    // the pending era instead of stacking a second one on the same date.
+    const pending: ReadonlyArray<HabitFrequencyChange> = [
+      { effectiveFrom: "2026-10-03", frequency: weekly },
+      { effectiveFrom: "2026-10-24", frequency: { _tag: "weekly", times: 2 } }
+    ]
+    expect(habitFrequencyHistoryAfter({
+      history: pending,
+      frequency: { _tag: "weekly", times: 4 },
+      changeDate: "2026-10-22"
+    })).toEqual([
+      { effectiveFrom: "2026-10-03", frequency: weekly },
+      { effectiveFrom: "2026-10-24", frequency: { _tag: "weekly", times: 4 } }
+    ])
+  })
+
+  it("clamps an impossible earlier boundary to the stored one", () => {
+    // A change date before the stored era (a clock that crossed the boundary
+    // between read and write) must not rewrite history backwards.
+    expect(habitFrequencyHistoryAfter({
+      history: [
+        { effectiveFrom: "2026-10-01", frequency: daily },
+        { effectiveFrom: "2026-10-10", frequency: weekly }
+      ],
+      frequency: weekdays,
+      changeDate: "2026-10-05"
+    })).toEqual([
+      { effectiveFrom: "2026-10-01", frequency: daily },
+      { effectiveFrom: "2026-10-10", frequency: weekdays }
+    ])
+  })
+
+  it("seeds era 0 from an empty list", () => {
+    expect(habitFrequencyHistoryAfter({ history: [], frequency: daily, changeDate: "2026-10-20" }))
       .toEqual([{ effectiveFrom: "2026-10-20", frequency: daily }])
   })
 
@@ -208,17 +299,20 @@ describe("habit frequency history", () => {
       { _tag: "weekdays", days: [1, 3] }
     )).toBe(true)
     // The weekday selection is a set: a differently ordered control is the
-    // same frequency, not a new version.
+    // same frequency, not a new era.
     expect(sameHabitFrequency(
       { _tag: "weekdays", days: [3, 1] },
       { _tag: "weekdays", days: [1, 3] }
     )).toBe(true)
   })
 
-  it("derives the effective date in the habit's zone, not UTC", () => {
+  it("derives the start date in the habit's zone, not UTC", () => {
     // 21:30 UTC is already the 21st in Tehran (+03:30).
     expect(localDateIn("2026-10-20T21:30:00.000Z", "Asia/Tehran")).toBe("2026-10-21")
     expect(localDateIn("2026-10-20T21:30:00.000Z", "UTC")).toBe("2026-10-20")
+    // The sync path uses the tolerant variant so a bad client value never throws.
+    expect(localDateInOption("2026-10-20T21:30:00.000Z", "Mars/Olympus")).toBeNull()
+    expect(localDateInOption("not-an-instant", "UTC")).toBeNull()
   })
 })
 

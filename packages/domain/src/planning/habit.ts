@@ -37,12 +37,13 @@ import { HouseholdId, UserId, Visibility } from "../common.js"
  *   7 = Sunday), i.e. "Mon/Wed/Fri";
  * - `weekly` — a target count per week (1..7), i.e. "3 times a week".
  *
- * `frequencyHistory` is the **versioned** form: one entry per frequency the
- * habit has had, oldest first, each carrying the local date it took effect.
- * The last entry always equals the current `frequency`; a change appends
- * (or replaces same-day) instead of rewriting the past, so the stats #65
- * defines can answer "what did this habit ask of the user last month?"
- * without a migration (FR-HAB-03's edge case).
+ * `frequencyHistory` is the **versioned** form: one era per frequency the habit
+ * has had, oldest first, each carrying the local date it took effect. The last
+ * entry always equals the current `frequency`; a change appends a new era whose
+ * boundary is computed at change time (the first period of the new frequency
+ * after the period the change happened in has ended), never a back-dated date,
+ * so eras never overlap and #65 can answer "what did this habit ask of the user
+ * last month?" (FR-HAB-03's edge case).
  *
  * ## The habit owns a zone
  *
@@ -96,16 +97,46 @@ export const HabitFrequency = Schema.Union([
 export type HabitFrequency = Schema.Schema.Type<typeof HabitFrequency>
 
 /**
- * One version of a habit's frequency: the local date it started applying.
+ * One **era** of a habit's frequency: the first local date it applies from.
  *
  * `effectiveFrom` is a wall date in the habit's own zone, so "from Saturday"
- * means the owner's Saturday, not UTC's.
+ * means the owner's Saturday, not UTC's. It is `startedOn` for the first era
+ * and, for a change, the boundary computed at change time (see
+ * `habitFrequencyHistoryAfter`): the first period of the new frequency after
+ * the period the change happened in has ended. Eras therefore never overlap and
+ * never leave a gap — the previous era implicitly runs until the next one
+ * starts.
  */
 export const HabitFrequencyChange = Schema.Struct({
   effectiveFrom: LocalDate,
   frequency: HabitFrequency
 })
 export type HabitFrequencyChange = Schema.Schema.Type<typeof HabitFrequencyChange>
+
+/**
+ * The version log: non-empty, oldest first, with **strictly increasing**
+ * boundaries.
+ *
+ * Enforced at the model boundary because a duplicate or out-of-order boundary
+ * would make "which frequency was in force on day X" ambiguous and could count
+ * one day in two eras. Only the server writes this field (it is not in the
+ * writable allowlist); the check is the last line of defence, not a client
+ * validation rule.
+ */
+export const HabitFrequencyHistory = Schema.Array(HabitFrequencyChange).check(
+  Schema.makeFilter<ReadonlyArray<HabitFrequencyChange>>((history) => {
+    if (history.length === 0) {
+      return "the frequency history must contain at least the starting era"
+    }
+    for (let index = 1; index < history.length; index += 1) {
+      if (!(history[index]!.effectiveFrom > history[index - 1]!.effectiveFrom)) {
+        return "frequency eras must have strictly increasing effective dates"
+      }
+    }
+    return true
+  })
+)
+export type HabitFrequencyHistory = Schema.Schema.Type<typeof HabitFrequencyHistory>
 
 /** Local wall-clock time `HH:mm` (24h). Stored as text; the zone is the habit's. */
 export const HabitReminderTime = Schema.String.check(
@@ -134,38 +165,116 @@ const canonicalHabitFrequency = (frequency: HabitFrequency): string =>
 /**
  * The local calendar date of an instant in a zone.
  *
- * Used for the history's `effectiveFrom`: the day a change takes effect is
- * the owner's wall date, never the UTC date. Pure; the service and the sync
- * merge both call it so both write paths agree.
+ * Used for a habit's `startedOn`: the day a habit began is the owner's wall
+ * date, never the UTC date. Pure; the service and the sync merge both call it
+ * so both write paths agree. Throws on an unusable instant/zone — trusted
+ * inputs only; the sync path uses `localDateInOption`.
  */
 export const localDateIn = (instant: string, timeZone: string): LocalDate =>
   Temporal.Instant.from(instant).toZonedDateTimeISO(timeZone).toPlainDate().toString() as LocalDate
 
 /**
- * Append (or replace) a version of the frequency. Pure, so the RPC service and
+ * As `localDateIn`, but a malformed instant or IANA zone yields `null`.
+ *
+ * The sync path receives both values from a client patch, so it must never
+ * throw: a bad zone is later rejected by the `Habit`/`HabitEntry` schema as an
+ * `InvalidPatch` instead of turning the whole push into a retryable 500.
+ */
+export const localDateInOption = (instant: string, timeZone: string): LocalDate | null => {
+  try {
+    return localDateIn(instant, timeZone)
+  } catch {
+    return null
+  }
+}
+
+// ── Frequency eras (#65) ──────────────────────────────────────────────────
+
+/** The counting unit of a frequency: day for daily/weekdays, week for weekly. */
+const habitUnit = (frequency: HabitFrequency): "day" | "week" =>
+  frequency._tag === "weekly" ? "week" : "day"
+
+const addDays = (date: LocalDate, days: number): LocalDate =>
+  Temporal.PlainDate.from(date).add({ days }).toString() as LocalDate
+
+/** ISO weekday 6 = Saturday, 5 = Friday (the fixed counting week, #65). */
+const SATURDAY = 6
+const FRIDAY = 5
+
+/** The last day of the period of `unit` containing `date`. */
+const periodEndIn = (date: LocalDate, unit: "day" | "week"): LocalDate => {
+  if (unit === "day") return date
+  const dayOfWeek = Temporal.PlainDate.from(date).dayOfWeek
+  return addDays(date, (FRIDAY - dayOfWeek + 7) % 7)
+}
+
+/** The first day of the next `unit` period strictly after `date`. */
+const nextPeriodStartAfter = (date: LocalDate, unit: "day" | "week"): LocalDate => {
+  if (unit === "day") return addDays(date, 1)
+  const dayOfWeek = Temporal.PlainDate.from(date).dayOfWeek
+  // A Saturday change belongs to the week that opened that day, so its next
+  // boundary is a full week later.
+  return addDays(date, ((SATURDAY - dayOfWeek + 7) % 7) || 7)
+}
+
+/**
+ * The first date the next frequency era applies from (#65 §5.2).
+ *
+ * `max(first period start of the new unit after the change,
+ *       end of the old period containing the change + 1 day)`.
+ *
+ * The old period always finishes under the frequency it opened with, so a
+ * mid-week change never re-cuts the week in progress, and the two eras cannot
+ * overlap. The result is always **strictly after** `changeDate`.
+ */
+const habitEraStartAfter = (input: {
+  readonly previous: HabitFrequency
+  readonly next: HabitFrequency
+  readonly changeDate: LocalDate
+}): LocalDate => {
+  const afterOldPeriod = addDays(periodEndIn(input.changeDate, habitUnit(input.previous)), 1)
+  const nextStart = nextPeriodStartAfter(input.changeDate, habitUnit(input.next))
+  return afterOldPeriod > nextStart ? afterOldPeriod : nextStart
+}
+
+/**
+ * Append (or replace) an era of the frequency. Pure, so the RPC service and
  * the offline sync merge cannot drift.
+ *
+ * `changeDate` is the owner's local date of the change **at the moment the
+ * server applies it** — never a client edit day. An era boundary is therefore
+ * never back-dated: a change can only take effect in a future period.
  *
  * - an unchanged frequency leaves the history exactly as it is (a no-op edit
  *   never grows the log);
- * - the same effective day replaces the last entry, so editing a habit twice
- *   on one day records one version, not two;
- * - otherwise the new version is appended and the previous one keeps the date
- *   it started on.
+ * - otherwise the new era starts at `habitEraStartAfter`;
+ * - a second change before that boundary lands (two edits in the same period)
+ *   replaces the pending era instead of stacking two eras on one boundary.
  */
 export const habitFrequencyHistoryAfter = (input: {
   readonly history: ReadonlyArray<HabitFrequencyChange>
   readonly frequency: HabitFrequency
-  readonly effectiveFrom: LocalDate
+  readonly changeDate: LocalDate
 }): ReadonlyArray<HabitFrequencyChange> => {
   const history = input.history
   const last = history[history.length - 1]
   if (last !== undefined && sameHabitFrequency(last.frequency, input.frequency)) {
     return history
   }
-  const next = { effectiveFrom: input.effectiveFrom, frequency: input.frequency }
-  return last !== undefined && last.effectiveFrom === input.effectiveFrom
-    ? [...history.slice(0, -1), next]
-    : [...history, next]
+  if (last === undefined) {
+    return [{ effectiveFrom: input.changeDate, frequency: input.frequency }]
+  }
+  const effectiveFrom = habitEraStartAfter({
+    previous: last.frequency,
+    next: input.frequency,
+    changeDate: input.changeDate
+  })
+  // Keep the log strictly increasing. A boundary behind the stored one (a clock
+  // that crossed it between the read and the write) updates the pending era
+  // instead of rewriting an era that already started.
+  return effectiveFrom <= last.effectiveFrom
+    ? [...history.slice(0, -1), { effectiveFrom: last.effectiveFrom, frequency: input.frequency }]
+    : [...history, { effectiveFrom, frequency: input.frequency }]
 }
 
 // ── Habit ─────────────────────────────────────────────────────────────────
@@ -181,13 +290,22 @@ export class Habit extends Model.Class<Habit>("Habit")({
   description: Schema.NullOr(Schema.String),
   /** Emoji or icon key chosen by the user; a free string, like a list's icon. */
   icon: Schema.NullOr(Schema.String),
+  /**
+   * The owner's local date the habit began (#65).
+   *
+   * A domain fact, not `createdAt`: the instant must not decide which day the
+   * habit started when the owner changes zone, and the streak/statistics never
+   * look before this date. Server-managed, like the history.
+   */
+  startedOn: LocalDate,
   /** The habit as it is defined today. */
   frequency: HabitFrequency,
   /**
-   * Every frequency the habit has had, oldest first; the last entry equals
-   * `frequency`. A frequency change appends here instead of rewriting the past.
+   * Every frequency era, oldest first and strictly increasing; the last entry
+   * equals `frequency`. A frequency change appends here instead of rewriting
+   * the past.
    */
-  frequencyHistory: Schema.Array(HabitFrequencyChange),
+  frequencyHistory: HabitFrequencyHistory,
   /** Local `HH:mm` reminder time, or `null` for "no reminder time". */
   reminderTime: Schema.NullOr(HabitReminderTime),
   /** The habit's IANA zone; `reminderTime` and the history dates are read in it. */

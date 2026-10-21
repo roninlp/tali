@@ -75,8 +75,9 @@ export type HabitServiceError = Schema.Schema.Type<typeof HabitServiceError>
  *
  * Kept in one place because the service input, the patch input and the domain
  * model must never drift: a field that is not listed here is not
- * client-writable. `frequencyHistory` is server-managed (a client edit would
- * be able to rewrite the past), so it is not in this list.
+ * client-writable. `frequencyHistory` and `startedOn` are server-managed (a
+ * client edit could rewrite the past, or move the day the habit began), so they
+ * are not in this list.
  */
 const habitFields = {
   title: Schema.String,

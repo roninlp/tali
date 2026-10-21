@@ -4,11 +4,12 @@ import {
   Event,
   Habit,
   HabitEntry,
+  HabitFrequency,
   habitFrequencyHistoryAfter,
-  type HabitFrequency,
   type HabitFrequencyChange,
   List,
   localDateIn,
+  localDateInOption,
   Note,
   normalizePersian,
   Project,
@@ -99,15 +100,6 @@ export interface SyncMergeInput {
   readonly conflict: boolean
   /** The server's commit instant. */
   readonly now: string
-  /**
-   * The client's edit instant (the entry's `clientUpdatedAt`).
-   *
-   * Needed by aggregates that date something in the *user's* calendar: a habit
-   * records the local day its frequency changed (#63), and an edit made
-   * offline three days ago must be dated then, not on the day it synced. The
-   * shared LWW merge ignores it.
-   */
-  readonly clientUpdatedAt: string
 }
 
 /** Fallback LWW merge shared by every aggregate (see `docs/sync-protocol-draft.md` §6). */
@@ -144,6 +136,13 @@ export interface SyncEntityDefinition {
   readonly softDeleteColumn: string
   /** Client-patchable fields and their value guards. */
   readonly writable: ReadonlyMap<string, SyncFieldGuard>
+  /**
+   * Fields whose presence with an invalid value must **reject** the entry
+   * instead of being dropped by the sanitizer (the shared default). Used where a
+   * dropped value would silently write something the user did not ask for —
+   * a habit entry's day, habit or status (#63).
+   */
+  readonly strict?: ReadonlyArray<string>
   /** Done-wins: the field + value that a completion beats a concurrent edit with. */
   readonly completion?: { readonly field: string; readonly value: unknown }
   /** Data for an offline insert, before validation. */
@@ -176,6 +175,14 @@ export interface SyncEntityDefinition {
    */
   readonly index?: (state: SyncEntityState) => ReadonlyArray<Statement.Statement<unknown>>
   /**
+   * Optional parent row this entity belongs to (a habit entry logs a habit).
+   *
+   * The engine resolves it before planning a write so a child can never carry a
+   * wider visibility than its parent or point at another household's row, even
+   * when the client forgets to send `visibility`.
+   */
+  readonly parent?: SyncParentRule
+  /**
    * Optional server-side successor for a write (task recurrence, #38).
    *
    * The push calls this **once per entry**, with the row state before and after
@@ -184,6 +191,16 @@ export interface SyncEntityDefinition {
    * completion whose CAS lost can never leave an orphan successor.
    */
   readonly spawn?: (input: SyncSpawnInput) => SyncSpawn | undefined
+}
+
+/** A parent reference resolved by the sync engine (see `parent` above). */
+export interface SyncParentRule {
+  /** Aggregate type of the parent row. */
+  readonly entityType: SyncEntityType
+  /** Data/patch field naming the parent id. */
+  readonly field: string
+  /** Copy the parent's visibility onto the child on every write. */
+  readonly inheritVisibility: boolean
 }
 
 export interface SyncSpawnInput {
@@ -1354,8 +1371,8 @@ const eventDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
 // ── Habit + HabitEntry (ticket #63; FR-HAB-01/02) ─────────────────────────
 
 const HABIT_COLUMNS =
-  `${META_COLUMNS}, type, title, description, icon, color, frequency, ` +
-  `frequency_history AS frequencyHistory, reminder_time AS reminderTime, ` +
+  `${META_COLUMNS}, type, title, description, icon, color, started_on AS startedOn, ` +
+  `frequency, frequency_history AS frequencyHistory, reminder_time AS reminderTime, ` +
   `time_zone AS timeZone, created_at AS createdAt`
 
 const habitCodec = withSchema<Habit>(Habit, (row) => {
@@ -1370,6 +1387,7 @@ const habitCodec = withSchema<Habit>(Habit, (row) => {
     householdId: encodeText(row.householdId),
     visibility: asVisibility(row.visibility),
     color: asText(row.color),
+    startedOn: encodeText(row.startedOn),
     frequency: parseJson(row.frequency) ?? { _tag: "daily" },
     frequencyHistory: Array.isArray(history) ? history : [],
     reminderTime: asText(row.reminderTime),
@@ -1393,9 +1411,11 @@ const HABIT_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
   ["visibility", isOneOf("private", "shared")]
 ])
 
-/** The habit's frequency as the union the model expects; `daily` if absent. */
+/** The habit's frequency as the union the model expects; `daily` only when absent. */
 const habitFrequencyOfPatch = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null ? (value as Record<string, unknown>) : { _tag: "daily" }
+  value === undefined || value === null
+    ? { _tag: "daily" }
+    : (value as Record<string, unknown>)
 
 const habitDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: "habit",
@@ -1408,6 +1428,16 @@ const habitDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   defaults: (patch, context) => {
     const timeZone = encodeText(patch.timeZone) || "UTC"
     const frequency = habitFrequencyOfPatch(patch.frequency) as unknown as HabitFrequency
+    // The habit began on the owner's local creation day. The client's creation
+    // instant is the edit time (a validated ISO string); a malformed custom
+    // `createdAt` falls back to it, then to the commit instant, so a bad value
+    // can never throw inside the batch planner.
+    const createdAt = asText(patch.createdAt)
+    const startedOn = (createdAt !== null
+      ? localDateInOption(createdAt, timeZone)
+      : null) ??
+      localDateInOption(context.clientUpdatedAt, timeZone) ??
+      localDateIn(context.now, "UTC")
     return {
       id: context.entityId,
       type: "habit",
@@ -1418,60 +1448,60 @@ const habitDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
       householdId: context.householdId,
       visibility: asVisibility(patch.visibility),
       color: asText(patch.color),
+      startedOn,
       frequency,
-      // An offline create seeds the history exactly like the service does, in
-      // the habit's own zone, on the **client's** creation day: a habit created
-      // offline three days ago did not start on the day it synced.
-      frequencyHistory: [
-        {
-          effectiveFrom: localDateIn(
-            asText(patch.createdAt) ?? context.clientUpdatedAt,
-            timeZone
-          ),
-          frequency
-        }
-      ],
+      // An offline create seeds era 0 exactly like the service does: the
+      // habit's own zone, on the day it began.
+      frequencyHistory: [{ effectiveFrom: startedOn, frequency }],
       reminderTime: asText(patch.reminderTime),
       timeZone,
       createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
     }
   },
   /**
-   * Shared field LWW, plus the frequency version log.
+   * Shared field LWW, plus the frequency era log.
    *
-   * The history is only grown when the merge actually adopted a *different*
+   * The log is only grown when the merge actually adopted a *different*
    * frequency: a patch that lost the conflict (or repeated the current
-   * frequency) leaves it untouched, so an offline edit can never append a
-   * version that never applied. `effectiveFrom` is the local day of the
-   * client's edit, not of the sync that delivered it.
+   * frequency) leaves it untouched, so an offline edit can never append an era
+   * that never applied. The boundary is computed from the **server's** commit
+   * instant in the habit's zone — never from `clientUpdatedAt` — so a change
+   * can never be back-dated behind the era it replaces (#65).
    */
   merge: (input) => {
     const next = mergeFields({}, input)
     const currentFrequency = input.current.frequency as HabitFrequency | undefined
     const nextFrequency = next.frequency as HabitFrequency | undefined
-    if (
-      nextFrequency !== undefined &&
-      (currentFrequency === undefined ||
-        !sameHabitFrequency(currentFrequency, nextFrequency))
-    ) {
-      const history = Array.isArray(next.frequencyHistory)
-        ? (next.frequencyHistory as ReadonlyArray<HabitFrequencyChange>)
-        : []
-      const timeZone = encodeText(next.timeZone) || "UTC"
-      next.frequencyHistory = habitFrequencyHistoryAfter({
-        history,
-        frequency: nextFrequency,
-        // The client's edit day, not the sync day: an offline change made
-        // three days ago took effect then.
-        effectiveFrom: localDateIn(input.clientUpdatedAt, timeZone)
-      })
+    if (nextFrequency !== undefined) {
+      // Decode before comparing: the schema strips unknown keys and the
+      // comparison is structural, so a differently-shaped-but-equal patch
+      // (`{_tag:"daily", days:[1]}`) cannot grow a phantom era. An invalid
+      // union is left as-is and rejected by `validate` below.
+      const decoded = Schema.decodeUnknownOption(HabitFrequency)(nextFrequency)
+      if (decoded._tag === "None") return next
+      const frequency = decoded.value
+      next.frequency = frequency
+      if (
+        currentFrequency === undefined ||
+        !sameHabitFrequency(currentFrequency, frequency)
+      ) {
+        const history = Array.isArray(next.frequencyHistory)
+          ? (next.frequencyHistory as ReadonlyArray<HabitFrequencyChange>)
+          : []
+        const timeZone = encodeText(next.timeZone) || "UTC"
+        next.frequencyHistory = habitFrequencyHistoryAfter({
+          history,
+          frequency,
+          changeDate: localDateInOption(input.now, timeZone) ?? localDateIn(input.now, "UTC")
+        })
+      }
     }
     return next
   },
   insert: (state) => sql`
     INSERT INTO habits
       (id, type, title, description, icon, owner_id, household_id, visibility,
-       color, frequency, frequency_history, reminder_time, time_zone,
+       color, started_on, frequency, frequency_history, reminder_time, time_zone,
        created_at, updated_at, version, deleted_at)
     VALUES
       (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
@@ -1479,6 +1509,7 @@ const habitDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
        ${encodeNullableText(state.data.icon)}, ${state.ownerId},
        ${state.householdId}, ${state.visibility},
        ${encodeNullableText(state.data.color)},
+       ${encodeText(state.data.startedOn)},
        ${encodeJson(state.data.frequency)},
        ${encodeJson(state.data.frequencyHistory)},
        ${encodeNullableText(state.data.reminderTime)},
@@ -1538,6 +1569,8 @@ const habitEntryDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition =>
   scope: SYNC_SCOPE_COLUMNS,
   softDeleteColumn: "deleted_at",
   writable: HABIT_ENTRY_WRITABLE,
+  parent: { entityType: "habit", field: "habitId", inheritVisibility: true },
+  strict: ["habitId", "localDate", "status"],
   ...habitEntryCodec,
   defaults: (patch, context) => {
     const timeZone = encodeText(patch.timeZone) || "UTC"
@@ -1549,10 +1582,16 @@ const habitEntryDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition =>
       visibility: asVisibility(patch.visibility),
       // The day the tap logged: the client sends it, so a backdated or
       // timezone-crossing tap is explicit. A delete-only push carries none, so
-      // fall back to the local date of the write instant.
-      localDate: encodeText(patch.localDate) || localDateIn(context.clientUpdatedAt, timeZone),
+      // fall back to the local date of the write instant (never a throw: a bad
+      // zone is rejected by the model below).
+      localDate: encodeText(patch.localDate) ||
+        (localDateInOption(context.clientUpdatedAt, timeZone) ??
+          localDateIn(context.now, "UTC")),
       timeZone,
-      status: encodeText(patch.status) || "done",
+      // No default: an entry always has a status, so a value the client sent
+      // outside the enum must be rejected as an invalid patch, not silently
+      // recorded as `done` (the RPC path rejects it too).
+      status: encodeText(patch.status),
       createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
     }
   },

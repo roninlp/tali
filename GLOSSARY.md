@@ -245,12 +245,20 @@ How often a habit is meant to happen: **daily**, **selected weekdays** (a
 non-empty, duplicate-free set of ISO weekdays) or **X times per week** (1–7).
 It is a union, never a free-text rhythm, so the three shapes cannot be mixed.
 
-### Frequency Version
+### Frequency Era
 
-One history entry of a habit's **Frequency**: the local date it took effect.
-Changing the frequency appends a version instead of rewriting the past, so a
-day's stats are always judged against what the habit asked for *then*
-(FR-HAB-03's edge case). The last version always equals the current frequency.
+One history entry of a habit's **Frequency**: the local date that frequency
+took effect. Era 0 is the habit's **Started On** date; a change opens the next
+era at the first period boundary after the period it changed in, and is never
+back-dated, so eras never overlap and a day's stats are always judged against
+what the habit asked for *then* (FR-HAB-03's edge case). The last era always
+equals the current frequency.
+
+### Started On
+
+The owner's local date a habit began. It is a stored domain fact (`startedOn`),
+not the `createdAt` instant, because the day a habit began must not move when
+the owner changes time zone. Streaks and statistics never look before it.
 
 ### Habit Entry
 

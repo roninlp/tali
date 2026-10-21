@@ -34,7 +34,7 @@ import {
 export const HABIT_SELECT =
   `id, type, title, description, icon, ` +
   `owner_id AS ownerId, household_id AS householdId, visibility, color, ` +
-  `frequency, frequency_history AS frequencyHistory, ` +
+  `started_on AS startedOn, frequency, frequency_history AS frequencyHistory, ` +
   `reminder_time AS reminderTime, time_zone AS timeZone, ` +
   `created_at AS createdAt, updated_at AS updatedAt, version, deleted_at AS deletedAt`
 
@@ -48,6 +48,8 @@ export interface HabitRow extends Record<string, unknown> {
   readonly householdId: string
   readonly visibility: string
   readonly color: string | null
+  /** The owner's local date the habit began (`YYYY-MM-DD`). */
+  readonly startedOn: string
   /** JSON text of the frequency union. */
   readonly frequency: string
   /** JSON array text of the frequency versions. */
@@ -120,6 +122,7 @@ export const habitPropsOf = (row: HabitRow) => ({
   title: row.title,
   description: row.description,
   icon: row.icon,
+  startedOn: row.startedOn as Habit["startedOn"],
   frequency: habitFrequencyOf(row.frequency),
   frequencyHistory: parseArray(row.frequencyHistory) as ReadonlyArray<HabitFrequencyChange>,
   reminderTime: row.reminderTime as HabitReminderTime | null,
@@ -185,12 +188,12 @@ export class HabitRepo extends Context.Service<HabitRepo>()("HabitRepo", {
         sql<HabitRow>`
           INSERT INTO habits
             (id, type, title, description, icon, owner_id, household_id, visibility,
-             color, frequency, frequency_history, reminder_time, time_zone,
+             color, started_on, frequency, frequency_history, reminder_time, time_zone,
              created_at, updated_at, version, deleted_at)
           VALUES
             (${habit.id}, ${habit.type}, ${habit.title}, ${habit.description},
              ${habit.icon}, ${habit.ownerId}, ${habit.householdId}, ${habit.visibility},
-             ${habit.color}, ${encodeFrequency(habit.frequency)},
+             ${habit.color}, ${habit.startedOn}, ${encodeFrequency(habit.frequency)},
              ${encodeHistory(habit.frequencyHistory)}, ${habit.reminderTime},
              ${habit.timeZone}, ${habit.createdAt}, ${habit.updatedAt},
              ${habit.version}, ${habit.deletedAt})
@@ -230,12 +233,12 @@ export class HabitRepo extends Context.Service<HabitRepo>()("HabitRepo", {
     const insertStatement = (habit: Habit) => sql`
       INSERT INTO habits
         (id, type, title, description, icon, owner_id, household_id, visibility,
-         color, frequency, frequency_history, reminder_time, time_zone,
+         color, started_on, frequency, frequency_history, reminder_time, time_zone,
          created_at, updated_at, version, deleted_at)
       VALUES
         (${habit.id}, ${habit.type}, ${habit.title}, ${habit.description},
          ${habit.icon}, ${habit.ownerId}, ${habit.householdId}, ${habit.visibility},
-         ${habit.color}, ${encodeFrequency(habit.frequency)},
+         ${habit.color}, ${habit.startedOn}, ${encodeFrequency(habit.frequency)},
          ${encodeHistory(habit.frequencyHistory)}, ${habit.reminderTime},
          ${habit.timeZone}, ${habit.createdAt}, ${habit.updatedAt},
          ${habit.version}, ${habit.deletedAt})

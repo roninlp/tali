@@ -161,10 +161,30 @@ describe("HabitService", () => {
     expect(created.description).toBeNull()
     expect(created.icon).toBeNull()
     expect(created.reminderTime).toBeNull()
-    expect(created.frequencyHistory[0]?.effectiveFrom).toBe("2026-10-20")
+    // The habit's first day is the owner's local date, and era 0 starts there.
+    expect(created.startedOn).toBe("2026-10-20")
+    expect(created.frequencyHistory).toEqual([
+      { effectiveFrom: "2026-10-20", frequency: daily }
+    ])
   })
 
-  it("versions the frequency instead of rewriting the past", async () => {
+  it("derives startedOn from the owner's local creation day", async () => {
+    const h = makeHarness()
+
+    // 21:30 UTC is already the next day in Tehran (+03:30): the habit began on
+    // the owner's wall date, not the UTC date.
+    const created = await h.svc((svc) =>
+      svc.create(
+        viewer({ timeZone: "Asia/Tehran" }),
+        { clientMutationId: "m-zone-start", title: "کتاب", frequency: daily },
+        "2026-10-20T21:30:00.000Z"
+      )
+    )
+    expect(created.startedOn).toBe("2026-10-21")
+    expect(created.frequencyHistory[0]?.effectiveFrom).toBe("2026-10-21")
+  })
+
+  it("starts a new era at the next period boundary instead of rewriting the past", async () => {
     const h = makeHarness()
     const id = uuidV7() as HabitId
 
@@ -176,7 +196,8 @@ describe("HabitService", () => {
       )
     )
 
-    // A change on the owner's next local day appends a version.
+    // daily → 3×/week on Wed 21 Oct (Tehran): the daily era keeps 21–23 Oct
+    // and the weekly era opens on Sat 24 Oct (#65 E11).
     const changed = await h.svc((svc) =>
       svc.update(
         viewer(),
@@ -188,13 +209,14 @@ describe("HabitService", () => {
     expect(changed.frequency).toEqual(weekly)
     expect(changed.frequencyHistory).toEqual([
       { effectiveFrom: "2026-10-20", frequency: daily },
-      { effectiveFrom: "2026-10-21", frequency: weekly }
+      { effectiveFrom: "2026-10-24", frequency: weekly }
     ])
+    expect(changed.startedOn).toBe("2026-10-20")
     expect(changed.version).toBe(2)
     expect(JSON.parse(h.rowOf(id)!.frequency_history as string)).toEqual(changed.frequencyHistory)
   })
 
-  it("does not grow the history for a same-frequency or same-day edit", async () => {
+  it("does not grow the history for a same-frequency edit or a second change before the boundary", async () => {
     const h = makeHarness()
     const id = uuidV7() as HabitId
 
@@ -206,7 +228,7 @@ describe("HabitService", () => {
       )
     )
 
-    // Same frequency: a title edit writes no version.
+    // Same frequency: a title edit writes no era.
     const renamed = await h.svc((svc) =>
       svc.update(
         viewer(),
@@ -218,16 +240,30 @@ describe("HabitService", () => {
       { effectiveFrom: "2026-10-20", frequency: daily }
     ])
 
-    // A frequency change on the same local day replaces that day's version.
-    const sameDay = await h.svc((svc) =>
+    // Both changes land on the same local day (20 Oct). The first schedules a
+    // weekly era for Sat 24 Oct; the second replaces that pending era rather
+    // than stacking two eras on one boundary.
+    const first = await h.svc((svc) =>
       svc.update(
         viewer(),
-        { id, clientMutationId: "m-sameday", patch: { frequency: weekdays } },
+        { id, clientMutationId: "m-first", patch: { frequency: weekly } },
+        "2026-10-20T10:00:00.000Z"
+      )
+    )
+    expect(first.frequencyHistory.at(-1)).toEqual({
+      effectiveFrom: "2026-10-24",
+      frequency: weekly
+    })
+    const second = await h.svc((svc) =>
+      svc.update(
+        viewer(),
+        { id, clientMutationId: "m-second", patch: { frequency: { _tag: "weekly", times: 2 } } },
         "2026-10-20T15:00:00.000Z"
       )
     )
-    expect(sameDay.frequencyHistory).toEqual([
-      { effectiveFrom: "2026-10-20", frequency: weekdays }
+    expect(second.frequencyHistory).toEqual([
+      { effectiveFrom: "2026-10-20", frequency: daily },
+      { effectiveFrom: "2026-10-24", frequency: { _tag: "weekly", times: 2 } }
     ])
   })
 
@@ -438,6 +474,18 @@ describe("HabitService", () => {
       )
     )
     expect((await h.svc((svc) => svc.list(viewer()))).map((habit) => habit.id)).toEqual([shared])
+
+    // Only the creator may take a shared habit private; the other member must
+    // not be able to lock the owner out.
+    const lockout = await h.svc((svc) =>
+      svc.update(
+        viewer(),
+        { id: shared, clientMutationId: "m-lockout", patch: { visibility: "private" } },
+        NOW
+      )
+    ).catch((cause: unknown) => cause)
+    expect(lockout).toMatchObject({ _tag: "HabitValidationError" })
+    expect((await h.svc((svc) => svc.get(viewer(), shared))).visibility).toBe("shared")
   })
 
   it("rejects an empty title and an invalid frequency union", async () => {
@@ -472,6 +520,37 @@ describe("HabitService", () => {
     }
 
     // Nothing was written by any rejected call.
+    expect(h.feedCount()).toBe(0)
+  })
+
+  it("rejects an invalid IANA zone and a malformed reminder time with typed errors", async () => {
+    const h = makeHarness()
+
+    // A zone that `Intl` cannot resolve must be a validation error, not a
+    // `Temporal` throw surfacing as a 500.
+    const badZone = await h.svc((svc) =>
+      svc.create(
+        viewer({ timeZone: "Mars/Olympus" }),
+        { clientMutationId: "m-bad-zone", title: "کتاب", frequency: daily },
+        NOW
+      )
+    ).catch((cause: unknown) => cause)
+    expect(badZone).toMatchObject({ _tag: "HabitValidationError" })
+
+    const badTime = await h.svc((svc) =>
+      svc.create(
+        viewer(),
+        {
+          clientMutationId: "m-bad-time",
+          title: "کتاب",
+          frequency: daily,
+          reminderTime: "25:00" as never
+        },
+        NOW
+      )
+    ).catch((cause: unknown) => cause)
+    expect(badTime).toMatchObject({ _tag: "HabitValidationError" })
+
     expect(h.feedCount()).toBe(0)
   })
 

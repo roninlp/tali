@@ -7,6 +7,7 @@ import {
   HabitForbidden,
   type HabitId,
   type HabitPatch,
+  HabitReminderTime,
   HabitValidationError,
   HabitMutationInput,
   HabitNotFound,
@@ -17,6 +18,7 @@ import {
   localDateIn,
   sameHabitFrequency,
   type SyncEntityType,
+  TimeZone,
   type UserId,
   type Visibility,
   uuidV7
@@ -42,12 +44,14 @@ import { HabitRepo, HabitRepoLive, type SyncEntityState, SyncRepo, SyncRepoLive 
  *
  * ## The frequency is versioned
  *
- * A create seeds `frequencyHistory` with the frequency's first version on the
- * owner's local date. A frequency change appends a version
- * (`habitFrequencyHistoryAfter`) instead of rewriting the past, so the
- * stats/streak algorithm (#65) can evaluate a past day against the frequency
- * that was in force then. The same helper is used by the offline sync merge, so
- * the two write paths cannot drift.
+ * A create seeds `startedOn` (the owner's local creation day) and era 0 of
+ * `frequencyHistory` on that day. A frequency change appends an era
+ * (`habitFrequencyHistoryAfter`) whose boundary is the first period of the new
+ * frequency after the period the change happened in has ended — computed from
+ * the server's apply instant, never back-dated — so the stats/streak algorithm
+ * (#65) can evaluate a past day against the frequency that was in force then.
+ * The same helper is used by the offline sync merge, so the two write paths
+ * cannot drift.
  *
  * ## Delete is a soft delete, and it is undoable
  *
@@ -289,6 +293,30 @@ export class HabitService extends Context.Service<HabitService>()("HabitService"
         : invalid("frequency", "the frequency is not a valid habit rhythm")
     }
 
+    /**
+     * Decode the habit's zone and local reminder time. The RPC edge already
+     * validates both, but the service is also the boundary for direct callers
+     * (tests, future HTTP routes): an invalid zone must be a typed error before
+     * any date arithmetic touches `Temporal`, and an invalid `HH:mm` must never
+     * reach the model constructor as an unhandled decode failure.
+     */
+    const decodeTimeZone = (timeZone: string): Effect.Effect<string, HabitValidationError> => {
+      const decoded = Schema.decodeUnknownOption(TimeZone)(timeZone)
+      return decoded._tag === "Some"
+        ? Effect.succeed(decoded.value)
+        : invalid("timeZone", "the time zone must be a valid IANA identifier")
+    }
+
+    const decodeReminderTime = (
+      value: string | null
+    ): Effect.Effect<string | null, HabitValidationError> => {
+      if (value === null) return Effect.succeed(null)
+      const decoded = Schema.decodeUnknownOption(HabitReminderTime)(value)
+      return decoded._tag === "Some"
+        ? Effect.succeed(decoded.value)
+        : invalid("reminderTime", "the reminder time must be a local HH:mm")
+    }
+
     const create = (
       viewer: HabitViewer,
       input: Schema.Schema.Type<typeof HabitCreateInput>,
@@ -302,7 +330,11 @@ export class HabitService extends Context.Service<HabitService>()("HabitService"
           return yield* invalid("title", "a habit needs a title")
         }
         const frequency = yield* decodeFrequency(input.frequency)
-        const timeZone = input.timeZone ?? viewer.timeZone
+        const timeZone = yield* decodeTimeZone(input.timeZone ?? viewer.timeZone)
+        const reminderTime = yield* decodeReminderTime(input.reminderTime ?? null)
+        // The owner's local creation day: a domain fact, not the UTC instant.
+        // Statistics never look before it (#65).
+        const startedOn = localDateIn(now, timeZone)
 
         const habit = new Habit({
           id: (input.id ?? uuidV7()) as Habit["id"],
@@ -310,13 +342,12 @@ export class HabitService extends Context.Service<HabitService>()("HabitService"
           title: input.title,
           description: input.description ?? null,
           icon: input.icon ?? null,
+          startedOn,
           frequency,
-          // The first version starts on the owner's local creation day, in the
-          // habit's zone — the same rule an offline create uses.
-          frequencyHistory: [
-            { effectiveFrom: localDateIn(now, timeZone), frequency }
-          ],
-          reminderTime: input.reminderTime ?? null,
+          // Era 0 starts on the habit's first day, in the habit's own zone —
+          // the same rule an offline create uses.
+          frequencyHistory: [{ effectiveFrom: startedOn, frequency }],
+          reminderTime,
           timeZone,
           ownerId: viewer.userId,
           householdId: viewer.householdId,
@@ -346,6 +377,7 @@ export class HabitService extends Context.Service<HabitService>()("HabitService"
 
     /** Apply a patch to a row, versioning the frequency when it changes. */
     const patchHabit = (
+      viewer: HabitViewer,
       current: Habit,
       patch: Schema.Schema.Type<typeof HabitPatch>,
       now: string
@@ -354,17 +386,28 @@ export class HabitService extends Context.Service<HabitService>()("HabitService"
         if (patch.title !== undefined && patch.title.trim().length === 0) {
           return yield* invalid("title", "a habit needs a title")
         }
+        // Only the creator can flip a shared habit to private; the other member
+        // must not be able to lock the owner out of their own habit (the same
+        // rule lists apply).
+        if (patch.visibility === "private" && current.ownerId !== viewer.userId) {
+          return yield* invalid("visibility", "only the habit owner can make it private")
+        }
         const frequency =
           patch.frequency === undefined ? current.frequency : yield* decodeFrequency(patch.frequency)
-        const timeZone = patch.timeZone ?? current.timeZone
+        const timeZone = yield* decodeTimeZone(patch.timeZone ?? current.timeZone)
+        const reminderTime = patch.reminderTime === undefined
+          ? current.reminderTime
+          : yield* decodeReminderTime(patch.reminderTime)
         const frequencyChanged = !sameHabitFrequency(frequency, current.frequency)
         const history = frequencyChanged
           ? habitFrequencyHistoryAfter({
             history: current.frequencyHistory,
             frequency,
-            // The day the change takes effect is the owner's local date in the
-            // habit's zone, never the server's UTC date.
-            effectiveFrom: localDateIn(now, timeZone)
+            // The era boundary is computed from the instant this change is
+            // applied, in the habit's zone — never a client-supplied edit day,
+            // so a frequency change can never be back-dated ahead of the era it
+            // replaces (#65).
+            changeDate: localDateIn(now, timeZone)
           })
           : current.frequencyHistory
 
@@ -378,9 +421,7 @@ export class HabitService extends Context.Service<HabitService>()("HabitService"
           icon: patch.icon === undefined ? current.icon : patch.icon,
           frequency,
           frequencyHistory: history,
-          reminderTime: patch.reminderTime === undefined
-            ? current.reminderTime
-            : patch.reminderTime,
+          reminderTime,
           timeZone,
           visibility: patch.visibility ?? current.visibility,
           version: current.version + 1,
@@ -411,7 +452,7 @@ export class HabitService extends Context.Service<HabitService>()("HabitService"
 
         for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
           const current = yield* readHabit(viewer, input.id, false)
-          const next = yield* patchHabit(current, input.patch, now)
+          const next = yield* patchHabit(viewer, current, input.patch, now)
           if (sameHabit(current, next)) return current
           const applied = yield* commitHabit({
             viewer,

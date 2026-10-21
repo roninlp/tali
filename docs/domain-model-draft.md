@@ -157,9 +157,11 @@ export class Membership extends Model.Class<Membership>("Membership")({
 > **Implemented in ticket [#63](https://github.com/roninlp/tali/issues/63)** — `packages/domain/src/planning/habit.ts`,
 > `packages/sql/migrations/0011_habits.sql`, `packages/sql/src/habit-repo.ts` + `habit-entry-repo.ts`, the
 > `habit`/`habitEntry` entries of the sync registry, and `apps/api/src/habit-service.ts`. The shipped shape
-> adds a per-habit `timeZone`, names the entry's day `localDate` (not `date`), and proves the frequency
-> union on both write paths; the decisions are recorded in `docs/adr/0006-habit-shape.md`. The daily tap
-> (#64), the streak algorithm (#65) and the screens (#66) are still open — none of them needs a migration.
+> adds a per-habit `timeZone` and `startedOn`, names the entry's day `localDate` (not `date`), stores the
+> frequency as **eras** whose boundaries are computed at change time and never back-dated (#65), and
+> proves the union on both write paths; the decisions are recorded in `docs/adr/0006-habit-shape.md`.
+> The daily tap (#64), the streak algorithm itself (#65, `docs/streak-algorithm.md`) and the screens
+> (#66) are still open — none of them needs a migration.
 
 ```ts
 export const HabitFrequency = Schema.Union(
@@ -177,9 +179,11 @@ export class Habit extends Model.Class<Habit>("Habit")({
   visibility: Visibility,
   color: Schema.NullOr(Schema.String),
   icon: Schema.NullOr(Schema.String),
+  startedOn: Schema.DateFromString,        // the owner's local creation date (#65); stats start here
   frequency: HabitFrequency,
-  // Frequency history — changing frequency must NOT rewrite past stats (FR-HAB-03 edge case):
-  // stored as a list of { effectiveFrom: date, frequency: HabitFrequency }.
+  // Frequency eras — changing frequency must NOT rewrite past stats (FR-HAB-03 edge case):
+  // stored as a list of { effectiveFrom: date, frequency: HabitFrequency }, oldest first,
+  // strictly increasing, never back-dated; era 0 starts on startedOn.
   frequencyHistory: Schema.Array(Schema.Struct({
     effectiveFrom: Schema.DateFromString,
     frequency: HabitFrequency

@@ -10,8 +10,9 @@ FR-HAB-01 needs a habit with a title, optional description, colour/icon, a
 frequency — **daily**, **selected weekdays**, or **X times per week** — and an
 optional reminder time. FR-HAB-02 needs a per-day log (Done / Partial /
 Missed) that is idempotent per `(habit, day)`. FR-HAB-03 needs a streak and
-stats over 7/30/90-day windows, and #65 is still an open product decision about
-what a streak means for a non-daily habit.
+stats over 7/30/90-day windows; #65 decided what a streak means for a
+non-daily habit (`docs/streak-algorithm.md`), and this ticket ships the shape
+that algorithm consumes.
 
 Ticket #63 lays the **shape and the plumbing** — the domain model, the
 migration, the repos, the sync-registry entries and the service — so #64, #65
@@ -31,21 +32,29 @@ Three shape questions had to be answered before that plumbing could exist:
 
 ## Decision
 
-- **The frequency is a discriminated union, and it is versioned.**
+- **The frequency is a discriminated union, and it is versioned into eras.**
   `frequency` is `{ _tag: "daily" }`, `{ _tag: "weekdays", days: [1..7] }` (a
   non-empty, duplicate-free ISO-weekday set) or `{ _tag: "weekly", times: 1..7 }`.
   `frequencyHistory` is an append-only list of
   `{ effectiveFrom: localDate, frequency }`, oldest first; the last entry always
-  equals `frequency`. A change on a later day appends a version, a change on
-  the same day replaces that day's version, and an unchanged frequency is a
-  no-op. One pure helper (`habitFrequencyHistoryAfter`) is used by both the RPC
+  equals `frequency`. Era 0 starts on the habit's `startedOn`. A change starts a
+  new era at the first period of the new frequency **after** the period the
+  change happened in has ended (`max(next period boundary, end of the old
+  period + 1 day)`), so a weekly era opens on the fixed Saturday boundary and a
+  day era opens the next day. A second change before that boundary replaces the
+  pending era. The model rejects an empty or unordered log, so eras can never
+  overlap. One pure helper (`habitFrequencyHistoryAfter`) is used by both the RPC
   service and the offline sync merge, so the two write paths cannot drift.
-- **The effective date is the owner's local day, taken from the write that made
-  the change.** The service uses the mutation's server instant in the habit's
-  zone; the sync merge uses the entry's `clientUpdatedAt`, so an edit made
-  offline three days ago is dated three days ago, not the day it synced. (The
-  shared `SyncMergeInput` gained a `clientUpdatedAt` field for this; every other
-  aggregate's merge ignores it.)
+- **A habit records the day it began.** `startedOn` is the owner's local
+  creation date — a domain fact, not the UTC `createdAt` instant — and the
+  streak/statistics (#65) never look before it.
+- **An era boundary is computed when the change is applied, and is never
+  back-dated.** The service uses the mutation's server instant in the habit's
+  zone; the sync merge uses the server's commit instant, *not* the client's
+  `clientUpdatedAt`. An offline edit therefore takes effect at the next period
+  boundary after it syncs, which is what keeps past periods immutable. The
+  boundary is always strictly after the change date, so it can never reach
+  behind the era it replaces.
 - **The habit carries its own zone.** `timeZone` is the IANA zone the local
   reminder time and the history dates are read in — the same per-item rule
   tasks and events use. It defaults to the owner's profile zone at creation.
@@ -61,9 +70,11 @@ Three shape questions had to be answered before that plumbing could exist:
 - **Entries are not common items, but they do carry the sync scope columns.**
   No title, no colour, no versioned document — just `habitId`, `localDate`,
   `timeZone`, `status`, plus `ownerId`/`householdId`/`visibility` denormalized
-  so `/sync/pull` filters them without a join. The entry inherits the habit's
-  visibility at write time (the client sends it in the patch); a private
-  habit's log stays private.
+  so `/sync/pull` filters them without a join. The sync engine resolves the
+  entry's habit before writing and **forces the entry's visibility to the
+  habit's**, refusing an entry whose habit is missing, trashed, private to
+  another member or in another household, so a private habit's log stays private
+  even when a client omits or flips the field.
 - **Delete is a soft delete with an undo path.** `DeleteHabit` stamps a
   `deletedAt` tombstone and records a `delete` op on the feed; `RestoreHabit`
   clears the same row, so the undo toast (#66) returns the identical habit —
