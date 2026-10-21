@@ -158,10 +158,10 @@ export class Membership extends Model.Class<Membership>("Membership")({
 > `packages/sql/migrations/0011_habits.sql`, `packages/sql/src/habit-repo.ts` + `habit-entry-repo.ts`, the
 > `habit`/`habitEntry` entries of the sync registry, and `apps/api/src/habit-service.ts`. The shipped shape
 > adds a per-habit `timeZone` and `startedOn`, names the entry's day `localDate` (not `date`), stores the
-> frequency as **eras** whose boundaries are computed at change time and never back-dated (#65), and
-> proves the union on both write paths; the decisions are recorded in `docs/adr/0006-habit-shape.md`.
-> The daily tap (#64), the streak algorithm itself (#65, `docs/streak-algorithm.md`) and the screens
-> (#66) are still open — none of them needs a migration.
+> frequency as **eras** whose boundaries are computed at change time and never back-dated, and proves the
+> union on both write paths; the decisions are recorded in `docs/adr/0006-habit-shape.md`. The daily tap
+> (#64), the streak function itself (#65, `docs/streak-algorithm.md`) and the screens (#66) are still open
+> — none of them needs a migration.
 
 ```ts
 export const HabitFrequency = Schema.Union(
@@ -214,6 +214,17 @@ export class HabitEntry extends Model.Class<HabitEntry>("HabitEntry")({
 ```
 
 > `HabitEntry` is the one entity that also needs a **unique** `(habitId, localDate)` — modeled as a D1 `UNIQUE` index, not a schema invariant (schemas validate shape, not cross-row uniqueness). The shipped index covers tombstones too, so a cleared day is revived in place rather than duplicated (#63).
+
+> **Streak decision [#65](https://github.com/roninlp/tali/issues/65):** the
+> frequency eras above are judged one period at a time. Era 0 is `startedOn`;
+> every later era starts at the first boundary of the new unit that does not fall
+> inside a period of the old one (a Saturday for a week unit; the next day for a
+> day unit, pushed to the following Saturday when the current counting week is
+> still open) — never the day of the edit. The period containing `startedOn` is
+> judged by era 0 even when its Saturday is earlier. The streak itself has no
+> columns: it is a pure function over `HabitEntry` + `frequencyHistory` +
+> `startedOn`, specified in `docs/streak-algorithm.md` and
+> [ADR-0007](adr/0007-habit-streak-periods.md).
 
 ### 3.3 `Event` (+ occurrence exceptions)
 
@@ -574,5 +585,5 @@ Each is phrased as a crisp question with a recommendation. **These are the real 
 - The **typed error hierarchy** (`HabitError`, `SyncError`, …) — a separate "Not yet specified" item on the map; the `Schema.TaggedError` shape is established here but not enumerated.
 - **FTS backend** (FTS5 vs trigram) for Persian note search — noted as a placeholder on `Note.plainText`.
 - **Reminder quiet-hours rules / medication tier rules / snooze semantics** — reminder *data* is modeled; the *scheduling policy* is a later ticket.
-- **Streak/heatmap algorithm** (frequency-aware streak over 7/30/90) — `HabitEntry` + `frequencyHistory` give the algorithm what it needs; the algorithm is out of scope here.
+- **Streak/heatmap algorithm** (frequency-aware streak over 7/30/90) — **decided in [#65](https://github.com/roninlp/tali/issues/65)**: `docs/streak-algorithm.md` (rules + pure function + worked examples) and [ADR-0007](adr/0007-habit-streak-periods.md). Heatmap bucketing remains #66's.
 - **Wire/HTTP contracts** for `/sync/pull`, `/sync/push`, SSE — this document defines the *entities* those endpoints move.
