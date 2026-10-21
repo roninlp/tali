@@ -42,3 +42,30 @@ table across accounts. A database dump yields nothing replayable as a login.
 The D1 fixed-window counter (`login_attempts`) keyed by normalized email + client
 IP: five failed logins per 15 minutes are allowed; the next attempt is answered
 with `429 RateLimited` before any credential comparison.
+
+## Preferences
+
+### Display Preferences
+
+The per-user settings in `user_preferences`: **Time Zone** (IANA), **Week
+Start** (Saturday/Sunday/Monday), **Digits** (Persian/Latin), **Dashboard
+Section Order** (a full permutation of the known dashboard sections), and
+**Checked Item Placement** (`bottom`/`inPlace`). The server is the source of
+truth; the browser keeps a read-only cache for offline boot. They do **not**
+ride the sync outbox. See
+[ADR-0002](docs/adr/0002-preferences-server-of-record-local-cache.md).
+
+_Avoid:_ "user settings" for auth/profile fields — those live on `users` and
+change through the auth routes.
+
+### Week Start
+
+The first day of the displayed Jalali week: `saturday` (default), `sunday`, or
+`monday`. It drives `jalaliWeek()` and the month grid; it is presentation only,
+never a date-storage convention.
+
+### Digits
+
+How numerals are displayed: `persian` (default, ۱۲۳) or `latin` (123). Domain
+values always stay plain numbers/ISO strings; only rendering localizes them.
+
