@@ -184,19 +184,24 @@ const constraintFailureOf = (error: unknown): ConstraintFailure | undefined => {
 
 /**
  * Parents before children inside one batch, so the common offline "create a
- * project/tag/list and its dependent row together" push succeeds without a
- * retry. `Array.prototype.sort` is stable, so entries for the same entity keep
- * their FIFO order.
+ * project/tag/list (or a habit) and its dependent row together" push succeeds
+ * without a retry. `Array.prototype.sort` is stable, so entries for the same
+ * entity keep their FIFO order.
  */
 const dependencyRank = (entityType: SyncEntityType): number => {
   switch (entityType) {
     case "project":
     case "tag":
     case "list":
+    // A habit is the parent of its daily entries (#63): an offline push may
+    // carry the habit and a tap in the same batch.
+    case "habit":
       return 0
     case "task":
     case "note":
     case "listItem":
+    case "habitEntry":
+      // `habitEntry` follows the `habit` it logs (rank 0) in the same batch.
       return 1
     default:
       return 1
@@ -573,7 +578,8 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
               patch: updatePatch,
               incomingNewer: true,
               conflict: false,
-              now
+              now,
+              clientUpdatedAt: asIso(entry.clientUpdatedAt)
             })
             const validated = yield* validateEntry(
               definition,
@@ -608,7 +614,8 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
             patch: updatePatch,
             incomingNewer,
             conflict: true,
-            now
+            now,
+            clientUpdatedAt: asIso(entry.clientUpdatedAt)
           })
           const validated = yield* validateEntry(
             definition,

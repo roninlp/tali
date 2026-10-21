@@ -2,10 +2,17 @@ import { Schema } from "effect"
 import { type SqlClient, Statement } from "effect/sql"
 import {
   Event,
+  Habit,
+  HabitEntry,
+  habitFrequencyHistoryAfter,
+  type HabitFrequency,
+  type HabitFrequencyChange,
   List,
+  localDateIn,
   Note,
   normalizePersian,
   Project,
+  sameHabitFrequency,
   successorTask,
   Tag,
   Task,
@@ -90,7 +97,17 @@ export interface SyncMergeInput {
   readonly incomingNewer: boolean
   /** True when the push's `baseVersion` was behind the stored row. */
   readonly conflict: boolean
+  /** The server's commit instant. */
   readonly now: string
+  /**
+   * The client's edit instant (the entry's `clientUpdatedAt`).
+   *
+   * Needed by aggregates that date something in the *user's* calendar: a habit
+   * records the local day its frequency changed (#63), and an edit made
+   * offline three days ago must be dated then, not on the day it synced. The
+   * shared LWW merge ignores it.
+   */
+  readonly clientUpdatedAt: string
 }
 
 /** Fallback LWW merge shared by every aggregate (see `docs/sync-protocol-draft.md` §6). */
@@ -244,6 +261,9 @@ const isJson: SyncFieldGuard = (value) => {
   return kind === "string" || kind === "number" || kind === "boolean" || kind === "object"
 }
 const isJsonArray: SyncFieldGuard = (value) => Array.isArray(value)
+/** Local calendar date `YYYY-MM-DD` (a habit entry's day). */
+const isLocalDate: SyncFieldGuard = (value) =>
+  typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
 
 // ── Generic merge / hydrate helpers ───────────────────────────────────────
 
@@ -1331,6 +1351,243 @@ const eventDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   }
 })
 
+// ── Habit + HabitEntry (ticket #63; FR-HAB-01/02) ─────────────────────────
+
+const HABIT_COLUMNS =
+  `${META_COLUMNS}, type, title, description, icon, color, frequency, ` +
+  `frequency_history AS frequencyHistory, reminder_time AS reminderTime, ` +
+  `time_zone AS timeZone, created_at AS createdAt`
+
+const habitCodec = withSchema<Habit>(Habit, (row) => {
+  const history = parseJson(row.frequencyHistory)
+  return {
+    id: String(row.id),
+    type: "habit",
+    title: encodeText(row.title),
+    description: asText(row.description),
+    icon: asText(row.icon),
+    ownerId: encodeText(row.ownerId),
+    householdId: encodeText(row.householdId),
+    visibility: asVisibility(row.visibility),
+    color: asText(row.color),
+    frequency: parseJson(row.frequency) ?? { _tag: "daily" },
+    frequencyHistory: Array.isArray(history) ? history : [],
+    reminderTime: asText(row.reminderTime),
+    timeZone: encodeText(row.timeZone) || "UTC",
+    createdAt: encodeText(row.createdAt)
+  }
+})
+
+const HABIT_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
+  ["title", isString],
+  ["description", isNullableString],
+  ["color", isNullableString],
+  ["icon", isNullableString],
+  // The union is one unit: a patch replaces the whole frequency, and the shape
+  // is validated by the Habit schema below. `frequencyHistory` is deliberately
+  // absent — it is server-managed, so a client patch can never rewrite the
+  // history the stats are computed from.
+  ["frequency", isJson],
+  ["reminderTime", isNullableString],
+  ["timeZone", isString],
+  ["visibility", isOneOf("private", "shared")]
+])
+
+/** The habit's frequency as the union the model expects; `daily` if absent. */
+const habitFrequencyOfPatch = (value: unknown): Record<string, unknown> =>
+  typeof value === "object" && value !== null ? (value as Record<string, unknown>) : { _tag: "daily" }
+
+const habitDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
+  entityType: "habit",
+  table: "habits",
+  select: HABIT_COLUMNS,
+  scope: SYNC_SCOPE_COLUMNS,
+  softDeleteColumn: "deleted_at",
+  writable: HABIT_WRITABLE,
+  ...habitCodec,
+  defaults: (patch, context) => {
+    const timeZone = encodeText(patch.timeZone) || "UTC"
+    const frequency = habitFrequencyOfPatch(patch.frequency) as unknown as HabitFrequency
+    return {
+      id: context.entityId,
+      type: "habit",
+      title: encodeText(patch.title),
+      description: asText(patch.description),
+      icon: asText(patch.icon),
+      ownerId: context.userId,
+      householdId: context.householdId,
+      visibility: asVisibility(patch.visibility),
+      color: asText(patch.color),
+      frequency,
+      // An offline create seeds the history exactly like the service does, in
+      // the habit's own zone, on the **client's** creation day: a habit created
+      // offline three days ago did not start on the day it synced.
+      frequencyHistory: [
+        {
+          effectiveFrom: localDateIn(
+            asText(patch.createdAt) ?? context.clientUpdatedAt,
+            timeZone
+          ),
+          frequency
+        }
+      ],
+      reminderTime: asText(patch.reminderTime),
+      timeZone,
+      createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
+    }
+  },
+  /**
+   * Shared field LWW, plus the frequency version log.
+   *
+   * The history is only grown when the merge actually adopted a *different*
+   * frequency: a patch that lost the conflict (or repeated the current
+   * frequency) leaves it untouched, so an offline edit can never append a
+   * version that never applied. `effectiveFrom` is the local day of the
+   * client's edit, not of the sync that delivered it.
+   */
+  merge: (input) => {
+    const next = mergeFields({}, input)
+    const currentFrequency = input.current.frequency as HabitFrequency | undefined
+    const nextFrequency = next.frequency as HabitFrequency | undefined
+    if (
+      nextFrequency !== undefined &&
+      (currentFrequency === undefined ||
+        !sameHabitFrequency(currentFrequency, nextFrequency))
+    ) {
+      const history = Array.isArray(next.frequencyHistory)
+        ? (next.frequencyHistory as ReadonlyArray<HabitFrequencyChange>)
+        : []
+      const timeZone = encodeText(next.timeZone) || "UTC"
+      next.frequencyHistory = habitFrequencyHistoryAfter({
+        history,
+        frequency: nextFrequency,
+        // The client's edit day, not the sync day: an offline change made
+        // three days ago took effect then.
+        effectiveFrom: localDateIn(input.clientUpdatedAt, timeZone)
+      })
+    }
+    return next
+  },
+  insert: (state) => sql`
+    INSERT INTO habits
+      (id, type, title, description, icon, owner_id, household_id, visibility,
+       color, frequency, frequency_history, reminder_time, time_zone,
+       created_at, updated_at, version, deleted_at)
+    VALUES
+      (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
+       ${encodeNullableText(state.data.description)},
+       ${encodeNullableText(state.data.icon)}, ${state.ownerId},
+       ${state.householdId}, ${state.visibility},
+       ${encodeNullableText(state.data.color)},
+       ${encodeJson(state.data.frequency)},
+       ${encodeJson(state.data.frequencyHistory)},
+       ${encodeNullableText(state.data.reminderTime)},
+       ${encodeText(state.data.timeZone) || "UTC"},
+       ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
+       ${state.updatedAt}, ${state.version}, ${state.deletedAt})
+    ON CONFLICT DO NOTHING
+  `,
+  update: (state, expectedVersion) => sql`
+    UPDATE habits SET
+      title = ${encodeText(state.data.title)},
+      description = ${encodeNullableText(state.data.description)},
+      icon = ${encodeNullableText(state.data.icon)},
+      visibility = ${state.visibility},
+      color = ${encodeNullableText(state.data.color)},
+      frequency = ${encodeJson(state.data.frequency)},
+      frequency_history = ${encodeJson(state.data.frequencyHistory)},
+      reminder_time = ${encodeNullableText(state.data.reminderTime)},
+      time_zone = ${encodeText(state.data.timeZone) || "UTC"},
+      updated_at = ${state.updatedAt},
+      version = ${state.version},
+      deleted_at = ${state.deletedAt}
+    WHERE id = ${state.entityId} AND version = ${expectedVersion}
+  `
+})
+
+const HABIT_ENTRY_COLUMNS =
+  `${META_COLUMNS}, habit_id AS habitId, local_date AS localDate, ` +
+  `time_zone AS timeZone, status, created_at AS createdAt`
+
+const habitEntryCodec = withSchema<HabitEntry>(HabitEntry, (row) => ({
+  id: String(row.id),
+  habitId: encodeText(row.habitId),
+  ownerId: encodeText(row.ownerId),
+  householdId: encodeText(row.householdId),
+  visibility: asVisibility(row.visibility),
+  localDate: encodeText(row.localDate),
+  timeZone: encodeText(row.timeZone) || "UTC",
+  status: encodeText(row.status) || "done",
+  createdAt: encodeText(row.createdAt)
+}))
+
+const HABIT_ENTRY_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
+  // The entry's identity on the wire: a tap names the habit and the local day
+  // it logs. Both are validated by the HabitEntry schema below.
+  ["habitId", isString],
+  ["localDate", isLocalDate],
+  ["timeZone", isString],
+  ["status", isOneOf("done", "partial", "missed")],
+  ["visibility", isOneOf("private", "shared")]
+])
+
+const habitEntryDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
+  entityType: "habitEntry",
+  table: "habit_entries",
+  select: HABIT_ENTRY_COLUMNS,
+  scope: SYNC_SCOPE_COLUMNS,
+  softDeleteColumn: "deleted_at",
+  writable: HABIT_ENTRY_WRITABLE,
+  ...habitEntryCodec,
+  defaults: (patch, context) => {
+    const timeZone = encodeText(patch.timeZone) || "UTC"
+    return {
+      id: context.entityId,
+      habitId: encodeText(patch.habitId) || null,
+      ownerId: context.userId,
+      householdId: context.householdId,
+      visibility: asVisibility(patch.visibility),
+      // The day the tap logged: the client sends it, so a backdated or
+      // timezone-crossing tap is explicit. A delete-only push carries none, so
+      // fall back to the local date of the write instant.
+      localDate: encodeText(patch.localDate) || localDateIn(context.clientUpdatedAt, timeZone),
+      timeZone,
+      status: encodeText(patch.status) || "done",
+      createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
+    }
+  },
+  /**
+   * Plain field LWW. A logged day has no "completion wins" rule of its own:
+   * the later status the user chose is the one that stands, and `deletedAt`
+   * keeps the shared tombstone-wins rule from `mergeFields`.
+   */
+  merge: (input) => mergeFields({}, input),
+  insert: (state) => sql`
+    INSERT INTO habit_entries
+      (id, habit_id, owner_id, household_id, visibility, local_date,
+       time_zone, status, created_at, updated_at, version, deleted_at)
+    VALUES
+      (${state.entityId}, ${encodeText(state.data.habitId)}, ${state.ownerId},
+       ${state.householdId}, ${state.visibility},
+       ${encodeText(state.data.localDate)},
+       ${encodeText(state.data.timeZone) || "UTC"},
+       ${encodeText(state.data.status)},
+       ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
+       ${state.updatedAt}, ${state.version}, ${state.deletedAt})
+    ON CONFLICT DO NOTHING
+  `,
+  update: (state, expectedVersion) => sql`
+    UPDATE habit_entries SET
+      visibility = ${state.visibility},
+      time_zone = ${encodeText(state.data.timeZone) || "UTC"},
+      status = ${encodeText(state.data.status)},
+      updated_at = ${state.updatedAt},
+      version = ${state.version},
+      deleted_at = ${state.deletedAt}
+    WHERE id = ${state.entityId} AND version = ${expectedVersion}
+  `
+})
+
 // ── Registry ──────────────────────────────────────────────────────────────
 
 /** Aggregates that sync today. Other `ItemType`s still reject as unsupported. */
@@ -1341,7 +1598,9 @@ export const SYNC_ENTITY_TYPES = [
   "list",
   "listItem",
   "note",
-  "event"
+  "event",
+  "habit",
+  "habitEntry"
 ] as const satisfies ReadonlyArray<SyncEntityType>
 
 export const makeSyncRegistry = (sql: SqlClient.SqlClient): SyncRegistry => {
@@ -1352,7 +1611,9 @@ export const makeSyncRegistry = (sql: SqlClient.SqlClient): SyncRegistry => {
     listDefinition(sql),
     listItemDefinition(sql),
     noteDefinition(sql),
-    eventDefinition(sql)
+    eventDefinition(sql),
+    habitDefinition(sql),
+    habitEntryDefinition(sql)
   ]
   const byType = new Map<SyncEntityType, SyncEntityDefinition>(
     definitions.map((definition) => [definition.entityType, definition])

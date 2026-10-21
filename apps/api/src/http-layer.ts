@@ -4,6 +4,8 @@ import { RpcServer, RpcSerialization } from "effect/rpc"
 import { ApiRpcs } from "@tali/rpc"
 import {
   EventRepoLive,
+  HabitEntryRepoLive,
+  HabitRepoLive,
   ListItemRepoLive,
   NoteRepoLive,
   NoteSearchRepoLive,
@@ -17,6 +19,7 @@ import { AuthRoutes } from "./auth-routes.js"
 import { CalendarRoutes } from "./calendar-routes.js"
 import { CalendarServiceLive } from "./calendar-service.js"
 import { EventServiceLive } from "./event-service.js"
+import { HabitServiceLive } from "./habit-service.js"
 import { ListServiceLive } from "./list-service.js"
 import { ListItemServiceLive } from "./list-item-service.js"
 import { NoteSearchRoutes } from "./note-search-routes.js"
@@ -43,6 +46,39 @@ const RpcLayer = RpcServer.layerHttp({
 )
 
 /**
+ * The service layers, grouped because `Layer.provide` merges at most 20
+ * layers: the app now provides more services and repositories than that.
+ */
+const ServiceLayers = Layer.mergeAll(
+  AuthServiceLive,
+  PreferencesServiceLive,
+  SyncServiceLive,
+  ListServiceLive,
+  ListItemServiceLive,
+  TaskServiceLive,
+  NoteServiceLive,
+  NoteSearchServiceLive,
+  TodayServiceLive,
+  CalendarServiceLive,
+  EventServiceLive,
+  HabitServiceLive
+)
+
+/** The aggregate repositories (each service also provides the ones it owns). */
+const RepoLayers = Layer.mergeAll(
+  ListItemRepoLive,
+  NoteRepoLive,
+  NoteSearchRepoLive,
+  ProjectRepoLive,
+  TagRepoLive,
+  TaskRepoLive,
+  EventRepoLive,
+  HabitRepoLive,
+  HabitEntryRepoLive,
+  PushSubscriptionRepoLive
+)
+
+/**
  * The full HTTP application layer: RPC + plain-HTTP sync + health.
  *
  * Requires `HttpRouter` (provided by `HttpRouter.toWebHandler`/`serve`) and
@@ -59,23 +95,6 @@ export const AppLayer = Layer.mergeAll(
   PushRoutes,
   RpcLayer
 ).pipe(
-  Layer.provide(AuthServiceLive),
-  Layer.provide(PreferencesServiceLive),
-  Layer.provide(SyncServiceLive),
-  Layer.provide(ListServiceLive),
-  Layer.provide(ListItemServiceLive),
-  Layer.provide(TaskServiceLive),
-  Layer.provide(NoteServiceLive),
-  Layer.provide(NoteSearchServiceLive),
-  Layer.provide(TodayServiceLive),
-  Layer.provide(CalendarServiceLive),
-  Layer.provide(EventServiceLive),
-  Layer.provide(ListItemRepoLive),
-  Layer.provide(NoteRepoLive),
-  Layer.provide(NoteSearchRepoLive),
-  Layer.provide(ProjectRepoLive),
-  Layer.provide(TagRepoLive),
-  Layer.provide(TaskRepoLive),
-  Layer.provide(EventRepoLive),
-  Layer.provide(PushSubscriptionRepoLive)
+  Layer.provide(ServiceLayers),
+  Layer.provide(RepoLayers)
 )
