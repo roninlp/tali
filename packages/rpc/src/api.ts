@@ -6,6 +6,16 @@ import {
   ListItemId,
   ListItemInsert,
   ListItemNotFound,
+  Note,
+  NoteCreateInput,
+  NoteFlagInput,
+  NoteId,
+  NoteListInput,
+  NoteMutationInput,
+  NoteSaveInput,
+  NoteServiceError,
+  NoteTagInput,
+  NoteUpdateInput,
   Project,
   ProjectCreateInput,
   ProjectRenameInput,
@@ -141,6 +151,82 @@ class ListTags extends Rpc.make("ListTags", {
   error: TaskRpcError
 }) {}
 
+// ── Notes (ticket #40; FR-NOTE-01/03) ────────────────────────────────────
+
+const NoteRpcError = Schema.Union([NoteServiceError, Unauthorized])
+
+class CreateNote extends Rpc.make("CreateNote", {
+  payload: NoteCreateInput,
+  success: Note,
+  error: NoteRpcError
+}) {}
+
+class GetNote extends Rpc.make("GetNote", {
+  payload: Schema.Struct({ id: NoteId }),
+  success: Note,
+  error: NoteRpcError
+}) {}
+
+/** Version-keyed autosave; identical text is a no-op, stale text conflicts. */
+class SaveNote extends Rpc.make("SaveNote", {
+  payload: NoteSaveInput,
+  success: Note,
+  error: NoteRpcError
+}) {}
+
+class UpdateNote extends Rpc.make("UpdateNote", {
+  payload: NoteUpdateInput,
+  success: Note,
+  error: NoteRpcError
+}) {}
+
+class SetNotePinned extends Rpc.make("SetNotePinned", {
+  payload: NoteFlagInput,
+  success: Note,
+  error: NoteRpcError
+}) {}
+
+class SetNoteArchived extends Rpc.make("SetNoteArchived", {
+  payload: NoteFlagInput,
+  success: Note,
+  error: NoteRpcError
+}) {}
+
+class SetNoteTags extends Rpc.make("SetNoteTags", {
+  payload: NoteTagInput,
+  success: Note,
+  error: NoteRpcError
+}) {}
+
+class TrashNote extends Rpc.make("TrashNote", {
+  payload: NoteMutationInput,
+  success: Note,
+  error: NoteRpcError
+}) {}
+
+class RestoreNote extends Rpc.make("RestoreNote", {
+  payload: NoteMutationInput,
+  success: Note,
+  error: NoteRpcError
+}) {}
+
+class ListNotes extends Rpc.make("ListNotes", {
+  payload: NoteListInput,
+  success: Schema.Array(Note),
+  error: NoteRpcError
+}) {}
+
+/** The #42 dashboard seam: pinned, live, non-archived notes. */
+class ListPinnedNotes extends Rpc.make("ListPinnedNotes", {
+  success: Schema.Array(Note),
+  error: NoteRpcError
+}) {}
+
+class ListTrashNotes extends Rpc.make("ListTrashNotes", {
+  success: Schema.Array(Note),
+  error: NoteRpcError
+}) {}
+
 export const ApiRpcs = RpcGroup.make(
   CreateListItem,
   ListListItems,
@@ -159,7 +245,19 @@ export const ApiRpcs = RpcGroup.make(
   ListProjects,
   CreateTag,
   RenameTag,
-  ListTags
+  ListTags,
+  CreateNote,
+  GetNote,
+  SaveNote,
+  UpdateNote,
+  SetNotePinned,
+  SetNoteArchived,
+  SetNoteTags,
+  TrashNote,
+  RestoreNote,
+  ListNotes,
+  ListPinnedNotes,
+  ListTrashNotes
 )
 
 /** The derived, shared client type the web app imports. */
