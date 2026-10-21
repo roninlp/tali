@@ -226,6 +226,11 @@ export const api = {
   ): Promise<ReadonlyArray<OccasionAdvanceReminder>> =>
     Effect.runPromise(withClient((client) => client.ListOccasionReminders(input))),
 
+  materialiseOccasionReminders: (
+    input: OccasionOccurrenceQuery
+  ): Promise<ReadonlyArray<Reminder>> =>
+    Effect.runPromise(withClient((client) => client.MaterialiseOccasionReminders(input))),
+
   prepareOccasionTask: (input: OccasionPrepareInput): Promise<OccasionPreparation> =>
     Effect.runPromise(withClient((client) => client.PrepareOccasionTask(input)))
 }

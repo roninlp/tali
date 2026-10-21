@@ -23,8 +23,9 @@ before the aggregate could be built:
    silently disappears in four years out of five. A person's birthday cannot
    disappear.
 
-Ticket #60 (the `Reminder` aggregate) is not on `main` yet. The occasions slice
-must not create a second reminder table or pre-empt #60's design.
+Ticket #60 (the `Reminder` aggregate and its dispatch ledger) has since landed.
+The occasions slice must not create a second reminder table or pre-empt #60's
+design, so the reminder is materialised as an ordinary `Reminder` row.
 
 ## Decision
 
@@ -45,12 +46,24 @@ must not create a second reminder table or pre-empt #60's design.
   count and end semantics an occasion does not have.
 - **The advance reminder is an offset, expanded at read time.** `advance_reminder_days`
   produces `occurrenceDate − N days` and a default 09:00 fire instant in the
-  occasion's zone. No per-year reminder row is written. The service exposes
-  `OccasionAdvanceReminder` drafts with a stable `reminderKey` and
-  `ReminderLink { _tag: "occasion" }` — the **documented seam for #60**. #60
-  owns the `reminders` table and materialises the draft; #61's sweep consumes
-  the fire instant. The `ReminderLink` union gains the `occasion` variant now
-  because the draft needs a typed target; no reminder table is created here.
+  occasion's zone. No per-year rule is written; the annual schedule is never
+  stored. The pure projection exposes `OccasionAdvanceReminder` drafts with a
+  stable `reminderKey` and `ReminderLink { _tag: "occasion" }`.
+- **The draft is materialised into one `Reminder` row per occurrence.**
+  `MaterialiseOccasionReminders` expands the window, then writes each due draft
+  through #60's `ReminderService.create` with an explicit `fireAt` (the
+  occurrence minus the offset, 09:00 in the occasion's own zone) and the
+  `occasion` link, so the row lands on the #34 version/feed path and travels on
+  `/sync/pull`. It is idempotent: an existing row for the same link + fire
+  instant is returned rather than duplicated, a tombstoned one is left deleted,
+  and the deterministic `clientMutationId` makes a retried create replay. The
+  guard is the **lookup**, not a unique index — `applied_mutations` is pruned
+  after 90 days, so the ledger alone cannot be the durable key, and a partial
+  unique index would need a `0014_` migration while still rejecting a legitimate
+  second reminder at the same instant. `link_type` is plain `TEXT`, so teaching
+  the reminder repo and sync registry the `occasion` tag needs no migration.
+  #61's sweep is what calls this; the push dispatch, the cron and the inbox stay
+  #61's.
 - **The preparation task is a real task row.** The one-tap action writes a
   normal `tasks` row (so it completes, syncs, and appears on `/today`) and links
   it from `occasions.preparation_task_id` in the same D1 batch. The task insert
@@ -66,10 +79,12 @@ must not create a second reminder table or pre-empt #60's design.
   offline and needs no change to the `/month` read model or its ETag.
 - A leap-day birthday is celebrated on Esfand 29 in common years and is never
   omitted. Tests pin both the leap and the common year.
-- The advance reminder has no delivery state of its own until #60 lands. That
-  is deliberate: a second table would diverge from the dispatch ledger ADR-0005
-  makes the source of truth for fires and answers. The seam returns a due date,
-  a default instant and a stable key, which is everything a reminder row needs.
+- The advance reminder has no delivery state of its own: once materialised it is
+  an ordinary reminder, and the dispatch ledger ADR-0005 makes the source of
+  truth for its fires and answers. A second table would diverge from that. The
+  materialised row is owned by whoever materialised it and inherits the
+  occasion's visibility, so a shared occasion's reminder reaches both members
+  through the normal sync path.
 - `events.occasion_id` (reserved in 0010) still has no foreign key. Events and
   occasions can arrive in either order on a sync pull; the relation is validated
   by the services that set it.

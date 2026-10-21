@@ -16,10 +16,12 @@ import {
   OccasionForbidden,
   OccasionValidationError,
   OccasionUpdateInput,
+  Reminder,
+  type ReminderServiceError,
   Task,
   type TaskId,
   taskBucketBounds,
-  type TimeZone,
+  TimeZone,
   type UserId,
   type Visibility,
   occasionAdvanceReminder,
@@ -42,12 +44,15 @@ import type {
 import {
   OccasionRepo,
   OccasionRepoLive,
+  ReminderRepo,
+  ReminderRepoLive,
   type SyncEntityState,
   SyncRepo,
   SyncRepoLive,
   TaskRepo,
   TaskRepoLive
 } from "@tali/sql"
+import { ReminderService, ReminderServiceLive } from "./reminder-service.js"
 
 /**
  * `OccasionService` — annual important dates (ticket #59; FR-CAL-02).
@@ -127,6 +132,19 @@ export interface OccasionServiceApi {
     viewer: OccasionViewer,
     input: Schema.Schema.Type<typeof OccasionOccurrenceQuery>
   ) => Effect.Effect<ReadonlyArray<OccasionAdvanceReminder>, OccasionServiceError>
+  /**
+   * Materialise the due advance reminders into real `Reminder` rows (#60).
+   *
+   * One row per `(occasion, occurrence)`, linked with `ReminderLink._tag =
+   * "occasion"` and fired at the occurrence minus the offset, 09:00 local in the
+   * occasion's zone. Idempotent: an existing row for the same link + fire
+   * instant is returned rather than duplicated, and a tombstoned one is left
+   * deleted.
+   */
+  readonly materialiseReminders: (
+    viewer: OccasionViewer,
+    input: Schema.Schema.Type<typeof OccasionOccurrenceQuery>
+  ) => Effect.Effect<ReadonlyArray<Reminder>, OccasionServiceError | ReminderServiceError>
   /** One-tap "prepare gift" task creation (idempotent for a live link). */
   readonly prepareTask: (
     viewer: OccasionViewer,
@@ -150,11 +168,25 @@ const validLocalDate = (value: string): boolean => {
   }
 }
 
+/**
+ * A malformed IANA zone must be a typed validation failure, not a schema defect
+ * that 500s the RPC: the registry's `validate` would otherwise throw while
+ * encoding the row (the same guard the habit service applies).
+ */
+const decodeTimeZone = (timeZone: string): Effect.Effect<string, OccasionValidationError> => {
+  const decoded = Schema.decodeUnknownOption(TimeZone)(timeZone)
+  return Option.isNone(decoded)
+    ? invalid("timeZone", "the time zone must be a valid IANA identifier")
+    : Effect.succeed(decoded.value)
+}
+
 export class OccasionService extends Context.Service<OccasionService>()("OccasionService", {
   make: Effect.gen(function*() {
     const occasions = yield* OccasionRepo
     const tasks = yield* TaskRepo
     const sync = yield* SyncRepo
+    const reminders = yield* ReminderService
+    const reminderRepo = yield* ReminderRepo
     const sql = yield* SqlClient.SqlClient
 
     const definition = (entityType: "occasion" | "task") => {
@@ -360,13 +392,14 @@ export class OccasionService extends Context.Service<OccasionService>()("Occasio
         if (!validLocalDate(input.originDate)) {
           return yield* invalid("originDate", "the origin date must be a real calendar date")
         }
+        const timeZone = yield* decodeTimeZone(input.timeZone ?? viewer.timeZone)
 
         const occasion = new Occasion({
           id: (input.id ?? uuidV7()) as Occasion["id"],
           type: "occasion",
           title: input.title,
           originDate: input.originDate,
-          timeZone: (input.timeZone ?? viewer.timeZone) as TimeZone,
+          timeZone: timeZone as TimeZone,
           yearly: input.yearly ?? true,
           advanceReminderDays: input.advanceReminderDays ?? null,
           preparationTaskId: null,
@@ -421,11 +454,12 @@ export class OccasionService extends Context.Service<OccasionService>()("Occasio
         if (patch.originDate !== undefined && !validLocalDate(patch.originDate)) {
           return yield* invalid("originDate", "the origin date must be a real calendar date")
         }
+        const timeZone = yield* decodeTimeZone(patch.timeZone ?? current.timeZone)
         return new Occasion({
           ...current,
           title: patch.title ?? current.title,
           originDate: patch.originDate ?? current.originDate,
-          timeZone: patch.timeZone ?? current.timeZone,
+          timeZone: timeZone as TimeZone,
           yearly: patch.yearly ?? current.yearly,
           advanceReminderDays:
             patch.advanceReminderDays === undefined
@@ -536,6 +570,61 @@ export class OccasionService extends Context.Service<OccasionService>()("Occasio
         yield* validateRange(input)
         const rows = yield* visibleSources(viewer)
         return occasionAdvanceReminders({ occasions: rows, range: input })
+      })
+
+    /**
+     * Turn the due advance reminders into real reminder rows.
+     *
+     * The write goes through `ReminderService.create`, so the reminder lands on
+     * the #34 one-batch version/feed/ledger path and travels on `/sync/pull` to
+     * the other household member exactly like any other reminder.
+     *
+     * Idempotency is a lookup by the flattened link plus the exact fire instant
+     * (a tombstone counts, so a deleted reminder is not resurrected), backed by
+     * the deterministic `clientMutationId` that makes a retried create replay.
+     * No unique index: the lookup is the durable key, and the ledger alone
+     * cannot be the guard because `applied_mutations` is pruned after 90 days.
+     */
+    const materialiseReminders = (
+      viewer: OccasionViewer,
+      input: Schema.Schema.Type<typeof OccasionOccurrenceQuery>
+    ): Effect.Effect<ReadonlyArray<Reminder>, OccasionServiceError | ReminderServiceError> =>
+      Effect.gen(function*() {
+        yield* validateRange(input)
+        const rows = yield* visibleOccasions(viewer)
+        const drafts = occasionAdvanceReminders({ occasions: rows, range: input })
+        const byId = new Map(rows.map((row) => [row.id as string, row]))
+        const materialised: Array<Reminder> = []
+        for (const draft of drafts) {
+          // The stored instant is canonical UTC with milliseconds; the pure
+          // projection emits Temporal's shorter form, so normalise before the
+          // lookup or every call would miss and fall through to create.
+          const fireAt = new Date(draft.fireAt).toISOString()
+          const existing = yield* reminderRepo.findOccasionByFireAt({
+            householdId: viewer.householdId,
+            occasionId: draft.occasionId,
+            fireAt
+          }).pipe(Effect.orDie)
+          if (Option.isSome(existing)) {
+            // A tombstone means the owner removed this occurrence's reminder.
+            if (existing.value.deletedAt === null) materialised.push(existing.value)
+            continue
+          }
+          const source = byId.get(draft.occasionId)
+          const created = yield* reminders.create(viewer, {
+            clientMutationId: `occasion-advance:${draft.reminderKey}`,
+            title: draft.title,
+            kind: "general",
+            repeat: { _tag: "once" },
+            fireAt: draft.fireAt,
+            offsetMinutes: draft.advanceDays * 24 * 60,
+            link: draft.link,
+            timeZone: draft.timeZone,
+            visibility: source?.visibility ?? "shared"
+          })
+          materialised.push(created)
+        }
+        return materialised
       })
 
     /**
@@ -732,6 +821,7 @@ export class OccasionService extends Context.Service<OccasionService>()("Occasio
       list,
       occurrences,
       advanceReminders,
+      materialiseReminders,
       prepareTask
     } as const
   })
@@ -740,5 +830,7 @@ export class OccasionService extends Context.Service<OccasionService>()("Occasio
 export const OccasionServiceLive = Layer.effect(OccasionService, OccasionService.make).pipe(
   Layer.provide(OccasionRepoLive),
   Layer.provide(TaskRepoLive),
+  Layer.provide(ReminderRepoLive),
+  Layer.provide(ReminderServiceLive),
   Layer.provide(SyncRepoLive)
 )

@@ -173,6 +173,27 @@ describe("advance reminder", () => {
     expect(occasionAdvanceReminder(occasion, "2027-04-01")?.dueDate).toBe("2027-03-25")
   })
 
+  it("keeps 09:00 local across a DST transition", () => {
+    // UK clocks spring forward on 2026-03-29, so the same 09:00 local wall time
+    // is a different UTC instant on either side of it.
+    const occasion = source({ timeZone: "Europe/London", advanceReminderDays: 14 })
+    expect(occasionAdvanceReminder(occasion, "2026-04-10")?.fireAt).toBe("2026-03-27T09:00:00Z")
+    expect(occasionAdvanceReminder(occasion, "2026-04-15")?.fireAt).toBe("2026-04-01T08:00:00Z")
+  })
+
+  it("finds an occurrence whose offset crosses into the previous Jalali year", () => {
+    // 1990-03-21 is 1 Farvardin 1369 (Nowruz); the 7-day reminder for the 1405
+    // occurrence (2026-03-21) falls on 2026-03-14, still in Jalali 1404.
+    const occasion = source({ originDate: "1990-03-21", advanceReminderDays: 7 })
+    const reminders = occasionAdvanceReminders({
+      occasions: [occasion],
+      range: { from: "2026-03-14"as LocalDate, to: "2026-03-14"as LocalDate }
+    })
+    expect(reminders).toHaveLength(1)
+    expect(reminders[0]?.occurrenceDate).toBe("2026-03-21")
+    expect(reminders[0]?.dueDate).toBe("2026-03-14")
+  })
+
   it("has no reminder when the offset is cleared", () => {
     expect(occasionAdvanceReminder(source({ advanceReminderDays: null }), "2026-04-01")).toBeNull()
   })

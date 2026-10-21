@@ -1805,7 +1805,8 @@ const reminderDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => (
         (patch.link as Record<string, unknown> | undefined)?._tag,
         (patch.link as Record<string, unknown> | undefined)?.taskId ??
           (patch.link as Record<string, unknown> | undefined)?.eventId ??
-          (patch.link as Record<string, unknown> | undefined)?.habitId
+          (patch.link as Record<string, unknown> | undefined)?.habitId ??
+          (patch.link as Record<string, unknown> | undefined)?.occasionId
       ),
       silencedUntil: normalizeInstantText(asText(patch.silencedUntil)),
       timeZone,

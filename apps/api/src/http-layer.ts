@@ -7,6 +7,7 @@ import {
   HabitEntryRepoLive,
   HabitRepoLive,
   ListItemRepoLive,
+  OccasionRepoLive,
   NoteRepoLive,
   NoteSearchRepoLive,
   ProjectRepoLive,

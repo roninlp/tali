@@ -330,7 +330,7 @@ export class Event extends Model.Class<Event>("Event")({
 > **Implemented in ticket [#59](https://github.com/roninlp/tali/issues/59)** — `packages/domain/src/planning/occasion.ts` +
 > `occasion-projection.ts`, `packages/sql/migrations/0013_occasions.sql`, `packages/sql/src/occasion-repo.ts`, the
 > `occasion` entry of the sync registry, and `apps/api/src/occasion-service.ts`. ADR-0008 records the projection and
-> the reminder seam.
+> the reminder materialisation.
 
 ```ts
 export class Occasion extends Model.Class<Occasion>("Occasion")({

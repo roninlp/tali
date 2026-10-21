@@ -957,7 +957,12 @@ describe("sync engine", () => {
     expect(new Set(boot.items.map((item) => item.entityId)).size).toBe(ids.length)
   })
 
-  it("rejects entity types that are not registered yet", async () => {
+  it("rejects an entity type with no registry definition", async () => {
+    // Every current `ItemType` now has a registry entry (occasion was the last
+    // one), so this guards the seam a future aggregate crosses: its enum value
+    // can exist on the wire before its definition lands. The cast models that
+    // pre-registration state; the service must still refuse it, not fall
+    // through to a missing definition.
     const h = makeHarness()
     await expect(
       push(h, {
@@ -965,14 +970,14 @@ describe("sync engine", () => {
         householdId: HOUSEHOLD,
         entries: [
           entry({
-            entityType: "occasion",
+            entityType: "attachment" as SyncEntityType,
             entityId: uuidV7(),
             baseVersion: 0,
-            patch: { title: "یادآور" }
+            patch: { title: "پیوست" }
           })
         ]
       })
-    ).rejects.toMatchObject({ _tag: "UnsupportedSyncEntity", entityType: "occasion" })
+    ).rejects.toMatchObject({ _tag: "UnsupportedSyncEntity", entityType: "attachment" })
   })
 
   it("guards patch values and rejects an insert the aggregate cannot accept", async () => {

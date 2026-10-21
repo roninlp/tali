@@ -120,8 +120,9 @@ An annual important date (a birthday, an anniversary) that usually needs
 preparation. It is not an event: it is one **origin local date** plus its zone,
 projected onto its Jalali month/day every year (Esfand 30 clamps to Esfand 29 in
 a common year), and events may be created from it. Its **advance reminder** is
-an offset expanded at read time, not a stored per-year rule; the reminder row is
-the Reminder aggregate's. See [ADR-0008](docs/adr/0008-occasion-origin-date-and-advance-reminder.md).
+an offset expanded at read time, not a stored per-year rule, materialised once
+per occurrence into the Reminder aggregate's table. See
+[ADR-0008](docs/adr/0008-occasion-origin-date-and-advance-reminder.md).
 
 ### Recurrence Rule
 

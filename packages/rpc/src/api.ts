@@ -537,6 +537,22 @@ class ListOccasionReminders extends Rpc.make("ListOccasionReminders", {
   error: OccasionRpcError
 }) {}
 
+/**
+ * Materialise the advance reminders due in the window into real `Reminder`
+ * rows (#60). Idempotent per `(occasion, occurrence)`.
+ */
+const OccasionReminderRpcError = Schema.Union([
+  OccasionServiceError,
+  ReminderServiceError,
+  Unauthorized
+])
+
+class MaterialiseOccasionReminders extends Rpc.make("MaterialiseOccasionReminders", {
+  payload: OccasionOccurrenceQuery,
+  success: Schema.Array(Reminder),
+  error: OccasionReminderRpcError
+}) {}
+
 /** One-tap "prepare gift" task creation from an occasion. */
 class PrepareOccasionTask extends Rpc.make("PrepareOccasionTask", {
   payload: OccasionPrepareInput,
@@ -612,6 +628,7 @@ export const ApiRpcs = RpcGroup.make(
   ListOccasions,
   ListOccasionOccurrences,
   ListOccasionReminders,
+  MaterialiseOccasionReminders,
   PrepareOccasionTask
 )
 

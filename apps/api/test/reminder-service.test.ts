@@ -132,6 +132,33 @@ const makeHarness = () => {
     return id
   }
 
+  /** Insert an occasion directly; the link check only needs its columns. */
+  const insertOccasion = (input: {
+    readonly id?: string
+    readonly ownerId?: string
+    readonly householdId?: string
+    readonly visibility?: string
+  }): string => {
+    const id = input.id ?? uuidV7()
+    db.prepare(
+      `INSERT INTO occasions
+        (id, type, title, owner_id, household_id, visibility, color,
+         origin_date, time_zone, yearly, advance_reminder_days,
+         preparation_task_id, created_at, updated_at, version)
+       VALUES (?, 'occasion', 'تولد', ?, ?, ?, NULL, '1990-04-01', ?, 1, 7,
+               NULL, ?, ?, 1)`
+    ).run(
+      id,
+      input.ownerId ?? USER_A,
+      input.householdId ?? HOUSEHOLD,
+      input.visibility ?? "shared",
+      TZ,
+      NOW,
+      NOW
+    )
+    return id
+  }
+
   /** Insert a claimed ledger row; the sweep that writes these is #61. */
   const insertDispatch = (input: {
     readonly reminderId: string
@@ -185,6 +212,7 @@ const makeHarness = () => {
     fake,
     svc,
     insertTask,
+    insertOccasion,
     insertDispatch,
     feedCount,
     reminderRow,
@@ -731,6 +759,56 @@ describe("ReminderService — list and visibility", () => {
           kind: "general",
           repeat: { _tag: "once" },
           link: { _tag: "task", taskId: foreignTask as never }
+        }, NOW)
+      )
+    ).rejects.toMatchObject({ _tag: "ReminderForbidden" })
+  })
+
+  it("links an occasion with an explicit fire time and refuses a private one", async () => {
+    const h = makeHarness()
+    const shared = h.insertOccasion({})
+
+    const created = await h.svc((svc) =>
+      svc.create(viewer(), {
+        clientMutationId: "occasion-link",
+        title: "یادآور تولد",
+        kind: "general",
+        repeat: { _tag: "once" },
+        fireAt: "2026-03-25T05:30:00.000Z",
+        link: { _tag: "occasion", occasionId: shared as never }
+      }, NOW)
+    )
+    expect(created.link).toEqual({ _tag: "occasion", occasionId: shared })
+    expect(h.reminderRow(created.id)).toMatchObject({
+      link_type: "occasion",
+      link_id: shared
+    })
+
+    // An occasion's advance instant is a projection, so a one-off link must
+    // carry its own fire time rather than defaulting to "now".
+    await expect(
+      h.svc((svc) =>
+        svc.create(viewer(), {
+          clientMutationId: "occasion-no-fire",
+          title: "یادآور",
+          kind: "general",
+          repeat: { _tag: "once" },
+          link: { _tag: "occasion", occasionId: shared as never }
+        }, NOW)
+      )
+    ).rejects.toMatchObject({ _tag: "ReminderValidationError" })
+
+    // Another member's private occasion is not linkable.
+    const privateOccasion = h.insertOccasion({ ownerId: USER_B, visibility: "private" })
+    await expect(
+      h.svc((svc) =>
+        svc.create(viewer(), {
+          clientMutationId: "occasion-private",
+          title: "یادآور",
+          kind: "general",
+          repeat: { _tag: "once" },
+          fireAt: "2026-03-25T05:30:00.000Z",
+          link: { _tag: "occasion", occasionId: privateOccasion as never }
         }, NOW)
       )
     ).rejects.toMatchObject({ _tag: "ReminderForbidden" })

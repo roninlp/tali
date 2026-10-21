@@ -204,10 +204,15 @@ export const reminderDateOf = (occurrence: OccasionOccurrence): string | null =>
  * The task is a normal mirrored task row, so it appears on `/today`/`/tasks`
  * immediately and syncs like any other task. The occasion's
  * `preparationTaskId` links it so a second tap is a no-op while the task is
- * live. Two `writeLocal` calls are used because the store commits one row at a
- * time: the task first (the user's work is never lost), then the link. If the
- * link write were interrupted, the task still exists and the next tap links a
- * fresh one — a stale link is harmless by design.
+ * live.
+ *
+ * Two `writeLocal` calls are used because the store commits one row at a time,
+ * and the **link is written first**. The order matters: if the second (task)
+ * write is interrupted, the occasion points at a task that does not exist, and
+ * the next tap notices the missing task, creates it and replaces the stale link
+ * — so the interrupted path self-heals. Writing the task first would instead
+ * leave an unlinked orphan task that no later tap can find, which is the one
+ * outcome that never heals.
  */
 export const prepareOccasionTaskInMirror = async (
   store: LocalStore,
@@ -228,6 +233,15 @@ export const prepareOccasionTaskInMirror = async (
   const dueDate =
     occasionAdvanceReminderDate(asOccasionSource(occasion), occurrence.date) ?? occurrence.date
   const taskId = uuidV7()
+  // Link first: an interrupted second write leaves a stale link the next tap
+  // repairs, never an orphan task (see the doc comment above).
+  await store.writeLocal({
+    entityType: "occasion",
+    entityId: occasion.id,
+    op: "upsert",
+    patch: { preparationTaskId: taskId },
+    now
+  })
   await store.writeLocal({
     entityType: "task",
     entityId: taskId,
@@ -248,13 +262,6 @@ export const prepareOccasionTaskInMirror = async (
       visibility: occasion.visibility,
       createdAt: now
     },
-    now
-  })
-  await store.writeLocal({
-    entityType: "occasion",
-    entityId: occasion.id,
-    op: "upsert",
-    patch: { preparationTaskId: taskId },
     now
   })
   return { taskId, created: true }

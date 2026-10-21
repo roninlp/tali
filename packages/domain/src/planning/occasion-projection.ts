@@ -7,7 +7,7 @@ import {
   toJalaliDate,
   toJalaliFields
 } from "../jalali.js"
-import { LocalDate, OccasionId, TimestampUtc } from "./common.js"
+import { LocalDate, OccasionId, TimeZone, TimestampUtc } from "./common.js"
 import { ReminderLink } from "./reminder-link.js"
 
 /**
@@ -102,6 +102,8 @@ export const OccasionAdvanceReminder = Schema.Struct({
   occurrenceDate: LocalDate,
   dueDate: LocalDate,
   fireAt: TimestampUtc,
+  /** The occasion's own IANA zone, so the materialised reminder reads its wall time there. */
+  timeZone: TimeZone,
   advanceDays: Schema.Int,
   link: ReminderLink
 })
@@ -227,6 +229,7 @@ export const occasionAdvanceReminder = (
     occurrenceDate: occurrenceDate as LocalDate,
     dueDate,
     fireAt: occasionReminderInstant(dueDate, occasion.timeZone),
+    timeZone: occasion.timeZone as TimeZone,
     advanceDays: occasion.advanceReminderDays ?? 0,
     link: { _tag: "occasion", occasionId: occasion.id as OccasionId }
   } as OccasionAdvanceReminder

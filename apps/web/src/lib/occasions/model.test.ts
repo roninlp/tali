@@ -79,4 +79,37 @@ describe("occasions client model", () => {
       expect(await store.list("task")).toHaveLength(1)
     })
   })
+
+  it("repairs a stale link left by an interrupted task write", async () => {
+    await withStore(async (store) => {
+      await createOccasionInMirror(store, {
+        title: "تولد سارا",
+        originDate: TODAY,
+        timeZone: TZ,
+        yearly: true,
+        advanceReminderDays: 7
+      })
+      const [row] = (await store.list("occasion")).map(toOccasionRow)
+
+      // The link write landed but the task write did not: the occasion points
+      // at a task that does not exist. The next tap must self-heal by creating
+      // the task and replacing the stale link, not leave an orphan.
+      await store.writeLocal({
+        entityType: "occasion",
+        entityId: row!.id,
+        op: "upsert",
+        patch: { preparationTaskId: uuidV7() },
+        now: "2026-10-21T10:00:00.000Z"
+      })
+
+      const [stale] = (await store.list("occasion")).map(toOccasionRow)
+      const repaired = await prepareOccasionTaskInMirror(store, stale!, TODAY)
+      expect(repaired.created).toBe(true)
+      expect(await store.get("task", repaired.taskId)).toBeDefined()
+      expect((await store.get("occasion", row!.id))?.data.preparationTaskId).toBe(
+        repaired.taskId
+      )
+      expect(await store.list("task")).toHaveLength(1)
+    })
+  })
 })

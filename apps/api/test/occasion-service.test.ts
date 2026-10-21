@@ -17,6 +17,11 @@ import {
   type OccasionServiceApi,
   type OccasionViewer
 } from "../src/occasion-service.js"
+import {
+  ReminderService,
+  ReminderServiceLive,
+  type ReminderServiceApi
+} from "../src/reminder-service.js"
 import { SyncService, SyncServiceLive } from "../src/sync-service.js"
 import { FakeD1 } from "./fake-d1.js"
 
@@ -60,10 +65,13 @@ const makeHarness = () => {
     transformQueryNames: Str.camelToSnake,
     transformResultNames: Str.snakeToCamel
   })
-  const layer = Layer.mergeAll(OccasionServiceLive, SyncServiceLive).pipe(Layer.provide(d1))
+  const layer = Layer.mergeAll(OccasionServiceLive, SyncServiceLive, ReminderServiceLive).pipe(
+    Layer.provide(d1)
+  )
 
-  const run = <A, E>(effect: Effect.Effect<A, E, OccasionService | SyncService>): Promise<A> =>
-    Effect.runPromise(Effect.provide(effect, layer))
+  const run = <A, E>(
+    effect: Effect.Effect<A, E, OccasionService | SyncService | ReminderService>
+  ): Promise<A> => Effect.runPromise(Effect.provide(effect, layer))
 
   const svc = <A, E>(
     f: (service: OccasionServiceApi) => Effect.Effect<A, E, never>
@@ -85,8 +93,26 @@ const makeHarness = () => {
       })
     )
 
+  const reminderSvc = <A, E>(
+    f: (service: ReminderServiceApi) => Effect.Effect<A, E, never>
+  ): Promise<A> =>
+    run(
+      Effect.gen(function*() {
+        const service = yield* ReminderService
+        return yield* f(service)
+      })
+    )
+
   const feedCount = (): number =>
     (db.prepare("SELECT COUNT(*) AS n FROM change_feed").get() as { readonly n: number }).n
+
+  const reminderRow = (id: string): Record<string, unknown> | undefined =>
+    db.prepare("SELECT * FROM reminders WHERE id = ?").get(id) as
+      | Record<string, unknown>
+      | undefined
+
+  const reminderCount = (): number =>
+    (db.prepare("SELECT COUNT(*) AS n FROM reminders").get() as { readonly n: number }).n
 
   const occasionRow = (id: string): Record<string, unknown> | undefined =>
     db.prepare("SELECT * FROM occasions WHERE id = ?").get(id) as
@@ -98,7 +124,19 @@ const makeHarness = () => {
       | Record<string, unknown>
       | undefined
 
-  return { db, fake, run, svc, sync, feedCount, occasionRow, taskRow }
+  return {
+    db,
+    fake,
+    run,
+    svc,
+    sync,
+    reminderSvc,
+    feedCount,
+    occasionRow,
+    taskRow,
+    reminderRow,
+    reminderCount
+  }
 }
 
 const createInput = (overrides: Record<string, unknown> = {}) => ({
@@ -259,6 +297,13 @@ describe("OccasionService", () => {
     expect(h.occasionRow(id)?.deleted_at).toBe(NOW)
   })
 
+  it("rejects a malformed zone with a typed error, not a defect", async () => {
+    const h = makeHarness()
+    await expect(
+      h.svc((svc) => svc.create(viewer(), createInput({ timeZone: "Mars/Olympus" }) as never, NOW))
+    ).rejects.toMatchObject({ _tag: "OccasionValidationError" })
+  })
+
   it("never exposes another member's private occasion", async () => {
     const h = makeHarness()
     const id = uuidV7() as OccasionId
@@ -279,6 +324,82 @@ describe("OccasionService", () => {
     await expect(
       h.svc((svc) => svc.get(viewer({ householdId: OTHER_HOUSEHOLD }), id, NOW))
     ).rejects.toMatchObject({ _tag: "OccasionForbidden" })
+  })
+})
+
+describe("advance reminder materialisation (#60 wiring)", () => {
+  it("creates the reminder at occurrence − offset, 09:00 local, exactly once", async () => {
+    const h = makeHarness()
+    const id = uuidV7() as OccasionId
+    await h.svc((svc) => svc.create(viewer(), createInput({ id }) as never, NOW))
+
+    const window = { from: "2026-03-20", to: "2026-03-31" } as never
+    const first = await h.svc((svc) => svc.materialiseReminders(viewer(), window))
+    expect(first).toHaveLength(1)
+    expect(first[0]).toMatchObject({
+      type: "reminder",
+      title: "تولد مامان",
+      kind: "general",
+      repeat: { _tag: "once" },
+      // 25 March 2026 09:00 Asia/Tehran (UTC+03:30) = 05:30Z.
+      fireAt: "2026-03-25T05:30:00.000Z",
+      offsetMinutes: 7 * 24 * 60,
+      timeZone: TZ,
+      visibility: "shared",
+      link: { _tag: "occasion", occasionId: id }
+    })
+    expect(h.reminderCount()).toBe(1)
+    expect(h.reminderRow(first[0]!.id)).toMatchObject({
+      link_type: "occasion",
+      link_id: id,
+      fire_at: "2026-03-25T05:30:00.000Z",
+      deleted_at: null
+    })
+
+    // A second materialisation of the same window returns the same row and
+    // writes nothing: no duplicate reminder.
+    const second = await h.svc((svc) => svc.materialiseReminders(viewer(), window))
+    expect(second.map((reminder) => reminder.id)).toEqual([first[0]!.id])
+    expect(h.reminderCount()).toBe(1)
+  })
+
+  it("syncs the materialised occasion reminder to the partner", async () => {
+    const h = makeHarness()
+    const id = uuidV7() as OccasionId
+    await h.svc((svc) => svc.create(viewer(), createInput({ id }) as never, NOW))
+    const created = await h.svc((svc) =>
+      svc.materialiseReminders(viewer(), { from: "2026-03-20", to: "2026-03-31" } as never)
+    )
+
+    // The partner's own cursor sees the server-created reminder on /sync/pull.
+    const pulled = await h.sync((sync) =>
+      sync.pull({ userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    )
+    const reminder = pulled.items.find(
+      (item) => item.entityType === "reminder" && item.entityId === created[0]!.id
+    )
+    expect(reminder?.data).toMatchObject({
+      title: "تولد مامان",
+      fireAt: "2026-03-25T05:30:00.000Z",
+      link: { _tag: "occasion", occasionId: id }
+    })
+  })
+
+  it("does not resurrect a deleted advance reminder", async () => {
+    const h = makeHarness()
+    const id = uuidV7() as OccasionId
+    await h.svc((svc) => svc.create(viewer(), createInput({ id }) as never, NOW))
+    const window = { from: "2026-03-20", to: "2026-03-31" } as never
+    const [created] = await h.svc((svc) => svc.materialiseReminders(viewer(), window))
+
+    await h.reminderSvc((svc) =>
+      svc.delete(viewer(), { id: created!.id, clientMutationId: "m-rem-delete" }, NOW)
+    )
+
+    const again = await h.svc((svc) => svc.materialiseReminders(viewer(), window))
+    expect(again).toEqual([])
+    expect(h.reminderCount()).toBe(1)
+    expect(h.reminderRow(created!.id)?.deleted_at).toBe(NOW)
   })
 })
 
