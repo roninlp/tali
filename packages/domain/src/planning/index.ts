@@ -6,7 +6,9 @@
  * conventions reused here.
  */
 export * from "./common"
+export * from "./buckets"
 export * from "./task"
+export * from "./task-service"
 export * from "./project"
 export * from "./tag"
 export * from "./list"
