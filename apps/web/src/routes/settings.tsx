@@ -16,7 +16,7 @@ import { PushHealthPanel } from "../components/push-health"
 import { useAuth } from "../lib/auth"
 import { authErrorMessage } from "../lib/auth-copy"
 import { deriveLoginKey, passwordProblem } from "../lib/login-key"
-import { usePreferences } from "../lib/preferences"
+import { changedDisplayFields, usePreferences } from "../lib/preferences"
 
 /**
  * Account settings (ticket #25) plus display preferences (ticket #35) and the
@@ -131,11 +131,16 @@ function SettingsPage() {
 
     setDisplayError(undefined)
     setDisplayDone(false)
-    const result = await preferences.update({
-      timeZone: zone,
-      weekStart: weekStart(),
-      digits: digits()
-    })
+    // Only the fields this screen actually changed: an untouched draft may be
+    // a profile default or an old cache that the server has since outgrown,
+    // and sending it would silently revert the other device's choice.
+    const result = await preferences.update(
+      changedDisplayFields(preferences.preferences(), {
+        timeZone: zone,
+        weekStart: weekStart(),
+        digits: digits()
+      })
+    )
     if (result.ok) {
       setDisplayDone(true)
     } else {

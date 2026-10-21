@@ -8,7 +8,7 @@ import {
   type UserPreferences
 } from "@tali/domain"
 import { AuthProvider } from "./auth"
-import { PreferencesProvider, usePreferences } from "./preferences"
+import { changedDisplayFields, PreferencesProvider, usePreferences } from "./preferences"
 import { cachePreferences, readCachedPreferences } from "./preferences-cache"
 import { weekDaysFor } from "./preferences-format"
 
@@ -203,5 +203,42 @@ describe("PreferencesProvider", () => {
       digits: "latin"
     })
     screen.unmount()
+  })
+})
+
+/**
+ * The settings form patches only what the user changed. Sending an untouched
+ * draft (profile defaults before the first GET, or a cache another device has
+ * outgrown) would revert the other device's saved choice — the silent revert
+ * ADR-0002 forbids.
+ */
+describe("changedDisplayFields", () => {
+  const saved = {
+    timeZone: "Asia/Tehran",
+    weekStart: "monday",
+    digits: "latin"
+  } as const
+
+  it("sends only the field the user changed", () => {
+    expect(changedDisplayFields(saved, { ...saved, timeZone: "Europe/Berlin" })).toEqual({
+      timeZone: "Europe/Berlin"
+    })
+    expect(changedDisplayFields(saved, { ...saved, digits: "persian" })).toEqual({
+      digits: "persian"
+    })
+  })
+
+  it("sends an empty patch when the drafts match the confirmed value", () => {
+    expect(changedDisplayFields(saved, { ...saved })).toEqual({})
+  })
+
+  it("sends every changed field together", () => {
+    expect(
+      changedDisplayFields(saved, {
+        timeZone: "Europe/Berlin",
+        weekStart: "saturday",
+        digits: "latin"
+      })
+    ).toEqual({ timeZone: "Europe/Berlin", weekStart: "saturday" })
   })
 })
