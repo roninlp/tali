@@ -225,3 +225,42 @@ before 30 minutes after its **root** fire instant (an early `done` counts).
 Snoozed-then-done is *late* because the grace window does not restart at the
 snooze; a dismiss or an unanswered dispatch is not on-time.
 
+
+## Habits
+
+### Habit
+
+A repeating intention the user wants to keep up (walk, read, take the
+medication). It carries a title, optional description, colour/icon, a
+**Frequency**, an optional local reminder time and its own **Time Zone** — and
+no streak: the streak is derived from the habit's **Entries** by the algorithm
+in #65. See [ADR-0006](docs/adr/0006-habit-shape.md).
+
+_Avoid:_ "streak" as a stored field on a habit, or "task" for a habit — a task
+is done once; a habit is kept up.
+
+### Frequency
+
+How often a habit is meant to happen: **daily**, **selected weekdays** (a
+non-empty, duplicate-free set of ISO weekdays) or **X times per week** (1–7).
+It is a union, never a free-text rhythm, so the three shapes cannot be mixed.
+
+### Frequency Version
+
+One history entry of a habit's **Frequency**: the local date it took effect.
+Changing the frequency appends a version instead of rewriting the past, so a
+day's stats are always judged against what the habit asked for *then*
+(FR-HAB-03's edge case). The last version always equals the current frequency.
+
+### Habit Entry
+
+One day's log of one habit: `done`, `partial` or `missed`, keyed by
+`(habitId, localDate)`. It is a separate row, not a field on the habit, so a
+tap is one idempotent upsert and a 7/30/90-day window is one range scan. The
+entry keeps the zone its day was written in.
+
+### Logged Day
+
+The local calendar date a **Habit Entry** covers, in the entry's own **Time
+Zone**. "Today" is the owner's wall date, never UTC's, and a backdated day is
+still the day the user says it was.
