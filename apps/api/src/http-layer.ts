@@ -7,6 +7,8 @@ import { ListItemService, ListItemServiceLive } from "./list-item-service.js"
 import { AuthServiceLive } from "./auth-service.js"
 import { AuthRoutes } from "./auth-routes.js"
 import { PushRoutes } from "./push-routes.js"
+import { PreferencesRoutes } from "./preferences-routes.js"
+import { PreferencesServiceLive } from "./preferences-service.js"
 import { SyncRoutes } from "./sync.js"
 import { SyncServiceLive } from "./sync-service.js"
 
@@ -40,10 +42,12 @@ export const AppLayer = Layer.mergeAll(
   HttpRouter.add("GET", "/health", HttpServerResponse.json({ ok: true })),
   SyncRoutes,
   AuthRoutes,
+  PreferencesRoutes,
   PushRoutes,
   RpcLayer
 ).pipe(
   Layer.provide(AuthServiceLive),
+  Layer.provide(PreferencesServiceLive),
   Layer.provide(SyncServiceLive),
   Layer.provide(ListItemServiceLive),
   Layer.provide(ListItemRepoLive),
