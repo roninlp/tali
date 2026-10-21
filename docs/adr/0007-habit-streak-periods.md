@@ -1,8 +1,8 @@
-# ADR-0006: A habit streak counts periods, and a counting week is a fixed Saturday–Friday
+# ADR-0007: A habit streak counts periods, and a counting week is a fixed Saturday–Friday
 
 - **Status:** Accepted (2026-10-21)
 - **Deciders:** Tali owner + developer (wayfinder #65)
-- **Related:** tickets #65 (this decision), #63 (habit aggregate), #64 (logging and backfill), #66 (badge/stats/heatmap), #35 (week start preference), #19 (Jalali date module), ADR-0002 (preferences are presentation, server-of-record); `docs/streak-algorithm.md` is the normative spec.
+- **Related:** tickets #65 (this decision), #63 (habit aggregate), #64 (logging and backfill), #66 (badge/stats/heatmap), #35 (week start preference), #19 (Jalali date module), ADR-0002 (preferences are presentation, server-of-record), ADR-0006 (the habit shape this builds on); `docs/streak-algorithm.md` is the normative spec.
 
 ## Context
 
@@ -36,7 +36,8 @@ Three things had to be settled together:
    overlap (the next era starts at the first boundary of the new unit after the
    old period ends), and a same-unit threshold change does not interrupt the
    streak. A unit change closes the streak, keeps it as `best`, and starts a new
-   run at the new unit.
+   run at the new unit. A change made mid-period therefore takes effect at the
+   next boundary, not on the day it was made.
 4. **The open period can never break a streak** and advances it the moment it is
    satisfied. Nothing is pro-rated and surplus does not bank.
 5. **The success rate is quota-relative and capped at 100%**, Partial is half
@@ -50,12 +51,17 @@ The rules, the pure-function contract and the worked examples live in
 - **Week Start stays presentation-only.** A user who prefers Monday or Sunday
   sees their calendar week start there, while a weekly habit's quota still turns
   over on Saturday. That mismatch is accepted and is the price of stable stats;
-  it affects only X-per-week habits.
-- **#63 stores `startedOn: LocalDate` and frequency *eras*** (an era's
-  `effectiveFrom` is its first period start, never a back-dated date). No cached
-  streak columns.
-- **The streak is not monotonic.** A ≤7-day backfill can grow it and a correction
-  can break it; #66 must recompute rather than store a counter.
+  it affects only X-per-week habits, and #66 must label the counting period
+  (e.g. «۲۵ مهر – ۱ آبان») so the turn is visible even when the display week
+  starts elsewhere.
+- **#63 stores `startedOn: LocalDate` and frequency *eras*.** Era 0 is written at
+  creation with `effectiveFrom = startedOn`; every later era's `effectiveFrom`
+  is its first period start under the new unit (never the day the edit was
+  made, and never back-dated). No cached streak columns.
+- **The streak and `best` are not monotonic.** A ≤7-day backfill can grow the
+  streak and a correction can shrink it *and* `best`; #66 must recompute rather
+  than store a counter. A `best` that survived a correction would be a cache by
+  another name.
 - **No habit `kind` in Must.** A medication habit keeps a strict daily streak; a
   "record instead of streak" mode is deferred, not smuggled into #63.
 - A `weekly(7)` habit is legal and is counted in weeks, not normalised to `daily`.
@@ -73,3 +79,7 @@ The rules, the pure-function contract and the worked examples live in
   neither is the thing the user is proud of.
 - **Re-judging history at the current frequency / resetting on any change** —
   both violate "don't rewrite past stats" or punish a corrected typo.
+- **Dating the new era from the day of the edit** — a weekly→daily change made
+  mid-week would start day periods inside a week that is still being judged as
+  a week, so one day would count twice. The new era must start at the new
+  unit's next boundary (`docs/streak-algorithm.md` §5.2).
