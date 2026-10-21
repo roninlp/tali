@@ -69,3 +69,42 @@ never a date-storage convention.
 How numerals are displayed: `persian` (default, ۱۲۳) or `latin` (123). Domain
 values always stay plain numbers/ISO strings; only rendering localizes them.
 
+## Calendar
+
+### Event
+
+Something that happens at a specific time and shows up on the calendar: an
+appointment, a meeting, a trip. An event is **timed** (two UTC instants) or
+**all-day** (one local calendar date) — never both — and it carries its own
+**Time Zone**, so a device that changes its zone never moves a stored event.
+
+_Avoid:_ "appointment" or "meeting" for the entity itself — those are events.
+
+### Occurrence
+
+One appearance of a recurring event. A recurring event is **one** row; its
+occurrences are computed from its recurrence rule by the expansion engine, not
+stored. The occurrence's key is its local start date (`YYYY-MM-DD`) in the
+event's time zone.
+
+### Exception
+
+A deviation of a single occurrence from its series: `delete` (the occurrence
+does not happen) or `override` (it happens, with its own title/time/place).
+Exceptions live inside their event's `exceptions` list — "this occurrence
+only".
+
+### Occasion
+
+An annual important date (a birthday, an anniversary) that usually needs
+preparation. It is not an event: it recurs every year on its own month/day and
+events may be created from it.
+
+### Recurrence Rule
+
+The structured rule that makes an event or a task repeat — frequency,
+interval, optional by-fields, and an end (never / count / until). It is a
+JSON object, **never** an RRULE string: the month and year fields are Jalali,
+which string RRULE parsers do not implement. See
+[ADR-0004](docs/adr/0004-event-timing-and-exception-storage.md).
+

@@ -36,7 +36,8 @@ const MIGRATIONS = [
   "0005_core_planning.sql",
   "0007_task_recurrence.sql",
   "0008_list_last_writer.sql",
-  "0009_note_search.sql"
+  "0009_note_search.sql",
+  "0010_events.sql"
 ]
 const NOW = (): string => new Date().toISOString()
 const PAST = "2020-01-01T00:00:00.000Z"
@@ -827,7 +828,8 @@ describe("sync engine", () => {
       tag: uuidV7(),
       list: uuidV7(),
       listItem: uuidV7(),
-      note: uuidV7()
+      note: uuidV7(),
+      event: uuidV7()
     }
     const patches: Record<string, Record<string, unknown>> = {
       task: { title: "کار", dueDate: "2026-10-22" },
@@ -835,7 +837,12 @@ describe("sync engine", () => {
       tag: { name: "فوری" },
       list: { title: "هفتگی" },
       listItem: { title: "شیر", checked: false, sortOrder: 0 },
-      note: { title: "ایده", body: { type: "doc" }, plainText: "ایده" }
+      note: { title: "ایده", body: { type: "doc" }, plainText: "ایده" },
+      event: {
+        title: "قرار",
+        timing: { _tag: "allDay", date: "2026-10-22" },
+        timeZone: "Asia/Tehran"
+      }
     }
     const types = Object.keys(ids) as ReadonlyArray<SyncEntityType>
 
@@ -954,10 +961,15 @@ describe("sync engine", () => {
         userId: USER_A,
         householdId: HOUSEHOLD,
         entries: [
-          entry({ entityType: "event", entityId: uuidV7(), baseVersion: 0, patch: { title: "جلسه" } })
+          entry({
+            entityType: "reminder",
+            entityId: uuidV7(),
+            baseVersion: 0,
+            patch: { title: "یادآور" }
+          })
         ]
       })
-    ).rejects.toMatchObject({ _tag: "UnsupportedSyncEntity", entityType: "event" })
+    ).rejects.toMatchObject({ _tag: "UnsupportedSyncEntity", entityType: "reminder" })
   })
 
   it("guards patch values and rejects an insert the aggregate cannot accept", async () => {
