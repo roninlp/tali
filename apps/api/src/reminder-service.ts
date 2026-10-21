@@ -46,6 +46,7 @@ import {
   reminderDeliverAt,
   reminderFireAt,
   reminderNextFireAfter,
+  reminderNextFireAfterNow,
   reminderTierFor,
   snoozeInstant,
   uuidV7
@@ -872,9 +873,12 @@ export class ReminderService extends Context.Service<ReminderService>()("Reminde
           snoozedUntil: null,
           createdAt: now
         })
-        const next = reminder.repeat._tag === "once"
-          ? null
-          : reminderNextFireAfter(reminder.repeat, reminder.timeZone, input.scheduledFor)
+        const next = reminderNextFireAfterNow(
+          reminder.repeat,
+          reminder.timeZone,
+          input.scheduledFor,
+          now
+        )
 
         yield* sync.commit([
           dispatches.claimInsertStatement(dispatch),

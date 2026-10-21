@@ -105,13 +105,16 @@ const makeHarness = () => {
     readonly ownerId?: string
     readonly visibility?: string
     readonly status?: string
+    readonly recurrence?: string | null
+    readonly recurrenceMode?: string | null
   }): string => {
     const id = input.id ?? uuidV7()
     db.prepare(
       `INSERT INTO tasks
         (id, type, title, owner_id, household_id, visibility, status, priority,
-         due_at, due_date, time_zone, tag_ids, created_at, updated_at, version)
-       VALUES (?, 'task', 'کار', ?, ?, ?, ?, 'medium', ?, ?, ?, '[]', ?, ?, 1)`
+         due_at, due_date, time_zone, tag_ids, recurrence, recurrence_mode,
+         created_at, updated_at, version)
+       VALUES (?, 'task', 'کار', ?, ?, ?, ?, 'medium', ?, ?, ?, '[]', ?, ?, ?, ?, 1)`
     ).run(
       id,
       input.ownerId ?? USER_A,
@@ -121,6 +124,8 @@ const makeHarness = () => {
       input.dueAt ?? null,
       input.dueDate ?? null,
       TZ,
+      input.recurrence ?? null,
+      input.recurrenceMode ?? null,
       NOW,
       NOW
     )
@@ -576,6 +581,44 @@ describe("ReminderService — responses", () => {
       )
     ).rejects.toMatchObject({ _tag: "ReminderDispatchNotFound" })
   })
+
+  it("Done on a recurring linked task spawns the #38 successor in the same batch", async () => {
+    const h = makeHarness()
+    const taskId = h.insertTask({
+      dueAt: "2026-10-21T12:00:00.000Z",
+      recurrence: JSON.stringify({
+        frequency: "daily",
+        interval: 1,
+        end: { _tag: "never" }
+      }),
+      recurrenceMode: "onCompletion"
+    })
+    const reminder = await h.svc((svc) =>
+      svc.create(viewer(), {
+        clientMutationId: "linked-recurring",
+        title: "زنگ کار",
+        kind: "chore",
+        repeat: { _tag: "once" },
+        offsetMinutes: 30,
+        link: { _tag: "task", taskId: taskId as never }
+      }, NOW)
+    )
+    const dispatchId = h.insertDispatch({
+      reminderId: reminder.id,
+      scheduledFor: "2026-10-21T11:30:00.000Z"
+    })
+
+    await h.svc((svc) =>
+      svc.respond(viewer(), { dispatchId: dispatchId as never, response: "done" }, NOW)
+    )
+
+    expect(h.taskRow(taskId)).toMatchObject({ status: "done", version: 2 })
+    const successors = h.db
+      .prepare("SELECT * FROM tasks WHERE recurrence_parent_id = ?")
+      .all(taskId) as ReadonlyArray<Record<string, unknown>>
+    expect(successors).toHaveLength(1)
+    expect(successors[0]).toMatchObject({ status: "todo", version: 1 })
+  })
 })
 
 describe("ReminderService — missed inbox", () => {
@@ -840,5 +883,59 @@ describe("ReminderService — claim (the #61 sweep seam)", () => {
     expect(inbox[0]?.dispatch.id).toBe(
       first._tag === "Some" ? first.value.id : ""
     )
+  })
+
+  it("catches up past an outage in one claim, not one stale row per tick", async () => {
+    const h = makeHarness()
+    const reminder = await h.svc((svc) =>
+      svc.create(viewer(), {
+        clientMutationId: "catch-up",
+        title: "یادآور",
+        kind: "general",
+        repeat: { _tag: "daily", time: "08:00" }
+      }, NOW)
+    )
+    // 08:00 Tehran on 2026-10-21.
+    expect(reminder.fireAt).toBe("2026-10-21T04:30:00.000Z")
+
+    const claimed = await h.svc((svc) =>
+      svc.claim({
+        reminderId: reminder.id,
+        scheduledFor: reminder.fireAt,
+        ownerTimeZone: TZ,
+        now: "2026-10-24T09:30:00.000Z"
+      })
+    )
+    expect(claimed._tag).toBe("Some")
+    // The tick is three days late: the series jumps to the first 08:00 after
+    // the tick, so the next tick has nothing left to catch up.
+    expect(h.reminderRow(reminder.id)).toMatchObject({
+      fire_at: "2026-10-25T04:30:00.000Z"
+    })
+  })
+
+  it("keeps the interval anchor while catching up", async () => {
+    const h = makeHarness()
+    const reminder = await h.svc((svc) =>
+      svc.create(viewer(), {
+        clientMutationId: "catch-up-interval",
+        title: "دارو",
+        kind: "medication",
+        repeat: { _tag: "interval", hours: 8 }
+      }, NOW)
+    )
+    expect(reminder.fireAt).toBe("2026-10-20T17:30:00.000Z")
+
+    await h.svc((svc) =>
+      svc.claim({
+        reminderId: reminder.id,
+        scheduledFor: reminder.fireAt,
+        ownerTimeZone: TZ,
+        now: "2026-10-22T09:30:00.000Z"
+      })
+    )
+    expect(h.reminderRow(reminder.id)).toMatchObject({
+      fire_at: "2026-10-22T17:30:00.000Z"
+    })
   })
 })

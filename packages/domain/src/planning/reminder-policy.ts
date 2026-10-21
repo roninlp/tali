@@ -186,6 +186,36 @@ export const reminderNextFireAfter = (
   after: string
 ): string | null => nextOccurrence(repeat, timeZone, after, false)
 
+/**
+ * The series' next fire after a claim made by the tick at `now`.
+ *
+ * Normal operation advances exactly one occurrence. A catch-up tick after an
+ * outage must instead jump past every occurrence the outage already covered,
+ * so one claim per reminder is enough (ADR-0005 §2: "the first occurrence
+ * strictly after `scheduledTime`"); otherwise each tick would emit another
+ * stale ledger row for the same outage.
+ *
+ * Interval patterns keep their original anchor: the first grid point strictly
+ * after `now` is computed arithmetically rather than by re-anchoring to `now`.
+ */
+export const reminderNextFireAfterNow = (
+  repeat: ReminderRepeat,
+  timeZone: string,
+  claimedFor: string,
+  now: string
+): string | null => {
+  if (repeat._tag === "once") return null
+  if (Date.parse(now) <= Date.parse(claimedFor)) {
+    return reminderNextFireAfter(repeat, timeZone, claimedFor)
+  }
+  if (repeat._tag === "interval") {
+    const step = repeat.hours * HOUR_MS
+    const steps = Math.floor((Date.parse(now) - Date.parse(claimedFor)) / step) + 1
+    return iso(asInstant(claimedFor).add({ hours: repeat.hours * steps }))
+  }
+  return reminderNextFireAfter(repeat, timeZone, now)
+}
+
 /** The first fire at or after `now` for a pattern reminder (write-time derivation). */
 export const reminderFirstFireAt = (
   repeat: ReminderRepeat,

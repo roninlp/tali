@@ -15,6 +15,7 @@ import {
   reminderFireAt,
   reminderFirstFireAt,
   reminderNextFireAfter,
+  reminderNextFireAfterNow,
   reminderTierFor,
   snoozeInstant
 } from "./reminder-policy.js"
@@ -249,6 +250,43 @@ describe("next-fire derivation", () => {
         "2026-10-20T08:00:00.000Z"
       )
     ).toBe("2026-10-20T16:00:00.000Z")
+  })
+
+  it("catches up to the first occurrence after the tick, not one per tick", () => {
+    // Claimed occurrence: 08:00 Tehran on 2026-10-21. The tick runs three days
+    // later, so the series must jump to 2026-10-25, not 2026-10-22.
+    expect(
+      reminderNextFireAfterNow(
+        { _tag: "daily", time: "08:00" },
+        TEHRAN,
+        "2026-10-21T04:30:00.000Z",
+        "2026-10-24T09:30:00.000Z"
+      )
+    ).toBe("2026-10-25T04:30:00.000Z")
+  })
+
+  it("keeps the interval grid when catching up", () => {
+    // 8-hourly from 17:30Z; the tick is 2026-10-22T09:30Z, so the next grid
+    // point is 17:30Z that day (not 01:30Z the day before).
+    expect(
+      reminderNextFireAfterNow(
+        { _tag: "interval", hours: 8 },
+        TEHRAN,
+        "2026-10-20T17:30:00.000Z",
+        "2026-10-22T09:30:00.000Z"
+      )
+    ).toBe("2026-10-22T17:30:00.000Z")
+  })
+
+  it("advances one occurrence when the tick is at the fire instant", () => {
+    expect(
+      reminderNextFireAfterNow(
+        { _tag: "daily", time: "08:00" },
+        TEHRAN,
+        "2026-10-21T04:30:00.000Z",
+        "2026-10-21T04:30:00.000Z"
+      )
+    ).toBe("2026-10-22T04:30:00.000Z")
   })
 
   it("has no next fire for a one-off", () => {

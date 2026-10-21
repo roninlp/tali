@@ -81,6 +81,7 @@ const entry = (input: {
   readonly patch?: Record<string, unknown>
   readonly op?: "upsert" | "delete"
   readonly clientMutationId?: string
+  readonly clientUpdatedAt?: string
 }): SyncPushEntry => ({
   clientMutationId: input.clientMutationId ?? uuidV7(),
   entityType: "reminder",
@@ -88,7 +89,7 @@ const entry = (input: {
   baseVersion: input.baseVersion,
   op: input.op ?? "upsert",
   patch: input.patch ?? {},
-  clientUpdatedAt: new Date().toISOString()
+  clientUpdatedAt: input.clientUpdatedAt ?? new Date().toISOString()
 })
 
 const reminderPatch = {
@@ -192,6 +193,42 @@ describe("reminder sync", () => {
     expect(other.items.find((item) => item.entityId === id)).toBeUndefined()
     const foreign = await pull(h, { userId: USER_A, householdId: HOUSEHOLD_B, cursor: 0 })
     expect(foreign.items.find((item) => item.entityId === id)).toBeUndefined()
+  })
+
+  it("derives a pattern reminder's fireAt when an offline create omits it", async () => {
+    const h = makeHarness()
+    const id = uuidV7()
+    const clientUpdatedAt = "2026-10-20T09:30:00.000Z"
+
+    const pushed = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityId: id,
+          baseVersion: 0,
+          clientUpdatedAt,
+          patch: {
+            title: "هر روز",
+            kind: "general",
+            repeat: { _tag: "daily", time: "22:00" },
+            timeZone: "Asia/Tehran"
+          }
+        })
+      ]
+    })
+    expect(pushed.results[0]).toMatchObject({ _tag: "applied", version: 1 })
+
+    // 22:00 Tehran on the edit day — not the edit instant, which is what the
+    // old fallback stored (and what would fire immediately on the next sweep).
+    const pulled = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
+    const row = pulled.items.find((item) => item.entityId === id)
+    expect(row?.data).toMatchObject({ fireAt: "2026-10-20T18:30:00.000Z" })
+    expect(
+      (h.db.prepare("SELECT fire_at FROM reminders WHERE id = ?").get(id) as {
+        readonly fire_at: string
+      }).fire_at
+    ).toBe("2026-10-20T18:30:00.000Z")
   })
 
   it("carries a delete-only tombstone", async () => {

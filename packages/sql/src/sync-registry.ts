@@ -15,6 +15,7 @@ import {
   Project,
   sameHabitFrequency,
   Reminder,
+  reminderFireAt,
   type ReminderType,
   reminderTierFor,
   successorTask,
@@ -1685,6 +1686,16 @@ const reminderRepeatOf = (value: unknown): Record<string, unknown> => {
   return { _tag: "once" }
 }
 
+/**
+ * The sweep compares `fire_at` as TEXT, so a synced instant has to be
+ * canonical UTC — the same normalisation the service applies on its write path.
+ */
+const normalizeInstantText = (value: unknown): unknown => {
+  if (typeof value !== "string") return value
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : value
+}
+
 const reminderCodec = withSchema<Reminder>(Reminder, (row) => ({
   id: String(row.id),
   type: "reminder",
@@ -1733,6 +1744,25 @@ const reminderDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => (
   ...reminderCodec,
   defaults: (patch, context) => {
     const kind = encodeText(patch.kind) || "general"
+    const repeat = reminderRepeatOf(patch.repeat)
+    const timeZone = encodeText(patch.timeZone) || "UTC"
+    const explicitFireAt = asText(patch.fireAt)
+    // The service derives a pattern reminder's first fire from its repeat; the
+    // offline-create path must do the same, or a daily/weekly reminder synced
+    // without a fireAt would fire at the edit instant instead of its local
+    // time. A one-off with neither an explicit fireAt nor a (sync-resolved)
+    // link keeps the edit instant as its best available anchor.
+    const fireAt = normalizeInstantText(
+      explicitFireAt ??
+        reminderFireAt({
+          repeat: repeat as Reminder["repeat"],
+          timeZone,
+          now: context.clientUpdatedAt,
+          explicitFireAt: null,
+          linkInstant: null
+        }) ??
+        context.clientUpdatedAt
+    )
     return {
       id: context.entityId,
       type: "reminder",
@@ -1741,10 +1771,8 @@ const reminderDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => (
       color: asText(patch.color),
       kind,
       tier: reminderTierFor(kind as ReminderType),
-      repeat: reminderRepeatOf(patch.repeat),
-      // An offline create carries its own fireAt; without one the row fires at
-      // the client's edit instant rather than silently never firing.
-      fireAt: encodeText(patch.fireAt) || context.clientUpdatedAt,
+      repeat,
+      fireAt,
       offsetMinutes: encodeInt(patch.offsetMinutes),
       link: reminderLinkOf(
         (patch.link as Record<string, unknown> | undefined)?._tag,
@@ -1752,8 +1780,8 @@ const reminderDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => (
           (patch.link as Record<string, unknown> | undefined)?.eventId ??
           (patch.link as Record<string, unknown> | undefined)?.habitId
       ),
-      silencedUntil: asText(patch.silencedUntil),
-      timeZone: encodeText(patch.timeZone) || "UTC",
+      silencedUntil: normalizeInstantText(asText(patch.silencedUntil)),
+      timeZone,
       ownerId: context.userId,
       householdId: context.householdId,
       visibility: asVisibility(patch.visibility),
@@ -1765,6 +1793,12 @@ const reminderDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => (
     // Type drives tier: re-derive after every merge so a kind change cannot
     // leave a stale critical/normal flag (and a patch cannot forge one).
     next.tier = reminderTierFor(next.kind as ReminderType)
+    // Keep the scheduling columns canonical so the sweep's TEXT comparison is
+    // an instant ordering, whichever device wrote the patch.
+    next.fireAt = normalizeInstantText(next.fireAt)
+    next.silencedUntil = next.silencedUntil === null
+      ? null
+      : normalizeInstantText(next.silencedUntil)
     return next
   },
   /**
