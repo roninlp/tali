@@ -43,6 +43,41 @@ export type ListItemId = Schema.Schema.Type<typeof ListItemId>
 export const NoteId = Schema.String.check(Schema.isUUID(7)).pipe(Schema.brand("NoteId"))
 export type NoteId = Schema.Schema.Type<typeof NoteId>
 
+/** `Event` aggregate id (Slice 3 / ticket #57). */
+export const EventId = Schema.String.check(Schema.isUUID(7)).pipe(Schema.brand("EventId"))
+export type EventId = Schema.Schema.Type<typeof EventId>
+
+/**
+ * A per-occurrence exception's own id.
+ *
+ * The exception is stored inside its event's exception list (one series, one
+ * row), so the id is the stable handle a client uses to address a single
+ * occurrence ("this occurrence only") without addressing the series.
+ */
+export const EventExceptionId = Schema.String.check(Schema.isUUID(7)).pipe(
+  Schema.brand("EventExceptionId")
+)
+export type EventExceptionId = Schema.Schema.Type<typeof EventExceptionId>
+
+/**
+ * Annual occasion id — **reserved** for ticket #59 (`Occasion`).
+ *
+ * The brand exists now because `Event.occasionId` (the relation between an
+ * event and the annual date it comes from) is part of the event shape, so the
+ * occasions slice lands without touching the events table.
+ */
+export const OccasionId = Schema.String.check(Schema.isUUID(7)).pipe(Schema.brand("OccasionId"))
+export type OccasionId = Schema.Schema.Type<typeof OccasionId>
+
+/**
+ * Habit id — **reserved** for ticket #63 (`Habit`).
+ *
+ * Only the `ReminderLink` union needs it today (the reminder link's habit
+ * variant); the habit aggregate itself is not built yet.
+ */
+export const HabitId = Schema.String.check(Schema.isUUID(7)).pipe(Schema.brand("HabitId"))
+export type HabitId = Schema.Schema.Type<typeof HabitId>
+
 // ── Enums (docs/domain-model-draft.md §2.3) ───────────────────────────────
 
 /**

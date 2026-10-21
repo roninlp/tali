@@ -38,6 +38,7 @@ export const MembershipId = Schema.String.pipe(Schema.brand("MembershipId"))
 export const HabitId      = Schema.String.pipe(Schema.brand("HabitId"))
 export const HabitEntryId = Schema.String.pipe(Schema.brand("HabitEntryId"))
 export const EventId      = Schema.String.pipe(Schema.brand("EventId"))
+export const EventExceptionId = Schema.String.pipe(Schema.brand("EventExceptionId"))
 export const OccasionId   = Schema.String.pipe(Schema.brand("OccasionId"))
 export const TaskId       = Schema.String.pipe(Schema.brand("TaskId"))
 export const ReminderId   = Schema.String.pipe(Schema.brand("ReminderId"))
@@ -107,7 +108,7 @@ const commonItemFields = {
 ### 2.5 Time & timezone conventions (settled in `temporal-jalali.md`)
 
 - **Instant** (`Event.start`, `Reminder.fireAt`, audit timestamps) → stored as a UTC datetime string (`Schema.DateTimeUtcFromString`). Rendering into Jalali/Gregorian is a projection at read/display time using the owner's IANA `timeZone`.
-- **All-day / local date** (`HabitEntry.date`, `Event.allDayDate`, `Occasion.monthDay`) → stored as a **local date string** (`Schema.DateFromString`, ISO `YYYY-MM-DD` **without** timezone) + an explicit IANA `timeZone` so "today" means the right thing when the device roams. Defaults to the owner's profile timezone but is stored per-item.
+- **All-day / local date** (`HabitEntry.date`, `Event.timing.date` (all-day), `Occasion.monthDay`) → stored as a **local date string** (`Schema.DateFromString`, ISO `YYYY-MM-DD` **without** timezone) + an explicit IANA `timeZone` so "today" means the right thing when the device roams. Defaults to the owner's profile timezone but is stored per-item.
 - **Jalali is never persisted.** Internally everything is ISO/Gregorian; Jalali is a display + input concern handled by Temporal's `persian` calendar. This is why no entity carries a `calendar` field.
 
 ---
@@ -202,6 +203,12 @@ export class HabitEntry extends Model.Class<HabitEntry>("HabitEntry")({
 
 ### 3.3 `Event` (+ occurrence exceptions)
 
+> **Implemented in ticket [#57](https://github.com/roninlp/tali/issues/57)** — `packages/domain/src/planning/event.ts`,
+> `packages/sql/migrations/0010_events.sql`, `packages/sql/src/event-repo.ts`, the `event` entry of the sync
+> registry, and `apps/api/src/event-service.ts`. The shape below is what ships; the open questions that
+> remain are the recurrence **engine** (#58), the occasions table (#59) and the reminder aggregate (#60) —
+> none of them needs a migration on `events`.
+
 ```ts
 export const RecurrenceFrequency = Schema.Literal("daily", "weekly", "monthly", "yearly")
 
@@ -221,54 +228,77 @@ export const RecurrenceRule = Schema.Struct({
   end: RecurrenceEnd
 })
 
+// Time: EITHER timed (start/end instants) OR all-day (one local date). A discriminated union.
+export const EventTiming = Schema.Union(
+  Schema.Struct({
+    _tag: Schema.Literal("timed"),
+    start: Schema.String,                  // ISO-8601 UTC instant
+    end: Schema.String                     // ISO-8601 UTC instant, never before `start`
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("allDay"),
+    date: Schema.String                    // local date `YYYY-MM-DD`, in the event's zone
+  })
+)
+
+// Occurrence exceptions: "this occurrence only".
+export const EventExceptionAction = Schema.Literal("delete", "override")
+
+export const EventExceptionOverrides = Schema.Struct({
+  title: Schema.optional(Schema.String),
+  description: Schema.optional(Schema.NullOr(Schema.String)),
+  location: Schema.optional(Schema.NullOr(Schema.String)),
+  color: Schema.optional(Schema.NullOr(Schema.String)),
+  timing: Schema.optional(EventTiming),
+  timeZone: Schema.optional(Schema.String)
+})
+
+export const EventException = Schema.Struct({
+  id: Schema.String.pipe(Schema.brand("EventExceptionId")),
+  instanceId: Schema.String,               // the occurrence's local start date (`YYYY-MM-DD`)
+  action: EventExceptionAction,
+  overrides: Schema.NullOr(EventExceptionOverrides),
+  createdAt: Schema.String
+})
+
 export class Event extends Model.Class<Event>("Event")({
-  id: Model.UuidV7Insert(EventId),
-  type: ItemType,                          // "event"
+  ...commonItemFields("event", EventId),
   title: Schema.String,
-  ownerId: UserId,
-  visibility: Visibility,
-  color: Schema.NullOr(Schema.String),
-  // Time: EITHER timed (start/end instants) OR all-day (local date + tz). A discriminated union.
-  timing: Schema.Union(
-    Schema.Struct({
-      _tag: Schema.Literal("timed"),
-      start: Schema.DateTimeUtcFromString,
-      end: Schema.DateTimeUtcFromString     // may be null for zero-duration? kept required for simplicity
-    }),
-    Schema.Struct({
-      _tag: Schema.Literal("allDay"),
-      date: Schema.DateFromString,
-      timeZone: Schema.String
-    })
-  ),
+  description: Schema.NullOr(Schema.String),
   location: Schema.NullOr(Schema.String),
-  body: Schema.NullOr(Schema.Json),        // description / structured content
+  category: Schema.NullOr(Schema.String),  // free-text label ("work", "family", …)
+  people: Schema.Array(Schema.String),      // people involved, by name
+  timing: EventTiming,
+  timeZone: Schema.String,                  // the event's own IANA zone (per-item, like a task)
   recurrence: Schema.NullOr(RecurrenceRule),
-  createdAt: Model.DateTimeInsertFromDate,
-  updatedAt: Model.DateTimeUpdateFromDate,
-  version: Schema.Int,
-  deletedAt: Schema.NullOr(Model.DateTimeUpdateFromDate)
-}) {}
-
-// Occurrence exceptions: "this occurrence only" / "this and following" edits & deletions.
-export const ExceptionAction = Schema.Literal("delete", "override")
-
-export class EventException extends Model.Class<EventException>("EventException")({
-  id: Model.UuidV7Insert(Schema.String.pipe(Schema.brand("EventExceptionId"))),
-  eventId: EventId,
-  instanceId: Schema.String,               // stable occurrence key (e.g. the original start instant / ISO date)
-  action: ExceptionAction,
-  overrides: Schema.NullOr(Schema.Struct({  // only when action = "override"
-    title: Schema.optional(Schema.String),
-    timing: Schema.optional(/* same union as Event.timing */ Schema.Json),
-    color: Schema.optional(Schema.NullOr(Schema.String))
-  })),
-  createdAt: Model.DateTimeInsertFromDate,
-  version: Schema.Int
+  exceptions: Schema.Array(EventException),
+  occasionId: Schema.NullOr(OccasionId)     // reserved for #59
 }) {}
 ```
 
-> **Edit-scope note:** "this and following" is represented by a `RecurrenceRule.end = until(instanceDate - 1)` on the original plus an exception row (or a new event) — the exact split is an engine detail flagged in open decision #6.
+**What changed from the first draft, and why:**
+
+- **The zone moved out of the union.** The draft put `timeZone` inside the all-day variant, which left a
+  *timed* event without a zone. The zone is now a field of the event (`timeZone`), exactly like a task's due
+  date: it makes the all-day date unambiguous, it is stored per item (the owner's profile zone at creation),
+  and a device that changes its zone never moves a stored event (FR-CAL-07).
+- **The exceptions live inside the event row.** The draft modelled `EventException` as its own row with its own
+  id and version. One series, one row keeps an occurrence edit and the series it belongs to from ever
+  disagreeing, and it lets the expansion engine (#58) read a series without a second query. The exception keeps
+  its own `id` (the stable handle for "this occurrence only"); the **event's** version versions the whole list.
+- **The occurrence key is the local start date.** `instanceId` is the occurrence's `YYYY-MM-DD` in the event's
+  zone — one key per occurrence, in the calendar the recurrence engine expands in.
+- **`category` and `people` are free text.** The PRD asks for "color/category" and "people (optional)"; the
+  household has two members, so the people involved are names (guests included), not user ids.
+- **The title is structurally a string, not a non-empty string.** The *service* enforces a non-empty title; the
+  model cannot, because a delete-only sync push inserts a tombstone row whose title is empty by construction.
+- **The occasion relation is reserved, the reminder link is defined.** `occasionId` points at the annual date an
+  event comes from (#59 adds the `occasions` table and no `events` migration), and the `ReminderLink` union
+  (§3.6) already carries the `event` variant, so the reminder aggregate (#60) needs no migration either.
+
+> **Edit-scope note:** "this and following" is represented by a `RecurrenceRule.end = until(instanceDate - 1)` on
+> the original plus an exception row (or a new event) — the exact split is an engine detail flagged in open
+> decision #6 and owned by #58.
 
 ### 3.4 `Occasion` (annual important dates)
 
@@ -498,6 +528,10 @@ Each is phrased as a crisp question with a recommendation. **These are the real 
 
 6. **Occurrence exceptions & "this and following" edits — how to represent a series split?**
    *Recommendation:* represent "this and following" as: mutate the original `RecurrenceRule.end = until(lastKeptInstance)` + create a **new** `Event` for the remainder, with the edited occurrence as an `EventException(override)`. Avoids a separate "series ID" concept. *Open sub-question:* is the stable `instanceId` the occurrence's original start instant, or a deterministic hash of (rule + index)?
+   *Resolved by #57:* the exceptions live **inside the event row** (`events.exceptions`, a JSON array), and the
+   occurrence key `instanceId` is the occurrence's **local start date** (`YYYY-MM-DD`) in the event's zone — one
+   key per occurrence, in the calendar the engine expands in. The "this and following" split itself is still open
+   and belongs to #58.
 
 7. **Soft-delete vs hard-delete purge — when is data truly destroyed?**
    *Recommendation:* **soft delete (30 days in trash) then hard-delete purge**, with nightly D1 backup as the safety net. Matches CC-03 and PRD §22.1. *Open sub-question:* does `version` bump on delete (so deletes sync) — **yes**, delete is a committed mutation; `deletedAt` carries the tombstone.
@@ -510,6 +544,8 @@ Each is phrased as a crisp question with a recommendation. **These are the real 
 
 10. **Timezone for all-day items — stored per-item, or always inherited from owner's profile?**
     *Recommendation:* **stored per-item** (default = owner's profile tz at creation). A shared all-day event ("anniversary dinner") should not silently shift days when the *other* member views it in a different tz; but the *author's* intent day must survive. This is subtle — flagging explicitly.
+    *Resolved by #57:* an event stores its **own** `timeZone` for both shapes (a timed event too), defaulting to
+    the owner's profile zone at creation — the same per-item rule the tasks use.
 
 11. **`Project` scope — tasks only, or also lists/notes?**
     *Recommendation:* **tasks only** for the MVP (feature map §7 wording implies tasks; lists stay flat). Adding `projectId` to `List` later is a non-breaking migration.

@@ -1,6 +1,7 @@
 import { Schema } from "effect"
 import { type SqlClient, Statement } from "effect/sql"
 import {
+  Event,
   List,
   Note,
   normalizePersian,
@@ -242,6 +243,7 @@ const isJson: SyncFieldGuard = (value) => {
   const kind = typeof value
   return kind === "string" || kind === "number" || kind === "boolean" || kind === "object"
 }
+const isJsonArray: SyncFieldGuard = (value) => Array.isArray(value)
 
 // ── Generic merge / hydrate helpers ───────────────────────────────────────
 
@@ -1113,6 +1115,220 @@ const noteDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   }
 })
 
+// ── Event ─────────────────────────────────────────────────────────────────
+
+const EVENT_COLUMNS =
+  `${META_COLUMNS}, type, title, description, location, category, people, color, ` +
+  `start_at AS startAt, end_at AS endAt, all_day_date AS allDayDate, ` +
+  `time_zone AS timeZone, recurrence, exceptions, occasion_id AS occasionId, ` +
+  `created_at AS createdAt`
+
+/**
+ * The row's timing union.
+ *
+ * An all-day row carries a local date; a timed row carries two instants. The
+ * union is the event's *one* time shape, so a row can never hold both.
+ */
+const eventTimingOfRow = (row: SyncRawRow): Record<string, unknown> => {
+  const allDayDate = asText(row.allDayDate)
+  if (allDayDate !== null) return { _tag: "allDay", date: allDayDate }
+  const createdAt = encodeText(row.createdAt)
+  const start = asText(row.startAt) ?? createdAt
+  return { _tag: "timed", start, end: asText(row.endAt) ?? start }
+}
+
+/**
+ * The timing of a client-authored patch.
+ *
+ * A patch that carries a well-formed timing keeps it; anything else falls
+ * back to an all-day event on the client's own date. The fallback matters for
+ * a **delete-only** push: the tombstone row is inserted without validation,
+ * so it still has to be a structurally valid event.
+ */
+const eventTimingOfPatch = (
+  value: unknown,
+  fallbackDate: string
+): Record<string, unknown> => {
+  if (typeof value === "object" && value !== null) {
+    const record = value as Record<string, unknown>
+    if (
+      record._tag === "timed" &&
+      typeof record.start === "string" &&
+      typeof record.end === "string"
+    ) {
+      return { _tag: "timed", start: record.start, end: record.end }
+    }
+    if (record._tag === "allDay" && typeof record.date === "string") {
+      return { _tag: "allDay", date: record.date }
+    }
+  }
+  return { _tag: "allDay", date: fallbackDate.slice(0, 10) }
+}
+
+const eventCodec = withSchema<Event>(Event, (row) => ({
+  id: String(row.id),
+  type: "event",
+  title: encodeText(row.title),
+  description: asText(row.description),
+  location: asText(row.location),
+  category: asText(row.category),
+  people: asStringArray(row.people),
+  timing: eventTimingOfRow(row),
+  timeZone: encodeText(row.timeZone),
+  recurrence: parseJson(row.recurrence),
+  exceptions: parseJson(row.exceptions),
+  occasionId: asText(row.occasionId),
+  ownerId: encodeText(row.ownerId),
+  householdId: encodeText(row.householdId),
+  visibility: asVisibility(row.visibility),
+  color: asText(row.color),
+  createdAt: encodeText(row.createdAt)
+}))
+
+const EVENT_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
+  ["title", isString],
+  ["description", isNullableString],
+  ["location", isNullableString],
+  ["category", isNullableString],
+  ["color", isNullableString],
+  ["people", isStringArray],
+  // The timing is one unit: a patch replaces the whole union, so a row can
+  // never end up with an instant *and* an all-day date. The shape itself is
+  // validated by the Event schema below.
+  ["timing", isJson],
+  ["timeZone", isString],
+  // The rule object is validated structurally by the Event schema below; the
+  // guard only rejects non-JSON scalars.
+  ["recurrence", isJson],
+  ["exceptions", isJsonArray],
+  ["occasionId", isNullableString],
+  ["visibility", isOneOf("private", "shared")]
+])
+
+/**
+ * The event's timing columns.
+ *
+ * The union is one field on the wire, so it maps to either the two instants
+ * or the local date — never to both.
+ */
+const eventTimingColumns = (
+  data: Record<string, unknown>
+): {
+  readonly startAt: string | null
+  readonly endAt: string | null
+  readonly allDayDate: string | null
+} => {
+  const timing = data.timing
+  if (typeof timing === "object" && timing !== null) {
+    const record = timing as Record<string, unknown>
+    if (record._tag === "allDay") {
+      return {
+        startAt: null,
+        endAt: null,
+        allDayDate: typeof record.date === "string" ? record.date : null
+      }
+    }
+    return {
+      startAt: typeof record.start === "string" ? record.start : null,
+      endAt: typeof record.end === "string" ? record.end : null,
+      allDayDate: null
+    }
+  }
+  return { startAt: null, endAt: null, allDayDate: null }
+}
+
+const eventDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
+  entityType: "event",
+  table: "events",
+  select: EVENT_COLUMNS,
+  scope: SYNC_SCOPE_COLUMNS,
+  softDeleteColumn: "deleted_at",
+  writable: EVENT_WRITABLE,
+  ...eventCodec,
+  defaults: (patch, context) => ({
+    id: context.entityId,
+    type: "event",
+    title: encodeText(patch.title),
+    description: asText(patch.description),
+    location: asText(patch.location),
+    category: asText(patch.category),
+    color: asText(patch.color),
+    people: asStringArray(patch.people),
+    timing: eventTimingOfPatch(patch.timing, context.clientUpdatedAt),
+    timeZone: encodeText(patch.timeZone) || "UTC",
+    recurrence: patch.recurrence ?? null,
+    exceptions: Array.isArray(patch.exceptions) ? patch.exceptions : [],
+    occasionId: asText(patch.occasionId),
+    ownerId: context.userId,
+    householdId: context.householdId,
+    visibility: asVisibility(patch.visibility),
+    createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
+  }),
+  merge: (input) => {
+    const next = mergeFields({}, input)
+    // The timing is one unit: a patch that carries a new timing replaces the
+    // whole union. A malformed timing is left as written so the schema
+    // rejects the entry instead of silently moving the event to another day.
+    if (input.patch.timing !== undefined) {
+      next.timing = input.patch.timing
+    }
+    // The rule and the exception list are separate units: clearing the rule
+    // clears nothing else, and an exception list is replaced wholesale.
+    if (input.patch.recurrence === null) next.recurrence = null
+    return next
+  },
+  insert: (state) => {
+    const timing = eventTimingColumns(state.data)
+    return sql`
+      INSERT INTO events
+        (id, type, title, description, location, category, people,
+         owner_id, household_id, visibility, color, start_at, end_at,
+         all_day_date, time_zone, recurrence, exceptions, occasion_id,
+         created_at, updated_at, version, deleted_at)
+      VALUES
+        (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
+         ${encodeNullableText(state.data.description)},
+         ${encodeNullableText(state.data.location)},
+         ${encodeNullableText(state.data.category)},
+         ${encodeJson(state.data.people)},
+         ${state.ownerId}, ${state.householdId}, ${state.visibility},
+         ${encodeNullableText(state.data.color)},
+         ${timing.startAt}, ${timing.endAt}, ${timing.allDayDate},
+         ${encodeText(state.data.timeZone)},
+         ${encodeJsonOrNull(state.data.recurrence)},
+         ${encodeJson(state.data.exceptions)},
+         ${encodeNullableText(state.data.occasionId)},
+         ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
+         ${state.updatedAt}, ${state.version}, ${state.deletedAt})
+      ON CONFLICT DO NOTHING
+    `
+  },
+  update: (state, expectedVersion) => {
+    const timing = eventTimingColumns(state.data)
+    return sql`
+      UPDATE events SET
+        title = ${encodeText(state.data.title)},
+        description = ${encodeNullableText(state.data.description)},
+        location = ${encodeNullableText(state.data.location)},
+        category = ${encodeNullableText(state.data.category)},
+        people = ${encodeJson(state.data.people)},
+        visibility = ${state.visibility},
+        color = ${encodeNullableText(state.data.color)},
+        start_at = ${timing.startAt},
+        end_at = ${timing.endAt},
+        all_day_date = ${timing.allDayDate},
+        time_zone = ${encodeText(state.data.timeZone)},
+        recurrence = ${encodeJsonOrNull(state.data.recurrence)},
+        exceptions = ${encodeJson(state.data.exceptions)},
+        occasion_id = ${encodeNullableText(state.data.occasionId)},
+        updated_at = ${state.updatedAt},
+        version = ${state.version},
+        deleted_at = ${state.deletedAt}
+      WHERE id = ${state.entityId} AND version = ${expectedVersion}
+    `
+  }
+})
+
 // ── Registry ──────────────────────────────────────────────────────────────
 
 /** Aggregates that sync today. Other `ItemType`s still reject as unsupported. */
@@ -1122,7 +1338,8 @@ export const SYNC_ENTITY_TYPES = [
   "tag",
   "list",
   "listItem",
-  "note"
+  "note",
+  "event"
 ] as const satisfies ReadonlyArray<SyncEntityType>
 
 export const makeSyncRegistry = (sql: SqlClient.SqlClient): SyncRegistry => {
@@ -1132,7 +1349,8 @@ export const makeSyncRegistry = (sql: SqlClient.SqlClient): SyncRegistry => {
     tagDefinition(sql),
     listDefinition(sql),
     listItemDefinition(sql),
-    noteDefinition(sql)
+    noteDefinition(sql),
+    eventDefinition(sql)
   ]
   const byType = new Map<SyncEntityType, SyncEntityDefinition>(
     definitions.map((definition) => [definition.entityType, definition])

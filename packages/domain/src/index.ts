@@ -13,12 +13,16 @@ export * from "./recurrence"
 export * from "./persian"
 export * from "./note-search"
 export {
+  EventExceptionId,
+  EventId,
+  HabitId,
   ItemType,
   ListCheckedPlacement,
   ListId,
   ListItemSort,
   LocalDate,
   NoteId,
+  OccasionId,
   Priority,
   ProjectId,
   TagId,
@@ -40,6 +44,9 @@ export * from "./planning/list"
 export * from "./planning/list-service"
 export * from "./planning/note"
 export * from "./planning/note-service"
+export * from "./planning/event"
+export * from "./planning/event-service"
+export * from "./planning/reminder-link"
 // The real `ListItem` aggregate collides with the pre-Slice-2 scaffold stub
 // (`./list-item`), which sync still speaks for the web mirror (#34). Re-export
 // it under an unambiguous alias plus the full `Planning` namespace.
