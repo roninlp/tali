@@ -54,6 +54,17 @@ export type ReminderType = Schema.Schema.Type<typeof ReminderType>
 export const ReminderTier = Schema.Literals(["normal", "critical"])
 export type ReminderTier = Schema.Schema.Type<typeof ReminderTier>
 
+/**
+ * Persian labels for the four reminder kinds. Shared so the push body, the
+ * missed inbox and the reminder list say the same thing.
+ */
+export const REMINDER_KIND_LABELS: Readonly<Record<ReminderType, string>> = {
+  medication: "دارو",
+  exercise: "ورزش",
+  chore: "کار خانه",
+  general: "یادآوری"
+}
+
 /** Local wall-clock time `HH:mm` (00:00–23:59), interpreted in the reminder's zone. */
 export const ClockTime = Schema.String.check(
   Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/)
@@ -158,6 +169,8 @@ export const ReminderInboxItem = Schema.Struct({
   dispatch: ReminderDispatch,
   reminderId: ReminderId,
   title: Schema.String,
+  /** The reminder's free text, shown under the title in the inbox. */
+  note: Schema.NullOr(Schema.String),
   kind: ReminderType,
   tier: ReminderTier,
   link: ReminderLink,

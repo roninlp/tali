@@ -242,6 +242,39 @@ export class ReminderRepo extends Context.Service<ReminderRepo>()("ReminderRepo"
         (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toReminder)
       )
 
+    /**
+     * Every occasion-linked reminder in a household whose fire instant falls in
+     * `[from, to]`, tombstones included.
+     *
+     * One read for the sweep's materialisation dedupe (ticket #61): a household
+     * has a handful of occasions, and checking each draft with
+     * `findOccasionByFireAt` would be one query per draft on *every* tick. The
+     * returned keys are `(linkId, fire_at)`; a tombstoned key must be skipped,
+     * not recreated.
+     */
+    const listOccasionLinkedInRange = (input: {
+      readonly householdId: string
+      readonly from: string
+      readonly to: string
+      readonly limit: number
+    }) =>
+      sql<{
+        readonly householdId: string
+        readonly occasionId: string
+        readonly fireAt: string
+        readonly deletedAt: string | null
+      }>`
+        SELECT household_id AS householdId, link_id AS occasionId,
+               fire_at AS fireAt, deleted_at AS deletedAt
+        FROM reminders
+        WHERE household_id = ${input.householdId}
+          AND link_type = 'occasion'
+          AND fire_at >= ${input.from}
+          AND fire_at <= ${input.to}
+        ORDER BY fire_at ASC, id ASC
+        LIMIT ${input.limit}
+      `
+
     /** Live rows visible to one member: shared reminders plus their own private ones. */
     const listVisible = (input: {
       readonly householdId: string
@@ -313,7 +346,14 @@ export class ReminderRepo extends Context.Service<ReminderRepo>()("ReminderRepo"
       )
     }
 
-    return { findById, findOccasionByFireAt, listVisible, insert, update } as const
+    return {
+      findById,
+      findOccasionByFireAt,
+      listOccasionLinkedInRange,
+      listVisible,
+      insert,
+      update
+    } as const
   })
 }) {}
 
@@ -338,6 +378,148 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
           `,
           (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toReminderDispatch)
         )
+
+      /**
+       * The sweep's due read (ADR-0005 §2): live reminders whose next fire is at
+       * or before the tick, with the owner's display zone for the policy.
+       *
+       * The `NOT EXISTS` rides the unique ledger key `(reminder_id,
+       * scheduled_for, origin)`, so a tick that already claimed this fire sees
+       * nothing — the claim itself is still the mutex; this only avoids
+       * re-reading the same rows every minute.
+       */
+      const listDueFires = (input: {
+        readonly now: string
+        readonly limit: number
+      }) =>
+        Effect.map(
+          sql<{
+            readonly reminderId: string
+            readonly fireAt: string
+            readonly ownerId: string
+            readonly ownerTimeZone: string
+            readonly tier: string
+            readonly repeat: string
+            readonly timeZone: string
+            readonly silencedUntil: string | null
+          }>`
+            SELECT r.id AS reminderId, r.fire_at AS fireAt, r.owner_id AS ownerId,
+                   COALESCE(p.time_zone, u.time_zone, 'UTC') AS ownerTimeZone,
+                   r.tier AS tier, r.repeat AS repeat, r.time_zone AS timeZone,
+                   r.silenced_until AS silencedUntil
+            FROM reminders r
+            LEFT JOIN user_preferences p ON p.user_id = r.owner_id
+            LEFT JOIN users u ON u.id = r.owner_id
+            WHERE r.fire_at <= ${input.now}
+              AND r.deleted_at IS NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM reminder_dispatches d
+                WHERE d.reminder_id = r.id
+                  AND d.scheduled_for = r.fire_at
+                  AND d.origin = 'schedule'
+              )
+            ORDER BY r.fire_at ASC
+            LIMIT ${input.limit}
+          `,
+          (rows) =>
+            rows.map((row) => ({
+              reminderId: row.reminderId,
+              fireAt: row.fireAt,
+              ownerId: row.ownerId,
+              ownerTimeZone: row.ownerTimeZone,
+              tier: row.tier as ReminderTier,
+              repeat: repeatOf(row.repeat),
+              timeZone: row.timeZone,
+              silencedUntil: row.silencedUntil
+            }))
+        )
+
+      /**
+       * The sweep's owed read (ADR-0005 §2): claimed but unanswered rows whose
+       * deliver-at has arrived and that are still retryable. Joined to the
+       * reminder so one read gives the push payload without an N+1.
+       */
+      const listOwed = (input: {
+        readonly now: string
+        readonly limit: number
+      }) =>
+        Effect.map(
+          sql<ReminderDispatchRow & {
+            readonly rTitle: string
+            readonly rNote: string | null
+            readonly rKind: string
+            readonly rTier: string
+          }>`
+            SELECT ${sql.literal(dispatchColumns("d."))},
+                   r.title AS rTitle, r.note AS rNote, r.kind AS rKind, r.tier AS rTier
+            FROM reminder_dispatches d
+            JOIN reminders r ON r.id = d.reminder_id
+            WHERE d.response IS NULL
+              AND d.push_outcome IN ('pending', 'failed')
+              AND d.deliver_at <= ${input.now}
+              AND r.deleted_at IS NULL
+            ORDER BY d.deliver_at ASC
+            LIMIT ${input.limit}
+          `,
+          (rows) =>
+            rows.map((row) => ({
+              dispatch: toReminderDispatch(row),
+              title: row.rTitle,
+              note: row.rNote,
+              kind: row.rKind as ReminderType,
+              tier: row.rTier as ReminderTier
+            }))
+        )
+
+      /**
+       * Publish one push result (ADR-0005 §3): the outcome cannot share the
+       * claim batch because it is only known after the `fetch`. Gated on the
+       * row still being unanswered so an answer that landed mid-tick wins.
+       */
+      const outcomeStatement = (input: {
+        readonly dispatchId: ReminderDispatchId
+        readonly pushOutcome: PushOutcome
+        readonly attempts: number
+        readonly lastAttemptAt: string | null
+      }): Statement.Statement<unknown> =>
+        sql`
+          UPDATE reminder_dispatches SET
+            push_outcome = ${input.pushOutcome},
+            attempts = ${input.attempts},
+            last_attempt_at = ${input.lastAttemptAt}
+          WHERE id = ${input.dispatchId} AND response IS NULL
+        `
+
+      /**
+       * Take the send slot for one dispatch (ticket #61's answered-mid-tick
+       * guard).
+       *
+       * The owed read is a snapshot; the owner can answer between that read and
+       * the push. This compare-and-set is the last look at the dispatch's own
+       * state before `fetch`: it increments the attempt count only while the row
+       * is still unanswered and retryable, and returns false otherwise. The
+       * caller must not send when it is false. The remaining window is the
+       * in-flight POST itself (one `fetch`), which no ledger write can cancel;
+       * the outcome update is already gated on `response IS NULL`, so the answer
+       * can never be overwritten or reopened by that late push.
+       */
+      const takeAttempts = (input: {
+        readonly dispatchIds: ReadonlyArray<ReminderDispatchId>
+        readonly now: string
+      }) =>
+        input.dispatchIds.length === 0
+          ? Effect.succeed([] as ReadonlyArray<string>)
+          : Effect.map(
+            sql<{ readonly id: string }>`
+              UPDATE reminder_dispatches
+              SET attempts = attempts + 1, last_attempt_at = ${input.now}
+              WHERE ${sql.in("id", input.dispatchIds)}
+                AND response IS NULL
+                AND push_outcome IN ('pending', 'failed')
+              RETURNING id
+            `,
+            (rows) => rows.map((row) => row.id)
+          )
 
       /** The at-most-one snooze child of a parent dispatch. */
       const findSnoozeChild = (parentDispatchId: ReminderDispatchId) =>
@@ -368,13 +550,14 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
           const rows = input.history === true
             ? yield* sql<ReminderDispatchRow & {
               readonly rTitle: string
+              readonly rNote: string | null
               readonly rKind: string
               readonly rTier: string
               readonly rLinkType: string
               readonly rLinkId: string | null
             }>`
               SELECT ${sql.literal(dispatchColumns("d."))},
-                     r.title AS rTitle, r.kind AS rKind, r.tier AS rTier,
+                     r.title AS rTitle, r.note AS rNote, r.kind AS rKind, r.tier AS rTier,
                      r.link_type AS rLinkType, r.link_id AS rLinkId
               FROM reminder_dispatches d
               JOIN reminders r ON r.id = d.reminder_id
@@ -385,13 +568,14 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
             `
             : yield* sql<ReminderDispatchRow & {
               readonly rTitle: string
+              readonly rNote: string | null
               readonly rKind: string
               readonly rTier: string
               readonly rLinkType: string
               readonly rLinkId: string | null
             }>`
               SELECT ${sql.literal(dispatchColumns("d."))},
-                     r.title AS rTitle, r.kind AS rKind, r.tier AS rTier,
+                     r.title AS rTitle, r.note AS rNote, r.kind AS rKind, r.tier AS rTier,
                      r.link_type AS rLinkType, r.link_id AS rLinkId
               FROM reminder_dispatches d
               JOIN reminders r ON r.id = d.reminder_id
@@ -407,6 +591,7 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
               dispatch: toReminderDispatch(row),
               reminderId: row.reminderId as ReminderId,
               title: row.rTitle,
+              note: row.rNote,
               kind: row.rKind as ReminderType,
               tier: row.rTier as ReminderTier,
               link: linkOf(row.rLinkType, row.rLinkId),
@@ -559,6 +744,10 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
         findById,
         findSnoozeChild,
         listInbox,
+        listDueFires,
+        listOwed,
+        outcomeStatement,
+        takeAttempts,
         insert,
         respondStatement,
         insertSnoozeChildStatement,

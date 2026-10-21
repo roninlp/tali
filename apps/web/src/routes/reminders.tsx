@@ -3,11 +3,15 @@ import { tokens } from "@tali/ui"
 import { AppHeader } from "../components/app-header"
 import { Guard } from "../components/guard"
 import { PushHealthPanel } from "../components/push-health"
+import { ReminderInbox } from "../components/reminder-inbox"
 
 /**
- * `/reminders` — the reminder screen starts as the notification health panel
- * plus the inbox placeholder (ticket #20). Reminder CRUD, the dispatch ledger,
- * and the missed-inbox query arrive with the reminder slice.
+ * `/reminders` — the notification health panel plus the missed-reminder inbox
+ * (tickets #20, #61).
+ *
+ * The inbox is the recovery path for every reason a reminder did not reach the
+ * device (closed browser, expired subscription, quiet-hours hold, failed push)
+ * and the place a queued notification answer is drained into the ledger.
  */
 export default function RemindersRoute() {
   return (
@@ -39,22 +43,7 @@ function RemindersPage() {
 
         <PushHealthPanel />
 
-        <section
-          style={{
-            background: tokens.color.surface,
-            border: `1px dashed ${tokens.color.line}`,
-            "border-radius": tokens.radius.lg,
-            padding: tokens.space.lg,
-            display: "grid",
-            gap: "4px"
-          }}
-        >
-          <h2 style={{ margin: 0, "font-size": "1.05rem" }}>یادآورهای ازدست‌رفته</h2>
-          <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.88rem", "line-height": "1.9" }}>
-            این فهرست از دفتر ارسال ساخته می‌شود تا هیچ یادآوری بی‌صدا ناپدید نشود. با فعال‌شدن
-            زمان‌بندی یادآورها در گام بعدی، موارد پاسخ‌داده‌نشده اینجا نمایش داده می‌شوند.
-          </p>
-        </section>
+        <ReminderInbox />
       </main>
     </div>
   )

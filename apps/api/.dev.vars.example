@@ -1,7 +1,21 @@
-# Local Worker vars (copy to .dev.vars). Never commit .dev.vars.
-# Web Push (VAPID) — the private key is a secret; see docs/web-push-local.md.
-VAPID_PUBLIC_KEY=
+# Local Worker vars. Copy to `.dev.vars` (git-ignored). Never commit a real
+# value here, and never commit `.dev.vars`.
+#
+# Web Push (VAPID). **No key pair is committed to this repository**, not even a
+# development one. Generate your own (docs/web-push-local.md §1):
+#
+#   pnpm exec web-push generate-vapid-keys
+#
+# Then put the pair below (`.dev.vars` is read by `scripts/test-push.mjs`) and
+# export the private key for `alchemy dev`, which reads the shell environment,
+# not this file:
+#
+#   VAPID_PRIVATE_KEY=… VAPID_SUBJECT=mailto:dev@tali.local pnpm dev
+#
+# The public half is derived from the private key at deploy/dev time.
 VAPID_PRIVATE_KEY=
+VAPID_PUBLIC_KEY=
 VAPID_SUBJECT=mailto:you@example.com
+
 # Origin allowed to call the API cross-origin during local dev.
 WEB_ORIGIN=http://localhost:3000

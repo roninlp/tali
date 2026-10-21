@@ -9,6 +9,12 @@ is the single owner of how the app runs:
 | `TaliApi` | `Cloudflare.Worker` | `apps/api/src/index.ts` in workerd on :8787 | uploaded Worker with the `DB` binding |
 | `TaliWeb` | `Cloudflare.Website.StaticSite` | `pnpm run dev` (Vite) on :3000 | `pnpm run build` → `apps/web/dist/client` as static assets |
 
+The api Worker also declares one **per-minute Cron trigger**
+(`crons: ["* * * * *"]`, ADR-0005): `scheduled()` runs the reminder sweep.
+`alchemy dev` does not run cron triggers, so a local tick is driven by hand at
+`POST /dev/reminders/sweep?at=<ISO>` — registered only when the stack runs under
+`alchemy dev` (`DEV_ROUTES=1`).
+
 ## Run it
 
 From the repo root:
@@ -46,6 +52,13 @@ pnpm stack:destroy    # alchemy destroy
 
 Stages isolate environments (`alchemy deploy --stage prod`), and every stage is
 an instance of the same program.
+
+A deploy also needs the Web Push identity: `VAPID_PRIVATE_KEY` (a Workers
+**secret**) and `VAPID_SUBJECT` (a real `mailto:`/`https:` URI). Generate a pair
+with `pnpm exec web-push generate-vapid-keys`; no key pair is committed to this
+repository. Without them the deploy fails instead of shipping an inbox-only app.
+`alchemy dev` reads the shell environment, not `.dev.vars`, so export the key
+before `pnpm dev`. See `docs/web-push-local.md` §1.
 
 ## Notes
 

@@ -1,7 +1,9 @@
 import { Layer, String as Str } from "effect"
 import { HttpRouter } from "effect/http"
 import { D1Client } from "@effect/sql-d1"
-import { AppLayer } from "./http-layer.js"
+import { makeAppLayer } from "./http-layer.js"
+import { vapidConfigOf } from "./push-gateway.js"
+import { runReminderSweep } from "./reminder-sweep-runner.js"
 
 /**
  * Cloudflare Worker entrypoint.
@@ -22,6 +24,12 @@ interface Env {
   DB: D1Database
   /** Explicit web origin allowed to call the API cross-origin. Overrides the dev fallback. */
   WEB_ORIGIN?: string
+  /** VAPID identity (RFC 8292). The private key is a secret binding. */
+  VAPID_PRIVATE_KEY?: string
+  VAPID_PUBLIC_KEY?: string
+  VAPID_SUBJECT?: string
+  /** `1` only when the stack was started by `alchemy dev` (#61's sweep trigger). */
+  DEV_ROUTES?: string
 }
 
 /** The Vite dev server's origin. `127.0.0.1` is deliberately absent: it is a
@@ -88,7 +96,12 @@ export default {
       return origin === undefined ? new Response(null, { status: 403 }) : preflightResponse(origin)
     }
 
-    const app = AppLayer.pipe(
+    const app = makeAppLayer({
+      vapid: vapidConfigOf(env),
+      // `alchemy dev` sets this; a deployed Worker has no such binding, so the
+      // local sweep trigger is not registered at all (ADR-0005 §11).
+      devRoutes: env.DEV_ROUTES === "1"
+    }).pipe(
       Layer.provide(
         D1Client.layer({
           db: env.DB,
@@ -104,5 +117,40 @@ export default {
     } finally {
       await dispose()
     }
+  },
+
+  /**
+   * The per-minute reminder sweep (ticket #61; ADR-0005).
+   *
+   * Cron put us here, so the clock is `controller.scheduledTime` — the nominal
+   * minute boundary — never `Date.now()`: two invocations for the same minute
+   * compute the same window and converge on the same claim. The sweep is a
+   * catch-up query, so a late, skipped or repeated tick loses nothing.
+   *
+   * Errors are caught and logged rather than rethrown: a failed tick is not
+   * recoverable by Cloudflare's retry (the next minute's query sees the same
+   * rows), and a throw would only mark the invocation failed.
+   */
+  async scheduled(
+    controller: ScheduledController,
+    env: Env,
+    ctx: ExecutionContext
+  ): Promise<void> {
+    const now = new Date(controller.scheduledTime).toISOString()
+    ctx.waitUntil(
+      runReminderSweep(env, now)
+        .then((result) => {
+          console.log(JSON.stringify({ event: "reminder.sweep", at: now, ...result }))
+        })
+        .catch((error: unknown) => {
+          console.error(
+            JSON.stringify({
+              event: "reminder.sweep.failed",
+              at: now,
+              message: error instanceof Error ? error.message : String(error)
+            })
+          )
+        })
+    )
   }
 }

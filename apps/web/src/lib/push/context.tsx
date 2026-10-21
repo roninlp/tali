@@ -5,8 +5,9 @@ import {
   useContext,
   type ParentProps
 } from "solid-js"
+import { API_URL } from "../config"
 import { useAuth } from "../auth"
-import { VAPID_CONFIGURED, VAPID_PUBLIC_KEY, urlBase64ToUint8Array } from "./config"
+import { loadVapidPublicKey, urlBase64ToUint8Array } from "./config"
 import {
   readQueuedReminderActions,
   type QueuedReminderAction
@@ -23,13 +24,14 @@ import {
 /**
  * The client half of the Web Push shell (ticket #20).
  *
- * Owns: service-worker registration, the VAPID-restricted `PushSubscription`,
- * its registration with `POST /push/register`, and the permission/health state
- * both `/reminders` and `/settings` render.
+ * Owns: service-worker registration, the VAPID-restricted `PushSubscription`
+ * (with the key read from `GET /push/vapid`), its registration with
+ * `POST /push/register`, and the permission/health state `/reminders` and
+ * `/settings` render.
  *
- * What it deliberately does **not** own: scheduling or dispatch. The shell can
- * receive a push that someone else sends (the local test script today, the
- * reminder cron in a later slice).
+ * What it deliberately does **not** own: scheduling or dispatch. The server's
+ * per-minute sweep sends; this provider makes sure the device is subscribed and
+ * the worker knows the API origin.
  */
 
 export type PushPermission = NotificationPermission | "unsupported"
@@ -39,6 +41,8 @@ export interface PushContextValue {
   secure: () => boolean
   installed: () => boolean
   configured: () => boolean
+  /** The server's VAPID public key (empty while unknown / unconfigured). */
+  publicKey: () => string
   permission: () => PushPermission
   subscribed: () => boolean
   busy: () => boolean
@@ -67,13 +71,17 @@ const FAILURE_MESSAGE: Record<PushRegistrationFailure, string> = {
 const permissionOf = (): PushPermission =>
   isPushSupported() ? Notification.permission : "unsupported"
 
-/** Post the public key so `pushsubscriptionchange` can resubscribe without a page. */
-const shareConfigWithWorker = async (): Promise<void> => {
-  if (!VAPID_CONFIGURED) return
+/**
+ * Post the VAPID key **and the API origin** so the worker can resubscribe after
+ * `pushsubscriptionchange` and flush a queued Done/Snooze action with no page
+ * open (the session cookie rides along: same-site, `credentials: "include"`).
+ */
+const shareConfigWithWorker = async (publicKey: string): Promise<void> => {
   const registration = await readyRegistration()
   registration?.active?.postMessage({
     type: "tali:push-config",
-    applicationServerKey: VAPID_PUBLIC_KEY
+    applicationServerKey: publicKey,
+    apiUrl: API_URL
   })
 }
 
@@ -94,6 +102,8 @@ export function PushProvider(props: ParentProps) {
   const auth = useAuth()
 
   const [permission, setPermission] = createSignal<PushPermission>(permissionOf())
+  // Unknown until `GET /push/vapid` answers; `configured()` stays false until then.
+  const [publicKey, setPublicKey] = createSignal("")
   const [subscription, setSubscription] = createSignal<PushSubscription>()
   const [busy, setBusy] = createSignal(false)
   const [error, setError] = createSignal<string>()
@@ -102,7 +112,7 @@ export function PushProvider(props: ParentProps) {
   const supported = isPushSupported
   const secure = isSecureContext
   const installed = isInstalled
-  const configured = () => VAPID_CONFIGURED
+  const configured = () => publicKey().length > 0
   const subscribed = () => subscription() !== undefined
 
   const refreshLastAction = async () => {
@@ -133,7 +143,10 @@ export function PushProvider(props: ParentProps) {
       setSubscription(undefined)
       return
     }
-    await shareConfigWithWorker()
+    // The API owns the key (ticket #61); a build-time value still wins.
+    const key = await loadVapidPublicKey()
+    setPublicKey(key)
+    await shareConfigWithWorker(key)
 
     let current: PushSubscription | null = null
     try {
@@ -157,8 +170,12 @@ export function PushProvider(props: ParentProps) {
       return
     }
     if (!configured()) {
-      setError("کلید عمومی VAPID تنظیم نشده است؛ ابتدا راهنمای آزمون محلی را ببینید.")
-      return
+      const key = await loadVapidPublicKey()
+      setPublicKey(key)
+      if (key === "") {
+        setError("کلید عمومی VAPID روی سرور تنظیم نشده است؛ ابتدا راهنمای آزمون محلی را ببینید.")
+        return
+      }
     }
     if (!secure()) {
       setError("Web Push فقط در بستر امن (HTTPS یا localhost) کار می‌کند.")
@@ -181,14 +198,14 @@ export function PushProvider(props: ParentProps) {
         return
       }
       await navigator.serviceWorker.ready
-      await shareConfigWithWorker()
+      await shareConfigWithWorker(publicKey())
 
       const existing = await registration.pushManager.getSubscription()
       const current =
         existing ??
         (await registration.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+          applicationServerKey: urlBase64ToUint8Array(publicKey())
         }))
 
       setSubscription(current)
@@ -268,6 +285,7 @@ export function PushProvider(props: ParentProps) {
     secure,
     installed,
     configured,
+    publicKey,
     permission,
     subscribed,
     busy,

@@ -39,6 +39,7 @@ import type {
   OccasionDetail as OccasionDetailShape,
   OccasionOccurrence as OccasionOccurrenceShape,
   OccasionPreparation as OccasionPreparationShape,
+  OccasionRange,
   OccasionSource
 } from "@tali/domain"
 import {
@@ -90,6 +91,27 @@ import { ReminderService, ReminderServiceLive } from "./reminder-service.js"
 
 /** How many CAS retries a service mutation makes before reporting contention. */
 const MAX_CAS_ATTEMPTS = 3
+
+/**
+ * Creates per sweep tick (#61). A household has a handful of occasions and each
+ * one fires once a year, so the steady state is zero; the cap only bounds the
+ * first tick after a burst of new occasions. It is deliberately tiny: one
+ * `ReminderService.create` is ~7 statements (replay + link read + entity/feed/
+ * ledger batch + applied check), and the same tick may carry ten claims, ten
+ * pushes and their outcome batch inside D1's Free-plan 50-statement ceiling
+ * (ADR-0005 §9). Anything over the cap is still due next minute — well inside
+ * the 15-minute horizon.
+ */
+const MATERIALISE_LIMIT = 1
+
+/** Rows one read may return when discovering occasions / existing reminders. */
+const MATERIALISE_SCAN_LIMIT = 500
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** Shift an ISO local date by whole days (UTC arithmetic is enough for a window bound). */
+const shiftDay = (date: string, days: number): string =>
+  new Date(Date.parse(`${date}T00:00:00.000Z`) + days * DAY_MS).toISOString()
 
 export interface OccasionViewer {
   readonly userId: UserId
@@ -145,6 +167,33 @@ export interface OccasionServiceApi {
     viewer: OccasionViewer,
     input: Schema.Schema.Type<typeof OccasionOccurrenceQuery>
   ) => Effect.Effect<ReadonlyArray<Reminder>, OccasionServiceError | ReminderServiceError>
+  /**
+   * The **system** materialiser (#61's per-minute sweep has no viewer).
+   *
+   * Covers the whole household: a shared occasion produces one shared reminder
+   * owned by the occasion's owner; a private occasion produces a private
+   * reminder that only its owner sees. Same idempotency as
+   * `materialiseReminders` (link + fire instant, and the same
+   * `occasion-advance:<key>` mutation id), so the sweep and the UI can race
+   * safely. `limit` bounds the creates per tick; the rest roll to the next one.
+   */
+  readonly materialiseForHousehold: (input: {
+    readonly householdId: HouseholdId
+    readonly range: OccasionRange
+    readonly limit?: number
+  }) => Effect.Effect<ReadonlyArray<Reminder>, OccasionServiceError | ReminderServiceError>
+  /**
+   * The sweep's materialisation pass over every household (#61).
+   *
+   * Same own-or-shared semantics as `materialiseForHousehold`, but discovery and
+   * dedupe are two reads for the whole tick instead of two per household, and
+   * total creates are bounded by `limit`. This is what the per-minute cron calls
+   * before claiming, because it is the only writer when no browser is open.
+   */
+  readonly materialiseDue: (input: {
+    readonly range: OccasionRange
+    readonly limit?: number
+  }) => Effect.Effect<ReadonlyArray<Reminder>, OccasionServiceError | ReminderServiceError>
   /** One-tap "prepare gift" task creation (idempotent for a live link). */
   readonly prepareTask: (
     viewer: OccasionViewer,
@@ -628,6 +677,161 @@ export class OccasionService extends Context.Service<OccasionService>()("Occasio
       })
 
     /**
+     * The household-scoped materialiser the sweep calls (#61).
+     *
+     * No viewer: the sweep is a system actor (ADR-0005 §8), so it reads every
+     * live occasion in the household and creates each advance reminder under
+     * the **occasion's own owner**, copying the occasion's visibility. That is
+     * the same own-or-shared rule the user-facing read applies — a shared
+     * occasion's reminder is shared (any member sees it), a private one's is
+     * private — without inventing a viewer and without a cross-household read.
+     *
+     * Dedupe is one read over the household's occasion-linked reminders in the
+     * fire window (tombstones included, so a deleted reminder stays deleted),
+     * rather than one lookup per draft on every tick. `limit` caps creates per
+     * tick; anything skipped is still due on the next tick, so nothing is lost.
+     */
+    /** A stable key for "this occasion occurrence already has its reminder". */
+    const materialiseKey = (
+      householdId: string,
+      occasionId: string,
+      fireAt: string
+    ): string => `${householdId}:${occasionId}:${new Date(fireAt).toISOString()}`
+
+    /**
+     * The window's fire instants are 09:00 in each occasion's own zone, so a
+     * local date can be up to a day away from its UTC date. Two days of slack
+     * either side makes the dedupe read a superset of the drafts.
+     */
+    const windowInstants = (range: OccasionRange): { readonly from: string; readonly to: string } => ({
+      from: shiftDay(range.from, -2),
+      to: shiftDay(range.to, 2)
+    })
+
+    /** Create the drafts that have no row (or tombstone) yet, up to `limit`. */
+    const createDrafts = (input: {
+      readonly householdId: HouseholdId
+      readonly rows: ReadonlyArray<Occasion>
+      readonly range: OccasionRange
+      readonly known: Set<string>
+      readonly limit: number
+    }): Effect.Effect<ReadonlyArray<Reminder>, ReminderServiceError> =>
+      Effect.gen(function*() {
+        const drafts = occasionAdvanceReminders({ occasions: input.rows, range: input.range })
+        const byId = new Map(input.rows.map((row) => [row.id as string, row]))
+        const created: Array<Reminder> = []
+        for (const draft of drafts) {
+          if (created.length >= input.limit) break
+          const fireAt = new Date(draft.fireAt).toISOString()
+          const key = materialiseKey(input.householdId, draft.occasionId, fireAt)
+          if (input.known.has(key)) continue
+          const source = byId.get(draft.occasionId)
+          if (source === undefined) continue
+          const reminder = yield* reminders.create(
+            {
+              userId: source.ownerId,
+              householdId: input.householdId,
+              timeZone: source.timeZone
+            },
+            {
+              clientMutationId: `occasion-advance:${draft.reminderKey}`,
+              title: draft.title,
+              kind: "general",
+              repeat: { _tag: "once" },
+              fireAt: draft.fireAt,
+              offsetMinutes: draft.advanceDays * 24 * 60,
+              link: draft.link,
+              timeZone: draft.timeZone,
+              visibility: source.visibility
+            }
+          )
+          input.known.add(key)
+          created.push(reminder)
+        }
+        return created
+      })
+
+    const materialiseForHousehold = (input: {
+      readonly householdId: HouseholdId
+      readonly range: OccasionRange
+      readonly limit?: number
+    }): Effect.Effect<ReadonlyArray<Reminder>, OccasionServiceError | ReminderServiceError> =>
+      Effect.gen(function*() {
+        yield* validateRange(input.range)
+        const rows = yield* occasions.listByHousehold(input.householdId).pipe(Effect.orDie)
+        const existing = yield* reminderRepo.listOccasionLinkedInRange({
+          householdId: input.householdId,
+          ...windowInstants(input.range),
+          limit: MATERIALISE_SCAN_LIMIT
+        }).pipe(Effect.orDie)
+        const known = new Set(
+          existing.map((row) => materialiseKey(row.householdId, row.occasionId, row.fireAt))
+        )
+        return yield* createDrafts({
+          householdId: input.householdId,
+          rows,
+          range: input.range,
+          known,
+          limit: Math.max(1, input.limit ?? MATERIALISE_LIMIT)
+        })
+      })
+
+    /**
+     * The sweep's materialisation pass (#61): every household's due advance
+     * reminders, in one discovery read plus one indexed dedupe read per
+     * household that actually has due drafts.
+     *
+     * `listAdvanceReminderSources` finds the occasions across households without
+     * scanning reminder rows; each household's dedupe read is scoped to its
+     * `household_id` index and includes tombstones, so a deleted reminder is not
+     * resurrected. `limit` bounds creates for the whole tick; the rest are still
+     * due on the next one.
+     */
+    const materialiseDue = (input: {
+      readonly range: OccasionRange
+      readonly limit?: number
+    }): Effect.Effect<ReadonlyArray<Reminder>, OccasionServiceError | ReminderServiceError> =>
+      Effect.gen(function*() {
+        yield* validateRange(input.range)
+        const sources = yield* occasions
+          .listAdvanceReminderSources(MATERIALISE_SCAN_LIMIT)
+          .pipe(Effect.orDie)
+        if (sources.length === 0) return []
+
+        const byHousehold = new Map<string, Array<Occasion>>()
+        for (const row of sources) {
+          const group = byHousehold.get(row.householdId) ?? []
+          group.push(row)
+          byHousehold.set(row.householdId, group)
+        }
+
+        const limit = Math.max(1, input.limit ?? MATERIALISE_LIMIT)
+        const materialised: Array<Reminder> = []
+        for (const [householdId, rows] of byHousehold) {
+          if (materialised.length >= limit) break
+          // Scoped by household so the read uses the existing household index;
+          // tombstones are included so a deleted reminder stays deleted.
+          const existing = yield* reminderRepo.listOccasionLinkedInRange({
+            householdId,
+            ...windowInstants(input.range),
+            limit: MATERIALISE_SCAN_LIMIT
+          }).pipe(Effect.orDie)
+          const known = new Set(
+            existing.map((row) => materialiseKey(row.householdId, row.occasionId, row.fireAt))
+          )
+          const created = yield* createDrafts({
+            householdId: householdId as HouseholdId,
+            rows,
+            range: input.range,
+            known,
+            limit: limit - materialised.length
+          })
+          materialised.push(...created)
+        }
+        return materialised
+      })
+
+    /**
      * Replay guard for preparation: the ledger row names the task this
      * mutation created. The occasion is re-read (its link may have been
      * replaced by a later preparation), so the response is current state.
@@ -822,6 +1026,8 @@ export class OccasionService extends Context.Service<OccasionService>()("Occasio
       occurrences,
       advanceReminders,
       materialiseReminders,
+      materialiseForHousehold,
+      materialiseDue,
       prepareTask
     } as const
   })
