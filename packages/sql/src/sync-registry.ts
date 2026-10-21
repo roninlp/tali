@@ -4,6 +4,7 @@ import {
   List,
   Note,
   Project,
+  successorTask,
   Tag,
   Task,
   type SyncEntityType,
@@ -145,6 +146,36 @@ export interface SyncEntityDefinition {
     state: SyncEntityState,
     expectedVersion: number
   ) => Statement.Statement<unknown>
+  /**
+   * Optional server-side successor for a write (task recurrence, #38).
+   *
+   * The push calls this **once per entry**, with the row state before and after
+   * the merge, and appends the returned insert + feed + ledger in the same
+   * batch. `insert` must be gated on the parent reaching `parentVersion`, so a
+   * completion whose CAS lost can never leave an orphan successor.
+   */
+  readonly spawn?: (input: SyncSpawnInput) => SyncSpawn | undefined
+}
+
+export interface SyncSpawnInput {
+  /** The row before this entry; `undefined` for an insert. */
+  readonly previous: SyncEntityState | undefined
+  /** The row this entry writes (already merged and validated). */
+  readonly next: SyncEntityState
+  readonly now: string
+}
+
+export interface SyncSpawn {
+  /** The already-validated successor row. */
+  readonly state: SyncEntityState
+  /** The completed instance this successor belongs to. */
+  readonly parentId: string
+  /** The parent version the insert is gated on (the write's new version). */
+  readonly parentVersion: number
+  /** Gated child INSERT; must run immediately before the child feed append. */
+  readonly insert: (state: SyncEntityState) => Statement.Statement<unknown>
+  /** Child `item_tags` joins, run after the feed/ledger (gated on the child row). */
+  readonly joins?: (state: SyncEntityState) => ReadonlyArray<Statement.Statement<unknown>>
 }
 
 export interface SyncRegistry {
@@ -304,6 +335,47 @@ const taskCodec = withSchema<Task>(Task, (row) => ({
   createdAt: encodeText(row.createdAt)
 }))
 
+/**
+ * The gated child `INSERT` for a spawn (task recurrence, #38). It only lands
+ * when the parent row really reached `done` at the write's new version; a lost
+ * CAS leaves no orphan. `recurrence_parent_id` is not part of the wire schema,
+ * so this statement is the only writer of that internal column on the push
+ * path. The partial unique index on the column makes it at-most-once.
+ */
+const insertSpawnedTask = (
+  sql: SqlClient.SqlClient,
+  state: SyncEntityState,
+  parentId: string,
+  parentVersion: number
+) => sql`
+  INSERT INTO tasks
+    (id, type, title, description, owner_id, household_id, visibility,
+     status, priority, due_at, due_date, time_zone, project_id, tag_ids,
+     color, recurrence, recurrence_mode, recurrence_parent_id,
+     started_at, completed_at, created_at, updated_at, version, deleted_at)
+  SELECT
+    ${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
+    ${encodeNullableText(state.data.description)}, ${state.ownerId},
+    ${state.householdId}, ${state.visibility}, ${encodeText(state.data.status)},
+    ${encodeText(state.data.priority)}, ${encodeNullableText(state.data.dueAt)},
+    ${encodeNullableText(state.data.dueDate)}, ${encodeText(state.data.timeZone)},
+    ${encodeNullableText(state.data.projectId)}, ${encodeJson(state.data.tagIds)},
+    ${encodeNullableText(state.data.color)},
+    ${encodeJsonOrNull(state.data.recurrence)},
+    ${encodeNullableText(state.data.recurrenceMode)}, ${parentId},
+    ${encodeNullableText(state.data.startedAt)},
+    ${encodeNullableText(state.data.completedAt)},
+    ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
+    ${state.updatedAt}, ${state.version}, ${state.deletedAt}
+  WHERE EXISTS (
+    SELECT 1 FROM tasks
+    WHERE id = ${parentId}
+      AND version = ${parentVersion}
+      AND status = 'done'
+  )
+  ON CONFLICT DO NOTHING
+`
+
 const TASK_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
   ["title", isString],
   ["description", isNullableString],
@@ -321,6 +393,28 @@ const TASK_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
   ["recurrenceMode", isNullableOneOf("onCompletion", "onDueDate")],
   ["visibility", isOneOf("private", "shared")]
 ])
+
+/** Tag joins for a freshly spawned successor, gated on the inserted row. */
+const spawnedTaskTagJoins = (
+  sql: SqlClient.SqlClient,
+  state: SyncEntityState
+): ReadonlyArray<Statement.Statement<unknown>> =>
+  state.householdId === null
+    ? []
+    : asStringArray(state.data.tagIds).flatMap((tagId) => [
+      sql`
+        INSERT INTO item_tags (item_id, item_type, tag_id, household_id, created_at)
+        SELECT ${state.entityId}, 'task', ${tagId}, ${state.householdId}, ${state.updatedAt}
+        WHERE EXISTS (
+          SELECT 1 FROM tasks
+          WHERE id = ${state.entityId}
+            AND version = ${state.version}
+            AND updated_at = ${state.updatedAt}
+        )
+        AND EXISTS (SELECT 1 FROM tags WHERE id = ${tagId})
+        ON CONFLICT DO NOTHING
+      `
+    ])
 
 // A completed task beats a concurrent rename, like a checked list item.
 const TASK_COMPLETION = { field: "status", value: "done" } as const
@@ -380,6 +474,48 @@ const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     }
     if (next.status === "doing" && next.startedAt === null) next.startedAt = input.now
     return next
+  },
+  /**
+   * Server-side successor generation for an offline completion (#38). Runs
+   * only on a live transition into `done`; `successorTask` is the same builder
+   * `TaskService` uses, so the date/mode semantics cannot drift between the
+   * RPC and sync paths.
+   */
+  spawn: ({ previous, next, now }) => {
+    if (next.deletedAt !== null) return undefined
+    if (previous === undefined) return undefined
+    if (previous.data.status === "done" || next.data.status !== "done") return undefined
+
+    const completed = new Task({
+      ...next.data,
+      id: next.entityId,
+      version: next.version,
+      updatedAt: next.updatedAt,
+      deletedAt: next.deletedAt
+    } as never)
+    const child = successorTask(completed, now)
+    if (child === null) return undefined
+    const state: SyncEntityState = {
+      entityType: "task",
+      entityId: child.id,
+      householdId: child.householdId,
+      ownerId: child.ownerId,
+      visibility: child.visibility,
+      version: child.version,
+      updatedAt: child.updatedAt,
+      deletedAt: null,
+      data: taskCodec.validate(
+        { ...child } as Record<string, unknown>,
+        { version: child.version, updatedAt: child.updatedAt, deletedAt: null }
+      )
+    }
+    return {
+      parentId: next.entityId,
+      parentVersion: next.version,
+      state,
+      insert: (childState) => insertSpawnedTask(sql, childState, next.entityId, next.version),
+      joins: (childState) => spawnedTaskTagJoins(sql, childState)
+    }
   },
   insert: (state) => sql`
     INSERT INTO tasks

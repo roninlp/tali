@@ -35,7 +35,7 @@ import {
   TaskValidationError,
   type UserId,
   localDateStartInstant,
-  nextRecurrenceDue,
+  successorTask,
   uuidV7,
   type Visibility
 } from "@tali/domain"
@@ -678,34 +678,10 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
 
     /**
      * The next instance of a just-completed recurring task, or `null` when the
-     * rule has ended. Pure apart from minting the child id; the caller puts the
-     * insert in the completion's one batch.
+     * rule has ended. The builder is shared with the sync push path so an
+     * offline completion lands the exact same successor row.
      */
-    const successorOf = (completed: Task, now: string): Task | null => {
-      if (completed.recurrence === null) return null
-      const nextDue = nextRecurrenceDue({
-        rule: completed.recurrence,
-        mode: completed.recurrenceMode ?? "onDueDate",
-        dueDate: completed.dueDate,
-        dueAt: completed.dueAt,
-        timeZone: completed.timeZone,
-        completedAt: now
-      })
-      if (nextDue === null) return null
-      return new Task({
-        ...completed,
-        id: uuidV7() as Task["id"],
-        status: "todo",
-        startedAt: null,
-        completedAt: null,
-        dueAt: nextDue.dueAt,
-        dueDate: nextDue.dueDate,
-        createdAt: now,
-        updatedAt: now,
-        version: 1,
-        deletedAt: null
-      })
-    }
+    const successorOf = successorTask
 
     /** Apply a patch to a row, including the status transition rules. */
     const patchTask = (

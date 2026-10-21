@@ -539,6 +539,46 @@ describe("exactly-once spawn", () => {
     expect(h.childCount(bounded)).toBe(0)
     expect(h.taskCount()).toBe(2)
   })
+
+  it("counts the whole series, not a fresh budget per generated instance", async () => {
+    const h = makeHarness()
+    const id = uuidV7() as TaskId
+    await h.svc((svc) =>
+      svc.create(
+        viewer(),
+        {
+          clientMutationId: "m-create",
+          id,
+          title: "سه‌بار",
+          dueDate: "2026-10-20",
+          recurrence: daily({ end: { _tag: "count", count: 3 } }),
+          recurrenceMode: "onDueDate"
+        },
+        NOW
+      )
+    )
+
+    await h.svc((svc) => svc.complete(viewer(), { id, clientMutationId: "m-c1" }, NOW))
+    const [child] = h.childrenOf(id)
+    expect(child).toMatchObject({ due_date: "2026-10-21" })
+    expect(JSON.parse(child!.recurrence as string).end).toEqual({ _tag: "count", count: 2 })
+
+    await h.svc((svc) =>
+      svc.complete(viewer(), { id: child!.id as TaskId, clientMutationId: "m-c2" }, NOW)
+    )
+    const [grandchild] = h.childrenOf(child!.id as string)
+    expect(grandchild).toMatchObject({ due_date: "2026-10-22" })
+    expect(JSON.parse(grandchild!.recurrence as string).end).toEqual({
+      _tag: "count",
+      count: 1
+    })
+
+    await h.svc((svc) =>
+      svc.complete(viewer(), { id: grandchild!.id as TaskId, clientMutationId: "m-c3" }, NOW)
+    )
+    expect(h.childCount(grandchild!.id as string)).toBe(0)
+    expect(h.taskCount()).toBe(3)
+  })
 })
 
 describe("recurrence through the sync registry", () => {
@@ -603,6 +643,350 @@ describe("recurrence through the sync registry", () => {
       })
     )
     expect(rejected.results[0]).toMatchObject({ _tag: "rejected", code: "InvalidPatch" })
+  })
+})
+
+describe("recurring completion through /sync/push (the app's offline path)", () => {
+  const complete = (id: string, clientMutationId: string, baseVersion: number, patch = {}) => ({
+    clientMutationId,
+    entityType: "task" as const,
+    entityId: id,
+    baseVersion,
+    op: "upsert" as const,
+    patch: { status: "done", ...patch },
+    clientUpdatedAt: NOW
+  })
+
+  it("spawns exactly one successor for a server-known recurring task", async () => {
+    const h = makeHarness()
+    const id = uuidV7() as TaskId
+    await h.svc((svc) =>
+      svc.create(
+        viewer(),
+        {
+          clientMutationId: "m-create",
+          id,
+          title: "قبض اینترنت",
+          dueDate: "2026-10-20",
+          recurrence: daily(),
+          recurrenceMode: "onDueDate"
+        },
+        NOW
+      )
+    )
+
+    const pushed = await h.sync((sync) =>
+      sync.push({
+        userId: USER_A,
+        householdId: HOUSEHOLD,
+        entries: [complete(id, "p-complete", 1)]
+      })
+    )
+    expect(pushed.results[0]).toMatchObject({ _tag: "applied", entityId: id, version: 2 })
+    expect(h.taskCount()).toBe(2)
+    expect(h.childCount(id)).toBe(1)
+    // Parent create + completed instance + spawned successor.
+    expect(h.feedCount()).toBe(3)
+
+    const [child] = h.childrenOf(id)
+    expect(child).toMatchObject({
+      title: "قبض اینترنت",
+      status: "todo",
+      due_date: "2026-10-21",
+      due_at: null,
+      time_zone: TZ,
+      recurrence_mode: "onDueDate",
+      version: 1
+    })
+    expect(JSON.parse(child!.recurrence as string)).toEqual(daily())
+
+    // The successor is a normal feed row: the next pull delivers it.
+    const page = await h.sync((sync) =>
+      sync.pull({ userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
+    )
+    expect(page.items.find((row) => row.entityId === id)).toMatchObject({ version: 2 })
+    expect(page.items.find((row) => row.entityId === child!.id)).toMatchObject({ version: 1 })
+    expect(page.entries.filter((entry) => entry.entityId === child!.id)).toHaveLength(1)
+  })
+
+  it("spawns on the first pushed completion of an offline-created rule", async () => {
+    const h = makeHarness()
+    const id = uuidV7()
+
+    await h.sync((sync) =>
+      sync.push({
+        userId: USER_A,
+        householdId: HOUSEHOLD,
+        entries: [
+          {
+            clientMutationId: "p-create",
+            entityType: "task",
+            entityId: id,
+            baseVersion: 0,
+            op: "upsert",
+            patch: {
+              title: "آفلاین",
+              dueDate: "2026-10-20",
+              timeZone: TZ,
+              recurrence: daily(),
+              recurrenceMode: "onDueDate"
+            },
+            clientUpdatedAt: NOW
+          }
+        ]
+      })
+    )
+
+    const pushed = await h.sync((sync) =>
+      sync.push({
+        userId: USER_A,
+        householdId: HOUSEHOLD,
+        entries: [complete(id, "p-complete", 1)]
+      })
+    )
+    expect(pushed.results[0]).toMatchObject({ _tag: "applied", version: 2 })
+    expect(h.childCount(id)).toBe(1)
+    expect(h.childrenOf(id)[0]).toMatchObject({ due_date: "2026-10-21", status: "todo" })
+  })
+
+  it("copies the parent's tags to the successor and keeps item_tags canonical", async () => {
+    const h = makeHarness()
+    const tagId = uuidV7()
+    const id = uuidV7() as TaskId
+
+    await h.sync((sync) =>
+      sync.push({
+        userId: USER_A,
+        householdId: HOUSEHOLD,
+        entries: [
+          {
+            clientMutationId: "p-tag",
+            entityType: "tag",
+            entityId: tagId,
+            baseVersion: 0,
+            op: "upsert",
+            patch: { name: "خانه", color: null, visibility: "shared" },
+            clientUpdatedAt: NOW
+          }
+        ]
+      })
+    )
+    await h.svc((svc) =>
+      svc.create(
+        viewer(),
+        {
+          clientMutationId: "m-create",
+          id,
+          title: "با برچسب",
+          dueDate: "2026-10-20",
+          tagIds: [tagId as never],
+          recurrence: daily(),
+          recurrenceMode: "onDueDate"
+        },
+        NOW
+      )
+    )
+
+    await h.sync((sync) =>
+      sync.push({
+        userId: USER_A,
+        householdId: HOUSEHOLD,
+        entries: [complete(id, "p-complete", 1)]
+      })
+    )
+
+    const [child] = h.childrenOf(id)
+    expect(JSON.parse(child!.tag_ids as string)).toEqual([tagId])
+    const joins = h.db
+      .prepare("SELECT tag_id AS tagId FROM item_tags WHERE item_id = ? AND item_type = 'task'")
+      .all(child!.id) as ReadonlyArray<{ readonly tagId: string }>
+    expect(joins.map((row) => row.tagId)).toEqual([tagId])
+  })
+
+  it("replaying the same completion push is a no-op", async () => {
+    const h = makeHarness()
+    const id = uuidV7() as TaskId
+    await h.svc((svc) =>
+      svc.create(
+        viewer(),
+        {
+          clientMutationId: "m-create",
+          id,
+          title: "تکرار پوش",
+          dueDate: "2026-10-20",
+          recurrence: daily(),
+          recurrenceMode: "onDueDate"
+        },
+        NOW
+      )
+    )
+    await h.sync((sync) =>
+      sync.push({
+        userId: USER_A,
+        householdId: HOUSEHOLD,
+        entries: [complete(id, "p-complete", 1)]
+      })
+    )
+    const feedAfter = h.feedCount()
+
+    const replay = await h.sync((sync) =>
+      sync.push({
+        userId: USER_A,
+        householdId: HOUSEHOLD,
+        entries: [complete(id, "p-complete", 1)]
+      })
+    )
+    expect(replay.results[0]?._tag).toBe("alreadyApplied")
+    expect(h.feedCount()).toBe(feedAfter)
+    expect(h.childCount(id)).toBe(1)
+    expect(h.taskCount()).toBe(2)
+  })
+
+  it("a fresh completion id on an already-done task spawns nothing", async () => {
+    const h = makeHarness()
+    const id = uuidV7() as TaskId
+    await h.svc((svc) =>
+      svc.create(
+        viewer(),
+        {
+          clientMutationId: "m-create",
+          id,
+          title: "دو بار پوش",
+          dueDate: "2026-10-20",
+          recurrence: daily(),
+          recurrenceMode: "onDueDate"
+        },
+        NOW
+      )
+    )
+    await h.sync((sync) =>
+      sync.push({
+        userId: USER_A,
+        householdId: HOUSEHOLD,
+        entries: [complete(id, "p-complete", 1)]
+      })
+    )
+    const feedAfter = h.feedCount()
+
+    // A second device's completion with its own mutation id and the current
+    // base version: the parent write may land, but no second successor may.
+    const again = await h.sync((sync) =>
+      sync.push({
+        userId: USER_A,
+        householdId: HOUSEHOLD,
+        entries: [complete(id, "p-complete-2", 2)]
+      })
+    )
+    expect(again.results[0]).toMatchObject({ _tag: "applied", entityId: id })
+    expect(h.childCount(id)).toBe(1)
+    expect(h.taskCount()).toBe(2)
+    // No second child feed row either.
+    expect(h.feedCount()).toBe(feedAfter + 1)
+  })
+
+  it("undo then re-complete through sync keeps exactly one successor", async () => {
+    const h = makeHarness()
+    const id = uuidV7() as TaskId
+    await h.svc((svc) =>
+      svc.create(
+        viewer(),
+        {
+          clientMutationId: "m-create",
+          id,
+          title: "بازگشت پوش",
+          dueDate: "2026-10-20",
+          recurrence: daily(),
+          recurrenceMode: "onDueDate"
+        },
+        NOW
+      )
+    )
+    await h.sync((sync) =>
+      sync.push({
+        userId: USER_A,
+        householdId: HOUSEHOLD,
+        entries: [complete(id, "p-complete", 1)]
+      })
+    )
+    const [child] = h.childrenOf(id)
+
+    await h.sync((sync) =>
+      sync.push({
+        userId: USER_A,
+        householdId: HOUSEHOLD,
+        entries: [
+          {
+            clientMutationId: "p-undo",
+            entityType: "task",
+            entityId: id,
+            baseVersion: 2,
+            op: "upsert",
+            patch: { status: "todo" },
+            clientUpdatedAt: NOW
+          }
+        ]
+      })
+    )
+    const recompleted = await h.sync((sync) =>
+      sync.push({
+        userId: USER_A,
+        householdId: HOUSEHOLD,
+        entries: [complete(id, "p-complete-2", 3)]
+      })
+    )
+    expect(recompleted.results[0]).toMatchObject({ _tag: "applied", version: 4 })
+    expect(h.childCount(id)).toBe(1)
+    expect(h.taskCount()).toBe(2)
+    // The unique parent index turned the second insert into a no-op; no feed
+    // row for a child that was never written.
+    expect(
+      (
+        h.db
+          .prepare("SELECT COUNT(*) AS n FROM change_feed WHERE entity_id = ?")
+          .get(child!.id) as { readonly n: number }
+      ).n
+    ).toBe(1)
+  })
+
+  it("a lost CAS leaves no orphan successor", async () => {
+    const h = makeHarness()
+    const id = uuidV7() as TaskId
+    await h.svc((svc) =>
+      svc.create(
+        viewer(),
+        {
+          clientMutationId: "m-create",
+          id,
+          title: "مسابقه پوش",
+          dueDate: "2026-10-20",
+          recurrence: daily(),
+          recurrenceMode: "onDueDate"
+        },
+        NOW
+      )
+    )
+
+    // Another writer lands between the push's pre-read and its batch. The
+    // parent stays `todo` at the version the spawn would require.
+    h.fake.beforeBatch = () => {
+      h.fake.beforeBatch = undefined
+      h.db
+        .prepare("UPDATE tasks SET version = version + 1, title = ?, updated_at = ? WHERE id = ?")
+        .run("نوشته‌ی همسر", NOW, id)
+    }
+
+    const error = await h
+      .sync((sync) =>
+        sync.push({
+          userId: USER_A,
+          householdId: HOUSEHOLD,
+          entries: [complete(id, "p-complete", 1)]
+        })
+      )
+      .catch((cause: unknown) => cause)
+    expect(error).toMatchObject({ _tag: "SyncContended" })
+    expect(h.childCount(id)).toBe(0)
+    expect(h.taskCount()).toBe(1)
   })
 })
 

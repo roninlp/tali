@@ -1,10 +1,12 @@
 import { Temporal } from "temporal-polyfill/full"
+import { uuidV7 } from "../ids.js"
 import {
   nextOccurrence,
   type RecurrenceRule,
   type TaskRecurrenceMode
 } from "../recurrence.js"
 import type { LocalDate } from "./common.js"
+import { Task } from "./task.js"
 
 /**
  * Task recurrence computation (FR-TASK-04, ticket #38).
@@ -34,10 +36,11 @@ import type { LocalDate } from "./common.js"
  * ## Bounded rules
  *
  * `onDueDate` keeps one anchor (the instance's due date), so `count` and
- * `until` eventually end the series. `onCompletion` deliberately re-anchors on
- * each completion, which means `count` is evaluated afresh per instance and
- * cannot be used to cap the whole series; use `until` for a hard end date on a
- * completion-based rule.
+ * `until` eventually end the series. `onCompletion` re-anchors on each
+ * completion; `successorTask` carries the **remaining** `count` budget to the
+ * child, so a count rule still produces exactly N instances overall (one per
+ * completion) instead of restarting a fresh N budget on every generated row.
+ * `until` remains an absolute local-date bound either way.
  *
  * The completed instance is not mutated beyond its done status: it stays as
  * history, with its original due date and rule, and the next instance is a new
@@ -112,4 +115,55 @@ export const nextRecurrenceDue = (
   }
 
   return { dueDate: next.toString() as LocalDate, dueAt: null }
+}
+
+/**
+ * The next instance of a just-completed recurring task, or `null` when the
+ * rule has ended.
+ *
+ * This is the **single** successor builder: the RPC `TaskService` and the
+ * `/sync/push` completion path both call it, so the same stored rule and due
+ * fields always produce the same child row. A client never supplies any part
+ * of the successor.
+ *
+ * The completed instance is left untouched (the caller has already written its
+ * `done` state); the child is a fresh `todo` row with its own id and version 1.
+ * The caller inserts it in the same batch as the completion, gated on the
+ * parent really reaching `done`.
+ */
+export const successorTask = (completed: Task, now: string): Task | null => {
+  if (completed.recurrence === null) return null
+  const nextDue = nextRecurrenceDue({
+    rule: completed.recurrence,
+    mode: completed.recurrenceMode ?? "onDueDate",
+    dueDate: completed.dueDate,
+    dueAt: completed.dueAt,
+    timeZone: completed.timeZone,
+    completedAt: now
+  })
+  if (nextDue === null) return null
+  // `count` counts occurrences of the series, and completion consumes one.
+  // The child therefore carries the *remaining* budget: a rule with count N
+  // produces N instances in total (parent + N-1 successors) instead of
+  // re-anchoring a fresh N-count budget on every generated row.
+  const recurrence: RecurrenceRule = completed.recurrence.end._tag === "count"
+    ? {
+      ...completed.recurrence,
+      end: { _tag: "count", count: completed.recurrence.end.count - 1 }
+    }
+    : completed.recurrence
+  return new Task({
+    ...completed,
+    id: uuidV7() as Task["id"],
+    status: "todo",
+    startedAt: null,
+    completedAt: null,
+    dueAt: nextDue.dueAt,
+    dueDate: nextDue.dueDate,
+    recurrence,
+    createdAt: now,
+    updatedAt: now,
+    version: 1,
+    deletedAt: null
+  })
 }
