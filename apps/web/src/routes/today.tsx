@@ -6,6 +6,8 @@ import { AppHeader } from "../components/app-header"
 import { Guard } from "../components/guard"
 import { TextInput } from "../components/form"
 import { useAuth } from "../lib/auth"
+import { usePreferences } from "../lib/preferences"
+import { weekDaysFor } from "../lib/preferences-format"
 import { useLocalStore } from "../lib/local-store"
 import type { MirrorRecord } from "../lib/local-store"
 
@@ -38,6 +40,7 @@ export default function TodayRoute() {
  */
 function TodayPage() {
   const auth = useAuth()
+  const preferences = usePreferences()
   const local = useLocalStore()
 
   const [items, setItems] = createSignal<ReadonlyArray<MirrorRecord>>([])
@@ -47,14 +50,17 @@ function TodayPage() {
   let draftTimer: ReturnType<typeof setTimeout> | undefined
 
   const name = () => auth.session()?.user.displayName ?? ""
-  const digits = () => auth.session()?.user.digits ?? "persian"
+  const digits = () => preferences.preferences().digits
   const today = () => {
     try {
-      return todayInTimeZone(auth.session()?.user.timeZone ?? DEFAULT_TIME_ZONE)
+      return todayInTimeZone(preferences.preferences().timeZone)
     } catch {
       return todayInTimeZone(DEFAULT_TIME_ZONE)
     }
   }
+  // Preferences drive both the week's first day and its numerals; reading the
+  // store here is what makes a settings PATCH re-render this screen live.
+  const week = () => weekDaysFor(today(), preferences.preferences())
   const sorted = () => [...items()].sort((a, b) => sortOrderOf(a) - sortOrderOf(b))
 
   // Hydrate from the mirror as soon as the store opens; the outbox is replayed
@@ -164,6 +170,64 @@ function TodayPage() {
         <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.9rem" }}>
           {formatJalaliDate(today(), { digits: digits() })}
         </p>
+
+        <section
+          aria-label="هفته‌ی جاری"
+          style={{
+            background: tokens.color.surface,
+            border: `1px solid ${tokens.color.line}`,
+            "border-radius": tokens.radius.lg,
+            padding: tokens.space.md,
+            display: "grid",
+            gap: tokens.space.sm
+          }}
+        >
+          <ul
+            style={{
+              "list-style": "none",
+              margin: 0,
+              padding: 0,
+              display: "grid",
+              "grid-template-columns": "repeat(7, minmax(0, 1fr))",
+              gap: "4px"
+            }}
+          >
+            <For each={week()}>
+              {(cell) => (
+                <li
+                  aria-label={cell.label}
+                  aria-current={cell.isToday ? "date" : undefined}
+                  style={{
+                    display: "grid",
+                    "justify-items": "center",
+                    gap: "2px",
+                    padding: "6px 2px",
+                    "border-radius": tokens.radius.md,
+                    border: `1px solid ${cell.isToday ? tokens.color.brand : tokens.color.line}`,
+                    background: cell.isToday ? "#eaf0ff" : tokens.color.surface
+                  }}
+                >
+                  <span aria-hidden="true" style={{ "font-size": "0.72rem", color: tokens.color.inkSoft }}>
+                    {cell.shortWeekday}
+                  </span>
+                  <span
+                    style={{
+                      "font-size": "1rem",
+                      "font-weight": cell.isToday ? 700 : 400,
+                      color: cell.isToday ? tokens.color.brand : tokens.color.ink
+                    }}
+                  >
+                    {cell.day}
+                  </span>
+                </li>
+              )}
+            </For>
+          </ul>
+          <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.78rem" }}>
+            {formatJalaliDate(week()[0]!.date, { style: "short", digits: digits() })} تا{" "}
+            {formatJalaliDate(week()[6]!.date, { style: "short", digits: digits() })} — شروع هفته از تنظیمات.
+          </p>
+        </section>
 
         <section
           style={{

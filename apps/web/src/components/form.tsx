@@ -79,6 +79,10 @@ export function TextInput(props: JSX.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} style={inputStyle} />
 }
 
+export function Select(props: JSX.SelectHTMLAttributes<HTMLSelectElement>) {
+  return <select {...props} style={inputStyle} />
+}
+
 export function FormError(props: { message?: string }) {
   return (
     <Show when={props.message}>

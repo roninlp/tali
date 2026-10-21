@@ -1,22 +1,72 @@
-import { createSignal } from "solid-js"
+import { createEffect, createSignal, Show } from "solid-js"
 import { Title } from "@solidjs/meta"
 import { useNavigate } from "@solidjs/router"
 import { Button, tokens } from "@tali/ui"
-import type { LoginKey } from "@tali/domain"
-import { AuthCard, Field, FormError, TextInput } from "../components/form"
+import {
+  DEFAULT_TIME_ZONE,
+  formatJalaliDate,
+  todayInTimeZone,
+  type Digits,
+  type LoginKey,
+  type WeekStart
+} from "@tali/domain"
+import { AuthCard, Field, FormError, Select, TextInput } from "../components/form"
 import { Guard } from "../components/guard"
 import { PushHealthPanel } from "../components/push-health"
 import { useAuth } from "../lib/auth"
 import { authErrorMessage } from "../lib/auth-copy"
 import { deriveLoginKey, passwordProblem } from "../lib/login-key"
+import { usePreferences } from "../lib/preferences"
 
 /**
- * Account settings (ticket #25) plus the device's notification health
- * (ticket #20). Today the credential form is only the password swap: both the
- * current and the new password are stretched to login keys in the browser, so
- * the API verifies the old key and stores a fresh verifier without ever seeing
- * a password.
+ * Account settings (ticket #25) plus display preferences (ticket #35) and the
+ * device's notification health (ticket #20).
+ *
+ * The preference form writes through `PATCH /preferences` and the store
+ * updates the cached signal immediately, so `/today`'s Jalali week and digits
+ * change without a reload. Time zone is validated as a real IANA zone here
+ * (the API validates again); week start and digits are closed choices.
+ *
+ * The credential form is unchanged: both passwords are stretched to login keys
+ * in the browser, so the API verifies the old key and stores a fresh verifier
+ * without ever seeing a password.
  */
+
+/** Common zones as datalist hints; any real IANA identifier is accepted. */
+const TIME_ZONE_SUGGESTIONS = [
+  "Asia/Tehran",
+  "Asia/Dubai",
+  "Asia/Istanbul",
+  "Asia/Kabul",
+  "Europe/London",
+  "Europe/Berlin",
+  "Europe/Paris",
+  "America/New_York",
+  "America/Los_Angeles",
+  "Australia/Sydney",
+  "UTC"
+] as const
+
+const WEEK_START_OPTIONS: ReadonlyArray<{ value: WeekStart; label: string }> = [
+  { value: "saturday", label: "شنبه" },
+  { value: "sunday", label: "یکشنبه" },
+  { value: "monday", label: "دوشنبه" }
+]
+
+const DIGITS_OPTIONS: ReadonlyArray<{ value: Digits; label: string }> = [
+  { value: "persian", label: "فارسی (۱۲۳)" },
+  { value: "latin", label: "لاتین (123)" }
+]
+
+const isIanaTimeZone = (value: string): boolean => {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value })
+    return true
+  } catch {
+    return false
+  }
+}
+
 export default function SettingsRoute() {
   return (
     <>
@@ -30,6 +80,7 @@ export default function SettingsRoute() {
 
 function SettingsPage() {
   const auth = useAuth()
+  const preferences = usePreferences()
   const navigate = useNavigate()
 
   const [current, setCurrent] = createSignal("")
@@ -38,6 +89,59 @@ function SettingsPage() {
   const [error, setError] = createSignal<string>()
   const [done, setDone] = createSignal(false)
   const [busy, setBusy] = createSignal(false)
+
+  // Display drafts; kept in sync when the server/cache answers.
+  const [timeZone, setTimeZone] = createSignal(preferences.preferences().timeZone)
+  const [weekStart, setWeekStart] = createSignal<WeekStart>(
+    preferences.preferences().weekStart
+  )
+  const [digits, setDigits] = createSignal<Digits>(preferences.preferences().digits)
+  const [displayError, setDisplayError] = createSignal<string>()
+  const [displayDone, setDisplayDone] = createSignal(false)
+
+  createEffect(
+    () => preferences.preferences(),
+    (saved) => {
+      setTimeZone(saved.timeZone)
+      setWeekStart(saved.weekStart)
+      setDigits(saved.digits)
+    }
+  )
+
+  /** Today's Jalali date in the drafted zone + digits, for instant feedback. */
+  const preview = (): string => {
+    try {
+      const zone = isIanaTimeZone(timeZone()) ? timeZone() : DEFAULT_TIME_ZONE
+      return formatJalaliDate(todayInTimeZone(zone), { digits: digits() })
+    } catch {
+      return formatJalaliDate(todayInTimeZone(DEFAULT_TIME_ZONE), { digits: digits() })
+    }
+  }
+
+  const saveDisplay = async (event: SubmitEvent) => {
+    event.preventDefault()
+    if (preferences.saving()) return
+
+    const zone = timeZone().trim()
+    if (!isIanaTimeZone(zone)) {
+      setDisplayError("منطقه‌ی زمانی معتبر نیست؛ مثل Asia/Tehran وارد کنید.")
+      setDisplayDone(false)
+      return
+    }
+
+    setDisplayError(undefined)
+    setDisplayDone(false)
+    const result = await preferences.update({
+      timeZone: zone,
+      weekStart: weekStart(),
+      digits: digits()
+    })
+    if (result.ok) {
+      setDisplayDone(true)
+    } else {
+      setDisplayError(authErrorMessage(result.code))
+    }
+  }
 
   const validate = (): string | undefined => {
     if (current() === "") return "گذرواژه‌ی فعلی را وارد کنید."
@@ -110,7 +214,99 @@ function SettingsPage() {
         </nav>
       }
     >
+      <section
+        aria-labelledby="settings-display-title"
+        style={{
+          display: "grid",
+          gap: "14px",
+          padding: tokens.space.md,
+          border: `1px solid ${tokens.color.line}`,
+          "border-radius": tokens.radius.md,
+          background: "#fbfcff"
+        }}
+      >
+        <header style={{ display: "grid", gap: "4px" }}>
+          <h2 id="settings-display-title" style={{ margin: 0, "font-size": "1.05rem" }}>
+            نمایش
+          </h2>
+          <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.85rem", "line-height": "1.8" }}>
+            تقویم شمسی، شروع هفته و شکل اعداد را اینجا تغییر دهید.
+          </p>
+        </header>
+
+        <form onSubmit={(event) => void saveDisplay(event)} style={{ display: "grid", gap: "14px" }}>
+          <Field label="منطقه‌ی زمانی (IANA)" for="settings-timezone" hint="مثل Asia/Tehran">
+            <TextInput
+              id="settings-timezone"
+              name="timeZone"
+              list="settings-timezone-options"
+              dir="ltr"
+              autocomplete="off"
+              spellcheck={false}
+              value={timeZone()}
+              disabled={preferences.saving()}
+              onInput={(event) => setTimeZone(event.currentTarget.value)}
+            />
+            <datalist id="settings-timezone-options">
+              {TIME_ZONE_SUGGESTIONS.map((zone) => (
+                <option value={zone} />
+              ))}
+            </datalist>
+          </Field>
+
+          <Field label="شروع هفته" for="settings-week-start">
+            <Select
+              id="settings-week-start"
+              name="weekStart"
+              value={weekStart()}
+              disabled={preferences.saving()}
+              onChange={(event) =>
+                setWeekStart(event.currentTarget.value as WeekStart)
+              }
+            >
+              {WEEK_START_OPTIONS.map((option) => (
+                <option value={option.value}>{option.label}</option>
+              ))}
+            </Select>
+          </Field>
+
+          <Field label="شکل اعداد" for="settings-digits">
+            <Select
+              id="settings-digits"
+              name="digits"
+              value={digits()}
+              disabled={preferences.saving()}
+              onChange={(event) => setDigits(event.currentTarget.value as Digits)}
+            >
+              {DIGITS_OPTIONS.map((option) => (
+                <option value={option.value}>{option.label}</option>
+              ))}
+            </Select>
+          </Field>
+
+          <p
+            aria-live="polite"
+            style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.88rem" }}
+          >
+            امروز: {preview()}
+          </p>
+
+          <FormError message={displayError()} />
+          <Show when={displayDone()}>
+            <p role="status" style={{ margin: 0, "font-size": "0.88rem", color: "#166534" }}>
+              تنظیمات نمایش ذخیره شد.
+            </p>
+          </Show>
+
+          <Button type="submit" disabled={preferences.saving()} style={{ width: "100%" }}>
+            {preferences.saving() ? "در حال ذخیره…" : "ذخیره‌ی تنظیمات نمایش"}
+          </Button>
+        </form>
+      </section>
+
       <form onSubmit={submit} style={{ display: "grid", gap: "14px" }}>
+        <h2 style={{ margin: 0, "font-size": "1.05rem" }}>گذرواژه</h2>
+
         <Field label="گذرواژه‌ی فعلی" for="settings-current">
           <TextInput
             id="settings-current"
