@@ -1603,6 +1603,13 @@ const habitEntryDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition =>
    * Plain field LWW. A logged day has no "completion wins" rule of its own:
    * the later status the user chose is the one that stands, and `deletedAt`
    * keeps the shared tombstone-wins rule from `mergeFields`.
+   *
+   * That tombstone-wins rule is deliberate for the **offline sync** path, but
+   * it is not how a tap re-logs a cleared day. #64's tap goes through
+   * `HabitService.logEntry`, which resolves the day with `findForDate` and
+   * revives the same row in place under a version CAS; a queued tap that meets
+   * a tombstone here is recovered by that explicit mutation (the client sync
+   * engine calls it on a `tombstone`/`UniqueViolation` result).
    */
   merge: (input) => mergeFields({}, input),
   insert: (state) => sql`

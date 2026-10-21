@@ -3,6 +3,13 @@ import {
   Habit,
   HabitConflict,
   HabitCreateInput,
+  HabitEntry,
+  type HabitEntryId,
+  HabitEntryLogInput,
+  HabitEntryNotFound,
+  HabitEntryOutOfWindow,
+  HabitEntryRangeInput,
+  HabitEntryStatus,
   HabitFrequency,
   HabitForbidden,
   type HabitId,
@@ -15,6 +22,8 @@ import {
   HabitUpdateInput,
   type HouseholdId,
   habitFrequencyHistoryAfter,
+  habitLogWindow,
+  LocalDate,
   localDateIn,
   sameHabitFrequency,
   type SyncEntityType,
@@ -23,7 +32,15 @@ import {
   type Visibility,
   uuidV7
 } from "@tali/domain"
-import { HabitRepo, HabitRepoLive, type SyncEntityState, SyncRepo, SyncRepoLive } from "@tali/sql"
+import {
+  HabitEntryRepo,
+  HabitEntryRepoLive,
+  HabitRepo,
+  HabitRepoLive,
+  type SyncEntityState,
+  SyncRepo,
+  SyncRepoLive
+} from "@tali/sql"
 
 /**
  * `HabitService` — create, edit, delete and restore (ticket #63; FR-HAB-01).
@@ -60,11 +77,23 @@ import { HabitRepo, HabitRepoLive, type SyncEntityState, SyncRepo, SyncRepoLive 
  * `restore` revives the same row — same id, same history, same entries — which
  * is what the undo toast on the habits screen (#66) calls.
  *
- * ## What this service does not do
+ * ## The daily tap (#64)
  *
- * It never writes a `HabitEntry`. The daily tap, the status cycle and the
- * ≤ 7-day backdating window are ticket #64's service, built on
- * `HabitEntryRepo`; this ticket ships the entry table, model and sync path.
+ * `logEntry` is the service-side tap. It resolves the day's row with
+ * `HabitEntryRepo.findForDate` — including a **tombstone** — and writes one
+ * gated CAS in the same batch shape as every other mutation. Reviving a
+ * tombstoned day therefore happens here, on the service path: the generic
+ * `/sync/push` resolver deliberately keeps tombstone-wins (an offline edit
+ * must not resurrect a deleted row), so a client whose queued tap meets a
+ * tombstone recovers by calling this mutation on the RPC path (the sync engine
+ * has an explicit repair hook for that, see `apps/web/src/lib/sync-engine.ts`).
+ *
+ * The day is validated against the ≤ 7-day backdating window in the viewer's
+ * local calendar before anything is written: an out-of-window tap is a typed
+ * `HabitEntryOutOfWindow` failure, never a clamped or dropped write.
+ *
+ * `entries` is the range read (`[from, before)`, own-or-shared visibility) that
+ * Today and the statistics (#66) consume.
  */
 
 /** How many CAS retries a service mutation makes before reporting contention. */
@@ -100,6 +129,17 @@ export interface HabitServiceApi {
     now?: string
   ) => Effect.Effect<Habit, HabitServiceError>
   readonly list: (viewer: HabitViewer) => Effect.Effect<ReadonlyArray<Habit>, HabitServiceError>
+  /** Log (or re-log) one local day; revives a tombstoned day in place. */
+  readonly logEntry: (
+    viewer: HabitViewer,
+    input: Schema.Schema.Type<typeof HabitEntryLogInput>,
+    now?: string
+  ) => Effect.Effect<HabitEntry, HabitServiceError>
+  /** The `[from, before)` entries visible to the viewer (Today, stats). */
+  readonly entries: (
+    viewer: HabitViewer,
+    input: Schema.Schema.Type<typeof HabitEntryRangeInput>
+  ) => Effect.Effect<ReadonlyArray<HabitEntry>, HabitServiceError>
 }
 
 const invalid = (field: string, message: string): Effect.Effect<never, HabitValidationError> =>
@@ -108,6 +148,7 @@ const invalid = (field: string, message: string): Effect.Effect<never, HabitVali
 export class HabitService extends Context.Service<HabitService>()("HabitService", {
   make: Effect.gen(function*() {
     const habits = yield* HabitRepo
+    const entries = yield* HabitEntryRepo
     const sync = yield* SyncRepo
 
     const definition = (entityType: SyncEntityType) => {
@@ -140,6 +181,43 @@ export class HabitService extends Context.Service<HabitService>()("HabitService"
           { version: habit.version, updatedAt: habit.updatedAt, deletedAt: habit.deletedAt }
         )
       }
+    }
+
+    /**
+     * The entry's trusted write state, validated by the same registry boundary
+     * the sync push uses. An entry has no `type` field and no common-item
+     * payload: just the day, the status and the scope columns.
+     */
+    const entryState = (entry: HabitEntry): SyncEntityState => {
+      const def = definition("habitEntry")
+      return {
+        entityType: "habitEntry",
+        entityId: entry.id,
+        householdId: entry.householdId,
+        ownerId: entry.ownerId,
+        visibility: entry.visibility,
+        version: entry.version,
+        updatedAt: entry.updatedAt,
+        deletedAt: entry.deletedAt,
+        data: def.validate(
+          { ...entry } as Record<string, unknown>,
+          { version: entry.version, updatedAt: entry.updatedAt, deletedAt: entry.deletedAt }
+        )
+      }
+    }
+
+    /** The same row-level scope rules habits use, applied to an entry. */
+    const ensureEntryVisible = (
+      viewer: HabitViewer,
+      entry: HabitEntry
+    ): Effect.Effect<void, HabitForbidden> => {
+      if (entry.householdId !== viewer.householdId) {
+        return Effect.fail(new HabitForbidden({ id: entry.habitId, reason: "household" }))
+      }
+      if (entry.visibility === "private" && entry.ownerId !== viewer.userId) {
+        return Effect.fail(new HabitForbidden({ id: entry.habitId, reason: "private" }))
+      }
+      return Effect.void
     }
 
     const appliedMutation = (viewer: HabitViewer, clientMutationId: string) =>
@@ -544,18 +622,199 @@ export class HabitService extends Context.Service<HabitService>()("HabitService"
         .listVisible({ householdId: viewer.householdId, userId: viewer.userId })
         .pipe(Effect.orDie)
 
+    /**
+     * Log one local day (#64; FR-HAB-02).
+     *
+     * The row is keyed by `(habitId, localDate)` for all time, so this is an
+     * upsert against the day rather than against an id: an existing live row is
+     * CAS-updated, a tombstoned row is revived **in place** (same id, same
+     * creation time, same owner), and only a day that has never been logged
+     * inserts. A racing insert loses the unique index and surfaces as a no-op
+     * (`ON CONFLICT DO NOTHING`), then this loop re-reads the day and updates
+     * the winning row — never a duplicate.
+     */
+    const logEntry = (
+      viewer: HabitViewer,
+      input: Schema.Schema.Type<typeof HabitEntryLogInput>,
+      now: string = new Date().toISOString()
+    ): Effect.Effect<HabitEntry, HabitServiceError> =>
+      Effect.gen(function*() {
+        // Replay guard: a retry after a lost response returns the row it wrote.
+        const replayed = yield* appliedMutation(viewer, input.clientMutationId)
+        if (Option.isSome(replayed)) {
+          if (
+            reusedMutationId(replayed.value, { entityType: "habitEntry", id: input.id })
+          ) {
+            return yield* invalid(
+              "clientMutationId",
+              "this mutation id was already applied to a different change"
+            )
+          }
+          const found = yield* entries
+            .findById(replayed.value.entityId as HabitEntryId)
+            .pipe(Effect.orDie)
+          if (Option.isNone(found)) {
+            return yield* Effect.fail(
+              new HabitEntryNotFound({ id: replayed.value.entityId as HabitEntryId })
+            )
+          }
+          yield* ensureEntryVisible(viewer, found.value)
+          return found.value
+        }
+
+        const status = Schema.decodeUnknownOption(HabitEntryStatus)(input.status)
+        if (status._tag === "None") {
+          return yield* invalid("status", "a logged day is done, partial or missed")
+        }
+        const localDate = Schema.decodeUnknownOption(LocalDate)(input.localDate)
+        if (localDate._tag === "None") {
+          return yield* invalid("localDate", "the logged day must be a calendar date")
+        }
+        const timeZone = yield* decodeTimeZone(input.timeZone ?? viewer.timeZone)
+
+        // The window is the viewer's local calendar: "yesterday" is the day
+        // they experienced, not a UTC instant. It is checked before any read or
+        // write, so an old day can never be silently clamped to today.
+        const today = localDateIn(now, viewer.timeZone)
+        const window = habitLogWindow(today)
+        if (localDate.value < window.earliest || localDate.value > window.latest) {
+          return yield* Effect.fail(
+            new HabitEntryOutOfWindow({
+              localDate: localDate.value,
+              earliest: window.earliest,
+              latest: window.latest
+            })
+          )
+        }
+
+        // Scope: the habit must exist, be visible and not be in the trash. A
+        // tap can never log against another household's or another member's
+        // private habit.
+        const habit = yield* readHabit(viewer, input.habitId, false)
+
+        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
+          const found = yield* entries
+            .findForDate({ habitId: habit.id, localDate: localDate.value })
+            .pipe(Effect.orDie)
+
+          if (Option.isSome(found)) {
+            const current = found.value
+            // Authorisation comes from the habit (`readHabit` above), not from
+            // the entry's denormalised visibility: if a habit was flipped to
+            // shared, the partner may log its days even when an older row was
+            // written while it was private. The write below re-inherits the
+            // habit's visibility, so the row converges.
+            // An identical tap changes nothing: return the stored row rather
+            // than growing the feed with a no-op version.
+            if (
+              current.deletedAt === null &&
+              current.status === status.value &&
+              current.timeZone === timeZone &&
+              current.visibility === habit.visibility
+            ) {
+              return current
+            }
+            const next = new HabitEntry({
+              // Revive in place: the day's identity never changes, so the
+              // other device's mirror/queue still points at the same row.
+              ...current,
+              visibility: habit.visibility,
+              timeZone,
+              status: status.value,
+              version: current.version + 1,
+              updatedAt: now,
+              deletedAt: null
+            })
+            const applied = yield* commitHabit({
+              viewer,
+              state: entryState(next),
+              expectedVersion: current.version,
+              clientMutationId: input.clientMutationId,
+              now
+            })
+            if (applied) return next
+            continue
+          }
+
+          const created = new HabitEntry({
+            id: (input.id ?? uuidV7()) as HabitEntry["id"],
+            habitId: habit.id,
+            ownerId: viewer.userId,
+            householdId: viewer.householdId,
+            visibility: habit.visibility,
+            localDate: localDate.value,
+            timeZone,
+            status: status.value,
+            createdAt: now,
+            updatedAt: now,
+            version: 1,
+            deletedAt: null
+          })
+          const applied = yield* commitHabit({
+            viewer,
+            state: entryState(created),
+            expectedVersion: null,
+            clientMutationId: input.clientMutationId,
+            now
+          })
+          if (applied) return created
+          // A racing writer inserted the same day first: re-read and update
+          // their row instead of inserting a duplicate.
+        }
+
+        return yield* Effect.fail(new HabitConflict({ id: habit.id }))
+      })
+
+    /**
+     * The half-open `[from, before)` range read (#64).
+     *
+     * It is deliberately independent of the habit list: Today renders the
+     * viewer's own days and the days of shared habits, which is exactly the
+     * repository's scope filter (`owner_id = viewer OR shared`). A tombstone is
+     * not a log entry, so deleted days are absent.
+     */
+    const entriesInRange = (
+      viewer: HabitViewer,
+      input: Schema.Schema.Type<typeof HabitEntryRangeInput>
+    ): Effect.Effect<ReadonlyArray<HabitEntry>, HabitServiceError> =>
+      Effect.gen(function*() {
+        const from = Schema.decodeUnknownOption(LocalDate)(input.from)
+        if (from._tag === "None") {
+          return yield* invalid("from", "the range must start on a calendar date")
+        }
+        const before = Schema.decodeUnknownOption(LocalDate)(input.before)
+        if (before._tag === "None") {
+          return yield* invalid("before", "the range must end on a calendar date")
+        }
+        if (from.value >= before.value) {
+          return yield* invalid("before", "the range must end after it starts")
+        }
+        return yield* entries
+          .listInRange({
+            householdId: viewer.householdId,
+            userId: viewer.userId,
+            from: from.value,
+            before: before.value,
+            habitId: input.habitId
+          })
+          .pipe(Effect.orDie)
+      })
+
     return {
       create,
       get,
       update,
       delete: deleteHabit,
       restore,
-      list
+      list,
+      logEntry,
+      entries: entriesInRange
     } as const
   })
 }) {}
 
 export const HabitServiceLive = Layer.effect(HabitService, HabitService.make).pipe(
   Layer.provide(HabitRepoLive),
+  Layer.provide(HabitEntryRepoLive),
   Layer.provide(SyncRepoLive)
 )

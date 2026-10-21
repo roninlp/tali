@@ -283,6 +283,26 @@ The local calendar date a **Habit Entry** covers, in the entry's own **Time
 Zone**. "Today" is the owner's wall date, never UTC's, and a backdated day is
 still the day the user says it was.
 
+### Backdating Window
+
+The seven days before today, plus today, on the user's own local calendar. A
+tap inside the window logs that day; a tap outside it is refused with a typed
+error rather than clamped. Logging never reaches into the future.
+
+### Status Cycle
+
+The order a repeated tap walks a **Habit Entry** through: Done → Partial →
+Missed → Done. Because a day is one row for all time, a tap replaces the day's
+status; it never adds another row.
+
+### Revive
+
+Bringing a tombstoned **Habit Entry** back by tapping its day again. The same
+row comes back — same id, same creation time, same owner — on the logging
+mutation's compare-and-set path. The generic sync push keeps tombstone-wins, so
+a queued offline tap that meets a tombstone recovers through that explicit
+mutation.
+
 ### Expected Day
 
 A day on which a habit is due: every day for a daily habit, the selected days for

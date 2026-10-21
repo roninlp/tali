@@ -16,6 +16,9 @@ import {
   EventUpdateInput,
   Habit,
   HabitCreateInput,
+  HabitEntry,
+  HabitEntryLogInput,
+  HabitEntryRangeInput,
   HabitId,
   HabitMutationInput,
   HabitServiceError,
@@ -417,6 +420,25 @@ class ListHabits extends Rpc.make("ListHabits", {
   error: HabitRpcError
 }) {}
 
+/**
+ * Log (or re-log) one habit day (#64). The server resolves the day's row —
+ * live or tombstoned — and updates it in place, so the status cycles
+ * Done → Partial → Missed without ever adding a second row. An old day is a
+ * typed `HabitEntryOutOfWindow` failure.
+ */
+class LogHabitEntry extends Rpc.make("LogHabitEntry", {
+  payload: HabitEntryLogInput,
+  success: HabitEntry,
+  error: HabitRpcError
+}) {}
+
+/** The `[from, before)` range read behind Today and the statistics (#66). */
+class ListHabitEntries extends Rpc.make("ListHabitEntries", {
+  payload: HabitEntryRangeInput,
+  success: Schema.Array(HabitEntry),
+  error: HabitRpcError
+}) {}
+
 // ── Reminders (ticket #60; FR-REM-01/03) ─────────────────────────────────
 
 const ReminderRpcError = Schema.Union([ReminderServiceError, Unauthorized])
@@ -504,8 +526,9 @@ export const ApiRpcs = RpcGroup.make(
   UpdateHabit,
   DeleteHabit,
   RestoreHabit,
-  ListHabits
-,
+  ListHabits,
+  LogHabitEntry,
+  ListHabitEntries,
   CreateReminder,
   GetReminder,
   UpdateReminder,
