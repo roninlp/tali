@@ -302,6 +302,22 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
     }
 
     /**
+     * The statements that maintain a derived index next to the row (the note
+     * search index, #41).
+     *
+     * They belong to the **same batch** as the entity write and run right
+     * after it: every one of them is gated on the row reaching the version
+     * this write stamped, so a lost compare-and-set leaves the index
+     * describing the row that is actually stored.
+     */
+    const indexStatements = (
+      state: SyncEntityState
+    ): ReadonlyArray<Statement.Statement<unknown>> => {
+      const def = registry.get(state.entityType)
+      return def?.index?.(state) ?? []
+    }
+
+    /**
      * Append the feed row, but only if the entity write above changed a row.
      * Must run immediately before `recordApplied`.
      */
@@ -341,6 +357,7 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
       maxSeq,
       prune,
       writeEntity,
+      indexStatements,
       appendFeed,
       recordApplied,
       commit

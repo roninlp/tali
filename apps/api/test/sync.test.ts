@@ -35,7 +35,8 @@ const MIGRATIONS = [
   "0003_sync_engine.sql",
   "0005_core_planning.sql",
   "0007_task_recurrence.sql",
-  "0008_list_last_writer.sql"
+  "0008_list_last_writer.sql",
+  "0009_note_search.sql"
 ]
 const NOW = (): string => new Date().toISOString()
 const PAST = "2020-01-01T00:00:00.000Z"

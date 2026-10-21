@@ -5,6 +5,7 @@ import { ApiRpcs } from "@tali/rpc"
 import {
   ListItemRepoLive,
   NoteRepoLive,
+  NoteSearchRepoLive,
   ProjectRepoLive,
   PushSubscriptionRepoLive,
   TagRepoLive,
@@ -16,6 +17,8 @@ import { CalendarRoutes } from "./calendar-routes.js"
 import { CalendarServiceLive } from "./calendar-service.js"
 import { ListServiceLive } from "./list-service.js"
 import { ListItemServiceLive } from "./list-item-service.js"
+import { NoteSearchRoutes } from "./note-search-routes.js"
+import { NoteSearchServiceLive } from "./note-search-service.js"
 import { NoteServiceLive } from "./note-service.js"
 import { PreferencesRoutes } from "./preferences-routes.js"
 import { PreferencesServiceLive } from "./preferences-service.js"
@@ -50,6 +53,7 @@ export const AppLayer = Layer.mergeAll(
   PreferencesRoutes,
   TodayRoutes,
   CalendarRoutes,
+  NoteSearchRoutes,
   PushRoutes,
   RpcLayer
 ).pipe(
@@ -60,10 +64,12 @@ export const AppLayer = Layer.mergeAll(
   Layer.provide(ListItemServiceLive),
   Layer.provide(TaskServiceLive),
   Layer.provide(NoteServiceLive),
+  Layer.provide(NoteSearchServiceLive),
   Layer.provide(TodayServiceLive),
   Layer.provide(CalendarServiceLive),
   Layer.provide(ListItemRepoLive),
   Layer.provide(NoteRepoLive),
+  Layer.provide(NoteSearchRepoLive),
   Layer.provide(ProjectRepoLive),
   Layer.provide(TagRepoLive),
   Layer.provide(TaskRepoLive),

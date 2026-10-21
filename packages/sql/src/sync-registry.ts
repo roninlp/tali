@@ -3,6 +3,7 @@ import { type SqlClient, Statement } from "effect/sql"
 import {
   List,
   Note,
+  normalizePersian,
   Project,
   successorTask,
   Tag,
@@ -146,6 +147,16 @@ export interface SyncEntityDefinition {
     state: SyncEntityState,
     expectedVersion: number
   ) => Statement.Statement<unknown>
+  /**
+   * Optional statements that maintain a derived index next to the row (the
+   * note search index, #41).
+   *
+   * They run **after** the entity write, in the same batch, and every one of
+   * them is gated on the row reaching the version this write stamped: if the
+   * compare-and-set lost, the index keeps the text it already has instead of
+   * describing a row that never landed.
+   */
+  readonly index?: (state: SyncEntityState) => ReadonlyArray<Statement.Statement<unknown>>
   /**
    * Optional server-side successor for a write (task recurrence, #38).
    *
@@ -1068,7 +1079,38 @@ const noteDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
       version = ${state.version},
       deleted_at = ${state.deletedAt}
     WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `
+  `,
+  /**
+   * The note search index (#41).
+   *
+   * The index holds the **folded** title and body (`normalizePersian`), so a
+   * note written in one Persian spelling is found by the other. Both
+   * statements are gated on the note row having reached this write's
+   * version/timestamp: a lost compare-and-set therefore leaves the index
+   * describing the row that is actually stored.
+   *
+   * The first statement drops the note's previous index row, the second
+   * writes the new one — both inside the same batch as the row write, so the
+   * index never lags behind a committed note.
+   */
+  index: (state) => {
+    const noteId = state.entityId
+    const title = normalizePersian(encodeText(state.data.title))
+    const body = normalizePersian(encodeText(state.data.plainText))
+    const landed = sql`
+      EXISTS (
+        SELECT 1 FROM notes
+        WHERE id = ${noteId} AND version = ${state.version} AND updated_at = ${state.updatedAt}
+      )
+    `
+    return [
+      sql`DELETE FROM notes_fts WHERE note_id = ${noteId} AND ${landed}`,
+      sql`
+        INSERT INTO notes_fts (note_id, search_title, search_body)
+        SELECT ${noteId}, ${title}, ${body} WHERE ${landed}
+      `
+    ]
+  }
 })
 
 // ── Registry ──────────────────────────────────────────────────────────────
