@@ -16,16 +16,16 @@ export const TASKS_ROOT = {
   "min-height": "100dvh",
   "font-family": tokens.font.sans,
   color: tokens.color.ink,
-  background: "#f7f9fd",
-  "overflow-x": "hidden"
+  background: tokens.color.canvas,
+  "overflow-x": "clip"
 } as const
 
 export const screenStyle = {
-  padding: tokens.space.lg,
+  padding: "clamp(16px, 3vw, 32px) 16px 32px",
   display: "grid",
   gap: tokens.space.md,
   width: "100%",
-  "max-width": "1180px",
+  "max-width": "1200px",
   "box-sizing": "border-box",
   "min-width": 0,
   margin: "0 auto"
@@ -109,11 +109,11 @@ const TASKS_CSS = `
 .tasks-board { min-width: 0; display: grid; gap: 6px; align-content: start; border-radius: ${tokens.radius.lg}; border: 1px solid transparent; padding: 2px; transition: background 120ms ease, border-color 120ms ease; }
 .tasks-board[data-over="true"] { background: #eef4ff; border-color: ${tokens.color.brand}; border-style: dashed; }
 .tasks-board-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-.tasks-board-head h2 { margin: 0; font-size: 1.05rem; }
+.tasks-board-head h2 { margin: 0; font-size: 1.05rem; letter-spacing: -0.01em; }
 .tasks-count { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; padding: 1px 8px; border-radius: 999px; background: #eef2fa; color: ${tokens.color.inkSoft}; font-size: 0.78rem; }
 .tasks-board-sub { margin: 0; color: ${tokens.color.inkSoft}; font-size: 0.78rem; line-height: 1.7; }
 .tasks-board ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; min-width: 0; }
-.tasks-card { min-width: 0; background: ${tokens.color.surface}; border: 1px solid ${tokens.color.line}; border-radius: ${tokens.radius.md}; padding: 8px 10px; display: grid; gap: 6px; }
+.tasks-card { min-width: 0; background: ${tokens.color.surface}; border: 1px solid ${tokens.color.line}; border-radius: ${tokens.radius.lg}; padding: 10px 12px; display: grid; gap: 8px; }
 .tasks-card[data-overdue="true"] { background: #fff8ec; border-color: #f0dfc0; }
 .tasks-card:target { border-color: ${tokens.color.brand}; background: #eef4ff; }
 .tasks-card[data-dragging="true"] { opacity: 0.5; }
@@ -126,7 +126,7 @@ const TASKS_CSS = `
 .tasks-check:active { transform: scale(0.92); }
 .tasks-drag-handle { display: none; cursor: grab; color: ${tokens.color.inkSoft}; font-size: 0.9rem; padding: 4px 2px; user-select: none; }
 .tasks-meta { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-width: 0; }
-.tasks-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: 0.72rem; line-height: 1.8; border: 1px solid ${tokens.color.line}; background: #f7f9fd; color: ${tokens.color.inkSoft}; max-width: 100%; overflow-wrap: anywhere; }
+.tasks-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: 0.72rem; line-height: 1.8; border: 1px solid ${tokens.color.line}; background: ${tokens.color.surfaceMuted}; color: ${tokens.color.inkSoft}; max-width: 100%; overflow-wrap: anywhere; }
 .tasks-chip[data-tone="overdue"] { background: #fdf1dd; border-color: #e8d3ae; color: #8a5a12; }
 .tasks-chip[data-tone="high"] { background: #fdecef; border-color: #f3cbd4; color: #9f1239; }
 .tasks-chip[data-tone="pending"] { background: #fff7e6; border-color: #ecd9b0; color: #92600e; }

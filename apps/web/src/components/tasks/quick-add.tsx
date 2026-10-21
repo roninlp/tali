@@ -152,7 +152,7 @@ export function QuickAdd(props: {
         padding: "8px 10px",
         border: `1px solid ${tokens.color.line}`,
         "border-radius": tokens.radius.md,
-        background: "#f7f9fd",
+        background: tokens.color.surfaceMuted,
         "min-width": 0
       }}
     >

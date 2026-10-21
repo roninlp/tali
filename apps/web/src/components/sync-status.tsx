@@ -10,7 +10,7 @@ const faNumber = new Intl.NumberFormat("fa-IR")
  * Deliberately quiet: a dot plus a short label. It reads the local store's
  * state, not the network, so it stays truthful while a request is in flight.
  */
-export function SyncStatus(props: { compact?: boolean } = {}) {
+export function SyncStatus() {
   const local = useLocalStore()
 
   const tone = () => {
@@ -39,12 +39,12 @@ export function SyncStatus(props: { compact?: boolean } = {}) {
         display: "inline-flex",
         "align-items": "center",
         gap: "6px",
-        padding: props.compact === true ? "2px 6px" : "4px 10px",
+        padding: "4px 10px",
         "border-radius": "999px",
         border: `1px solid ${tokens.color.line}`,
         background: tokens.color.surface,
         color: tokens.color.inkSoft,
-        "font-size": props.compact === true ? "0.7rem" : "0.78rem",
+        "font-size": "0.78rem",
         "white-space": "nowrap"
       }}
     >

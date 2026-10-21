@@ -33,13 +33,13 @@ function RemindersPage() {
         "min-height": "100dvh",
         "font-family": tokens.font.sans,
         color: tokens.color.ink,
-        background: "#f7f9fd"
+        background: tokens.color.canvas
       }}
     >
       <AppHeader active="reminders" />
 
-      <main style={{ padding: tokens.space.lg, display: "grid", gap: tokens.space.md, "max-width": "720px" }}>
-        <h1 style={{ margin: 0, "font-size": "1.5rem" }}>یادآورها</h1>
+      <main style={{ padding: "clamp(16px, 3vw, 28px) 16px 32px", display: "grid", gap: tokens.space.md, "max-width": "752px", width: "100%", "box-sizing": "border-box", margin: "0 auto" }}>
+        <h1 style={{ margin: 0, "font-size": "1.35rem", "letter-spacing": "-0.02em" }}>یادآورها</h1>
 
         <PushHealthPanel />
 

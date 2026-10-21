@@ -27,17 +27,19 @@ export const logical = {
 
 export const tokens = {
   color: {
-    brand: "#2f5fe0",
-    brandDark: "#22449f",
-    accent: "#0f9d8f",
-    ink: "#1c2333",
-    inkSoft: "#4a5568",
+    brand: "#3558b5",
+    brandDark: "#25438f",
+    accent: "#258777",
+    ink: "#202938",
+    inkSoft: "#626d7d",
     surface: "#ffffff",
-    line: "#e3e7f0"
+    surfaceMuted: "#f9fafc",
+    canvas: "#f5f7fb",
+    line: "#e4e8ef"
   },
   radius: {
-    md: "8px",
-    lg: "14px"
+    md: "10px",
+    lg: "16px"
   },
   space,
   /** Logical spacing aliases (direction-neutral, no physical left/right). */

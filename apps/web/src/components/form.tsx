@@ -7,6 +7,7 @@ import { tokens } from "@tali/ui"
 const inputStyle: JSX.CSSProperties = {
   "font-family": tokens.font.sans,
   "font-size": "1rem",
+  "min-height": "46px",
   padding: `${tokens.space.sm} 12px`,
   border: `1px solid ${tokens.color.line}`,
   "border-radius": tokens.radius.md,
@@ -31,7 +32,7 @@ export function AuthCard(props: {
         display: "grid",
         "place-items": "center",
         padding: tokens.space.md,
-        background: "linear-gradient(180deg, #f5f8ff 0%, #ffffff 65%)",
+        background: `linear-gradient(180deg, ${tokens.color.canvas} 0%, #ffffff 68%)`,
         "font-family": tokens.font.sans,
         color: tokens.color.ink
       }}

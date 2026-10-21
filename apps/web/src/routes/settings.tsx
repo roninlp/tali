@@ -1,6 +1,5 @@
-import { createEffect, createSignal, Show } from "solid-js"
+import { createEffect, createSignal, For, Show } from "solid-js"
 import { Title } from "@solidjs/meta"
-import { useNavigate } from "@solidjs/router"
 import { Button, tokens } from "@tali/ui"
 import {
   DEFAULT_TIME_ZONE,
@@ -10,7 +9,8 @@ import {
   type LoginKey,
   type WeekStart
 } from "@tali/domain"
-import { AuthCard, Field, FormError, Select, TextInput } from "../components/form"
+import { AppHeader } from "../components/app-header"
+import { Field, FormError, Select, TextInput } from "../components/form"
 import { Guard } from "../components/guard"
 import { PushHealthPanel } from "../components/push-health"
 import { useAuth } from "../lib/auth"
@@ -81,8 +81,6 @@ export default function SettingsRoute() {
 function SettingsPage() {
   const auth = useAuth()
   const preferences = usePreferences()
-  const navigate = useNavigate()
-
   const [current, setCurrent] = createSignal("")
   const [next, setNext] = createSignal("")
   const [confirm, setConfirm] = createSignal("")
@@ -201,34 +199,22 @@ function SettingsPage() {
   }
 
   return (
-    <AuthCard
-      title="تنظیمات"
-      subtitle="گذرواژه فقط در همین مرورگر به کلید ورود تبدیل می‌شود و به سرور نمی‌رسد."
-      footer={
-        <nav style={{ "text-align": "center", "font-size": "0.9rem" }}>
-          <a
-            href="/today"
-            onClick={(event) => {
-              event.preventDefault()
-              navigate(auth.householdId() === undefined ? "/household" : "/today")
-            }}
-            style={{ color: tokens.color.brand, "text-decoration": "none" }}
-          >
-            بازگشت
-          </a>
-        </nav>
-      }
+    <div
+      class="settings-root"
+      dir="rtl"
+      lang="fa"
+      style={{ "min-height": "100dvh", background: tokens.color.canvas, color: tokens.color.ink }}
     >
+      <AppHeader active="settings" />
+      <main class="settings-main">
+        <header class="settings-heading">
+          <h1>تنظیمات</h1>
+          <p>گذرواژه فقط در همین مرورگر به کلید ورود تبدیل می‌شود و به سرور نمی‌رسد.</p>
+        </header>
       <section
+        class="settings-card"
         aria-labelledby="settings-display-title"
-        style={{
-          display: "grid",
-          gap: "14px",
-          padding: tokens.space.md,
-          border: `1px solid ${tokens.color.line}`,
-          "border-radius": tokens.radius.md,
-          background: "#fbfcff"
-        }}
+        style={{ display: "grid", gap: "14px" }}
       >
         <header style={{ display: "grid", gap: "4px" }}>
           <h2 id="settings-display-title" style={{ margin: 0, "font-size": "1.05rem" }}>
@@ -253,9 +239,7 @@ function SettingsPage() {
               onInput={(event) => setTimeZone(event.currentTarget.value)}
             />
             <datalist id="settings-timezone-options">
-              {TIME_ZONE_SUGGESTIONS.map((zone) => (
-                <option value={zone} />
-              ))}
+              <For each={TIME_ZONE_SUGGESTIONS}>{(zone) => <option value={zone} />}</For>
             </datalist>
           </Field>
 
@@ -269,9 +253,9 @@ function SettingsPage() {
                 setWeekStart(event.currentTarget.value as WeekStart)
               }
             >
-              {WEEK_START_OPTIONS.map((option) => (
-                <option value={option.value}>{option.label}</option>
-              ))}
+              <For each={WEEK_START_OPTIONS}>
+                {(option) => <option value={option.value}>{option.label}</option>}
+              </For>
             </Select>
           </Field>
 
@@ -283,9 +267,9 @@ function SettingsPage() {
               disabled={preferences.saving()}
               onChange={(event) => setDigits(event.currentTarget.value as Digits)}
             >
-              {DIGITS_OPTIONS.map((option) => (
-                <option value={option.value}>{option.label}</option>
-              ))}
+              <For each={DIGITS_OPTIONS}>
+                {(option) => <option value={option.value}>{option.label}</option>}
+              </For>
             </Select>
           </Field>
 
@@ -309,7 +293,7 @@ function SettingsPage() {
         </form>
       </section>
 
-      <form onSubmit={submit} style={{ display: "grid", gap: "14px" }}>
+      <form class="settings-card" onSubmit={submit} style={{ display: "grid", gap: "14px" }}>
         <h2 style={{ margin: 0, "font-size": "1.05rem" }}>گذرواژه</h2>
 
         <Field label="گذرواژه‌ی فعلی" for="settings-current">
@@ -361,6 +345,7 @@ function SettingsPage() {
       </form>
 
       <PushHealthPanel />
-    </AuthCard>
+      </main>
+    </div>
   )
 }

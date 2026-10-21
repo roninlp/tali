@@ -14,12 +14,12 @@ export const HABITS_ROOT = {
   "min-height": "100dvh",
   "font-family": tokens.font.sans,
   color: tokens.color.ink,
-  background: "#f7f9fd",
-  "overflow-x": "hidden"
+  background: tokens.color.canvas,
+  "overflow-x": "clip"
 } as const
 
 export const HABITS_MAIN = {
-  padding: "12px 12px 24px",
+  padding: "clamp(16px, 3vw, 28px) 16px 32px",
   display: "grid",
   gap: "10px",
   width: "100%",
@@ -31,7 +31,7 @@ export const HABITS_MAIN = {
 
 const COMMON_CSS = `
 .habits-root :focus-visible, .habit-lane :focus-visible { outline: 2px solid ${tokens.color.brand}; outline-offset: 2px; }
-.habit-tap { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; min-width: 44px; padding: 4px 14px; border-radius: 999px; border: 1px solid ${tokens.color.line}; background: #f7f9fd; color: ${tokens.color.ink}; font-family: ${tokens.font.sans}; font-size: 0.84rem; cursor: pointer; }
+.habit-tap { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; min-width: 44px; padding: 4px 14px; border-radius: 999px; border: 1px solid ${tokens.color.line}; background: ${tokens.color.surfaceMuted}; color: ${tokens.color.ink}; font-family: ${tokens.font.sans}; font-size: 0.84rem; cursor: pointer; }
 .habit-tap:disabled { opacity: 0.55; cursor: not-allowed; }
 .habit-tap[data-status="done"] { border-color: #2e9d57; background: #eaf7ee; color: #1e6b3a; }
 .habit-tap[data-status="partial"] { border-color: #d9822b; background: #fff4e6; color: #8a5a12; }
@@ -65,7 +65,7 @@ const COMMON_CSS = `
 
 const SCREEN_CSS = `
 .habits-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-.habits-head h1 { margin: 0; font-size: 1.22rem; line-height: 1.4; }
+.habits-head h1 { margin: 0; font-size: 1.35rem; line-height: 1.4; letter-spacing: -0.02em; }
 .habits-head p { margin: 0; color: ${tokens.color.inkSoft}; font-size: 0.78rem; line-height: 1.8; }
 .habits-source { color: #8a5a12; font-size: 0.72rem; }
 .habits-form { background: ${tokens.color.surface}; border: 1px solid ${tokens.color.line}; border-radius: ${tokens.radius.lg}; padding: 10px; display: grid; gap: 10px; min-width: 0; }
@@ -118,7 +118,7 @@ const SCREEN_CSS = `
 .habits-heat-key { display: inline-flex; align-items: center; gap: 4px; }
 .habits-heat-dot { inline-size: 10px; block-size: 10px; border-radius: 3px; border: 1px solid ${tokens.color.line}; }
 .habits-heat-hint { margin: 0; color: ${tokens.color.inkSoft}; font-size: 0.66rem; line-height: 1.7; }
-.habits-toast { position: fixed; inset-block-end: 14px; inset-inline: 12px; margin: 0 auto; max-width: 420px; background: #1c2333; color: #fff; border-radius: 999px; padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; z-index: 20; font-size: 0.82rem; }
+.habits-toast { position: fixed; inset-block-end: 14px; inset-inline: 12px; margin: 0 auto; max-width: 420px; background: ${tokens.color.ink}; color: #fff; border-radius: 999px; padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; z-index: 20; font-size: 0.82rem; }
 .habits-toast button { min-height: 34px; padding: 2px 12px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.5); background: transparent; color: #fff; font-family: ${tokens.font.sans}; font-size: 0.8rem; cursor: pointer; }
 .habits-sr { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
 `

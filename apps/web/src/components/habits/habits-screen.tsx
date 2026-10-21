@@ -8,6 +8,7 @@ import {
   type HabitFrequency,
   type LocalDate
 } from "@tali/domain"
+import { tokens } from "@tali/ui"
 import { useLocalStore } from "../../lib/local-store"
 import { usePreferences } from "../../lib/preferences"
 import { useAuth } from "../../lib/auth"
@@ -80,7 +81,7 @@ export function HabitsScreen() {
   const [days, setDays] = createSignal<ReadonlyArray<number>>([6, 1, 3])
   const [times, setTimes] = createSignal(3)
   const [icon, setIcon] = createSignal<string>("🌱")
-  const [color, setColor] = createSignal<string>("#2f5fe0")
+  const [color, setColor] = createSignal<string>(tokens.color.brand)
   const [formBusy, setFormBusy] = createSignal(false)
   const [formError, setFormError] = createSignal<string>()
 
@@ -182,7 +183,7 @@ export function HabitsScreen() {
     setDays([6, 1, 3])
     setTimes(3)
     setIcon("🌱")
-    setColor("#2f5fe0")
+    setColor(tokens.color.brand)
     setFormError(undefined)
   }
 
@@ -195,7 +196,7 @@ export function HabitsScreen() {
     if (habit.frequency._tag === "weekdays") setDays([...habit.frequency.days])
     if (habit.frequency._tag === "weekly") setTimes(habit.frequency.times)
     setIcon(habit.icon ?? "🌱")
-    setColor(habit.color ?? "#2f5fe0")
+    setColor(habit.color ?? tokens.color.brand)
     setFormError(undefined)
     titleRef?.focus()
   }
@@ -566,7 +567,7 @@ export function HabitsScreen() {
               return (
                 <li
                   class="habit-card"
-                  style={{ "border-inline-start-color": habit.color ?? "#2f5fe0" }}
+                  style={{ "border-inline-start-color": habit.color ?? tokens.color.brand }}
                 >
                   <div class="habit-card-head">
                     <span class="habit-mark" aria-hidden="true">

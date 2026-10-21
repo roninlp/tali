@@ -20,7 +20,10 @@ export function Button(props: ButtonProps) {
       {...rest}
       style={{
         "font-family": tokens.font.sans,
+        "font-size": "0.9rem",
+        "font-weight": 600,
         "border-radius": tokens.radius.md,
+        "min-height": "44px",
         "padding-block": tokens.space.sm,
         "padding-inline-start": tokens.logical.ps.md,
         "padding-inline-end": tokens.logical.pe.md,

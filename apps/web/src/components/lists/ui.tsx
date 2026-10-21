@@ -15,16 +15,16 @@ export const LISTS_ROOT = {
   "min-height": "100dvh",
   "font-family": tokens.font.sans,
   color: tokens.color.ink,
-  background: "#f7f9fd",
-  "overflow-x": "hidden"
+  background: tokens.color.canvas,
+  "overflow-x": "clip"
 } as const
 
 export const listsScreenStyle = {
-  padding: tokens.space.lg,
+  padding: "clamp(16px, 3vw, 32px) 16px 32px",
   display: "grid",
   gap: tokens.space.md,
   width: "100%",
-  "max-width": "920px",
+  "max-width": "960px",
   "box-sizing": "border-box",
   "min-width": 0,
   margin: "0 auto"
@@ -81,7 +81,7 @@ export const listsDangerButtonStyle: JSX.CSSProperties = {
 }
 
 export const COLOR_CHOICES = [
-  "#2f5fe0",
+  tokens.color.brand,
   "#0f9d8f",
   "#b45309",
   "#9f1239",

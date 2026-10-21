@@ -39,21 +39,13 @@ const NAV: ReadonlyArray<{ section: AppSection; href: string; label: string }> =
   { section: "settings", href: "/settings", label: "تنظیمات" }
 ]
 
-export function AppHeader(props: { active: AppSection; compact?: boolean }) {
+export function AppHeader(props: { active: AppSection }) {
   const auth = useAuth()
   const local = useLocalStore()
   const navigate = useNavigate()
   const [signOutBusy, setSignOutBusy] = createSignal(false)
   const [signOutError, setSignOutError] = createSignal<string>()
   const [noteBusy, setNoteBusy] = createSignal(false)
-  const compact = () => props.compact === true
-  const compactButton = () => ({
-    "padding-block": "4px",
-    "padding-inline-start": "10px",
-    "padding-inline-end": "10px",
-    "font-size": "0.8rem"
-  })
-
   const newNote = async () => {
     if (noteBusy()) return
     setNoteBusy(true)
@@ -113,96 +105,74 @@ export function AppHeader(props: { active: AppSection; compact?: boolean }) {
 
   return (
     <header
+      class="tali-app-header"
       style={{
         display: "grid",
-        gap: compact() ? "4px" : tokens.space.sm,
-        padding: compact() ? "8px 12px" : `${tokens.space.md} ${tokens.space.lg}`,
-        background: tokens.color.surface,
-        "border-bottom": `1px solid ${tokens.color.line}`
+        padding: "10px clamp(14px, 3vw, 24px)"
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          "align-items": "center",
-          "justify-content": "space-between",
-          gap: compact() ? "8px" : tokens.space.md,
-          "flex-wrap": "wrap"
-        }}
-      >
-        <div style={{ display: "grid", gap: "2px" }}>
-          <strong style={{ "font-size": compact() ? "1rem" : "1.1rem", color: tokens.color.brand }}>
-            تالی
-          </strong>
-          <Show when={auth.session()?.user.displayName}>
-            {(displayName) => (
-              <span
-                style={{
-                  "font-size": compact() ? "0.72rem" : "0.85rem",
-                  color: tokens.color.inkSoft
-                }}
-              >
-                {displayName()}
-              </span>
-            )}
-          </Show>
+      <div class="tali-app-header-inner">
+        <div class="tali-app-header-top">
+          <div class="tali-app-brand">
+            <strong style={{ "font-size": "1.08rem", color: tokens.color.brand }}>
+              تالی
+            </strong>
+            <Show when={auth.session()?.user.displayName}>
+              {(displayName) => <span class="tali-app-user">{displayName()}</span>}
+            </Show>
+          </div>
+          <div class="tali-app-header-actions">
+            <SyncStatus />
+            <Button
+              type="button"
+              disabled={noteBusy()}
+              onClick={() => void newNote()}
+              aria-keyshortcuts="Alt+N"
+              title="یادداشت تازه (Alt+N)"
+            >
+              {noteBusy() ? "…" : "یادداشت تازه"}
+            </Button>
+            <Button
+              variant="ghost"
+              type="button"
+              disabled={signOutBusy()}
+              onClick={() => void signOut()}
+            >
+              {signOutBusy() ? "در حال خروج…" : "خروج"}
+            </Button>
+          </div>
         </div>
-        <div style={{ display: "flex", "align-items": "center", gap: compact() ? "4px" : tokens.space.sm }}>
-          <SyncStatus compact={compact()} />
-          <Button
-            type="button"
-            disabled={noteBusy()}
-            onClick={() => void newNote()}
-            aria-keyshortcuts="Alt+N"
-            title="یادداشت تازه (Alt+N)"
-            style={compact() ? compactButton() : undefined}
-          >
-            {noteBusy() ? "…" : "یادداشت تازه"}
-          </Button>
-          <Button
-            variant="ghost"
-            type="button"
-            disabled={signOutBusy()}
-            onClick={() => void signOut()}
-            style={compact() ? compactButton() : undefined}
-          >
-            {signOutBusy() ? "در حال خروج…" : "خروج"}
-          </Button>
-        </div>
+
+        <nav class="tali-app-nav" aria-label="بخش‌های تالی">
+          <For each={NAV}>
+            {(item) => {
+              const active = () => item.section === props.active
+              const style = (): JSX.CSSProperties => ({
+                padding: "5px 12px",
+                "border-radius": "999px",
+                "font-family": tokens.font.sans,
+                "font-size": "0.82rem",
+                "text-decoration": "none",
+                color: active() ? "#fff" : tokens.color.inkSoft,
+                background: active() ? tokens.color.brand : "transparent",
+                border: `1px solid ${active() ? tokens.color.brand : tokens.color.line}`
+              })
+              return (
+                <a
+                  href={item.href}
+                  aria-current={active() ? "page" : undefined}
+                  style={style()}
+                  onClick={(event) => go(event, item.href)}
+                >
+                  {item.label}
+                </a>
+              )
+            }}
+          </For>
+        </nav>
+
+        <FormError message={signOutError()} />
       </div>
-
-      <nav
-        aria-label="بخش‌های تالی"
-        style={{ display: "flex", gap: compact() ? "2px" : "4px", "flex-wrap": "wrap" }}
-      >
-        <For each={NAV}>
-          {(item) => {
-            const active = () => item.section === props.active
-            const style = (): JSX.CSSProperties => ({
-              padding: compact() ? "1px 5px" : "4px 10px",
-              "border-radius": "999px",
-              "font-family": tokens.font.sans,
-              "font-size": compact() ? "0.72rem" : "0.85rem",
-              "text-decoration": "none",
-              color: active() ? "#fff" : tokens.color.inkSoft,
-              background: active() ? tokens.color.brand : "transparent",
-              border: `1px solid ${active() ? tokens.color.brand : tokens.color.line}`
-            })
-            return (
-              <a
-                href={item.href}
-                aria-current={active() ? "page" : undefined}
-                style={style()}
-                onClick={(event) => go(event, item.href)}
-              >
-                {item.label}
-              </a>
-            )
-          }}
-        </For>
-      </nav>
-
-      <FormError message={signOutError()} />
     </header>
   )
 }

@@ -15,8 +15,8 @@ export const TODAY_ROOT: JSX.CSSProperties = {
   "min-height": "100dvh",
   "font-family": tokens.font.sans,
   color: tokens.color.ink,
-  background: "#f7f9fd",
-  "overflow-x": "hidden"
+  background: tokens.color.canvas,
+  "overflow-x": "clip"
 }
 
 export const TODAY_MAIN: JSX.CSSProperties = {
@@ -37,7 +37,7 @@ export function TodayStyles() {
 const TODAY_CSS = `
 .today-root :focus-visible { outline: 2px solid ${tokens.color.brand}; outline-offset: 2px; }
 .today-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-.today-head h1 { margin: 0; font-size: 1.22rem; line-height: 1.4; }
+.today-head h1 { margin: 0; font-size: 1.35rem; line-height: 1.4; letter-spacing: -0.02em; }
 .today-head-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-inline-start: auto; }
 .today-date { margin: 0; color: ${tokens.color.inkSoft}; font-size: 0.8rem; }
 .today-source { margin: 0; color: #8a5a12; font-size: 0.72rem; line-height: 1.6; }
@@ -61,7 +61,7 @@ const TODAY_CSS = `
 .today-order-move:hover:not(:disabled) { border-color: ${tokens.color.brand}; color: ${tokens.color.brand}; }
 .today-order-move:disabled { opacity: 0.4; cursor: not-allowed; }
 .today-order-status { margin: 4px 0 6px; color: ${tokens.color.inkSoft}; font-size: 0.72rem; }
-.today-section { min-width: 0; background: ${tokens.color.surface}; border: 1px solid ${tokens.color.line}; border-radius: ${tokens.radius.lg}; padding: 8px 10px; display: grid; gap: 6px; }
+.today-section { min-width: 0; background: ${tokens.color.surface}; border: 1px solid ${tokens.color.line}; border-radius: ${tokens.radius.lg}; padding: 10px 12px; display: grid; gap: 8px; }
 .today-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .today-section-head h2 { margin: 0; font-size: 0.94rem; line-height: 1.5; }
 .today-count { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; padding: 0 7px; border-radius: 999px; background: #eef2fa; color: ${tokens.color.inkSoft}; font-size: 0.72rem; line-height: 1.8; }

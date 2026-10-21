@@ -558,7 +558,7 @@ function TodayPage() {
   return (
     <div class="today-root" dir="rtl" lang="fa" style={TODAY_ROOT}>
       <TodayStyles />
-      <AppHeader active="today" compact />
+      <AppHeader active="today" />
 
       <main style={TODAY_MAIN}>
         <header class="today-head">

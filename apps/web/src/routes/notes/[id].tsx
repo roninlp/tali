@@ -496,20 +496,21 @@ function NoteEditor() {
         "min-height": "100dvh",
         "font-family": tokens.font.sans,
         color: tokens.color.ink,
-        background: "#f7f9fd",
-        "overflow-x": "hidden"
+        background: tokens.color.canvas,
+        "overflow-x": "clip"
       }}
     >
       <AppHeader active="notes" />
 
       <main
         style={{
-          padding: tokens.space.lg,
+          padding: "clamp(16px, 3vw, 28px) 16px 32px",
           display: "grid",
           gap: tokens.space.md,
           "max-width": "720px",
           "box-sizing": "border-box",
-          width: "100%"
+          width: "100%",
+          margin: "0 auto"
         }}
       >
         <header

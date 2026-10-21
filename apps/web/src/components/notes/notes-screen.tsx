@@ -377,24 +377,25 @@ export function NotesScreen() {
         "min-height": "100dvh",
         "font-family": tokens.font.sans,
         color: tokens.color.ink,
-        background: "#f7f9fd",
-        "overflow-x": "hidden"
+        background: tokens.color.canvas,
+        "overflow-x": "clip"
       }}
     >
       <AppHeader active="notes" />
 
       <main
         style={{
-          padding: tokens.space.lg,
           display: "grid",
           gap: tokens.space.md,
           "max-width": "720px",
           "box-sizing": "border-box",
-          width: "100%"
+          width: "100%",
+          margin: "0 auto",
+          padding: "clamp(16px, 3vw, 28px) 16px 32px"
         }}
       >
         <header style={{ display: "flex", "align-items": "center", "justify-content": "space-between", gap: tokens.space.sm, "flex-wrap": "wrap" }}>
-          <h1 style={{ margin: 0, "font-size": "1.5rem" }}>یادداشت‌ها</h1>
+          <h1 style={{ margin: 0, "font-size": "1.35rem", "letter-spacing": "-0.02em" }}>یادداشت‌ها</h1>
           <div style={{ display: "flex", gap: tokens.space.sm, "flex-wrap": "wrap" }}>
             <Button type="button" onClick={() => void newNote()} disabled={busy() || local.store() === undefined}>
               یادداشت تازه

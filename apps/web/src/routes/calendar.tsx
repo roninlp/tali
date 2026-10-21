@@ -16,7 +16,7 @@ export default function CalendarRoute() {
       <Guard access="household">
         <div class="calendar-root" dir="rtl" lang="fa" style={CALENDAR_ROOT}>
           <CalendarStyles />
-          <AppHeader active="calendar" compact />
+          <AppHeader active="calendar" />
           <CalendarScreen />
         </div>
       </Guard>
