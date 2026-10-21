@@ -65,6 +65,33 @@ export const DashboardSectionOrder = Schema.Array(DashboardSection).check(
 )
 export type DashboardSectionOrder = Schema.Schema.Type<typeof DashboardSectionOrder>
 
+/**
+ * Defensive display order for consumers reading a possibly stale cache.
+ *
+ * A persisted order is validated as a full permutation, but a browser can hold
+ * an older cached value across a release that adds a section. Drop unknown and
+ * duplicate ids, then append any missing known section in product order — so
+ * `Today` always renders every section exactly once instead of silently
+ * hiding a new one.
+ */
+export const normalizeDashboardSectionOrder = (
+  order: ReadonlyArray<string> | undefined
+): ReadonlyArray<DashboardSection> => {
+  const seen = new Set<DashboardSection>()
+  const result: Array<DashboardSection> = []
+  for (const candidate of order ?? []) {
+    if (!(DASHBOARD_SECTIONS as ReadonlyArray<string>).includes(candidate)) continue
+    const section = candidate as DashboardSection
+    if (seen.has(section)) continue
+    seen.add(section)
+    result.push(section)
+  }
+  for (const section of DASHBOARD_SECTIONS) {
+    if (!seen.has(section)) result.push(section)
+  }
+  return result
+}
+
 export class UserPreferences extends Model.Class<UserPreferences>("UserPreferences")({
   userId: UserId,
   /** IANA zone used for "today", week boundaries and all-day dates. */

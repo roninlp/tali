@@ -212,6 +212,7 @@ export function TaskCard(props: {
 
   return (
     <li
+      id={`task-${props.task.id}`}
       class="tasks-card"
       data-overdue={overdue() ? "true" : "false"}
       data-dragging={props.dragging ? "true" : "false"}

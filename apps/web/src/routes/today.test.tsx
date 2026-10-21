@@ -1,21 +1,28 @@
 import "fake-indexeddb/auto"
 import { flush } from "solid-js"
-import { render, waitFor } from "@solidjs/testing-library"
+import { fireEvent, render, waitFor } from "@solidjs/testing-library"
 import { createRouter } from "@solidjs/router"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { defaultPreferences, uuidV7, type SessionContext } from "@tali/domain"
+import {
+  defaultPreferences,
+  taskBucketBounds,
+  uuidV7,
+  type SessionContext,
+  type UserPreferences
+} from "@tali/domain"
 import { AuthProvider } from "../lib/auth"
 import { PreferencesProvider } from "../lib/preferences"
 import { LocalStoreProvider } from "../lib/local-store"
 import { openLocalStore } from "../lib/local-store/store"
+import type { LocalStore } from "../lib/local-store/types"
 import { cacheSession } from "../lib/session-cache"
-import { createListItemInMirror, createListInMirror } from "../lib/lists/mirror"
+import { createTaskInMirror } from "../lib/tasks/model"
 import TodayRoute from "./today"
 
 /**
- * The dashboard quick list owns the legacy scaffold rows only. Ticket #39 puts
- * every `/lists` item in the same mirror table, so without the `listId` scope
- * the whole shopping list would appear on Today.
+ * Ticket #42 at the client seam: the dashboard prefers the `GET /today` read
+ * model, falls back to mirror aggregation when the API is unreachable, renders
+ * the #35 section order, and keeps every inline action local-first.
  */
 
 const newSession = (): SessionContext => ({
@@ -30,26 +37,148 @@ const newSession = (): SessionContext => ({
   householdId: uuidV7() as NonNullable<SessionContext["householdId"]>
 })
 
-const json = (status: number, body: unknown): Response =>
+let session: SessionContext = newSession()
+let preferences: UserPreferences
+
+const bounds = (): ReturnType<typeof taskBucketBounds> =>
+  taskBucketBounds("UTC", new Date().toISOString())
+
+const json = (status: number, body: unknown, headers: Record<string, string> = {}): Response =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json" }
+    headers: { "content-type": "application/json", ...headers }
   })
 
-let session: SessionContext = newSession()
+interface TaskFixture {
+  readonly id: string
+  readonly title: string
+}
 
-const stubNetwork = (): void => {
-  globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+const taskFixture = (title: string): TaskFixture & Record<string, unknown> => {
+  const now = new Date().toISOString()
+  return {
+    id: uuidV7(),
+    title,
+    type: "task",
+    description: null,
+    ownerId: session.user.id,
+    householdId: session.householdId!,
+    visibility: "shared",
+    color: null,
+    status: "todo",
+    priority: "medium",
+    dueAt: null,
+    dueDate: bounds().today,
+    timeZone: "UTC",
+    projectId: null,
+    tagIds: [],
+    recurrence: null,
+    recurrenceMode: null,
+    startedAt: null,
+    completedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    version: 1,
+    deletedAt: null
+  }
+}
+
+const noteFixture = (title: string) => {
+  const now = new Date().toISOString()
+  return {
+    id: uuidV7(),
+    title,
+    type: "note",
+    body: null,
+    plainText: "متن یادداشت",
+    ownerId: session.user.id,
+    householdId: session.householdId!,
+    visibility: "shared",
+    color: null,
+    isPinned: true,
+    isArchived: false,
+    tagIds: [],
+    createdAt: now,
+    updatedAt: now,
+    version: 1,
+    deletedAt: null
+  }
+}
+
+interface ReadModelFixture {
+  readonly today: string
+  readonly tomorrow: string
+  readonly timeZone: string
+  readonly sectionOrder: ReadonlyArray<string>
+  readonly tasks: ReadonlyArray<unknown>
+  readonly notes: ReadonlyArray<unknown>
+  readonly counts: Record<string, number>
+  readonly empty: Record<string, boolean>
+}
+
+const readModel = (input: {
+  tasks?: ReadonlyArray<unknown>
+  notes?: ReadonlyArray<unknown>
+} = {}): ReadModelFixture => {
+  const tasks = input.tasks ?? []
+  const notes = input.notes ?? []
+  return {
+    today: bounds().today,
+    tomorrow: bounds().tomorrow,
+    timeZone: "UTC",
+    sectionOrder: ["tasks", "events", "reminders", "habits", "notes"],
+    tasks,
+    notes,
+    counts: {
+      tasks: tasks.length,
+      overdue: 0,
+      events: 0,
+      reminders: 0,
+      habits: 0,
+      notes: notes.length
+    },
+    empty: {
+      tasks: tasks.length === 0,
+      events: true,
+      reminders: true,
+      habits: true,
+      notes: notes.length === 0
+    }
+  }
+}
+
+interface NetworkPlan {
+  readonly today?: ReadModelFixture | "fail"
+  readonly etag?: string
+  readonly sectionOrder?: ReadonlyArray<string>
+}
+
+let plan: NetworkPlan
+
+const stubNetwork = (next: NetworkPlan): void => {
+  plan = next
+  globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     if (url.endsWith("/auth/me")) return json(200, session)
     if (url.endsWith("/preferences")) {
       return json(200, {
-        preferences: defaultPreferences(session.user.id, {
-          timeZone: "UTC",
-          weekStart: "saturday",
-          digits: "persian"
-        })
+        preferences: {
+          ...preferences,
+          dashboardSectionOrder:
+            plan.sectionOrder ?? preferences.dashboardSectionOrder
+        }
       })
+    }
+    if (url.endsWith("/today")) {
+      if (plan.today === "fail" || plan.today === undefined) {
+        throw new TypeError("network down")
+      }
+      const etag = plan.etag ?? '"today-v1"'
+      const headers = init?.headers as Record<string, string> | undefined
+      if (headers?.["if-none-match"] === etag) {
+        return new Response(null, { status: 304, headers: { etag } })
+      }
+      return json(200, plan.today, { etag, "cache-control": "private, no-cache" })
     }
     throw new Error(`unexpected network call: ${url}`)
   }) as unknown as typeof fetch
@@ -78,35 +207,193 @@ const mountToday = () => {
   ))
 }
 
-describe("Today quick list", () => {
+const withStore = async (run: (store: LocalStore) => Promise<void>): Promise<void> => {
+  const store = await openLocalStore(session.user.id)
+  try {
+    await run(store)
+  } finally {
+    store.close()
+  }
+}
+
+const seedOfflineTask = async (
+  title: string,
+  dueDate: string | null
+): Promise<string> => {
+  let id = ""
+  await withStore(async (store) => {
+    id = await createTaskInMirror(store, {
+      title,
+      dueDate,
+      priority: "medium",
+      projectId: null,
+      tagIds: [],
+      timeZone: "UTC"
+    })
+  })
+  return id
+}
+
+const seedPinnedNote = async (title: string): Promise<string> => {
+  const id = uuidV7()
+  const now = new Date().toISOString()
+  await withStore(async (store) => {
+    await store.writeLocal({
+      entityType: "note",
+      entityId: id,
+      op: "upsert",
+      patch: {
+        id,
+        type: "note",
+        title,
+        body: null,
+        plainText: "متن یادداشت",
+        isPinned: true,
+        isArchived: false,
+        tagIds: [],
+        visibility: "shared",
+        createdAt: now
+      },
+      now
+    })
+  })
+  return id
+}
+
+const sectionsInOrder = (container: HTMLElement): ReadonlyArray<string> =>
+  [...container.querySelectorAll("[data-section]")].map(
+    (section) => section.getAttribute("data-section") ?? ""
+  )
+
+describe("Today dashboard", () => {
   beforeEach(() => {
     localStorage.clear()
     session = newSession()
     cacheSession(session)
-    stubNetwork()
+    preferences = defaultPreferences(session.user.id, {
+      timeZone: "UTC",
+      weekStart: "saturday",
+      digits: "persian"
+    })
+    stubNetwork({})
   })
 
-  it("shows scaffold quick items and hides items that belong to a list", async () => {
-    const now = new Date().toISOString()
-    const store = await openLocalStore(session.user.id)
-    try {
-      const quickId = uuidV7()
-      await store.writeLocal({
-        entityType: "listItem",
-        entityId: quickId,
-        op: "upsert",
-        patch: { id: quickId, title: "کار خانه", checked: false, sortOrder: 0, createdAt: now },
-        now
-      })
-      const listId = await createListInMirror(store, { title: "خرید" })
-      await createListItemInMirror(store, listId, { name: "شیر", order: 1 })
-    } finally {
-      store.close()
-    }
+  it("renders the server read model in the saved section order", async () => {
+    const task = taskFixture("کار سرور")
+    const note = noteFixture("یادداشت سرور")
+    stubNetwork({
+      today: readModel({ tasks: [task], notes: [note] }),
+      sectionOrder: ["notes", "tasks", "events", "reminders", "habits"]
+    })
 
     const screen = mountToday()
-    await eventually(() => expect(screen.getByText("کار خانه")).toBeTruthy())
-    expect(screen.queryByText("شیر")).toBeNull()
+    await eventually(() => {
+      expect(screen.getByText("کار سرور")).toBeTruthy()
+      expect(screen.getByText("یادداشت سرور")).toBeTruthy()
+      expect(sectionsInOrder(screen.container)).toEqual([
+        "notes",
+        "tasks",
+        "events",
+        "reminders",
+        "habits"
+      ])
+    })
+    screen.unmount()
+  })
+
+  it("falls back to mirror aggregation when the API is unreachable", async () => {
+    await seedOfflineTask("کار آفلاین", bounds().today)
+    await seedOfflineTask("کار فردا", bounds().tomorrow)
+    await seedPinnedNote("یادداشت آفلاین")
+    // Simulate rows that have already synced: the fallback path is about the
+    // API being unreachable, not about an outbox that is still draining.
+    await withStore(async (store) => {
+      const queued = await store.pending()
+      await store.ack(queued.map((entry) => entry.clientMutationId))
+    })
+    stubNetwork({ today: "fail" })
+
+    const screen = mountToday()
+    await eventually(() => {
+      expect(screen.getByText("کار آفلاین")).toBeTruthy()
+      expect(screen.getByText("یادداشت آفلاین")).toBeTruthy()
+      expect(screen.queryByText("کار فردا")).toBeNull()
+      expect(screen.getByText(/آفلاین — نمایش از حافظهٔ محلی/)).toBeTruthy()
+    })
+    screen.unmount()
+  })
+
+  it("completes, moves to tomorrow, and opens rows without leaving Today", async () => {
+    const first = taskFixture("خرید نان")
+    const second = taskFixture("تماس با مادر")
+    const note = noteFixture("ایده‌های هفته")
+    stubNetwork({ today: readModel({ tasks: [first, second], notes: [note] }) })
+
+    const screen = mountToday()
+    await eventually(() => {
+      expect(screen.getByText("خرید نان")).toBeTruthy()
+      const input = screen.getByLabelText("کار تازه برای امروز") as HTMLInputElement
+      expect(input.disabled).toBe(false)
+    })
+
+    expect(
+      screen.getByRole("link", { name: "تماس با مادر" }).getAttribute("href")
+    ).toBe(`/tasks#task-${second.id}`)
+    expect(
+      screen.getByRole("link", { name: "باز کردن ایده‌های هفته" }).getAttribute("href")
+    ).toBe(`/notes/${note.id}`)
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "انجام خرید نان" }))
+    await eventually(() => expect(screen.queryByText("خرید نان")).toBeNull())
+    await withStore(async (store) => {
+      const row = await store.get("task", first.id)
+      expect(row?.data.status).toBe("done")
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "فردا کردن تماس با مادر" }))
+    await eventually(() => expect(screen.queryByText("تماس با مادر")).toBeNull())
+    await withStore(async (store) => {
+      const row = await store.get("task", second.id)
+      expect(row?.data.dueDate).toBe(bounds().tomorrow)
+    })
+
+    screen.unmount()
+  })
+
+  it("quick-adds a task due today as a local write", async () => {
+    stubNetwork({ today: readModel() })
+
+    const screen = mountToday()
+    await eventually(() => {
+      const field = screen.getByLabelText("کار تازه برای امروز") as HTMLInputElement
+      expect(field.disabled).toBe(false)
+    })
+    const input = screen.getByLabelText("کار تازه برای امروز") as HTMLInputElement
+
+    fireEvent.input(input, { target: { value: "آب خوردن" } })
+    flush()
+    fireEvent.click(screen.getByRole("button", { name: "افزودن" }))
+
+    await eventually(() => expect(screen.getByText("آب خوردن")).toBeTruthy())
+    await withStore(async (store) => {
+      const tasks = await store.list("task")
+      const created = tasks.find((task) => task.data.title === "آب خوردن")
+      expect(created).toBeTruthy()
+      expect(created?.data.dueDate).toBe(bounds().today)
+    })
+    expect((input as HTMLInputElement).value).toBe("")
+    screen.unmount()
+  })
+
+  it("shows a meaningful empty state with a suggested first action", async () => {
+    stubNetwork({ today: readModel() })
+
+    const screen = mountToday()
+    await eventually(() => {
+      expect(screen.getByText(/امروز خالی است/)).toBeTruthy()
+      expect(screen.getByRole("button", { name: /افزودن اولین کار/ })).toBeTruthy()
+      expect(screen.getByText(/یادداشتی پین نشده است/)).toBeTruthy()
+    })
     screen.unmount()
   })
 })

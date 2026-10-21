@@ -29,13 +29,20 @@ const NAV: ReadonlyArray<{ section: AppSection; href: string; label: string }> =
   { section: "settings", href: "/settings", label: "تنظیمات" }
 ]
 
-export function AppHeader(props: { active: AppSection }) {
+export function AppHeader(props: { active: AppSection; compact?: boolean }) {
   const auth = useAuth()
   const local = useLocalStore()
   const navigate = useNavigate()
   const [signOutBusy, setSignOutBusy] = createSignal(false)
   const [signOutError, setSignOutError] = createSignal<string>()
   const [noteBusy, setNoteBusy] = createSignal(false)
+  const compact = () => props.compact === true
+  const compactButton = () => ({
+    "padding-block": "4px",
+    "padding-inline-start": "10px",
+    "padding-inline-end": "10px",
+    "font-size": "0.8rem"
+  })
 
   const newNote = async () => {
     if (noteBusy()) return
@@ -98,8 +105,8 @@ export function AppHeader(props: { active: AppSection }) {
     <header
       style={{
         display: "grid",
-        gap: tokens.space.sm,
-        padding: `${tokens.space.md} ${tokens.space.lg}`,
+        gap: compact() ? "4px" : tokens.space.sm,
+        padding: compact() ? "8px 12px" : `${tokens.space.md} ${tokens.space.lg}`,
         background: tokens.color.surface,
         "border-bottom": `1px solid ${tokens.color.line}`
       }}
@@ -109,44 +116,63 @@ export function AppHeader(props: { active: AppSection }) {
           display: "flex",
           "align-items": "center",
           "justify-content": "space-between",
-          gap: tokens.space.md,
+          gap: compact() ? "8px" : tokens.space.md,
           "flex-wrap": "wrap"
         }}
       >
         <div style={{ display: "grid", gap: "2px" }}>
-          <strong style={{ "font-size": "1.1rem", color: tokens.color.brand }}>تالی</strong>
+          <strong style={{ "font-size": compact() ? "1rem" : "1.1rem", color: tokens.color.brand }}>
+            تالی
+          </strong>
           <Show when={auth.session()?.user.displayName}>
             {(displayName) => (
-              <span style={{ "font-size": "0.85rem", color: tokens.color.inkSoft }}>{displayName()}</span>
+              <span
+                style={{
+                  "font-size": compact() ? "0.72rem" : "0.85rem",
+                  color: tokens.color.inkSoft
+                }}
+              >
+                {displayName()}
+              </span>
             )}
           </Show>
         </div>
-        <div style={{ display: "flex", "align-items": "center", gap: tokens.space.sm }}>
-          <SyncStatus />
+        <div style={{ display: "flex", "align-items": "center", gap: compact() ? "4px" : tokens.space.sm }}>
+          <SyncStatus compact={compact()} />
           <Button
             type="button"
             disabled={noteBusy()}
             onClick={() => void newNote()}
             aria-keyshortcuts="Alt+N"
             title="یادداشت تازه (Alt+N)"
+            style={compact() ? compactButton() : undefined}
           >
             {noteBusy() ? "…" : "یادداشت تازه"}
           </Button>
-          <Button variant="ghost" type="button" disabled={signOutBusy()} onClick={() => void signOut()}>
+          <Button
+            variant="ghost"
+            type="button"
+            disabled={signOutBusy()}
+            onClick={() => void signOut()}
+            style={compact() ? compactButton() : undefined}
+          >
             {signOutBusy() ? "در حال خروج…" : "خروج"}
           </Button>
         </div>
       </div>
 
-      <nav aria-label="بخش‌های تالی" style={{ display: "flex", gap: "4px", "flex-wrap": "wrap" }}>
+      <nav
+        aria-label="بخش‌های تالی"
+        style={{ display: "flex", gap: compact() ? "2px" : "4px", "flex-wrap": "wrap" }}
+      >
         <For each={NAV}>
           {(item) => {
             const active = () => item.section === props.active
             const style = (): JSX.CSSProperties => ({
-              padding: "4px 10px",
+              padding: compact() ? "1px 5px" : "4px 10px",
               "border-radius": "999px",
               "font-family": tokens.font.sans,
-              "font-size": "0.85rem",
+              "font-size": compact() ? "0.72rem" : "0.85rem",
               "text-decoration": "none",
               color: active() ? "#fff" : tokens.color.inkSoft,
               background: active() ? tokens.color.brand : "transparent",

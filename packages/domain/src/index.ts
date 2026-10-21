@@ -8,6 +8,7 @@ export * from "./auth"
 export * from "./list-item"
 export * from "./push"
 export * from "./preferences"
+export * from "./today"
 export * from "./recurrence"
 export {
   ItemType,
