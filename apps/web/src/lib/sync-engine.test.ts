@@ -1,6 +1,14 @@
 import "fake-indexeddb/auto"
 import { describe, expect, it, vi } from "vitest"
-import { uuidV7, type SyncBootstrapResponse, type SyncPullResponse, type SyncPushEntry, type SyncPushResponse } from "@tali/domain"
+import {
+  type HabitEntry,
+  type HabitEntryLogInput,
+  type SyncBootstrapResponse,
+  type SyncPullResponse,
+  type SyncPushEntry,
+  type SyncPushResponse,
+  uuidV7
+} from "@tali/domain"
 import { openLocalStore } from "./local-store/store"
 import type { LocalStore } from "./local-store/types"
 import { createSyncEngine, SyncRejected, type SyncTransport } from "./sync-engine"
@@ -38,10 +46,12 @@ const transport = (parts: {
   readonly pull?: (cursor: number, limit: number) => Promise<SyncPullResponse>
   readonly bootstrap?: (offset: number, limit: number) => Promise<SyncBootstrapResponse>
   readonly push?: (entries: ReadonlyArray<SyncPushEntry>) => Promise<SyncPushResponse>
+  readonly logHabitEntry?: (input: HabitEntryLogInput) => Promise<HabitEntry>
 }): SyncTransport => ({
   pull: parts.pull ?? (async (cursor) => emptyPull(cursor)),
   bootstrap: parts.bootstrap ?? (async () => ({ items: [], nextOffset: 0, hasMore: false, cursor: 0 })),
-  push: parts.push ?? (async () => ({ results: [], cursor: 0 }))
+  push: parts.push ?? (async () => ({ results: [], cursor: 0 })),
+  ...(parts.logHabitEntry === undefined ? {} : { logHabitEntry: parts.logHabitEntry })
 })
 
 describe("client sync engine", () => {
@@ -517,6 +527,197 @@ describe("client sync engine", () => {
     expect((await store.list("listItem")).map((row) => row.data.title).sort()).toEqual(
       ["اول", "دوم"].sort()
     )
+    store.close()
+  })
+
+  it("revives a queued habit tap through the logging mutation when the push meets a tombstone (#64)", async () => {
+    const store = await open()
+    const habitId = uuidV7()
+    const entryId = uuidV7()
+    const now = "2026-10-20T09:30:00.000Z"
+    await store.writeLocal({
+      entityType: "habitEntry",
+      entityId: entryId,
+      op: "upsert",
+      patch: {
+        habitId,
+        localDate: "2026-10-20",
+        timeZone: "Asia/Tehran",
+        status: "done"
+      },
+      now
+    })
+
+    const revived: Array<HabitEntryLogInput> = []
+    const engine = createSyncEngine(
+      transport({
+        push: async (entries) => ({
+          // Tombstone-wins: the generic resolver refuses the offline tap.
+          results: [
+            {
+              _tag: "tombstone" as const,
+              clientMutationId: entries[0]!.clientMutationId,
+              entityType: "habitEntry" as const,
+              entityId: entryId,
+              version: 2,
+              seq: 5,
+              item: {
+                entityType: "habitEntry" as const,
+                entityId: entryId,
+                version: 2,
+                updatedAt: now,
+                deletedAt: now,
+                data: { habitId, localDate: "2026-10-20", status: "done" }
+              }
+            }
+          ],
+          cursor: 5
+        }),
+        logHabitEntry: async (input) => {
+          revived.push(input)
+          return {
+            id: entryId,
+            habitId,
+            ownerId: "user",
+            householdId: "household",
+            visibility: "shared",
+            localDate: "2026-10-20",
+            timeZone: "Asia/Tehran",
+            status: "done",
+            createdAt: now,
+            updatedAt: "2026-10-20T09:30:01.000Z",
+            version: 3,
+            deletedAt: null
+          } as HabitEntry
+        }
+      })
+    )
+
+    await engine.sync(store)
+
+    expect(revived).toHaveLength(1)
+    expect(revived[0]).toMatchObject({
+      habitId,
+      localDate: "2026-10-20",
+      status: "done",
+      clientMutationId: expect.any(String)
+    })
+    expect(await store.pending()).toHaveLength(0)
+    expect(await store.get("habitEntry", entryId)).toMatchObject({
+      version: 3,
+      deletedAt: null,
+      data: { status: "done" }
+    })
+    store.close()
+  })
+
+  it("keeps a tap queued when the revive path fails transiently (#64)", async () => {
+    const store = await open()
+    const habitId = uuidV7()
+    const entryId = uuidV7()
+    await store.writeLocal({
+      entityType: "habitEntry",
+      entityId: entryId,
+      op: "upsert",
+      patch: {
+        habitId,
+        localDate: "2026-10-20",
+        timeZone: "Asia/Tehran",
+        status: "done"
+      }
+    })
+
+    const engine = createSyncEngine(
+      transport({
+        push: async (entries) => ({
+          results: [
+            {
+              _tag: "tombstone" as const,
+              clientMutationId: entries[0]!.clientMutationId,
+              entityType: "habitEntry" as const,
+              entityId: entryId,
+              version: 2,
+              seq: 1
+            }
+          ],
+          cursor: 1
+        }),
+        logHabitEntry: async () => {
+          throw new Error("network")
+        }
+      })
+    )
+
+    await expect(engine.sync(store)).rejects.toThrow("network")
+    // Not acked: the next reconcile retries the revive.
+    expect(await store.pending()).toHaveLength(1)
+    store.close()
+  })
+
+  it("repairs a habit tap rejected for a unique day by adopting the server row (#64)", async () => {
+    const store = await open()
+    const habitId = uuidV7()
+    const localId = uuidV7()
+    const serverId = uuidV7()
+    const now = "2026-10-20T09:30:00.000Z"
+    await store.writeLocal({
+      entityType: "habitEntry",
+      entityId: localId,
+      op: "upsert",
+      patch: {
+        habitId,
+        localDate: "2026-10-20",
+        timeZone: "Asia/Tehran",
+        status: "partial"
+      },
+      now
+    })
+
+    const engine = createSyncEngine(
+      transport({
+        push: async (entries) => ({
+          results: [
+            {
+              _tag: "rejected" as const,
+              clientMutationId: entries[0]!.clientMutationId,
+              entityType: "habitEntry" as const,
+              entityId: localId,
+              code: "UniqueViolation",
+              message: "Insert conflicted with a row that is already live"
+            }
+          ],
+          cursor: 0
+        }),
+        logHabitEntry: async () =>
+          ({
+            id: serverId,
+            habitId,
+            ownerId: "user",
+            householdId: "household",
+            visibility: "shared",
+            localDate: "2026-10-20",
+            timeZone: "Asia/Tehran",
+            status: "partial",
+            createdAt: now,
+            updatedAt: "2026-10-20T09:30:01.000Z",
+            version: 2,
+            deletedAt: null
+          }) as HabitEntry
+      })
+    )
+
+    await engine.sync(store)
+
+    expect(await store.pending()).toHaveLength(0)
+    // Exactly one mirror row for the day: the local placeholder is dropped and
+    // the server's row is adopted.
+    const live = await store.list("habitEntry")
+    expect(live.map((row) => row.entityId)).toEqual([serverId])
+    expect(live[0]).toMatchObject({
+      version: 2,
+      deletedAt: null,
+      data: { status: "partial" }
+    })
     store.close()
   })
 })
