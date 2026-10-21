@@ -35,17 +35,30 @@ const TASK_COLUMNS =
   `id, type, title, description, owner_id AS ownerId, household_id AS householdId, ` +
   `visibility, status, priority, due_at AS dueAt, due_date AS dueDate, ` +
   `time_zone AS timeZone, project_id AS projectId, tag_ids AS tagIds, color, ` +
+  `recurrence, recurrence_mode AS recurrenceMode, ` +
   `started_at AS startedAt, completed_at AS completedAt, created_at AS createdAt, ` +
   `updated_at AS updatedAt, version, deleted_at AS deletedAt`
 
-interface TaskRow extends Omit<Task, "tagIds"> {
+interface TaskRow extends Omit<Task, "tagIds" | "recurrence"> {
   readonly tagIds: string
+  /** JSON text in SQLite; parsed into the structured rule by `toTask`. */
+  readonly recurrence: string | null
 }
 
 const toTask = (row: TaskRow): Task =>
-  new Task({ ...row, tagIds: JSON.parse(row.tagIds) as ReadonlyArray<TagId> })
+  new Task({
+    ...row,
+    tagIds: JSON.parse(row.tagIds) as ReadonlyArray<TagId>,
+    recurrence: row.recurrence === null
+      ? null
+      : (JSON.parse(row.recurrence) as Task["recurrence"])
+  })
 
 const encodeTagIds = (ids: ReadonlyArray<TagId>): string => JSON.stringify(ids)
+
+/** Rules are JSON text, `NULL` for a one-off task. */
+const encodeRecurrence = (rule: Task["recurrence"]): string | null =>
+  rule === null ? null : JSON.stringify(rule)
 
 export interface TaskQuery {
   readonly householdId: string
@@ -318,13 +331,15 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
           INSERT INTO tasks
             (id, type, title, description, owner_id, household_id, visibility,
              status, priority, due_at, due_date, time_zone, project_id, tag_ids,
-             color, started_at, completed_at, created_at, updated_at, version, deleted_at)
+             color, recurrence, recurrence_mode, started_at, completed_at,
+             created_at, updated_at, version, deleted_at)
           VALUES
             (${task.id}, ${task.type}, ${task.title}, ${task.description},
              ${task.ownerId}, ${task.householdId}, ${task.visibility},
              ${task.status}, ${task.priority}, ${task.dueAt}, ${task.dueDate},
              ${task.timeZone}, ${task.projectId}, ${encodeTagIds(task.tagIds)},
-             ${task.color}, ${task.startedAt}, ${task.completedAt},
+             ${task.color}, ${encodeRecurrence(task.recurrence)},
+             ${task.recurrenceMode}, ${task.startedAt}, ${task.completedAt},
              ${task.createdAt}, ${task.updatedAt}, ${task.version}, ${task.deletedAt})
           RETURNING ${sql.literal(TASK_COLUMNS)}
         `,
@@ -351,6 +366,8 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
             project_id = ${task.projectId},
             tag_ids = ${encodeTagIds(task.tagIds)},
             color = ${task.color},
+            recurrence = ${encodeRecurrence(task.recurrence)},
+            recurrence_mode = ${task.recurrenceMode},
             started_at = ${task.startedAt},
             completed_at = ${task.completedAt},
             updated_at = ${task.updatedAt},
@@ -409,14 +426,56 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
       INSERT INTO tasks
         (id, type, title, description, owner_id, household_id, visibility,
          status, priority, due_at, due_date, time_zone, project_id, tag_ids,
-         color, started_at, completed_at, created_at, updated_at, version, deleted_at)
+         color, recurrence, recurrence_mode, started_at, completed_at,
+         created_at, updated_at, version, deleted_at)
       VALUES
         (${task.id}, ${task.type}, ${task.title}, ${task.description},
          ${task.ownerId}, ${task.householdId}, ${task.visibility},
          ${task.status}, ${task.priority}, ${task.dueAt}, ${task.dueDate},
          ${task.timeZone}, ${task.projectId}, ${encodeTagIds(task.tagIds)},
-         ${task.color}, ${task.startedAt}, ${task.completedAt},
+         ${task.color}, ${encodeRecurrence(task.recurrence)},
+         ${task.recurrenceMode}, ${task.startedAt}, ${task.completedAt},
          ${task.createdAt}, ${task.updatedAt}, ${task.version}, ${task.deletedAt})
+      ON CONFLICT DO NOTHING
+    `
+
+    /**
+     * The next occurrence of a recurring task (ticket #38), inserted in the
+     * same batch as the completion that spawned it.
+     *
+     * The insert only lands when the parent really reached `done` at the
+     * version the service read, so a completion that loses its version CAS
+     * cannot leave an orphan successor. The partial unique index on
+     * `recurrence_parent_id` (and `ON CONFLICT DO NOTHING`) makes the spawn
+     * exactly-once even if the same instance is completed again after an undo:
+     * one instance has at most one successor, ever.
+     */
+    const insertRecurrenceChildStatement = (input: {
+      readonly task: Task
+      readonly parentId: TaskId
+      readonly parentVersion: number
+    }) => sql`
+      INSERT INTO tasks
+        (id, type, title, description, owner_id, household_id, visibility,
+         status, priority, due_at, due_date, time_zone, project_id, tag_ids,
+         color, recurrence, recurrence_mode, recurrence_parent_id,
+         started_at, completed_at, created_at, updated_at, version, deleted_at)
+      SELECT
+        ${input.task.id}, ${input.task.type}, ${input.task.title},
+        ${input.task.description}, ${input.task.ownerId}, ${input.task.householdId},
+        ${input.task.visibility}, ${input.task.status}, ${input.task.priority},
+        ${input.task.dueAt}, ${input.task.dueDate}, ${input.task.timeZone},
+        ${input.task.projectId}, ${encodeTagIds(input.task.tagIds)},
+        ${input.task.color}, ${encodeRecurrence(input.task.recurrence)},
+        ${input.task.recurrenceMode}, ${input.parentId},
+        ${input.task.startedAt}, ${input.task.completedAt}, ${input.task.createdAt},
+        ${input.task.updatedAt}, ${input.task.version}, ${input.task.deletedAt}
+      WHERE EXISTS (
+        SELECT 1 FROM tasks
+        WHERE id = ${input.parentId}
+          AND version = ${input.parentVersion}
+          AND status = 'done'
+      )
       ON CONFLICT DO NOTHING
     `
 
@@ -432,7 +491,8 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
       attachTagIfVersion,
       insert,
       update,
-      insertStatement
+      insertStatement,
+      insertRecurrenceChildStatement
     } as const
   })
 }) {}

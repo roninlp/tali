@@ -193,6 +193,8 @@ const isStringArray: SyncFieldGuard = (value) =>
   Array.isArray(value) && value.every((entry) => typeof entry === "string")
 const isOneOf = (...allowed: ReadonlyArray<string>): SyncFieldGuard => (value) =>
   typeof value === "string" && allowed.includes(value)
+const isNullableOneOf = (...allowed: ReadonlyArray<string>): SyncFieldGuard => (value) =>
+  value === null || (typeof value === "string" && allowed.includes(value))
 const isJson: SyncFieldGuard = (value) => {
   if (value === null || value === undefined) return true
   const kind = typeof value
@@ -276,6 +278,7 @@ const TASK_COLUMNS =
   `${META_COLUMNS}, type, title, description, status, priority, ` +
   `due_at AS dueAt, due_date AS dueDate, time_zone AS timeZone, ` +
   `project_id AS projectId, tag_ids AS tagIds, color, ` +
+  `recurrence, recurrence_mode AS recurrenceMode, ` +
   `started_at AS startedAt, completed_at AS completedAt, created_at AS createdAt`
 
 const taskCodec = withSchema<Task>(Task, (row) => ({
@@ -291,6 +294,8 @@ const taskCodec = withSchema<Task>(Task, (row) => ({
   projectId: asText(row.projectId),
   tagIds: asStringArray(row.tagIds),
   color: asText(row.color),
+  recurrence: parseJson(row.recurrence),
+  recurrenceMode: asText(row.recurrenceMode),
   startedAt: asText(row.startedAt),
   completedAt: asText(row.completedAt),
   ownerId: encodeText(row.ownerId),
@@ -310,6 +315,10 @@ const TASK_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
   ["projectId", isNullableString],
   ["tagIds", isStringArray],
   ["color", isNullableString],
+  // The rule object is validated structurally by the Task schema below; the
+  // guard only rejects non-JSON scalars.
+  ["recurrence", isJson],
+  ["recurrenceMode", isNullableOneOf("onCompletion", "onDueDate")],
   ["visibility", isOneOf("private", "shared")]
 ])
 
@@ -338,6 +347,12 @@ const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     projectId: asText(patch.projectId),
     tagIds: Array.isArray(patch.tagIds) ? patch.tagIds : [],
     color: asText(patch.color),
+    recurrence: patch.recurrence ?? null,
+    recurrenceMode: patch.recurrence === null || patch.recurrence === undefined
+      ? null
+      : patch.recurrenceMode === "onCompletion" || patch.recurrenceMode === "onDueDate"
+      ? patch.recurrenceMode
+      : "onDueDate",
     startedAt: null,
     completedAt: null,
     ownerId: context.userId,
@@ -347,6 +362,15 @@ const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   }),
   merge: (input) => {
     const next = mergeFields({ completion: TASK_COMPLETION }, input)
+    // Recurrence rule and mode are one unit: a rule without a mode defaults to
+    // the fixed schedule, and clearing the rule clears the mode. This keeps a
+    // partial client patch from leaving a half-configured series.
+    if (next.recurrence === null || next.recurrence === undefined) {
+      next.recurrence = null
+      next.recurrenceMode = null
+    } else if (next.recurrenceMode !== "onCompletion" && next.recurrenceMode !== "onDueDate") {
+      next.recurrenceMode = "onDueDate"
+    }
     // Lifecycle stamps are server-side (FR-TASK-02). #36 owns the task
     // service; sync keeps the same rule so an offline completion is coherent.
     if (next.status === "done") {
@@ -361,7 +385,8 @@ const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     INSERT INTO tasks
       (id, type, title, description, owner_id, household_id, visibility,
        status, priority, due_at, due_date, time_zone, project_id, tag_ids,
-       color, started_at, completed_at, created_at, updated_at, version, deleted_at)
+       color, recurrence, recurrence_mode, started_at, completed_at,
+       created_at, updated_at, version, deleted_at)
     VALUES
       (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
        ${encodeNullableText(state.data.description)}, ${state.ownerId},
@@ -370,6 +395,8 @@ const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
        ${encodeNullableText(state.data.dueDate)}, ${encodeText(state.data.timeZone)},
        ${encodeNullableText(state.data.projectId)}, ${encodeJson(state.data.tagIds)},
        ${encodeNullableText(state.data.color)},
+       ${encodeJsonOrNull(state.data.recurrence)},
+       ${encodeNullableText(state.data.recurrenceMode)},
        ${encodeNullableText(state.data.startedAt)},
        ${encodeNullableText(state.data.completedAt)},
        ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
@@ -389,6 +416,8 @@ const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
       project_id = ${encodeNullableText(state.data.projectId)},
       tag_ids = ${encodeJson(state.data.tagIds)},
       color = ${encodeNullableText(state.data.color)},
+      recurrence = ${encodeJsonOrNull(state.data.recurrence)},
+      recurrence_mode = ${encodeNullableText(state.data.recurrenceMode)},
       started_at = ${encodeNullableText(state.data.startedAt)},
       completed_at = ${encodeNullableText(state.data.completedAt)},
       updated_at = ${state.updatedAt},

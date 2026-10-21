@@ -8,6 +8,7 @@ import {
   ProjectNotFound,
   ProjectRenameInput,
   type Priority,
+  RecurrenceRule,
   type SyncEntityType,
   Tag,
   type TagId,
@@ -28,11 +29,13 @@ import {
   TaskNotFound,
   TaskNotRestorable,
   type TaskPatch,
+  type TaskRecurrenceMode,
   type TaskSort,
   TaskUpdateInput,
   TaskValidationError,
   type UserId,
   localDateStartInstant,
+  nextRecurrenceDue,
   uuidV7,
   type Visibility
 } from "@tali/domain"
@@ -49,7 +52,6 @@ import {
   type TaskQuery
 } from "@tali/sql"
 import { loadAssignableTags } from "./tag-guard.js"
-
 /**
  * `TaskService` — create, patch, organise, bucket, complete/undo (ticket #36;
  * FR-TASK-01/02/05/06).
@@ -75,6 +77,24 @@ import { loadAssignableTags } from "./tag-guard.js"
  * reads all-day rows by `due_date`, timed rows by `due_at`, and undated rows
  * separately. "Today" is the viewer's wall date, so DST and Jalali month edges
  * are display-calendar concerns only; no-date tasks never enter Today.
+ *
+ * ## Recurrence (FR-TASK-04, #38)
+ *
+ * The server alone generates the next instance; a client never does. When a
+ * recurring task transitions into `done` (through `complete` or an `update`
+ * that sets the status), the successor is built from the just-completed row
+ * and inserted in the *same* D1 batch as the completion, with its own feed and
+ * ledger rows. The insert is gated on the parent reaching `done` at the version
+ * the service read, and a partial unique index on `recurrence_parent_id` means
+ * one instance can have at most one successor ever — so a replayed completion,
+ * a second device's completion, or an undo-then-recomplete cannot duplicate
+ * it. The completed instance remains as done history with its original due
+ * fields and rule.
+ *
+ * `onDueDate` keeps the schedule (advance one occurrence from the instance's
+ * due date). `onCompletion` restarts the rule grid on the completion day, so
+ * an overdue task does not immediately produce another overdue one. A bounded
+ * rule that has ended produces no successor.
  */
 
 /** FR-TASK-06: completed tasks stay visible/restorable for seven days. */
@@ -224,6 +244,8 @@ const sameTaskFields = (a: Task, b: Task): boolean =>
   a.projectId === b.projectId &&
   a.visibility === b.visibility &&
   a.color === b.color &&
+  a.recurrenceMode === b.recurrenceMode &&
+  sameRecurrence(a.recurrence, b.recurrence) &&
   a.startedAt === b.startedAt &&
   a.completedAt === b.completedAt &&
   a.tagIds.length === b.tagIds.length &&
@@ -231,6 +253,41 @@ const sameTaskFields = (a: Task, b: Task): boolean =>
 
 const sameTags = (a: ReadonlyArray<TagId>, b: ReadonlyArray<TagId>): boolean =>
   a.length === b.length && a.every((tagId, index) => tagId === b[index])
+
+/**
+ * Canonical comparison for a stored rule vs a patched one. Rules arrive as
+ * plain structs, and object key order is not meaningful, so compare the fields
+ * the engine actually reads.
+ */
+const sameRecurrence = (a: RecurrenceRule | null, b: RecurrenceRule | null): boolean => {
+  if (a === null || b === null) return a === b
+  const key = (rule: RecurrenceRule): string =>
+    JSON.stringify([
+      rule.frequency,
+      rule.interval,
+      rule.byDay ?? null,
+      rule.byMonthDay ?? null,
+      rule.nthWeekday === undefined
+        ? null
+        : [rule.nthWeekday.nth, rule.nthWeekday.day],
+      rule.end._tag === "count"
+        ? ["count", rule.end.count]
+        : rule.end._tag === "until"
+        ? ["until", rule.end.date]
+        : ["never"]
+    ])
+  return key(a) === key(b)
+}
+
+/** Decode + cross-field validate a rule against the one shared contract. */
+const decodeRule = (
+  rule: RecurrenceRule
+): Effect.Effect<RecurrenceRule, TaskValidationError> => {
+  const decoded = Schema.decodeUnknownOption(RecurrenceRule)(rule)
+  return Option.isNone(decoded)
+    ? invalid("recurrence", "recurrence rule is not valid")
+    : Effect.succeed(decoded.value)
+}
 
 export class TaskService extends Context.Service<TaskService>()("TaskService", {
   make: Effect.gen(function*() {
@@ -353,6 +410,16 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
         readonly previous: ReadonlyArray<TagId>
         readonly next: ReadonlyArray<TagId>
       }
+      /**
+       * The next occurrence of a completed recurring task (#38). Its insert,
+       * feed row and spawn ledger row join the parent's batch, gated on the
+       * parent reaching `done` at this version, so exactly one successor
+       * exists and a replay writes nothing.
+       */
+      readonly spawn?: {
+        readonly task: Task
+        readonly parentId: Task["id"]
+      }
     }) =>
       Effect.gen(function*() {
         // A mutation id is one mutation for its whole retention window. If the
@@ -411,6 +478,49 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
                 createdAt: input.now,
                 version: input.state.version,
                 updatedAt: input.state.updatedAt
+              })
+            )
+          )
+        }
+
+        if (input.spawn !== undefined) {
+          const child = input.spawn.task
+          const parentId = input.spawn.parentId
+          // Insert is gated on the parent's new version + done status; the
+          // feed/ledger rows are gated on that insert (`changes()`), and the
+          // partial unique index on recurrence_parent_id makes it exactly-once.
+          statements.push(
+            tasks.insertRecurrenceChildStatement({
+              task: child,
+              parentId,
+              parentVersion: input.state.version
+            }),
+            sync.appendFeed({
+              householdId: input.viewer.householdId,
+              entityType: "task",
+              entityId: child.id,
+              op: "upsert",
+              version: child.version,
+              updatedAt: child.updatedAt,
+              ownerId: child.ownerId,
+              visibility: child.visibility
+            }),
+            sync.recordApplied({
+              clientMutationId: `recurrence:${parentId}`,
+              householdId: input.viewer.householdId,
+              entityType: "task",
+              entityId: child.id,
+              version: child.version,
+              createdAt: input.now
+            }),
+            ...child.tagIds.map((tagId) =>
+              tasks.attachTagIfVersion({
+                taskId: child.id,
+                tagId,
+                householdId: input.viewer.householdId,
+                createdAt: input.now,
+                version: child.version,
+                updatedAt: child.updatedAt
               })
             )
           )
@@ -566,6 +676,37 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
         }
       })
 
+    /**
+     * The next instance of a just-completed recurring task, or `null` when the
+     * rule has ended. Pure apart from minting the child id; the caller puts the
+     * insert in the completion's one batch.
+     */
+    const successorOf = (completed: Task, now: string): Task | null => {
+      if (completed.recurrence === null) return null
+      const nextDue = nextRecurrenceDue({
+        rule: completed.recurrence,
+        mode: completed.recurrenceMode ?? "onDueDate",
+        dueDate: completed.dueDate,
+        dueAt: completed.dueAt,
+        timeZone: completed.timeZone,
+        completedAt: now
+      })
+      if (nextDue === null) return null
+      return new Task({
+        ...completed,
+        id: uuidV7() as Task["id"],
+        status: "todo",
+        startedAt: null,
+        completedAt: null,
+        dueAt: nextDue.dueAt,
+        dueDate: nextDue.dueDate,
+        createdAt: now,
+        updatedAt: now,
+        version: 1,
+        deletedAt: null
+      })
+    }
+
     /** Apply a patch to a row, including the status transition rules. */
     const patchTask = (
       viewer: TaskViewer,
@@ -587,6 +728,54 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
           if (patch.dueDate !== undefined) dueDate = null
         }
         yield* validateDue(dueAt, dueDate)
+
+        // Recurrence rule + mode move as one unit. A rule without a mode
+        // defaults to the fixed schedule; clearing the rule clears the mode.
+        let recurrence = current.recurrence
+        let recurrenceMode = current.recurrenceMode
+        if (patch.recurrence !== undefined) {
+          if (patch.recurrence === null) {
+            recurrence = null
+            recurrenceMode = null
+          } else {
+            recurrence = yield* decodeRule(patch.recurrence)
+            recurrenceMode =
+              patch.recurrenceMode !== undefined
+                ? patch.recurrenceMode
+                : current.recurrenceMode ?? "onDueDate"
+            if (recurrenceMode === null) {
+              return yield* invalid("recurrenceMode", "a recurrence rule needs a mode")
+            }
+          }
+        } else if (patch.recurrenceMode !== undefined) {
+          if (patch.recurrenceMode === null) {
+            if (recurrence !== null) {
+              return yield* invalid(
+                "recurrenceMode",
+                "clear the recurrence rule to stop repeating"
+              )
+            }
+          } else if (recurrence === null) {
+            return yield* invalid(
+              "recurrenceMode",
+              "a recurrence mode requires a recurrence rule"
+            )
+          } else {
+            recurrenceMode = patch.recurrenceMode
+          }
+        }
+        if (recurrence !== null && recurrenceMode === null) recurrenceMode = "onDueDate"
+        if (
+          recurrence !== null &&
+          recurrenceMode === "onDueDate" &&
+          dueAt === null &&
+          dueDate === null
+        ) {
+          return yield* invalid(
+            "dueDate",
+            "an on-due-date recurrence needs a due date"
+          )
+        }
 
         if (patch.projectId !== undefined && patch.projectId !== null) {
           yield* requireProject(viewer, patch.projectId)
@@ -628,6 +817,8 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
           dueAt,
           dueDate,
           timeZone: patch.timeZone ?? current.timeZone,
+          recurrence,
+          recurrenceMode,
           version: current.version + 1,
           updatedAt: now
         })
@@ -647,6 +838,33 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
           : normalizeInstant(input.dueAt)
         const dueDate = input.dueDate ?? null
         yield* validateDue(dueAt, dueDate)
+        if (
+          input.recurrenceMode !== undefined &&
+          input.recurrenceMode !== null &&
+          (input.recurrence === undefined || input.recurrence === null)
+        ) {
+          return yield* invalid(
+            "recurrenceMode",
+            "a recurrence mode requires a recurrence rule"
+          )
+        }
+        const recurrence =
+          input.recurrence === undefined || input.recurrence === null
+            ? null
+            : yield* decodeRule(input.recurrence)
+        const recurrenceMode: TaskRecurrenceMode | null =
+          recurrence === null ? null : input.recurrenceMode ?? "onDueDate"
+        if (
+          recurrence !== null &&
+          recurrenceMode === "onDueDate" &&
+          dueAt === null &&
+          dueDate === null
+        ) {
+          return yield* invalid(
+            "dueDate",
+            "an on-due-date recurrence needs a due date"
+          )
+        }
         if (input.projectId !== undefined && input.projectId !== null) {
           yield* requireProject(viewer, input.projectId)
         }
@@ -671,6 +889,8 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
           timeZone: input.timeZone ?? viewer.timeZone,
           projectId: input.projectId ?? null,
           tagIds: input.tagIds ?? [],
+          recurrence,
+          recurrenceMode,
           startedAt: status === "doing" ? now : null,
           completedAt: status === "done" ? now : null,
           createdAt: now,
@@ -709,13 +929,22 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
           const current = yield* loadTask(viewer, input.id)
           const next = yield* patchTask(viewer, current, input.patch, now)
           if (sameTaskFields(current, next)) return current
+          // `update({ status: "done" })` is a completion too, so it must spawn
+          // the same single successor as `complete()`.
+          const spawnTask =
+            current.status !== "done" && next.status === "done"
+              ? successorOf(next, now)
+              : null
           const applied = yield* commitPlanningEntity({
             viewer,
             state: taskState(next),
             expectedVersion: current.version,
             clientMutationId: input.clientMutationId,
             now,
-            tagChanges: { previous: current.tagIds, next: next.tagIds }
+            tagChanges: { previous: current.tagIds, next: next.tagIds },
+            spawn: spawnTask === null
+              ? undefined
+              : { task: spawnTask, parentId: current.id }
           })
           if (applied) return next
         }
@@ -816,13 +1045,20 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
             version: current.version + 1,
             updatedAt: now
           })
+          // The successor is computed from the instance being completed (its
+          // rule and due anchor), never from the client. A bounded rule that
+          // has run out produces no successor.
+          const spawnTask = successorOf(next, now)
           const applied = yield* commitPlanningEntity({
             viewer,
             state: taskState(next),
             expectedVersion: current.version,
             clientMutationId: input.clientMutationId,
             now,
-            tagChanges: { previous: current.tagIds, next: next.tagIds }
+            tagChanges: { previous: current.tagIds, next: next.tagIds },
+            spawn: spawnTask === null
+              ? undefined
+              : { task: spawnTask, parentId: current.id }
           })
           if (applied) return next
         }

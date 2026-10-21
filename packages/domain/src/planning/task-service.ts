@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import { Visibility } from "../common.js"
+import { RecurrenceRule, TaskRecurrenceMode } from "../recurrence.js"
 import { TaskBucket } from "./buckets.js"
 import {
   LocalDate,
@@ -113,6 +114,8 @@ export const TaskPatch = Schema.Struct({
   projectId: Schema.optional(Schema.NullOr(ProjectId)),
   tagIds: Schema.optional(TagIds),
   color: Schema.optional(Schema.NullOr(Schema.String)),
+  recurrence: Schema.optional(Schema.NullOr(RecurrenceRule)),
+  recurrenceMode: Schema.optional(Schema.NullOr(TaskRecurrenceMode)),
   visibility: Schema.optional(Visibility)
 })
 export type TaskPatch = Schema.Schema.Type<typeof TaskPatch>
@@ -132,6 +135,9 @@ export const TaskCreateInput = Schema.Struct({
   projectId: Schema.optional(Schema.NullOr(ProjectId)),
   tagIds: Schema.optional(TagIds),
   color: Schema.optional(Schema.NullOr(Schema.String)),
+  recurrence: Schema.optional(Schema.NullOr(RecurrenceRule)),
+  /** Defaults to `onDueDate` when a rule is supplied without a mode. */
+  recurrenceMode: Schema.optional(Schema.NullOr(TaskRecurrenceMode)),
   visibility: Schema.optional(Visibility)
 })
 export type TaskCreateInput = Schema.Schema.Type<typeof TaskCreateInput>

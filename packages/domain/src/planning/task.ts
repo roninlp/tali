@@ -2,6 +2,10 @@ import { Schema } from "effect"
 import { Model } from "effect/schema"
 import { Visibility } from "../common.js"
 import {
+  RecurrenceRule,
+  TaskRecurrenceMode
+} from "../recurrence.js"
+import {
   commonItemFields,
   LocalDate,
   Priority,
@@ -22,9 +26,12 @@ import {
  * `startedAt` when a task enters `doing` and `completedAt` when it reaches
  * `done` (the timestamps are part of the row, not client input).
  *
- * Recurrence is deliberately absent: the hand-rolled recurrence engine lands
- * in #38 and will add `recurrence`/`recurrenceMode` without changing the
- * columns below.
+ * Recurrence is a structured rule (never an RRULE string) stored as JSON:
+ * `recurrenceMode` chooses whether the series advances on the fixed due-date
+ * schedule (`onDueDate`) or restarts when the work is completed
+ * (`onCompletion`). Both are null together, or set together. The server — never
+ * a client — generates the next instance on completion (#38); the completed
+ * row stays as `done` history.
  */
 export class Task extends Model.Class<Task>("Task")({
   ...commonItemFields("task", TaskId),
@@ -43,6 +50,10 @@ export class Task extends Model.Class<Task>("Task")({
   projectId: Schema.NullOr(ProjectId),
   /** Denormalized tag ids; `item_tags` remains the source of truth. */
   tagIds: TagIds,
+  /** Structured recurrence rule; `null` for a one-off task. */
+  recurrence: Schema.NullOr(RecurrenceRule),
+  /** Only meaningful with `recurrence`; both are cleared together. */
+  recurrenceMode: Schema.NullOr(TaskRecurrenceMode),
   /** Server timestamp for the `todo → doing` transition. */
   startedAt: Schema.NullOr(TimestampUtc),
   /** Server timestamp for the `→ done` transition. */
@@ -64,6 +75,9 @@ export const TaskCreate = Schema.Struct({
   timeZone: Schema.optional(TimeZone),
   projectId: Schema.optional(Schema.NullOr(ProjectId)),
   tagIds: Schema.optional(TagIds),
+  recurrence: Schema.optional(Schema.NullOr(RecurrenceRule)),
+  /** Defaults to `onDueDate` when a rule is supplied without a mode. */
+  recurrenceMode: Schema.optional(Schema.NullOr(TaskRecurrenceMode)),
   visibility: Schema.optional(Visibility)
 })
 export type TaskCreate = Schema.Schema.Type<typeof TaskCreate>

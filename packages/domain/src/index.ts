@@ -8,6 +8,7 @@ export * from "./auth"
 export * from "./list-item"
 export * from "./push"
 export * from "./preferences"
+export * from "./recurrence"
 export {
   ItemType,
   ListCheckedPlacement,
@@ -27,6 +28,7 @@ export {
 } from "./planning/common"
 export * from "./planning/buckets"
 export * from "./planning/task"
+export * from "./planning/task-recurrence"
 export * from "./planning/task-service"
 export * from "./planning/project"
 export * from "./planning/tag"

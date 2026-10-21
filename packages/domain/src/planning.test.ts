@@ -60,6 +60,8 @@ const task = {
   timeZone: "Asia/Tehran",
   projectId,
   tagIds: [tagId],
+  recurrence: null,
+  recurrenceMode: null,
   startedAt: NOW,
   completedAt: null
 }

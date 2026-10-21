@@ -33,7 +33,8 @@ const MIGRATIONS = [
   "0003_credentials.sql",
   "0003_sync_engine.sql",
   "0004_push_subscriptions.sql",
-  "0005_core_planning.sql"
+  "0005_core_planning.sql",
+  "0007_task_recurrence.sql"
 ]
 
 const NOW = "2026-10-20T09:30:00.000Z"
@@ -111,6 +112,8 @@ const task = (input: {
     timeZone: "UTC",
     projectId: null,
     tagIds: [],
+    recurrence: null,
+    recurrenceMode: null,
     startedAt: null,
     completedAt: null
   })
