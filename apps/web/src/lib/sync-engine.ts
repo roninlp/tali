@@ -1,8 +1,10 @@
 import { Schema } from "effect"
 import {
+  type Habit,
   type HabitEntry,
   type HabitEntryLogInput,
   type HabitEntryStatus,
+  type HabitMutationInput,
   SyncBootstrapResponse,
   SyncPullResponse,
   SyncPushResponse,
@@ -44,6 +46,15 @@ export interface SyncTransport {
    * entry is then acked like any other non-applied result).
    */
   readonly logHabitEntry?: (input: HabitEntryLogInput) => Promise<HabitEntry>
+  /**
+   * The explicit service path that undoes a habit soft delete (#63/#66).
+   *
+   * `/sync/push` deliberately keeps tombstone-wins, so the local-first undo
+   * (a queued `upsert` with an empty patch) comes back as `tombstone`. The
+   * engine calls `RestoreHabit`, which is idempotent on a live row, and adopts
+   * the returned row. Optional for the same reason as `logHabitEntry`.
+   */
+  readonly restoreHabit?: (input: HabitMutationInput) => Promise<Habit>
 }
 
 /** The server row shape for a habit entry the revive path returned. */
@@ -54,6 +65,16 @@ const habitEntryRow = (entry: HabitEntry): SyncEntityRow => ({
   updatedAt: entry.updatedAt,
   deletedAt: entry.deletedAt,
   data: { ...entry }
+})
+
+/** The server row shape for a habit the restore path returned (#63/#66). */
+const habitRow = (habit: Habit): SyncEntityRow => ({
+  entityType: "habit",
+  entityId: habit.id,
+  version: habit.version,
+  updatedAt: habit.updatedAt,
+  deletedAt: habit.deletedAt,
+  data: { ...habit }
 })
 
 const isHabitEntryStatus = (value: unknown): value is HabitEntryStatus =>
@@ -82,6 +103,17 @@ const repairableHabitEntry = (result: SyncPushResult): boolean =>
   (result._tag === "tombstone" ||
     (result._tag === "rejected" && result.code === "UniqueViolation"))
 
+/**
+ * A queued habit restore: an `upsert` with no fields. The screen's delete is a
+ * queued `delete`; its undo is a queued empty upsert that re-points the mirror
+ * at the live row. The generic resolver answers `tombstone`, which the engine
+ * repairs through `RestoreHabit`.
+ */
+const isHabitRestore = (entry: SyncPushEntry): boolean =>
+  entry.entityType === "habit" &&
+  entry.op === "upsert" &&
+  Object.keys(entry.patch).length === 0
+
 /** A non-2xx sync response; the stable code and details travel to the engine. */
 export class SyncRejected extends Error {
   constructor(
@@ -89,6 +121,27 @@ export class SyncRejected extends Error {
     readonly details: Readonly<Record<string, unknown>> = {}
   ) {
     super(code)
+  }
+}
+
+/**
+ * The prefix of the error the engine raises when `RestoreHabit` permanently
+ * refuses a queued habit undo (the row was purged, or is no longer visible).
+ *
+ * The undo is acked first — keeping it would retry forever — so the engine
+ * reports the refusal after the batch so `syncNow` can surface it rather than
+ * leaving the user with a habit that silently disappears again.
+ */
+export const HABIT_RESTORE_REFUSED = "habit-restore-refused"
+
+export class HabitRestoreRefused extends Error {
+  override readonly name = "HabitRestoreRefused"
+
+  constructor(
+    readonly habitId: string,
+    readonly reason: string
+  ) {
+    super(`${HABIT_RESTORE_REFUSED}:${reason}`)
   }
 }
 
@@ -136,7 +189,8 @@ export const httpSyncTransport = (): SyncTransport => ({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ entries })
     }),
-  logHabitEntry: (input) => api.logHabitEntry(input)
+  logHabitEntry: (input) => api.logHabitEntry(input),
+  restoreHabit: (input) => api.restoreHabit(input)
 })
 
 const asServerRows = (result: SyncPushResult): ReadonlyArray<SyncEntityRow> =>
@@ -249,14 +303,55 @@ export const createSyncEngine = (
       }
       const repairedRows: Array<SyncEntityRow> = []
       const repairedOriginalIds = new Set<string>()
+      let restoreRefusal: HabitRestoreRefused | undefined
 
       for (const result of response.results) {
+        /**
+         * A queued undo for a habit the server tombstoned is a service
+         * mutation, not a generic push: `RestoreHabit` clears the tombstone in
+         * place (idempotent on a live row) and the engine adopts the returned
+         * row. Like the habit-tap repair below, it runs before the entry is
+         * acked so a transient failure leaves the undo queued.
+         */
+        if (
+          result.entityType === "habit" &&
+          result._tag === "tombstone" &&
+          transport.restoreHabit !== undefined
+        ) {
+          const queued = batch.find(
+            (entry) => entry.clientMutationId === result.clientMutationId
+          )
+          if (queued !== undefined && isHabitRestore(queued)) {
+            try {
+              const restored = await transport.restoreHabit({
+                id: queued.entityId as Habit["id"],
+                clientMutationId: queued.clientMutationId
+              })
+              repairedRows.push(habitRow(restored))
+              versionByEntity.set(`habit\u0000${restored.id}`, restored.version)
+            } catch (cause) {
+              const tag = (cause as { readonly _tag?: unknown })._tag
+              if (typeof tag !== "string" || !PERMANENT_REVIVE_ERRORS.has(tag)) {
+                // Transient (offline, 5xx, timeout): keep the undo queued.
+                throw cause
+              }
+              console.warn(
+                `[sync] stopped restoring habit/${queued.entityId} (${tag}): ${
+                  cause instanceof Error ? cause.message : String(cause)
+                }`
+              )
+              // Acked below like any other resolved result, so the refusal is
+              // reported after the batch instead of retrying forever.
+              restoreRefusal ??= new HabitRestoreRefused(queued.entityId, tag)
+            }
+            continue
+          }
+        }
         /**
          * A queued tap for a day the server tombstoned (or for a day another
          * device already owns under a different id) is not lost: the generic
          * resolver refuses it by design, so the explicit logging mutation
-         * resolves the day and revives/updates the existing row. It runs before
-         * the entry is acked, so a transient failure leaves the outbox intact.
+         * resolves the day and revives/updates the existing row.
          */
         if (repairableHabitEntry(result) && transport.logHabitEntry !== undefined) {
           const queued = batch.find(
@@ -334,6 +429,10 @@ export const createSyncEngine = (
       for (const entityId of repairedOriginalIds) {
         await store.removeFromMirror("habitEntry", entityId)
       }
+      // The undo was acked (so it cannot loop), but the user asked to restore a
+      // habit the server permanently refused: report it now that the mirror is
+      // consistent. `syncNow` turns this into a visible error.
+      if (restoreRefusal !== undefined) throw restoreRefusal
       // Defensive: a server result set with no ids would otherwise spin.
       if (response.results.length === 0) return
     }

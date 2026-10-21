@@ -22,6 +22,7 @@ export type AppSection =
   | "today"
   | "calendar"
   | "tasks"
+  | "habits"
   | "lists"
   | "notes"
   | "reminders"
@@ -31,6 +32,7 @@ const NAV: ReadonlyArray<{ section: AppSection; href: string; label: string }> =
   { section: "today", href: "/today", label: "امروز" },
   { section: "calendar", href: "/calendar", label: "تقویم" },
   { section: "tasks", href: "/tasks", label: "کارها" },
+  { section: "habits", href: "/habits", label: "عادت‌ها" },
   { section: "lists", href: "/lists", label: "فهرست‌ها" },
   { section: "notes", href: "/notes", label: "یادداشت‌ها" },
   { section: "reminders", href: "/reminders", label: "یادآورها" },

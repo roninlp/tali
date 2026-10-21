@@ -20,12 +20,14 @@ import {
   toIsoDate,
   todayInTimeZone,
   type DashboardSection,
+  type LocalDate,
   type TodayReadModel
 } from "@tali/domain"
 import { AppHeader } from "../components/app-header"
 import { Guard } from "../components/guard"
 import { TextInput } from "../components/form"
 import { TodayStyles, TODAY_MAIN, TODAY_ROOT } from "../components/today/ui"
+import { TodayHabits } from "../components/habits/today-habits"
 import { usePreferences } from "../lib/preferences"
 import { authErrorMessage } from "../lib/auth-copy"
 import { weekDaysFor } from "../lib/preferences-format"
@@ -49,11 +51,10 @@ import type { NoteRow } from "../lib/notes/mirror"
 
 const DRAFT_KEY = "today.quickAdd.title"
 
-/** Events/reminders/habits stay quiet until Slices 3–4; do not fake content. */
-const QUIET_COPY: Readonly<Record<"events" | "reminders" | "habits", string>> = {
+/** Events/reminders stay quiet until their UI slices land; do not fake content. */
+const QUIET_COPY: Readonly<Record<"events" | "reminders", string>> = {
   events: "امروز رویدادی نیست؛ تقویم در گام بعدی می‌آید.",
-  reminders: "یادآوری‌ای برای امروز نیست.",
-  habits: "عادتی برای امروز ثبت نشده است."
+  reminders: "یادآوری‌ای برای امروز نیست."
 }
 
 const SECTION_TITLES: Readonly<Record<DashboardSection, string>> = {
@@ -117,6 +118,8 @@ function TodayPage() {
   const [pageError, setPageError] = createSignal<string>()
   const [announcement, setAnnouncement] = createSignal("")
   const [orderBusy, setOrderBusy] = createSignal(false)
+  /** The habits lane owns its mirror read; it reports its row count for the header. */
+  const [habitCount, setHabitCount] = createSignal(0)
   const [orderError, setOrderError] = createSignal<string>()
   const [orderOpen, setOrderOpen] = createSignal(false)
 
@@ -134,7 +137,12 @@ function TodayPage() {
       return DEFAULT_TIME_ZONE
     }
   }
-  const todayDate = () => todayInTimeZone(timeZone())
+  const todayDate = () => {
+    // Track the minute clock so the date (and the habits lane's "today") roll
+    // over at midnight without a reload.
+    void now()
+    return todayInTimeZone(timeZone())
+  }
   const todayIso = () => toIsoDate(todayDate())
   const week = () => weekDaysFor(todayDate(), preferences.preferences())
   const bounds = () => taskBucketBounds(timeZone(), now())
@@ -397,7 +405,8 @@ function TodayPage() {
     navigate("/notes")
   }
 
-  const sectionCount = (section: DashboardSection): number => view().counts[section]
+  const sectionCount = (section: DashboardSection): number =>
+    section === "habits" ? habitCount() : view().counts[section]
 
   const isOverdue = (task: TaskRow): boolean =>
     taskBucketOf(
@@ -482,6 +491,18 @@ function TodayPage() {
       )
     }
 
+    if (section === "habits") {
+      return (
+        <TodayHabits
+          store={local.store()}
+          timeZone={timeZone()}
+          digits={digits()}
+          today={todayIso() as LocalDate}
+          onCount={setHabitCount}
+        />
+      )
+    }
+
     if (section === "notes") {
       return (
         <Show
@@ -527,7 +548,11 @@ function TodayPage() {
       )
     }
 
-    return <p class="today-quiet">{QUIET_COPY[section]}</p>
+    return (
+      <p class="today-quiet">
+        {section === "events" || section === "reminders" ? QUIET_COPY[section] : ""}
+      </p>
+    )
   }
 
   return (
