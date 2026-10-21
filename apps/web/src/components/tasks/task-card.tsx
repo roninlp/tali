@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal, onCleanup } from "solid-js"
+import { For, Show, createEffect, createSignal, onCleanup, untrack } from "solid-js"
 import type { JSX } from "@solidjs/web"
 import { tokens } from "@tali/ui"
 import type { Digits, Priority, TaskBucketBounds, TaskStatus } from "@tali/domain"
@@ -60,9 +60,14 @@ export function TaskCard(props: {
 }) {
   const editorId = () => `task-${props.task.id}-editor`
   const [expanded, setExpanded] = createSignal(false)
-  const [draftTitle, setDraftTitle] = createSignal(props.task.title)
-  const [draftDescription, setDraftDescription] = createSignal(props.task.description ?? "")
-  const [draftDue, setDraftDue] = createSignal(props.task.dueDate ?? "")
+  // One-shot seeds: the effects below keep each draft in step with the row, and
+  // the dirty flags protect text the user is typing. `untrack` keeps the
+  // initialization from looking like an accidental untracked read.
+  const [draftTitle, setDraftTitle] = createSignal(untrack(() => props.task.title))
+  const [draftDescription, setDraftDescription] = createSignal(
+    untrack(() => props.task.description ?? "")
+  )
+  const [draftDue, setDraftDue] = createSignal(untrack(() => props.task.dueDate ?? ""))
   const [saveState, setSaveState] = createSignal<SaveState>("idle")
 
   let titleDirty = false

@@ -138,6 +138,12 @@ const draft = (
   timeZone: ZONE
 })
 
+/** Let the store's async reload (IndexedDB read → setTasks) land. */
+const settle = async (): Promise<void> => {
+  await new Promise((resolve) => setTimeout(resolve, 60))
+  flush()
+}
+
 describe("TasksScreen", () => {
   beforeEach(() => {
     localStorage.clear()
@@ -324,6 +330,53 @@ describe("TasksScreen", () => {
       } finally {
         store.close()
       }
+    })
+
+    screen.unmount()
+  })
+
+  it("keeps the open editor mounted and focused across its own autosave write", async () => {
+    await seed([draft("نان", today())])
+    const screen = mount()
+
+    await eventually(() => expect(screen.getByRole("button", { name: "نان" })).toBeTruthy())
+    click(screen.getByRole("button", { name: "نان" }))
+    const titleInput = (await screen.findByLabelText("عنوان")) as HTMLInputElement
+    titleInput.focus()
+    type(titleInput, "نان سنگک")
+
+    // The write reloads the whole mirror. The card is keyed by task id, so the
+    // editor (and the caret) must survive that reload rather than collapsing.
+    await eventually(() => expect(screen.getByText("ذخیره شد")).toBeTruthy())
+    await settle()
+    expect(screen.getByLabelText("عنوان")).toBe(titleInput)
+    expect(document.activeElement).toBe(titleInput)
+    expect(titleInput.value).toBe("نان سنگک")
+
+    screen.unmount()
+  })
+
+  it("keeps an in-flight title draft when another local write reloads the mirror", async () => {
+    await seed([draft("نان", today())])
+    const screen = mount()
+
+    await eventually(() => expect(screen.getByRole("button", { name: "نان" })).toBeTruthy())
+    click(screen.getByRole("button", { name: "نان" }))
+    const titleInput = (await screen.findByLabelText("عنوان")) as HTMLInputElement
+    type(titleInput, "نان سنگک")
+
+    // Quick-adding a second task commits another mirror write (and reload)
+    // before the 450ms title debounce fires; the pending draft must survive it.
+    type(screen.getByLabelText("عنوان کار تازه"), "شیر")
+    click(screen.getByRole("button", { name: "افزودن" }))
+    await settle()
+
+    expect(screen.getByLabelText("عنوان")).toBe(titleInput)
+    expect(titleInput.value).toBe("نان سنگک")
+
+    await waitFor(async () => {
+      const row = await mirrorTask("نان سنگک")
+      expect(row?.title).toBe("نان سنگک")
     })
 
     screen.unmount()

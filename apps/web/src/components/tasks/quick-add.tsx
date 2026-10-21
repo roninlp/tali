@@ -4,7 +4,6 @@ import type { Digits, Priority } from "@tali/domain"
 import {
   formatLocalDate,
   shiftLocalDate,
-  todayLocalDate,
   type ProjectRow,
   type TagRow,
   type TaskCreateDraft
@@ -34,6 +33,8 @@ const priorityLabel = (priority: Priority): string =>
 export function QuickAdd(props: {
   disabled: boolean
   timeZone: string
+  /** The viewer's live wall date (`YYYY-MM-DD`), re-evaluated across midnight. */
+  today: string
   digits: Digits
   projects: ReadonlyArray<ProjectRow>
   tags: ReadonlyArray<TagRow>
@@ -46,7 +47,7 @@ export function QuickAdd(props: {
 
   const [title, setTitle] = createSignal("")
   const [dueDate, setDueDate] = createSignal<string | null>(
-    untrack(() => todayLocalDate(props.timeZone))
+    untrack(() => props.today)
   )
   const [priority, setPriority] = createSignal<Priority>("medium")
   const [projectId, setProjectId] = createSignal<string | null>(null)
@@ -59,11 +60,12 @@ export function QuickAdd(props: {
   const [newProject, setNewProject] = createSignal("")
   const [newTag, setNewTag] = createSignal("")
 
-  // The default due day follows the viewer's zone. Until the first edit it is
-  // recomputed when preferences finish loading, so a boot in Tehran's default
-  // zone cannot leave a UTC user with yesterday's date selected.
-  createEffect(() => props.timeZone, (zone) => {
-    if (!dueTouched) setDueDate(untrack(() => todayLocalDate(zone)))
+  // The default due day follows the viewer's zone and stays on *today* while the
+  // form sits open past midnight. Until the first edit it is recomputed
+  // whenever the screen's day rolls over, so a task added at 00:05 is never
+  // silently dated yesterday.
+  createEffect(() => props.today, (today) => {
+    if (!dueTouched) setDueDate(today)
   })
 
   const chooseDue = (value: string | null) => {
@@ -80,8 +82,7 @@ export function QuickAdd(props: {
   const dueChipLabel = () => {
     const date = dueDate()
     if (date === null) return "بدون موعد"
-    const today = todayLocalDate(props.timeZone)
-    if (date === today) return "امروز"
+    if (date === props.today) return "امروز"
     return formatLocalDate(date, props.digits)
   }
 
@@ -248,9 +249,9 @@ export function QuickAdd(props: {
           <div style={{ display: "flex", gap: "6px", "flex-wrap": "wrap" }}>
             <For
               each={[
-                { label: "امروز", value: todayLocalDate(props.timeZone) },
-                { label: "فردا", value: shiftLocalDate(todayLocalDate(props.timeZone), 1) },
-                { label: "هفتهٔ بعد", value: shiftLocalDate(todayLocalDate(props.timeZone), 7) },
+                { label: "امروز", value: props.today },
+                { label: "فردا", value: shiftLocalDate(props.today, 1) },
+                { label: "هفتهٔ بعد", value: shiftLocalDate(props.today, 7) },
                 { label: "بدون تاریخ", value: null as string | null }
               ]}
             >

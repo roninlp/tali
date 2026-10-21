@@ -413,6 +413,7 @@ export function TasksScreen() {
           <QuickAdd
             disabled={local.store() === undefined}
             timeZone={timeZone()}
+            today={view().bounds.today}
             digits={digits()}
             projects={projects()}
             tags={tags()}
@@ -564,27 +565,27 @@ function BoardSection(props: BoardSectionProps) {
           </p>
         }
       >
-        <For each={props.view.board.groups}>
+        <For each={props.view.board.groups} keyed={(group) => group.key}>
           {(group) => {
-            const ghosts = () => props.ghostsFor(group.key)
+            const ghosts = () => props.ghostsFor(group().key)
             return (
-              <Show when={group.tasks.length > 0 || ghosts().length > 0}>
-                <Show when={group.key !== "today" && group.key !== "noDate"}>
+              <Show when={group().tasks.length > 0 || ghosts().length > 0}>
+                <Show when={group().key !== "today" && group().key !== "noDate"}>
                   <h3 style={{ margin: "4px 0 0", "font-size": "0.78rem", color: tokens.color.inkSoft }}>
-                    {groupTitles[group.key]}
+                    {groupTitles[group().key]}
                   </h3>
                 </Show>
                 <ul>
-                  <For each={group.tasks}>
+                  <For each={group().tasks} keyed={(task) => task.id}>
                     {(task) => (
                       <TaskCard
-                        task={task}
+                        task={task()}
                         bounds={props.view.bounds}
                         digits={props.view.digits}
                         projects={props.view.projects}
                         tags={props.view.tags}
-                        pending={props.view.pendingIds.has(task.id)}
-                        dragging={props.view.draggingId === task.id}
+                        pending={props.view.pendingIds.has(task().id)}
+                        dragging={props.view.draggingId === task().id}
                         onPatch={props.view.onPatch}
                         onComplete={props.view.onComplete}
                         onMove={props.view.onMove}
