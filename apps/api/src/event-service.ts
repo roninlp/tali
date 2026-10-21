@@ -778,8 +778,15 @@ export class EventService extends Context.Service<EventService>()("EventService"
         }
 
         // Splitting at the first occurrence leaves nothing before it, so
-        // "this and following" is a whole-series edit.
-        if (input.scope === "thisOccurrence" || input.instanceId === anchor) {
+        // "this and following" is a whole-series edit: the rule keeps running
+        // and every later occurrence takes the new values.
+        if (input.scope === "thisAndFollowing" && input.instanceId === anchor) {
+          return { series: patchEventSeries(current, overrides, now), following: null }
+        }
+
+        // "This occurrence" is one exception on the row, at the anchor too: the
+        // series (and every other occurrence) stays exactly as it was.
+        if (input.scope === "thisOccurrence") {
           return {
             series: overrideEventOccurrence({
               event: current,
@@ -855,6 +862,21 @@ export class EventService extends Context.Service<EventService>()("EventService"
         const replayed = yield* replayOccurrenceChange(viewer, input)
         if (Option.isSome(replayed)) return replayed.value
 
+        // A split inserts its new half under a client-minted id. An id that is
+        // already a row would be swallowed by the insert's `ON CONFLICT DO
+        // NOTHING` while the old row is still truncated in the same batch —
+        // the series would lose its future with no continuation. Refuse before
+        // writing anything.
+        if (input.scope === "thisAndFollowing" && input.followingId !== undefined) {
+          if (input.followingId === input.id) {
+            return yield* invalid("followingId", "the new series needs its own id")
+          }
+          const taken = yield* events.findById(input.followingId).pipe(Effect.orDie)
+          if (Option.isSome(taken)) {
+            return yield* invalid("followingId", "this series id is already in use")
+          }
+        }
+
         for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
           const current = yield* readEvent(viewer, input.id, false)
           const change = yield* applyOccurrenceEdit(current, input, now)
@@ -869,19 +891,22 @@ export class EventService extends Context.Service<EventService>()("EventService"
           ]
           if (change.following !== null) {
             const following = change.following
+            if (input.followingMutationId === undefined) {
+              return yield* invalid(
+                "followingMutationId",
+                "a split needs a replay key for the new series"
+              )
+            }
             entries.push({
               state: eventState(following),
               expectedVersion: null,
-              clientMutationId: input.followingMutationId!,
+              clientMutationId: input.followingMutationId,
               op: "upsert",
-              // The tail is only written when the old row really reached the
-              // truncated version in this same batch: a lost CAS must not
+              // The tail is only written when the old row is exactly the
+              // truncated row this batch wrote: a lost CAS — including one a
+              // competing writer masks with the same next version — must not
               // leave two live halves.
-              insert: () =>
-                events.insertStatementGated(following, {
-                  id: change.series.id,
-                  version: change.series.version
-                })
+              insert: () => events.insertStatementGated(following, change.series)
             })
           }
           const applied = yield* commitEntries({ viewer, entries, now })

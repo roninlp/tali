@@ -311,6 +311,72 @@ describe("eventOccurrences", () => {
     expect(occurrences.map((occurrence) => occurrence.date)).toEqual(["2026-10-20"])
     expect(occurrences[0]!.instanceId).toBe("2026-10-21")
   })
+
+  it("expands a series handed over twice only once", () => {
+    // The month read model unions the grid's rows with a second query for an
+    // out-of-grid drill-down, and both queries return every recurring row.
+    const event = series()
+    const once = eventOccurrences({
+      events: [source(event)],
+      from: "2026-10-18",
+      to: "2026-10-31",
+      timeZone: TEHRAN
+    })
+    const twice = eventOccurrences({
+      events: [source(event), source(event)],
+      from: "2026-10-18",
+      to: "2026-10-31",
+      timeZone: TEHRAN
+    })
+
+    expect(twice.map((occurrence) => occurrence.key)).toEqual(
+      once.map((occurrence) => occurrence.key)
+    )
+    expect(new Set(twice.map((occurrence) => occurrence.key)).size).toBe(twice.length)
+  })
+
+  it("skips an unreadable stored series instead of failing the whole window", () => {
+    // `LocalDate` on the wire is a pattern, so a sync push can store a date
+    // that is not a day. One such row must not 500 every calendar read.
+    const badException = series({
+      exceptions: [
+        {
+          id: uuidV7() as EventExceptionId,
+          instanceId: "2026-02-30" as LocalDate,
+          action: "delete",
+          overrides: null,
+          createdAt: NOW
+        }
+      ]
+    })
+    const badAnchor = series({
+      timing: {
+        _tag: "timed",
+        start: "not-an-instant",
+        end: "not-an-instant"
+      }
+    })
+    const healthy = series()
+
+    const occurrences = eventOccurrences({
+      events: [source(badException), source(badAnchor), source(healthy)],
+      from: "2026-10-18",
+      to: "2026-11-01",
+      timeZone: TEHRAN
+    })
+
+    // The bad exception is ignored, so its series still paints its rule; the
+    // unreadable anchor drops only that series.
+    const byEvent = new Map<string, Array<string>>()
+    for (const occurrence of occurrences) {
+      const list = byEvent.get(occurrence.id) ?? []
+      list.push(occurrence.instanceId)
+      byEvent.set(occurrence.id, list)
+    }
+    expect(byEvent.get(badException.id)).toEqual(["2026-10-21", "2026-10-28"])
+    expect(byEvent.get(healthy.id)).toEqual(["2026-10-21", "2026-10-28"])
+    expect(byEvent.has(badAnchor.id)).toBe(false)
+  })
 })
 
 describe("occurrence identity and edits", () => {
@@ -376,6 +442,39 @@ describe("occurrence identity and edits", () => {
     expect(next.exceptions).toEqual([])
     expect(next.recurrence).toBeNull()
     expect(next.version).toBe(2)
+  })
+
+  it("patches the whole series when this-and-following starts at the first occurrence", () => {
+    // "First occurrence" here carries a stored override: the whole-series edit
+    // must fold it into the series and drop the now-redundant exception, not
+    // leave it shadowing the new values.
+    const event = series({
+      exceptions: [
+        {
+          id: uuidV7() as EventExceptionId,
+          instanceId: "2026-10-21",
+          action: "override",
+          overrides: { location: "کافه" },
+          createdAt: NOW
+        },
+        {
+          id: uuidV7() as EventExceptionId,
+          instanceId: "2026-11-11",
+          action: "override",
+          overrides: { title: "بعدی" },
+          createdAt: NOW
+        }
+      ]
+    })
+    const next = patchEventSeries(event, { title: "قرار تازه" }, NOW)
+
+    expect(next.title).toBe("قرار تازه")
+    // The first occurrence's old override is folded in, then dropped.
+    expect(next.location).toBe("کافه")
+    expect(next.exceptions.map((exception) => exception.instanceId)).toEqual(["2026-11-11"])
+    // The rule keeps running: the later occurrences still exist.
+    expect(next.recurrence).toEqual(weeklyTen)
+    expect(next.timing).toEqual(event.timing)
   })
 
   it("splits a series for this-and-following", () => {

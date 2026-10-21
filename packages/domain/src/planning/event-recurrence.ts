@@ -86,7 +86,10 @@ export const EventOccurrence = Schema.Struct({
 })
 export type EventOccurrence = Schema.Schema.Type<typeof EventOccurrence>
 
-/** Inclusive local-date window; `to` is inclusive, like the engine. */
+/**
+ * A local-date window: `from` is inclusive, `before` is exclusive (the same
+ * convention as the other range inputs). The builder's own `to` is inclusive.
+ */
 export const EventOccurrenceQuery = Schema.Struct({
   from: LocalDate,
   before: LocalDate
@@ -115,6 +118,16 @@ export interface EventOccurrenceSource {
 // ── Local-date helpers ───────────────────────────────────────────────────
 
 const plainDate = (date: string): Temporal.PlainDate => Temporal.PlainDate.from(date)
+
+/** A local date the calendar can actually read (`2026-02-30` cannot). */
+const isReadableDate = (date: string): boolean => {
+  try {
+    plainDate(date)
+    return true
+  } catch {
+    return false
+  }
+}
 
 /** The local date one day before `date` (`YYYY-MM-DD`). */
 export const localDayBefore = (date: string): LocalDate =>
@@ -260,6 +273,55 @@ const compareOccurrences = (a: EventOccurrence, b: EventOccurrence): number =>
     : 0) ||
   a.key.localeCompare(b.key)
 
+/** One series' occurrences inside a window (the read-only projection). */
+const seriesOccurrences = (input: {
+  readonly event: EventOccurrenceSource
+  readonly from: LocalDate
+  readonly to: LocalDate
+  /** Display-day padding: the occurrence may paint on another day. */
+  readonly windowStart: LocalDate
+  readonly windowEnd: LocalDate
+  readonly viewerTimeZone: string
+}): ReadonlyArray<EventOccurrence> => {
+  const { event } = input
+  const anchor = eventAnchorDate(event)
+  const exceptions = new Map(event.exceptions.map((entry) => [entry.instanceId, entry]))
+  const instanceIds = new Set<string>([anchor])
+
+  if (event.recurrence !== null) {
+    for (const date of occurrenceDates(event.recurrence, anchor, {
+      from: input.windowStart,
+      to: input.windowEnd
+    })) {
+      instanceIds.add(date)
+    }
+    for (const exception of event.exceptions) {
+      if (instanceIds.has(exception.instanceId)) continue
+      // The wire pattern admits dates that are not days; such an exception is
+      // noise, not a reason to hide the series.
+      if (!isReadableDate(exception.instanceId)) continue
+      if (!isEventOccurrence(event, exception.instanceId)) continue
+      instanceIds.add(exception.instanceId)
+    }
+  }
+
+  const occurrences: Array<EventOccurrence> = []
+  for (const instanceId of instanceIds) {
+    const exception = exceptions.get(instanceId)
+    if (exception?.action === "delete") continue
+    const occurrence = occurrenceOf({
+      event,
+      instanceId: instanceId as LocalDate,
+      projected: instanceId !== anchor,
+      viewerTimeZone: input.viewerTimeZone,
+      exception
+    })
+    if (occurrence.date < input.from || occurrence.date > input.to) continue
+    occurrences.push(occurrence)
+  }
+  return occurrences
+}
+
 export interface BuildOccurrencesInput {
   readonly events: ReadonlyArray<EventOccurrenceSource>
   /** Inclusive first display day. */
@@ -285,38 +347,32 @@ export const eventOccurrences = (
   const occurrences: Array<EventOccurrence> = []
   const windowStart = localDayBefore(input.from)
   const windowEnd = localDayAfter(input.to)
+  // The same series can arrive twice: the month read model unions the grid's
+  // rows with a second range query for an out-of-grid drill-down, and both
+  // queries also return every live recurring row. Expanding a row twice would
+  // paint every occurrence twice (and double-count the month's busy marks), so
+  // the source rows are deduped by id exactly as `taskOccurrences` does.
+  const byId = new Map<string, EventOccurrenceSource>()
+  for (const event of input.events) byId.set(event.id, event)
 
-  for (const event of input.events) {
-    const anchor = eventAnchorDate(event)
-    const exceptions = new Map(event.exceptions.map((entry) => [entry.instanceId, entry]))
-    const instanceIds = new Set<string>([anchor])
-
-    if (event.recurrence !== null) {
-      for (const date of occurrenceDates(event.recurrence, anchor, {
-        from: windowStart,
-        to: windowEnd
-      })) {
-        instanceIds.add(date)
-      }
-      for (const exception of event.exceptions) {
-        if (instanceIds.has(exception.instanceId)) continue
-        if (!isEventOccurrence(event, exception.instanceId)) continue
-        instanceIds.add(exception.instanceId)
-      }
-    }
-
-    for (const instanceId of instanceIds) {
-      const exception = exceptions.get(instanceId)
-      if (exception?.action === "delete") continue
-      const occurrence = occurrenceOf({
-        event,
-        instanceId: instanceId as LocalDate,
-        projected: instanceId !== anchor,
-        viewerTimeZone: input.timeZone,
-        exception
-      })
-      if (occurrence.date < input.from || occurrence.date > input.to) continue
-      occurrences.push(occurrence)
+  for (const event of byId.values()) {
+    try {
+      occurrences.push(
+        ...seriesOccurrences({
+          event,
+          from: input.from,
+          to: input.to,
+          windowStart,
+          windowEnd,
+          viewerTimeZone: input.timeZone
+        })
+      )
+    } catch {
+      // A stored row can carry a value the wire shapes only pattern-check
+      // ("2026-02-30", a non-ISO instant) — a hand-edited database or a sync
+      // push bypassing the service. Such a row is unreadable, but it must not
+      // turn every calendar read into a 500: skip that series, keep the window.
+      continue
     }
   }
 
@@ -337,26 +393,38 @@ export const eventOccurrencesOf = (
  *
  * Used for a one-off event and for "this and following" at the series' first
  * occurrence: there is no earlier part to keep, so the edit is a plain series
- * edit.
+ * edit and the rule keeps running with the new values.
+ *
+ * A stored override on that first occurrence is folded into the new series
+ * values field by field (the edit wins) and then dropped: leaving it in the
+ * exception list would shadow the series values on the occurrence the edit was
+ * made from.
  */
 export const patchEventSeries = (
   event: Event,
   overrides: EventExceptionOverrides,
   now: string
-): Event =>
-  new Event({
+): Event => {
+  const anchor = eventAnchorDate(event)
+  const merged: EventExceptionOverrides = {
+    ...(storedOccurrenceOverrides(event, anchor) ?? {}),
+    ...overrides
+  }
+  return new Event({
     ...event,
-    title: overrides.title ?? event.title,
-    description: overrides.description !== undefined
-      ? overrides.description
+    title: merged.title ?? event.title,
+    description: merged.description !== undefined
+      ? merged.description
       : event.description,
-    location: overrides.location !== undefined ? overrides.location : event.location,
-    color: overrides.color !== undefined ? overrides.color : event.color,
-    timing: overrides.timing ?? event.timing,
-    timeZone: overrides.timeZone ?? event.timeZone,
+    location: merged.location !== undefined ? merged.location : event.location,
+    color: merged.color !== undefined ? merged.color : event.color,
+    timing: merged.timing ?? event.timing,
+    timeZone: merged.timeZone ?? event.timeZone,
+    exceptions: event.exceptions.filter((exception) => exception.instanceId !== anchor),
     version: event.version + 1,
     updatedAt: now
   })
+}
 
 const withException = (
   event: Event,

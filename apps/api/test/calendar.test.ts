@@ -536,6 +536,51 @@ describe("GET /week", () => {
     expect(after.version).toBe(before.version)
   })
 
+  it("keeps the week readable when a stored row carries an unreadable value", async () => {
+    const h = await setup()
+    const healthy = uuidV7()
+    const poisoned = uuidV7()
+
+    seedEvent(h.db, {
+      id: healthy,
+      title: "جلسهٔ هفتگی",
+      startAt: "2026-10-19T06:30:00.000Z",
+      endAt: "2026-10-19T07:30:00.000Z",
+      recurrence: { frequency: "weekly", interval: 1, byDay: [1], end: { _tag: "never" } }
+    })
+    // A sync push can store a date the wire pattern accepts but no calendar can
+    // read (`LocalDate` is a pattern). One such row must not 500 the household's
+    // whole week.
+    seedEvent(h.db, {
+      id: poisoned,
+      title: "ردیف خراب",
+      startAt: "2026-10-19T08:30:00.000Z",
+      endAt: "2026-10-19T09:30:00.000Z",
+      recurrence: { frequency: "weekly", interval: 1, byDay: [1], end: { _tag: "never" } }
+    })
+    h.db
+      .prepare("UPDATE events SET exceptions = ? WHERE id = ?")
+      .run(
+        JSON.stringify([
+          {
+            id: uuidV7(),
+            instanceId: "2026-02-30",
+            action: "delete",
+            overrides: null,
+            createdAt: NOW
+          }
+        ]),
+        poisoned
+      )
+
+    const response = await week(h, { token: TOKEN_A, anchor: "2026-10-19" })
+    expect(response.status).toBe(200)
+    expect(dayOf(response.model!, "2026-10-19").events.map((event) => event.id)).toEqual([
+      healthy,
+      poisoned
+    ])
+  })
+
   it("honors Saturday, Sunday and Monday week starts from preferences", async () => {
     const h = await setup()
     seedWeek(h)
@@ -705,6 +750,36 @@ describe("GET /month", () => {
       projected: true,
       title: "جلسهٔ هفتگی"
     })
+  })
+
+  it("does not expand a series twice when the drill-down day is outside the grid", async () => {
+    const h = await setup()
+    const series = uuidV7()
+    // Mondays from 2026-03-16, so both Farvardin's grid and the far drill-down
+    // day (a Monday in June) have occurrences.
+    seedEvent(h.db, {
+      id: series,
+      title: "جلسهٔ هفتگی",
+      startAt: "2026-03-16T06:30:00.000Z",
+      endAt: "2026-03-16T07:30:00.000Z",
+      recurrence: { frequency: "weekly", interval: 1, byDay: [1], end: { _tag: "never" } }
+    })
+
+    // 2026-06-01 is outside Farvardin 1405's grid, so the route unions a second
+    // read for that day. That read returns every live recurring row again, and
+    // the builder has to collapse the duplicate instead of painting the series
+    // twice.
+    const model = (await month(h, {
+      token: TOKEN_A,
+      anchor: "2026-03-21",
+      day: "2026-06-01"
+    })).model!
+
+    const monday = model.days.find((day) => day.events > 0)!
+    expect(monday.events).toBe(1)
+    expect(monday.counts.events).toBe(1)
+    expect(model.day?.date).toBe("2026-06-01")
+    expect(model.day?.events.map((event) => event.instanceId)).toEqual(["2026-06-01"])
   })
 
   it("crosses a Jalali month edge and counts adjacent-month cells separately", async () => {

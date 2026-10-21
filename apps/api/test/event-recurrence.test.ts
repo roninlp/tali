@@ -450,7 +450,7 @@ describe("event recurrence — this and following", () => {
     expect(h.feed(followingId)).toHaveLength(1)
   })
 
-  it("gates the new tail row on the old row reaching the truncated version", async () => {
+  it("gates the new tail row on the old row reaching the truncated shape", async () => {
     const h = makeHarness()
     const created = await createSeries(h)
     const followingId = uuidV7() as EventId
@@ -463,27 +463,181 @@ describe("event recurrence — this and following", () => {
       now: NOW
     })!
 
-    const insertTail = (gateVersion: number) =>
+    const insertTail = (gate: typeof split.previous) =>
       h.run(
         Effect.gen(function*() {
           const repo = yield* EventRepo
           const d1 = yield* D1Client.D1Client
-          yield* d1.batch([
-            repo.insertStatementGated(split.following, {
-              id: created.id,
-              version: gateVersion
-            })
-          ])
+          yield* d1.batch([repo.insertStatementGated(split.following, gate)])
         })
       )
 
     // The old row is still v1: a gate expecting the truncated v2 inserts
     // nothing, so a lost CAS cannot leave an orphan tail.
-    await insertTail(created.version + 1)
+    await insertTail(split.previous)
     expect(h.rowOf(followingId)).toBeUndefined()
 
-    await insertTail(created.version)
+    // A competing writer can bump the row to the *same* next version. The
+    // version alone must not open the gate — the row has to carry this
+    // truncation's shape and timestamp too.
+    h.db
+      .prepare("UPDATE events SET version = ?, updated_at = ? WHERE id = ?")
+      .run(split.previous.version, "2026-10-20T09:30:01.000Z", created.id)
+    await insertTail(split.previous)
+    expect(h.rowOf(followingId)).toBeUndefined()
+
+    // Only the row this split actually wrote opens the gate.
+    h.db
+      .prepare("UPDATE events SET updated_at = ?, recurrence = ? WHERE id = ?")
+      .run(split.previous.updatedAt, JSON.stringify(split.previous.recurrence), created.id)
+    await insertTail(split.previous)
     expect(h.rowOf(followingId)).toBeDefined()
+  })
+
+  it("leaves neither half behind when every split attempt loses the CAS", async () => {
+    const h = makeHarness()
+    const created = await createSeries(h)
+    const followingId = uuidV7() as EventId
+
+    // Another member edits the series after our pre-read but before every
+    // batch, so the truncation never lands. The tail must not land either: it
+    // would claim the same future while the old rule still runs.
+    let bumps = 0
+    h.fake.beforeBatch = () => {
+      bumps += 1
+      h.db
+        .prepare("UPDATE events SET version = version + 1, updated_at = ? WHERE id = ?")
+        .run(new Date(Date.parse(NOW) + bumps * 1000).toISOString(), created.id)
+    }
+    const failed = await h.svc((svc) =>
+      svc.editOccurrence(
+        viewer(),
+        {
+          id: created.id,
+          instanceId: "2026-11-04" as LocalDate,
+          clientMutationId: "m-split-lost",
+          followingId,
+          followingMutationId: "m-split-lost-tail",
+          scope: "thisAndFollowing",
+          overrides: { location: "دفتر" }
+        },
+        NOW
+      ).pipe(Effect.flip)
+    )
+    h.fake.beforeBatch = undefined
+
+    expect(failed).toMatchObject({ _tag: "EventConflict" })
+    expect(h.rowOf(followingId)).toBeUndefined()
+    expect(h.feed(followingId)).toEqual([])
+    expect(h.ledger().some((row) => row.clientMutationId === "m-split-lost-tail")).toBe(false)
+
+    // The series still owns the future: its rule was never truncated.
+    const stored = await h.svc((svc) => svc.get(viewer(), created.id))
+    expect(stored.recurrence).toEqual(weekly)
+  })
+
+  it("applies this-and-following at the first occurrence as a whole-series edit", async () => {
+    const h = makeHarness()
+    const created = await createSeries(h)
+
+    const change = await h.svc((svc) =>
+      svc.editOccurrence(
+        viewer(),
+        {
+          id: created.id,
+          instanceId: "2026-10-21" as LocalDate,
+          clientMutationId: "m-series-edit",
+          scope: "thisAndFollowing",
+          overrides: { title: "جلسهٔ تازه", location: "دفتر" }
+        },
+        NOW
+      )
+    )
+
+    // No split: one row, same rule and timing, new series values.
+    expect(change.following).toBeNull()
+    expect(change.series.version).toBe(2)
+    expect(change.series.title).toBe("جلسهٔ تازه")
+    expect(change.series.location).toBe("دفتر")
+    expect(change.series.timing).toEqual(timed)
+    expect(change.series.recurrence).toEqual(weekly)
+    expect(change.series.exceptions).toEqual([])
+
+    // Every later occurrence carries the new values — not just the first.
+    const list = await occurrences(h, "2026-10-18", "2026-11-01")
+    expect(list.map((occurrence) => [occurrence.instanceId, occurrence.title])).toEqual([
+      ["2026-10-21", "جلسهٔ تازه"],
+      ["2026-10-28", "جلسهٔ تازه"]
+    ])
+    expect(h.feed(created.id).map((row) => row.version)).toEqual([1, 2])
+  })
+
+  it("refuses to edit or delete another member's private occurrence", async () => {
+    const h = makeHarness()
+    const priv = await createSeries(h, { visibility: "private" })
+    const other = viewer({ userId: "user-b" as UserId })
+
+    const edit = await h.svc((svc) =>
+      svc.editOccurrence(
+        other,
+        {
+          id: priv.id,
+          instanceId: "2026-10-28" as LocalDate,
+          clientMutationId: "m-private-edit",
+          scope: "thisOccurrence",
+          overrides: { title: "x" }
+        },
+        NOW
+      )
+    ).catch((cause: unknown) => cause)
+    expect(edit).toMatchObject({ _tag: "EventForbidden", reason: "private" })
+
+    const remove = await h.svc((svc) =>
+      svc.deleteOccurrence(
+        other,
+        {
+          id: priv.id,
+          instanceId: "2026-10-28" as LocalDate,
+          clientMutationId: "m-private-delete",
+          scope: "thisAndFollowing"
+        },
+        NOW
+      )
+    ).catch((cause: unknown) => cause)
+    expect(remove).toMatchObject({ _tag: "EventForbidden", reason: "private" })
+
+    // Nothing was written and the series is untouched.
+    expect(h.feed(priv.id)).toHaveLength(1)
+    expect((await h.svc((svc) => svc.get(viewer(), priv.id))).version).toBe(1)
+  })
+
+  it("rejects a split that would overwrite an existing series id", async () => {
+    const h = makeHarness()
+    const created = await createSeries(h)
+    const other = await createSeries(h)
+    const before = h.feed(created.id).length
+
+    const rejected = await h.svc((svc) =>
+      svc.editOccurrence(
+        viewer(),
+        {
+          id: created.id,
+          instanceId: "2026-11-04" as LocalDate,
+          clientMutationId: "m-split-taken",
+          followingId: other.id,
+          followingMutationId: "m-split-taken-tail",
+          scope: "thisAndFollowing",
+          overrides: { title: "جلسهٔ تازه" }
+        },
+        NOW
+      )
+    ).catch((cause: unknown) => cause)
+
+    expect(rejected).toMatchObject({ _tag: "EventValidationError" })
+    // The old row was not truncated and no tail was written.
+    expect((await h.svc((svc) => svc.get(viewer(), created.id))).recurrence).toEqual(weekly)
+    expect(h.feed(created.id)).toHaveLength(before)
+    expect(h.feed(other.id)).toHaveLength(1)
   })
 
   it("deletes this and following by truncating the series", async () => {

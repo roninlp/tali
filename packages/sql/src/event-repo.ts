@@ -317,10 +317,13 @@ export class EventRepo extends Context.Service<EventRepo>()("EventRepo", {
      * Statement form so the sync engine can put the write in one batch.
      *
      * It is an `INSERT … SELECT` so the same row list can carry a gate: a
-     * series split inserts the new tail **only if** the old row really reached
-     * the truncated version in the same batch. Without that gate a lost
-     * compare-and-set on the old row would leave an orphan tail row (the two
-     * halves would both claim the future). `1 = 1` is the ungated form.
+     * series split inserts the new tail **only if** the old row is exactly the
+     * truncated row this batch wrote. Matching the whole shape matters, not
+     * just the version: a concurrent writer that bumps the series to the same
+     * next version would otherwise open the gate while our truncation lost its
+     * compare-and-set, and the two halves would both claim the future. The
+     * `notes_fts` index hook uses the same version+`updated_at` gate for the
+     * same reason. `1 = 1` is the ungated form.
      */
     const insertEvent = (event: Event, gate: Statement.Fragment) => sql`
       INSERT INTO events
@@ -347,13 +350,17 @@ export class EventRepo extends Context.Service<EventRepo>()("EventRepo", {
 
     const insertStatementGated = (
       event: Event,
-      gate: { readonly id: string; readonly version: number }
+      gate: Pick<Event, "id" | "version" | "updatedAt" | "recurrence">
     ) =>
       insertEvent(
         event,
         sql`EXISTS (
           SELECT 1 FROM events
-          WHERE id = ${gate.id} AND version = ${gate.version} AND deleted_at IS NULL
+          WHERE id = ${gate.id}
+            AND version = ${gate.version}
+            AND updated_at = ${gate.updatedAt}
+            AND recurrence IS ${encodeRecurrence(gate.recurrence)}
+            AND deleted_at IS NULL
         )`
       )
 
