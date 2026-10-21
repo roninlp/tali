@@ -2,10 +2,19 @@ import { Schema } from "effect"
 import { Rpc, RpcClient, RpcGroup } from "effect/rpc"
 import type { RpcClientError } from "effect/rpc/RpcClientError"
 import {
-  ListItem,
-  ListItemId,
-  ListItemInsert,
-  ListItemNotFound,
+  List,
+  ListCreateInput,
+  ListId,
+  ListItemCheckInput,
+  ListItemCreateInput,
+  ListItemMutationInput,
+  ListItemUpdateInput,
+  ListItemsAppendInput,
+  ListItemsQuery,
+  ListMutationInput,
+  ListReorderInput,
+  ListServiceError,
+  ListUpdateInput,
   Note,
   NoteCreateInput,
   NoteFlagInput,
@@ -16,6 +25,7 @@ import {
   NoteServiceError,
   NoteTagInput,
   NoteUpdateInput,
+  PlanningListItem,
   Project,
   ProjectCreateInput,
   ProjectRenameInput,
@@ -46,20 +56,79 @@ import {
  * invalid-transition and validation outcomes by tag.
  */
 
+// ── Lists / ListItems (ticket #39; FR-LIST-01/02/03) ─────────────────────
+
+const ListRpcError = Schema.Union([ListServiceError, Unauthorized])
+
+class CreateList extends Rpc.make("CreateList", {
+  payload: ListCreateInput,
+  success: List,
+  error: ListRpcError
+}) {}
+
+class GetList extends Rpc.make("GetList", {
+  payload: Schema.Struct({ id: ListId }),
+  success: List,
+  error: ListRpcError
+}) {}
+
+class UpdateList extends Rpc.make("UpdateList", {
+  payload: ListUpdateInput,
+  success: List,
+  error: ListRpcError
+}) {}
+
+class DeleteList extends Rpc.make("DeleteList", {
+  payload: ListMutationInput,
+  success: List,
+  error: ListRpcError
+}) {}
+
+class ListLists extends Rpc.make("ListLists", {
+  success: Schema.Array(List),
+  error: ListRpcError
+}) {}
+
 class CreateListItem extends Rpc.make("CreateListItem", {
-  payload: ListItemInsert,
-  success: ListItem,
-  error: ListItemNotFound
+  payload: ListItemCreateInput,
+  success: PlanningListItem,
+  error: ListRpcError
+}) {}
+
+class AppendListItems extends Rpc.make("AppendListItems", {
+  payload: ListItemsAppendInput,
+  success: Schema.Array(PlanningListItem),
+  error: ListRpcError
 }) {}
 
 class ListListItems extends Rpc.make("ListListItems", {
-  success: Schema.Array(ListItem)
+  payload: ListItemsQuery,
+  success: Schema.Array(PlanningListItem),
+  error: ListRpcError
 }) {}
 
-class ToggleListItem extends Rpc.make("ToggleListItem", {
-  payload: Schema.Struct({ id: ListItemId, checked: Schema.Boolean }),
-  success: ListItem,
-  error: ListItemNotFound
+class UpdateListItem extends Rpc.make("UpdateListItem", {
+  payload: ListItemUpdateInput,
+  success: PlanningListItem,
+  error: ListRpcError
+}) {}
+
+class SetListItemChecked extends Rpc.make("SetListItemChecked", {
+  payload: ListItemCheckInput,
+  success: PlanningListItem,
+  error: ListRpcError
+}) {}
+
+class DeleteListItem extends Rpc.make("DeleteListItem", {
+  payload: ListItemMutationInput,
+  success: PlanningListItem,
+  error: ListRpcError
+}) {}
+
+class ReorderListItems extends Rpc.make("ReorderListItems", {
+  payload: ListReorderInput,
+  success: Schema.Array(PlanningListItem),
+  error: ListRpcError
 }) {}
 
 const TaskRpcError = Schema.Union([TaskServiceError, Unauthorized])
@@ -228,9 +297,18 @@ class ListTrashNotes extends Rpc.make("ListTrashNotes", {
 }) {}
 
 export const ApiRpcs = RpcGroup.make(
+  CreateList,
+  GetList,
+  UpdateList,
+  DeleteList,
+  ListLists,
   CreateListItem,
+  AppendListItems,
   ListListItems,
-  ToggleListItem,
+  UpdateListItem,
+  SetListItemChecked,
+  DeleteListItem,
+  ReorderListItems,
   CreateTask,
   GetTask,
   UpdateTask,

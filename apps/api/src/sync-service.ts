@@ -359,12 +359,22 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
 
         const write = (
           entry: PushEntry,
-          state: SyncEntityState,
+          inputState: SyncEntityState,
           expectedVersion: number | null,
           op: "upsert" | "delete",
           tag: WriteTag,
           previous?: SyncEntityState
         ) => {
+          // Server-stamped attribution for the list "updated by" label (#39).
+          // Only the list aggregates carry the column; other entities ignore
+          // the extra data field.
+          const state: SyncEntityState =
+            inputState.entityType === "list" || inputState.entityType === "listItem"
+              ? {
+                ...inputState,
+                data: { ...inputState.data, lastWriterId: input.userId }
+              }
+              : inputState
           const statements: Array<Statement.Statement<unknown>> = [
             repo.writeEntity({ state, expectedVersion }),
             repo.appendFeed({

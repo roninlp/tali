@@ -34,7 +34,8 @@ const MIGRATIONS = [
   "0003_sync_engine.sql",
   "0004_push_subscriptions.sql",
   "0005_core_planning.sql",
-  "0007_task_recurrence.sql"
+  "0007_task_recurrence.sql",
+  "0008_list_last_writer.sql"
 ]
 
 const NOW = "2026-10-20T09:30:00.000Z"

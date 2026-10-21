@@ -1,9 +1,9 @@
 import { Effect } from "effect"
 import type { Headers } from "effect/http/Headers"
 import { ApiRpcs } from "@tali/rpc"
-import { NoteForbidden, TaskForbidden, Unauthorized } from "@tali/domain"
+import { ListForbidden, NoteForbidden, TaskForbidden, Unauthorized } from "@tali/domain"
 import { AuthService } from "./auth-service.js"
-import { ListItemService } from "./list-item-service.js"
+import { ListService, type ListViewer } from "./list-service.js"
 import { NoteService } from "./note-service.js"
 import { PreferencesService } from "./preferences-service.js"
 import { TaskService, type TaskViewer } from "./task-service.js"
@@ -51,7 +51,8 @@ export const viewerFromHeaders = (
     return {
       userId: context.user.id,
       householdId: context.householdId,
-      timeZone: prefs.timeZone
+      timeZone: prefs.timeZone,
+      defaultCheckedPlacement: prefs.checkedItemPlacement
     } as const
   })
 
@@ -83,13 +84,61 @@ const withNoteViewer = <A, E, R>(
     Effect.flatMap(run)
   )
 
+/**
+ * Lists have their own typed forbidden error, so the edge's "no household"
+ * failure is mapped before the handler runs (same pattern as notes).
+ */
+const withListViewer = <A, E, R>(
+  headers: Headers,
+  run: (viewer: ListViewer) => Effect.Effect<A, E, R>
+): Effect.Effect<A, E | Unauthorized | ListForbidden, AuthService | PreferencesService | R> =>
+  viewerFromHeaders(headers).pipe(
+    Effect.mapError((error) =>
+      error._tag === "TaskForbidden"
+        ? new ListForbidden({ id: error.id, reason: error.reason })
+        : error
+    ),
+    Effect.flatMap(run)
+  )
+
 export const RpcHandlers = ApiRpcs.toLayer({
-  CreateListItem: (input) =>
-    ListItemService.pipe(Effect.flatMap((svc) => svc.create(input))),
-  ListListItems: () =>
-    ListItemService.pipe(Effect.flatMap((svc) => svc.list())),
-  ToggleListItem: ({ id, checked }) =>
-    ListItemService.pipe(Effect.flatMap((svc) => svc.setChecked(id, checked))),
+  CreateList: (input, { headers }) =>
+    withListViewer(headers, (viewer) =>
+      ListService.pipe(Effect.flatMap((svc) => svc.create(viewer, input)))),
+  GetList: ({ id }, { headers }) =>
+    withListViewer(headers, (viewer) =>
+      ListService.pipe(Effect.flatMap((svc) => svc.get(viewer, id)))),
+  UpdateList: (input, { headers }) =>
+    withListViewer(headers, (viewer) =>
+      ListService.pipe(Effect.flatMap((svc) => svc.update(viewer, input)))),
+  DeleteList: (input, { headers }) =>
+    withListViewer(headers, (viewer) =>
+      ListService.pipe(Effect.flatMap((svc) => svc.remove(viewer, input)))),
+  ListLists: (_input, { headers }) =>
+    withListViewer(headers, (viewer) =>
+      ListService.pipe(Effect.flatMap((svc) => svc.list(viewer)))),
+
+  CreateListItem: (input, { headers }) =>
+    withListViewer(headers, (viewer) =>
+      ListService.pipe(Effect.flatMap((svc) => svc.createItem(viewer, input)))),
+  AppendListItems: (input, { headers }) =>
+    withListViewer(headers, (viewer) =>
+      ListService.pipe(Effect.flatMap((svc) => svc.appendItems(viewer, input)))),
+  ListListItems: (input, { headers }) =>
+    withListViewer(headers, (viewer) =>
+      ListService.pipe(Effect.flatMap((svc) => svc.listItems(viewer, input)))),
+  UpdateListItem: (input, { headers }) =>
+    withListViewer(headers, (viewer) =>
+      ListService.pipe(Effect.flatMap((svc) => svc.updateItem(viewer, input)))),
+  SetListItemChecked: (input, { headers }) =>
+    withListViewer(headers, (viewer) =>
+      ListService.pipe(Effect.flatMap((svc) => svc.setItemChecked(viewer, input)))),
+  DeleteListItem: (input, { headers }) =>
+    withListViewer(headers, (viewer) =>
+      ListService.pipe(Effect.flatMap((svc) => svc.deleteItem(viewer, input)))),
+  ReorderListItems: (input, { headers }) =>
+    withListViewer(headers, (viewer) =>
+      ListService.pipe(Effect.flatMap((svc) => svc.reorder(viewer, input)))),
 
   CreateTask: (input, { headers }) =>
     withViewer(headers, (viewer) =>
