@@ -122,6 +122,8 @@ const linkOf = (type: string, id: string | null): ReminderLink => {
       return id === null ? { _tag: "none" } : { _tag: "event", eventId: id as never }
     case "habit":
       return id === null ? { _tag: "none" } : { _tag: "habit", habitId: id as never }
+    case "occasion":
+      return id === null ? { _tag: "none" } : { _tag: "occasion", occasionId: id as never }
     default:
       return { _tag: "none" }
   }
@@ -185,6 +187,8 @@ export const linkColumns = (
       return { linkType: "event", linkId: link.eventId }
     case "habit":
       return { linkType: "habit", linkId: link.habitId }
+    case "occasion":
+      return { linkType: "occasion", linkId: link.occasionId }
     default:
       return { linkType: "none", linkId: null }
   }
@@ -209,6 +213,32 @@ export class ReminderRepo extends Context.Service<ReminderRepo>()("ReminderRepo"
     const findById = (id: ReminderId) =>
       Effect.map(
         sql<ReminderRow>`SELECT ${sql.literal(REMINDER_SELECT)} FROM reminders WHERE id = ${id}`,
+        (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toReminder)
+      )
+
+    /**
+     * The reminder already materialised for one occasion occurrence, if any.
+     *
+     * Tombstones count: once the owner deletes a materialised advance reminder,
+     * a later materialisation of the same occurrence must not resurrect it. The
+     * lookup is by the flattened link plus the exact fire instant, which is the
+     * durable key `(occasion, occurrence date)` expands to.
+     */
+    const findOccasionByFireAt = (input: {
+      readonly householdId: string
+      readonly occasionId: string
+      readonly fireAt: string
+    }) =>
+      Effect.map(
+        sql<ReminderRow>`
+          SELECT ${sql.literal(REMINDER_SELECT)} FROM reminders
+          WHERE household_id = ${input.householdId}
+            AND link_type = 'occasion'
+            AND link_id = ${input.occasionId}
+            AND fire_at = ${input.fireAt}
+          ORDER BY version DESC, id ASC
+          LIMIT 1
+        `,
         (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toReminder)
       )
 
@@ -283,7 +313,7 @@ export class ReminderRepo extends Context.Service<ReminderRepo>()("ReminderRepo"
       )
     }
 
-    return { findById, listVisible, insert, update } as const
+    return { findById, findOccasionByFireAt, listVisible, insert, update } as const
   })
 }) {}
 

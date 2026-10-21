@@ -12,6 +12,7 @@ import {
   localDateInOption,
   Note,
   normalizePersian,
+  Occasion,
   Project,
   sameHabitFrequency,
   Reminder,
@@ -262,6 +263,13 @@ const asStringArray = (value: unknown): ReadonlyArray<string> => {
   const parsed = parseJson(value)
   return Array.isArray(parsed) ? parsed.filter((entry) => typeof entry === "string") : []
 }
+const asNullableInt = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : null
+/** The occasion offset column: `null`, or 0…365 whole days. */
+const encodeAdvanceDays = (value: unknown): number | null => {
+  const days = asNullableInt(value)
+  return days !== null && days >= 0 && days <= 365 ? days : null
+}
 
 // ── Field guards (client patches) ─────────────────────────────────────────
 
@@ -285,6 +293,15 @@ const isJsonArray: SyncFieldGuard = (value) => Array.isArray(value)
 /** Local calendar date `YYYY-MM-DD` (a habit entry's day). */
 const isLocalDate: SyncFieldGuard = (value) =>
   typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+const isNullableIntInRange = (
+  minimum: number,
+  maximum: number
+): SyncFieldGuard => (value) =>
+  value === null ||
+  (typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= minimum &&
+    value <= maximum)
 
 // ── Generic merge / hydrate helpers ───────────────────────────────────────
 
@@ -1656,6 +1673,8 @@ const reminderLinkOf = (type: unknown, id: unknown): Record<string, unknown> => 
       return linkId === null ? { _tag: "none" } : { _tag: "event", eventId: linkId }
     case "habit":
       return linkId === null ? { _tag: "none" } : { _tag: "habit", habitId: linkId }
+    case "occasion":
+      return linkId === null ? { _tag: "none" } : { _tag: "occasion", occasionId: linkId }
     default:
       return { _tag: "none" }
   }
@@ -1675,6 +1694,8 @@ const reminderLinkColumns = (
         return { linkType: "event", linkId: asText(record.eventId) }
       case "habit":
         return { linkType: "habit", linkId: asText(record.habitId) }
+      case "occasion":
+        return { linkType: "occasion", linkId: asText(record.occasionId) }
       default:
         return { linkType: "none", linkId: null }
     }
@@ -1784,7 +1805,8 @@ const reminderDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => (
         (patch.link as Record<string, unknown> | undefined)?._tag,
         (patch.link as Record<string, unknown> | undefined)?.taskId ??
           (patch.link as Record<string, unknown> | undefined)?.eventId ??
-          (patch.link as Record<string, unknown> | undefined)?.habitId
+          (patch.link as Record<string, unknown> | undefined)?.habitId ??
+          (patch.link as Record<string, unknown> | undefined)?.occasionId
       ),
       silencedUntil: normalizeInstantText(asText(patch.silencedUntil)),
       timeZone,
@@ -1878,6 +1900,113 @@ const reminderDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => (
   }
 })
 
+// ── Occasion ──────────────────────────────────────────────────────────────
+
+const OCCASION_COLUMNS =
+  `${META_COLUMNS}, type, title, origin_date AS originDate, time_zone AS timeZone, ` +
+  `yearly, advance_reminder_days AS advanceReminderDays, ` +
+  `preparation_task_id AS preparationTaskId, color, created_at AS createdAt`
+
+const occasionCodec = withSchema<Occasion>(Occasion, (row) => ({
+  id: String(row.id),
+  type: "occasion",
+  title: encodeText(row.title),
+  originDate: encodeText(row.originDate),
+  timeZone: encodeText(row.timeZone),
+  yearly: asBit(row.yearly),
+  advanceReminderDays: asNullableInt(row.advanceReminderDays),
+  preparationTaskId: asText(row.preparationTaskId),
+  ownerId: encodeText(row.ownerId),
+  householdId: encodeText(row.householdId),
+  visibility: asVisibility(row.visibility),
+  color: asText(row.color),
+  createdAt: encodeText(row.createdAt)
+}))
+
+/**
+ * The occasion's physical columns.
+ *
+ * `yearly` is a SQLite 0/1 and `advanceReminderDays` is nullable; both are
+ * normalised by the codec. The preparation-task link is client-writable on
+ * purpose: an offline client mints the task and the link in one outbox drain,
+ * exactly like it mints any other client-owned row. A stale link is harmless
+ * (the next preparation replaces a missing task).
+ */
+const occasionDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
+  entityType: "occasion",
+  table: "occasions",
+  select: OCCASION_COLUMNS,
+  scope: SYNC_SCOPE_COLUMNS,
+  softDeleteColumn: "deleted_at",
+  writable: new Map([
+    ["title", isString],
+    ["originDate", isString],
+    ["timeZone", isString],
+    ["yearly", isBoolean],
+    ["advanceReminderDays", isNullableIntInRange(0, 365)],
+    ["preparationTaskId", isNullableString],
+    ["color", isNullableString],
+    ["visibility", isOneOf("private", "shared")]
+  ]),
+  ...occasionCodec,
+  defaults: (patch, context) => ({
+    id: context.entityId,
+    type: "occasion",
+    title: encodeText(patch.title),
+    // A delete-only push carries no date; the tombstone still needs a valid
+    // local date, so the client's own write day is the fallback.
+    originDate: encodeText(patch.originDate) || context.clientUpdatedAt.slice(0, 10),
+    timeZone: encodeText(patch.timeZone) || "UTC",
+    yearly: patch.yearly !== false,
+    // Preserve an out-of-range offset so the strict schema rejects it rather
+    // than silently clearing it.
+    advanceReminderDays: asNullableInt(patch.advanceReminderDays),
+    preparationTaskId: asText(patch.preparationTaskId),
+    ownerId: context.userId,
+    householdId: context.householdId,
+    visibility: asVisibility(patch.visibility),
+    color: asText(patch.color),
+    createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
+  }),
+  /**
+   * The shared field-level LWW merge. The origin date is one field: a newer
+   * edit may move the annual anchor, and an older one must not.
+   */
+  merge: (input) => mergeFields({}, input),
+  insert: (state) => sql`
+    INSERT INTO occasions
+      (id, type, title, owner_id, household_id, visibility, color,
+       origin_date, time_zone, yearly, advance_reminder_days,
+       preparation_task_id, created_at, updated_at, version, deleted_at)
+    VALUES
+      (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
+       ${state.ownerId}, ${state.householdId}, ${state.visibility},
+       ${encodeNullableText(state.data.color)},
+       ${encodeText(state.data.originDate)}, ${encodeText(state.data.timeZone)},
+       ${encodeBit(state.data.yearly)},
+       ${encodeAdvanceDays(state.data.advanceReminderDays)},
+       ${encodeNullableText(state.data.preparationTaskId)},
+       ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
+       ${state.updatedAt}, ${state.version}, ${state.deletedAt})
+    ON CONFLICT DO NOTHING
+  `,
+  update: (state, expectedVersion) => sql`
+    UPDATE occasions SET
+      title = ${encodeText(state.data.title)},
+      visibility = ${state.visibility},
+      color = ${encodeNullableText(state.data.color)},
+      origin_date = ${encodeText(state.data.originDate)},
+      time_zone = ${encodeText(state.data.timeZone)},
+      yearly = ${encodeBit(state.data.yearly)},
+      advance_reminder_days = ${encodeAdvanceDays(state.data.advanceReminderDays)},
+      preparation_task_id = ${encodeNullableText(state.data.preparationTaskId)},
+      updated_at = ${state.updatedAt},
+      version = ${state.version},
+      deleted_at = ${state.deletedAt}
+    WHERE id = ${state.entityId} AND version = ${expectedVersion}
+  `
+})
+
 // ── Registry ──────────────────────────────────────────────────────────────
 
 /** Aggregates that sync today. Other `ItemType`s still reject as unsupported. */
@@ -1890,9 +2019,9 @@ export const SYNC_ENTITY_TYPES = [
   "note",
   "event",
   "habit",
-  "habitEntry"
-,
-  "reminder"
+  "habitEntry",
+  "reminder",
+  "occasion"
 ] as const satisfies ReadonlyArray<SyncEntityType>
 
 export const makeSyncRegistry = (sql: SqlClient.SqlClient): SyncRegistry => {
@@ -1905,9 +2034,9 @@ export const makeSyncRegistry = (sql: SqlClient.SqlClient): SyncRegistry => {
     noteDefinition(sql),
     eventDefinition(sql),
     habitDefinition(sql),
-    habitEntryDefinition(sql)
-,
-    reminderDefinition(sql)
+    habitEntryDefinition(sql),
+    reminderDefinition(sql),
+    occasionDefinition(sql)
   ]
   const byType = new Map<SyncEntityType, SyncEntityDefinition>(
     definitions.map((definition) => [definition.entityType, definition])

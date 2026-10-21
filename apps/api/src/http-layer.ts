@@ -7,6 +7,7 @@ import {
   HabitEntryRepoLive,
   HabitRepoLive,
   ListItemRepoLive,
+  OccasionRepoLive,
   NoteRepoLive,
   NoteSearchRepoLive,
   ProjectRepoLive,
@@ -27,6 +28,7 @@ import { ListItemServiceLive } from "./list-item-service.js"
 import { NoteSearchRoutes } from "./note-search-routes.js"
 import { NoteSearchServiceLive } from "./note-search-service.js"
 import { NoteServiceLive } from "./note-service.js"
+import { OccasionServiceLive } from "./occasion-service.js"
 import { PreferencesRoutes } from "./preferences-routes.js"
 import { PreferencesServiceLive } from "./preferences-service.js"
 import { PushRoutes } from "./push-routes.js"
@@ -66,7 +68,8 @@ const ServiceLayers = Layer.mergeAll(
   CalendarServiceLive,
   EventServiceLive,
   HabitServiceLive,
-  ReminderServiceLive
+  ReminderServiceLive,
+  OccasionServiceLive
 )
 
 /** The aggregate repositories (each service also provides the ones it owns). */
@@ -80,6 +83,7 @@ const RepoLayers = Layer.mergeAll(
   EventRepoLive,
   HabitRepoLive,
   HabitEntryRepoLive,
+  OccasionRepoLive,
   ReminderRepoLive,
   ReminderDispatchRepoLive,
   PushSubscriptionRepoLive

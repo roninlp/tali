@@ -2,6 +2,8 @@ import { Context, Effect, Layer, Option, Schema } from "effect"
 import {
   EventRepo,
   EventRepoLive,
+  OccasionRepo,
+  OccasionRepoLive,
   type SyncEntityState,
   ReminderDispatchRepo,
   ReminderDispatchRepoLive,
@@ -180,6 +182,7 @@ export class ReminderService extends Context.Service<ReminderService>()("Reminde
     const dispatches = yield* ReminderDispatchRepo
     const tasks = yield* TaskRepo
     const events = yield* EventRepo
+    const occasions = yield* OccasionRepo
     const sync = yield* SyncRepo
 
     const definition = (entityType: SyncEntityType) => {
@@ -319,6 +322,28 @@ export class ReminderService extends Context.Service<ReminderService>()("Reminde
           }
           case "habit":
             return null
+          case "occasion": {
+            const found = yield* occasions.findById(link.occasionId).pipe(Effect.orDie)
+            if (Option.isNone(found) || found.value.deletedAt !== null) {
+              return yield* invalid("link", "the linked occasion no longer exists")
+            }
+            const occasion = found.value
+            if (occasion.householdId !== viewer.householdId) {
+              return yield* Effect.fail(
+                new ReminderForbidden({ id: occasion.id, reason: "household" })
+              )
+            }
+            if (occasion.visibility === "private" && occasion.ownerId !== viewer.userId) {
+              return yield* Effect.fail(
+                new ReminderForbidden({ id: occasion.id, reason: "private" })
+              )
+            }
+            // An occasion's advance instant is a projection of the occurrence,
+            // not one stored instant, so there is no link-derived default: the
+            // materialiser supplies an explicit `fireAt`, and a hand-created
+            // `once` occasion reminder must do the same.
+            return null
+          }
           default:
             return null
         }
@@ -984,5 +1009,6 @@ export const ReminderServiceLive = Layer.effect(ReminderService, ReminderService
   Layer.provide(ReminderDispatchRepoLive),
   Layer.provide(TaskRepoLive),
   Layer.provide(EventRepoLive),
+  Layer.provide(OccasionRepoLive),
   Layer.provide(SyncRepoLive)
 )

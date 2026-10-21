@@ -23,6 +23,16 @@ import type {
   NoteSaveInput,
   NoteTagInput,
   NoteUpdateInput,
+  Occasion,
+  OccasionAdvanceReminder,
+  OccasionCreateInput,
+  OccasionDetail,
+  OccasionMutationInput,
+  OccasionOccurrence,
+  OccasionOccurrenceQuery,
+  OccasionPrepareInput,
+  OccasionPreparation,
+  OccasionUpdateInput,
   PlanningListItem,
   Reminder,
   ReminderCreateInput,
@@ -182,5 +192,45 @@ export const api = {
     Effect.runPromise(withClient((client) => client.DeleteReminder(input))),
 
   listReminders: (input: ReminderListInput = {}): Promise<ReadonlyArray<Reminder>> =>
-    Effect.runPromise(withClient((client) => client.ListReminders(input)))
+    Effect.runPromise(withClient((client) => client.ListReminders(input))),
+
+  // ── Occasions (#59) ────────────────────────────────────────────────────
+  // The calendar panel writes through the local mirror; these are the online
+  // RPC equivalents (server-authoritative create/update, detail projection and
+  // the one-batch preparation task).
+
+  createOccasion: (input: OccasionCreateInput): Promise<Occasion> =>
+    Effect.runPromise(withClient((client) => client.CreateOccasion(input))),
+
+  getOccasion: (id: string): Promise<OccasionDetail> =>
+    Effect.runPromise(
+      withClient((client) => client.GetOccasion({ id: id as Occasion["id"] }))
+    ),
+
+  updateOccasion: (input: OccasionUpdateInput): Promise<Occasion> =>
+    Effect.runPromise(withClient((client) => client.UpdateOccasion(input))),
+
+  deleteOccasion: (input: OccasionMutationInput): Promise<Occasion> =>
+    Effect.runPromise(withClient((client) => client.DeleteOccasion(input))),
+
+  listOccasions: (): Promise<ReadonlyArray<Occasion>> =>
+    Effect.runPromise(withClient((client) => client.ListOccasions())),
+
+  listOccasionOccurrences: (
+    input: OccasionOccurrenceQuery
+  ): Promise<ReadonlyArray<OccasionOccurrence>> =>
+    Effect.runPromise(withClient((client) => client.ListOccasionOccurrences(input))),
+
+  listOccasionReminders: (
+    input: OccasionOccurrenceQuery
+  ): Promise<ReadonlyArray<OccasionAdvanceReminder>> =>
+    Effect.runPromise(withClient((client) => client.ListOccasionReminders(input))),
+
+  materialiseOccasionReminders: (
+    input: OccasionOccurrenceQuery
+  ): Promise<ReadonlyArray<Reminder>> =>
+    Effect.runPromise(withClient((client) => client.MaterialiseOccasionReminders(input))),
+
+  prepareOccasionTask: (input: OccasionPrepareInput): Promise<OccasionPreparation> =>
+    Effect.runPromise(withClient((client) => client.PrepareOccasionTask(input)))
 }

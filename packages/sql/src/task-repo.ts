@@ -463,6 +463,32 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
     `
 
     /**
+     * A statement-form insert that only lands when `gate` holds.
+     *
+     * Used by the occasion preparation task (#59): the task is inserted in the
+     * same batch as the occasion's CAS that links it, gated on that exact
+     * occasion version and link, so a lost CAS cannot leave an orphan task. The
+     * caller owns the gate fragment; it binds only parameters.
+     */
+    const insertStatementGated = (task: Task, gate: Statement.Fragment) => sql`
+      INSERT INTO tasks
+        (id, type, title, description, owner_id, household_id, visibility,
+         status, priority, due_at, due_date, time_zone, project_id, tag_ids,
+         color, recurrence, recurrence_mode, started_at, completed_at,
+         created_at, updated_at, version, deleted_at)
+      SELECT
+        ${task.id}, ${task.type}, ${task.title}, ${task.description},
+        ${task.ownerId}, ${task.householdId}, ${task.visibility},
+        ${task.status}, ${task.priority}, ${task.dueAt}, ${task.dueDate},
+        ${task.timeZone}, ${task.projectId}, ${encodeTagIds(task.tagIds)},
+        ${task.color}, ${encodeRecurrence(task.recurrence)},
+        ${task.recurrenceMode}, ${task.startedAt}, ${task.completedAt},
+        ${task.createdAt}, ${task.updatedAt}, ${task.version}, ${task.deletedAt}
+      WHERE ${gate}
+      ON CONFLICT DO NOTHING
+    `
+
+    /**
      * The next occurrence of a recurring task (ticket #38), inserted in the
      * same batch as the completion that spawned it.
      *
@@ -516,6 +542,7 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
       insert,
       update,
       insertStatement,
+      insertStatementGated,
       insertRecurrenceChildStatement
     } as const
   })

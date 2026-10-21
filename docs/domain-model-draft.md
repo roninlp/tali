@@ -327,6 +327,11 @@ export class Event extends Model.Class<Event>("Event")({
 
 ### 3.4 `Occasion` (annual important dates)
 
+> **Implemented in ticket [#59](https://github.com/roninlp/tali/issues/59)** — `packages/domain/src/planning/occasion.ts` +
+> `occasion-projection.ts`, `packages/sql/migrations/0013_occasions.sql`, `packages/sql/src/occasion-repo.ts`, the
+> `occasion` entry of the sync registry, and `apps/api/src/occasion-service.ts`. ADR-0008 records the projection and
+> the reminder materialisation.
+
 ```ts
 export class Occasion extends Model.Class<Occasion>("Occasion")({
   id: Model.UuidV7Insert(OccasionId),
@@ -335,15 +340,22 @@ export class Occasion extends Model.Class<Occasion>("Occasion")({
   ownerId: UserId,
   visibility: Visibility,
   color: Schema.NullOr(Schema.String),
-  monthDay: Schema.Struct({ month: Schema.Int, day: Schema.Int }), // e.g. a birthday; day 30 handles Esfand leap
-  timeZone: Schema.String,                 // for correct annual expansion when the user travels
-  advanceReminderDays: Schema.Int,         // e.g. 7 → remind 7 days before
+  originDate: Schema.DateFromString,       // the one stored local date; Jalali month/day is derived from it
+  timeZone: Schema.String,                 // the origin date's zone; the advance reminder fires in it
+  yearly: Schema.Boolean,                  // true = repeats every Jalali year (birthday/anniversary)
+  advanceReminderDays: Schema.NullOr(Schema.Int), // e.g. 7 → remind 7 days before; null = none
+  preparationTaskId: Schema.NullOr(TaskId),       // the optional "prepare gift" task (#59)
   createdAt: Model.DateTimeInsertFromDate,
   updatedAt: Model.DateTimeUpdateFromDate,
   version: Schema.Int,
   deletedAt: Schema.NullOr(Model.DateTimeUpdateFromDate)
 }) {}
 ```
+
+The draft's `monthDay` pair is replaced by the **origin date**: the Jalali month/day is projected from it in each
+requested year, both calendars are returned, and Esfand 30 clamps to Esfand 29 in a common year (unlike the shared
+recurrence engine, which skips impossible dates). The advance reminder is an offset expanded at read time, and the
+`ReminderLink` union carries an `occasion` variant; the actual reminder row is #60's.
 
 ### 3.5 `Task` (+ recurrence linkage)
 
