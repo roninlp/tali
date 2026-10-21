@@ -10,18 +10,19 @@ import { SyncStatus } from "./sync-status"
 import { FormError } from "./form"
 
 /**
- * The signed-in app chrome shared by `/today`, `/notes`, `/reminders`, and
- * `/settings` (ticket #20; notes ticket #40).
+ * The signed-in app chrome shared by `/today`, `/tasks`, `/notes`,
+ * `/reminders`, and `/settings` (ticket #20; notes #40; tasks #37).
  *
  * The "new note" action lives here rather than on one screen because FR-NOTE-01
  * requires quick create from anywhere: one local-store transaction mints the
  * note, then the editor opens immediately — no network round trip.
  */
 
-export type AppSection = "today" | "notes" | "reminders" | "settings"
+export type AppSection = "today" | "tasks" | "notes" | "reminders" | "settings"
 
 const NAV: ReadonlyArray<{ section: AppSection; href: string; label: string }> = [
   { section: "today", href: "/today", label: "امروز" },
+  { section: "tasks", href: "/tasks", label: "کارها" },
   { section: "notes", href: "/notes", label: "یادداشت‌ها" },
   { section: "reminders", href: "/reminders", label: "یادآورها" },
   { section: "settings", href: "/settings", label: "تنظیمات" }

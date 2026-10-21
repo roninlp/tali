@@ -101,6 +101,12 @@ declare module "virtual:file-routes" {
       $$route?: undefined;
     },
     {
+      path: "/tasks";
+      page: true;
+      $component: FileRouteLazyRef<typeof import("./src/routes/tasks")>;
+      $$route?: undefined;
+    },
+    {
       path: "/today";
       page: true;
       $component: FileRouteLazyRef<typeof import("./src/routes/today")>;
@@ -167,6 +173,14 @@ declare module "virtual:file-routes" {
           children?: undefined;
         }
       ];
+    },
+    {
+      path: "/tasks";
+      id: "/tasks";
+      page: true;
+      $component: FileRouteLazyRef<typeof import("./src/routes/tasks")>;
+      $$route?: undefined;
+      children?: undefined;
     },
     {
       path: "/today";
