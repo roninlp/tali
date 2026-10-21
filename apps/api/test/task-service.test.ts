@@ -446,6 +446,77 @@ describe("TaskService round-trip", () => {
     expect(h.feedCount()).toBe(feedAfterFirst)
   })
 
+  it("never hands another member's private task back through the replay guard", async () => {
+    const h = makeHarness()
+    const privateId = uuidV7() as TaskId
+    const mutationId = "m-private-create"
+    await h.svc((svc) =>
+      svc.create(
+        viewer(),
+        { clientMutationId: mutationId, id: privateId, title: "top secret", visibility: "private" },
+        NOW
+      )
+    )
+
+    // The owner's replay still works.
+    const own = await h.svc((svc) =>
+      svc.create(
+        viewer(),
+        { clientMutationId: mutationId, id: privateId, title: "top secret", visibility: "private" },
+        NOW
+      )
+    )
+    expect(own.id).toBe(privateId)
+
+    // A spouse who reuses the id against the private row gets the normal
+    // visibility error, not the row.
+    const byId = await h
+      .svc((svc) =>
+        svc.update(
+          viewer({ userId: USER_B }),
+          { id: privateId, clientMutationId: mutationId, patch: { title: "نفوذ" } },
+          NOW
+        )
+      )
+      .catch((cause: unknown) => cause)
+    expect(byId).toMatchObject({ _tag: "TaskForbidden", reason: "private" })
+
+    // Reusing the id for a *different* row is rejected, not silently replayed.
+    const otherId = uuidV7() as TaskId
+    await h.svc((svc) =>
+      svc.create(viewer({ userId: USER_B }), { clientMutationId: "m-b", id: otherId, title: "b" }, NOW)
+    )
+    const mismatched = await h
+      .svc((svc) =>
+        svc.complete(viewer({ userId: USER_B }), { id: otherId, clientMutationId: mutationId }, NOW)
+      )
+      .catch((cause: unknown) => cause)
+    expect(mismatched).toMatchObject({ _tag: "TaskValidationError" })
+  })
+
+  it("rejects a mutation id already spent on another aggregate without writing", async () => {
+    const h = makeHarness()
+    const mutationId = "m-one-key"
+    const project = await h.svc((svc) =>
+      svc.createProject(viewer(), { clientMutationId: mutationId, title: "خانه" }, NOW)
+    )
+    const feedAfterProject = h.feedCount()
+
+    const rejected = await h
+      .svc((svc) => svc.create(viewer(), { clientMutationId: mutationId, title: "وظیفه" }, NOW))
+      .catch((cause: unknown) => cause)
+    expect(rejected).toMatchObject({ _tag: "TaskValidationError" })
+    expect(h.feedCount()).toBe(feedAfterProject)
+    expect(h.db.prepare("SELECT COUNT(*) AS n FROM tasks").get()).toMatchObject({ n: 0 })
+
+    // The original mutation still replays.
+    const replay = await h.svc((svc) =>
+      svc.createProject(viewer(), { clientMutationId: mutationId, title: "خانه" }, NOW)
+    )
+    expect(replay.id).toBe(project.id)
+    expect(h.feedCount()).toBe(feedAfterProject)
+  })
+
   it("refuses private tasks of another member and foreign households", async () => {
     const h = makeHarness()
     const id = uuidV7() as TaskId
@@ -572,6 +643,33 @@ describe("TaskService buckets", () => {
       svc.list(viewer(), { filter: { bucket: "today" } }, NOW)
     )
     expect(filtered.map((task) => task.id).sort()).toEqual([today, timedToday].sort())
+  })
+
+  it("keeps completed tasks out of a bucket filter until a status is asked for", async () => {
+    const h = makeHarness()
+    const active = uuidV7() as TaskId
+    const finished = uuidV7() as TaskId
+    await h.svc((svc) =>
+      svc.create(viewer(), { clientMutationId: "m-active", id: active, title: "باز", dueDate: "2026-10-20" }, NOW)
+    )
+    await h.svc((svc) =>
+      svc.create(viewer(), { clientMutationId: "m-finished", id: finished, title: "تمام", dueDate: "2026-10-20" }, NOW)
+    )
+    await h.svc((svc) => svc.complete(viewer(), { id: finished, clientMutationId: "m-done" }, NOW))
+
+    // Same answer as `buckets()`: active work only.
+    const todayBucket = await h.svc((svc) =>
+      svc.list(viewer(), { filter: { bucket: "today" } }, NOW)
+    )
+    expect(todayBucket.map((task) => task.id)).toEqual([active])
+    const view = await h.svc((svc) => svc.buckets(viewer(), NOW))
+    expect(view.todayTasks.map((task) => task.id)).toEqual([active])
+
+    // An explicit status still asks the question directly (e.g. history).
+    const doneToday = await h.svc((svc) =>
+      svc.list(viewer(), { filter: { bucket: "today", status: "done" } }, NOW)
+    )
+    expect(doneToday.map((task) => task.id)).toEqual([finished])
   })
 })
 

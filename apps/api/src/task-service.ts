@@ -307,6 +307,36 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
     }
 
     /**
+     * The ledger row for one mutation id, if this household already applied it.
+     * Household-scoped exactly like the sync push (`findApplied`).
+     */
+    const appliedMutation = (viewer: TaskViewer, clientMutationId: string) =>
+      Effect.gen(function*() {
+        const applied = yield* sync
+          .findApplied({
+            householdId: viewer.householdId,
+            clientMutationIds: [clientMutationId]
+          })
+          .pipe(Effect.orDie)
+        return Option.fromUndefinedOr(applied.get(clientMutationId))
+      })
+
+    /**
+     * Has this mutation id already been spent on a *different* change? Reusing
+     * an id across rows or aggregates silently disables the replay guard, so it
+     * is rejected as a validation error rather than written.
+     */
+    const reusedMutationId = (
+      row: { readonly entityType: SyncEntityType; readonly entityId: string },
+      expected: { readonly entityType: SyncEntityType; readonly id?: string }
+    ): boolean =>
+      row.entityType !== expected.entityType ||
+      (expected.id !== undefined && row.entityId !== expected.id)
+
+    const reusedMutationIdError = (id: string) =>
+      invalid("clientMutationId", "this mutation id was already applied to a different change")
+
+    /**
      * One entity mutation: the CAS entity write, gated feed append, gated
      * ledger row, then any tag-join statements — one D1 batch. Returns whether
      * this `clientMutationId` is now recorded, i.e. the CAS won.
@@ -324,6 +354,22 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       }
     }) =>
       Effect.gen(function*() {
+        // A mutation id is one mutation for its whole retention window. If the
+        // ledger already maps it to a different row/aggregate, `recordApplied`
+        // below would be an `INSERT OR IGNORE` no-op: the write would land with
+        // no replay guard (so a retry applies it twice) and `applied` would
+        // report success even when the CAS lost. Refuse before writing.
+        const prior = yield* appliedMutation(input.viewer, input.clientMutationId)
+        if (
+          Option.isSome(prior) &&
+          reusedMutationId(prior.value, {
+            entityType: input.state.entityType,
+            id: input.state.entityId
+          })
+        ) {
+          return yield* reusedMutationIdError(input.state.entityId)
+        }
+
         const statements = [
           sync.writeEntity({ state: input.state, expectedVersion: input.expectedVersion }),
           sync.appendFeed({
@@ -379,31 +425,31 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
         return applied.has(input.clientMutationId)
       })
 
-    /** Task/project commits: repository failures are unexpected defects. */
+    /**
+     * Task/project commits: repository failures are unexpected defects, while
+     * the service's own typed failures (a reused mutation id) propagate.
+     */
     const commitPlanningEntity = (
       input: Parameters<typeof commitEntity>[0]
-    ): Effect.Effect<boolean> => commitEntity(input).pipe(Effect.orDie)
+    ): Effect.Effect<boolean, TaskServiceError> =>
+      commitEntity(input).pipe(Effect.catchTag("SqlError", (error) => Effect.die(error)))
 
     /** Replay guard: the same mutation id already committed (lost response). */
     const replayOf = (
       viewer: TaskViewer,
-      clientMutationId: string
+      clientMutationId: string,
+      expectedId?: Task["id"]
     ): Effect.Effect<Option.Option<Task>, TaskServiceError> =>
       Effect.gen(function*() {
-        const applied = yield* sync
-          .findApplied({
-            householdId: viewer.householdId,
-            clientMutationIds: [clientMutationId]
-          })
-          .pipe(Effect.orDie)
-        if (!applied.has(clientMutationId)) return Option.none()
-        const row = applied.get(clientMutationId)!
-        if (row.entityType !== "task") return Option.none()
-        const current = yield* tasks.findById(row.entityId as Task["id"]).pipe(Effect.orDie)
-        if (Option.isNone(current) || current.value.deletedAt !== null) {
-          return yield* Effect.fail(new TaskNotFound({ id: row.entityId as Task["id"] }))
+        const row = yield* appliedMutation(viewer, clientMutationId)
+        if (Option.isNone(row)) return Option.none()
+        if (reusedMutationId(row.value, { entityType: "task", id: expectedId })) {
+          return yield* reusedMutationIdError(expectedId ?? row.value.entityId)
         }
-        return Option.some(current.value)
+        // Same household/owner rules as any other read: a mutation id must
+        // never hand back another member's private row.
+        const current = yield* loadTask(viewer, row.value.entityId as Task["id"])
+        return Option.some(current)
       })
 
     const loadTask = (viewer: TaskViewer, id: Task["id"]): Effect.Effect<Task, TaskServiceError> =>
@@ -420,6 +466,63 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
           return yield* Effect.fail(new TaskForbidden({ id, reason: "private" }))
         }
         return task
+      })
+
+    /**
+     * Replay guard for project/tag mutations — same rules as `replayOf`: the
+     * key must belong to the same aggregate and row, and the row must still be
+     * visible to the caller (a mutation id may not reveal a private row).
+     */
+    const replayProject = (
+      viewer: TaskViewer,
+      clientMutationId: string,
+      expectedId?: Project["id"]
+    ): Effect.Effect<Option.Option<Project>, TaskServiceError> =>
+      Effect.gen(function*() {
+        const row = yield* appliedMutation(viewer, clientMutationId)
+        if (Option.isNone(row)) return Option.none()
+        if (reusedMutationId(row.value, { entityType: "project", id: expectedId })) {
+          return yield* reusedMutationIdError(expectedId ?? row.value.entityId)
+        }
+        const id = row.value.entityId as Project["id"]
+        const found = yield* projects.findById(id).pipe(Effect.orDie)
+        if (Option.isNone(found) || found.value.deletedAt !== null) {
+          return yield* Effect.fail(new ProjectNotFound({ id }))
+        }
+        const project = found.value
+        if (project.householdId !== viewer.householdId) {
+          return yield* Effect.fail(new TaskForbidden({ id, reason: "household" }))
+        }
+        if (project.visibility === "private" && project.ownerId !== viewer.userId) {
+          return yield* Effect.fail(new TaskForbidden({ id, reason: "private" }))
+        }
+        return Option.some(project)
+      })
+
+    const replayTag = (
+      viewer: TaskViewer,
+      clientMutationId: string,
+      expectedId?: Tag["id"]
+    ): Effect.Effect<Option.Option<Tag>, TaskServiceError> =>
+      Effect.gen(function*() {
+        const row = yield* appliedMutation(viewer, clientMutationId)
+        if (Option.isNone(row)) return Option.none()
+        if (reusedMutationId(row.value, { entityType: "tag", id: expectedId })) {
+          return yield* reusedMutationIdError(expectedId ?? row.value.entityId)
+        }
+        const id = row.value.entityId as Tag["id"]
+        const found = yield* tags.findById(id).pipe(Effect.orDie)
+        if (Option.isNone(found) || found.value.deletedAt !== null) {
+          return yield* Effect.fail(new TagNotFound({ id }))
+        }
+        const tag = found.value
+        if (tag.householdId !== viewer.householdId) {
+          return yield* Effect.fail(new TaskForbidden({ id, reason: "household" }))
+        }
+        if (tag.visibility === "private" && tag.ownerId !== viewer.userId) {
+          return yield* Effect.fail(new TaskForbidden({ id, reason: "private" }))
+        }
+        return Option.some(tag)
       })
 
     const requireProject = (
@@ -550,7 +653,7 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       now: string = new Date().toISOString()
     ): Effect.Effect<Task, TaskServiceError> =>
       Effect.gen(function*() {
-        const replayed = yield* replayOf(viewer, input.clientMutationId)
+        const replayed = yield* replayOf(viewer, input.clientMutationId, input.id)
         if (Option.isSome(replayed)) return replayed.value
 
         const dueAt = input.dueAt === undefined || input.dueAt === null
@@ -613,7 +716,7 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       now: string = new Date().toISOString()
     ): Effect.Effect<Task, TaskServiceError> =>
       Effect.gen(function*() {
-        const replayed = yield* replayOf(viewer, input.clientMutationId)
+        const replayed = yield* replayOf(viewer, input.clientMutationId, input.id)
         if (Option.isSome(replayed)) return replayed.value
 
         for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
@@ -639,7 +742,7 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       now: string = new Date().toISOString()
     ): Effect.Effect<Task, TaskServiceError> =>
       Effect.gen(function*() {
-        const replayed = yield* replayOf(viewer, input.clientMutationId)
+        const replayed = yield* replayOf(viewer, input.clientMutationId, input.id)
         if (Option.isSome(replayed)) return replayed.value
         if (input.dueDate !== null && !validLocalDate(input.dueDate)) {
           return yield* invalid("dueDate", "due date must be a real calendar date")
@@ -675,7 +778,7 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       now: string = new Date().toISOString()
     ): Effect.Effect<Task, TaskServiceError> =>
       Effect.gen(function*() {
-        const replayed = yield* replayOf(viewer, input.clientMutationId)
+        const replayed = yield* replayOf(viewer, input.clientMutationId, input.id)
         if (Option.isSome(replayed)) return replayed.value
 
         for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
@@ -713,7 +816,7 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       now: string = new Date().toISOString()
     ): Effect.Effect<Task, TaskServiceError> =>
       Effect.gen(function*() {
-        const replayed = yield* replayOf(viewer, input.clientMutationId)
+        const replayed = yield* replayOf(viewer, input.clientMutationId, input.id)
         if (Option.isSome(replayed)) return replayed.value
 
         for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
@@ -746,7 +849,7 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       now: string = new Date().toISOString()
     ): Effect.Effect<Task, TaskServiceError> =>
       Effect.gen(function*() {
-        const replayed = yield* replayOf(viewer, input.clientMutationId)
+        const replayed = yield* replayOf(viewer, input.clientMutationId, input.id)
         if (Option.isSome(replayed)) return replayed.value
 
         for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
@@ -847,6 +950,10 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
               query.noDue = true
               break
           }
+          // A bucket is the active-work view: `buckets()` never puts a
+          // completed task in one, so the filter must not either. A caller
+          // that explicitly asks for a status (e.g. `done`) still gets it.
+          if (filter.status === undefined) query.excludeDone = true
         }
 
         return yield* tasks.listFiltered(query).pipe(Effect.orDie)
@@ -929,18 +1036,8 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       now: string = new Date().toISOString()
     ): Effect.Effect<Project, TaskServiceError> =>
       Effect.gen(function*() {
-        const replayed = yield* sync
-          .findApplied({
-            householdId: viewer.householdId,
-            clientMutationIds: [input.clientMutationId]
-          })
-          .pipe(Effect.orDie)
-        if (replayed.has(input.clientMutationId)) {
-          const id = replayed.get(input.clientMutationId)!.entityId as ProjectId
-          const found = yield* projects.findById(id).pipe(Effect.orDie)
-          if (Option.isNone(found)) return yield* Effect.fail(new TaskConflict({ id }))
-          return found.value
-        }
+        const replayed = yield* replayProject(viewer, input.clientMutationId, input.id)
+        if (Option.isSome(replayed)) return replayed.value
 
         const project = new Project({
           id: (input.id ?? uuidV7()) as ProjectId,
@@ -972,17 +1069,8 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       now: string = new Date().toISOString()
     ): Effect.Effect<Project, TaskServiceError> =>
       Effect.gen(function*() {
-        const replayed = yield* sync
-          .findApplied({
-            householdId: viewer.householdId,
-            clientMutationIds: [input.clientMutationId]
-          })
-          .pipe(Effect.orDie)
-        if (replayed.has(input.clientMutationId)) {
-          const found = yield* projects.findById(input.id).pipe(Effect.orDie)
-          if (Option.isNone(found)) return yield* Effect.fail(new TaskConflict({ id: input.id }))
-          return found.value
-        }
+        const replayed = yield* replayProject(viewer, input.clientMutationId, input.id)
+        if (Option.isSome(replayed)) return replayed.value
 
         for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
           const found = yield* projects.findById(input.id).pipe(Effect.orDie)
@@ -1030,18 +1118,8 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       now: string = new Date().toISOString()
     ): Effect.Effect<Tag, TaskServiceError> =>
       Effect.gen(function*() {
-        const replayed = yield* sync
-          .findApplied({
-            householdId: viewer.householdId,
-            clientMutationIds: [input.clientMutationId]
-          })
-          .pipe(Effect.orDie)
-        if (replayed.has(input.clientMutationId)) {
-          const id = replayed.get(input.clientMutationId)!.entityId as TagId
-          const found = yield* tags.findById(id).pipe(Effect.orDie)
-          if (Option.isNone(found)) return yield* Effect.fail(new TaskConflict({ id }))
-          return found.value
-        }
+        const replayed = yield* replayTag(viewer, input.clientMutationId, input.id)
+        if (Option.isSome(replayed)) return replayed.value
 
         const existing = yield* tags
           .findLiveByName({ householdId: viewer.householdId, name: input.name })
@@ -1097,17 +1175,8 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       now: string = new Date().toISOString()
     ): Effect.Effect<Tag, TaskServiceError> =>
       Effect.gen(function*() {
-        const replayed = yield* sync
-          .findApplied({
-            householdId: viewer.householdId,
-            clientMutationIds: [input.clientMutationId]
-          })
-          .pipe(Effect.orDie)
-        if (replayed.has(input.clientMutationId)) {
-          const found = yield* tags.findById(input.id).pipe(Effect.orDie)
-          if (Option.isNone(found)) return yield* Effect.fail(new TaskConflict({ id: input.id }))
-          return found.value
-        }
+        const replayed = yield* replayTag(viewer, input.clientMutationId, input.id)
+        if (Option.isSome(replayed)) return replayed.value
 
         for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
           const found = yield* tags.findById(input.id).pipe(Effect.orDie)
