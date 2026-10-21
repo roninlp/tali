@@ -229,6 +229,18 @@ export const weekRange = (
   }
 }
 
+/** The single-day range a month drill-down is projected over. */
+export const singleDayRange = (date: string | Temporal.PlainDate): CalendarRange => {
+  const day = asLocalDate(date)
+  return {
+    start: day,
+    end: day,
+    endExclusive: toIsoDate(
+      Temporal.PlainDate.from(day).add({ days: 1 })
+    ) as LocalDate
+  }
+}
+
 export interface JalaliMonthKey {
   readonly year: number
   readonly month: number
@@ -509,19 +521,12 @@ export const buildMonthReadModel = (input: BuildMonthInput): MonthReadModel => {
 
   let day: CalendarDayView | null = null
   if (input.day !== undefined && input.day !== null && input.day !== "") {
-    const date = asLocalDate(input.day)
-    const dayRange: CalendarRange = {
-      start: date,
-      end: date,
-      endExclusive: toIsoDate(
-        Temporal.PlainDate.from(date).add({ days: 1 })
-      ) as LocalDate
-    }
+    const drillRange = singleDayRange(input.day)
     day = dayViewFrom(
-      date,
+      drillRange.start,
       taskOccurrences({
         tasks: input.tasks,
-        range: dayRange,
+        range: drillRange,
         timeZone: input.timeZone
       })
     )

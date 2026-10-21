@@ -253,13 +253,30 @@ export function CalendarScreen() {
     })
   }
 
+  /**
+   * A validator is only meaningful together with the snapshot it validates.
+   * Every path that drops the snapshot drops the ETag too: otherwise a later
+   * `304` (the body is byte-identical) would leave the screen without a server
+   * model *and* without a reason to fetch one, so it would stay on the mirror
+   * forever after an offline blip or a transient error.
+   */
+  const dropServerWeek = () => {
+    setServerWeek(undefined)
+    setServerWeekEtag(undefined)
+  }
+
+  const dropServerMonth = () => {
+    setServerMonth(undefined)
+    setServerMonthEtag(undefined)
+  }
+
   const refreshWeek = async (inFlightDirty: ReadonlySet<string>): Promise<void> => {
     const ticket = ++refreshGeneration
     const result = await fetchWeek(untrack(anchor), untrack(serverWeekEtag))
     if (ticket !== refreshGeneration) return
     if (!untrack(() => local.online() && local.pending() === 0)) return
     if (!result.ok) {
-      setServerWeek(undefined)
+      dropServerWeek()
       setFetchState(result.error.code === "Network" ? "offline" : "error")
       return
     }
@@ -283,7 +300,7 @@ export function CalendarScreen() {
     if (ticket !== refreshGeneration) return
     if (!untrack(() => local.online() && local.pending() === 0)) return
     if (!result.ok) {
-      setServerMonth(undefined)
+      dropServerMonth()
       setFetchState(result.error.code === "Network" ? "offline" : "error")
       return
     }
@@ -309,8 +326,8 @@ export function CalendarScreen() {
     }),
     (state) => {
       if (!state.online) {
-        setServerWeek(undefined)
-        setServerMonth(undefined)
+        dropServerWeek()
+        dropServerMonth()
         setFetchState("offline")
         return
       }

@@ -5,6 +5,7 @@ import {
   jalaliMonthOf,
   localDateStartInstant,
   monthRange,
+  singleDayRange,
   taskBucketBounds,
   weekRange,
   type CalendarRange,
@@ -132,14 +133,23 @@ export class CalendarService extends Context.Service<CalendarService>()(
           const anchor = options.anchor ?? taskBucketBounds(viewer.timeZone, now).today
           const { year, month: monthOfYear } = jalaliMonthOf(anchor)
           const range = monthRange(year, monthOfYear, viewer.weekStart)
+          const day = options.day ?? null
           const rows = yield* loadRangeTasks(viewer, range)
+          // The drill-down accepts any date, and a client may ask for one
+          // outside the month grid (a stale selection, an adjacent-month day).
+          // The grid query never covered it, so read that day too instead of
+          // answering an empty day for a day that has tasks.
+          let drillRows: ReadonlyArray<CalendarTaskSource> = []
+          if (day !== null && (day < range.start || day > range.end)) {
+            drillRows = yield* loadRangeTasks(viewer, singleDayRange(day))
+          }
           return buildMonthReadModel({
-            tasks: rows,
+            tasks: [...rows, ...drillRows],
             year,
             month: monthOfYear,
             weekStart: viewer.weekStart,
             timeZone: viewer.timeZone,
-            day: options.day ?? null
+            day
           })
         }).pipe(Effect.orDie)
 

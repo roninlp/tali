@@ -269,6 +269,35 @@ describe("Calendar week view", () => {
     screen.unmount()
   })
 
+  it("returns to the server snapshot after an offline blip", async () => {
+    const today = todayIn(TIME_ZONE)
+    sources = [source({ title: "کار سرور", dueDate: today })]
+    const screen = mountCalendar()
+    await waitForSource(screen, "server")
+    await eventually(() => expect(screen.getByText("کار سرور")).toBeTruthy())
+
+    const setOnline = (value: boolean) => {
+      Object.defineProperty(navigator, "onLine", { configurable: true, value })
+      window.dispatchEvent(new Event(value ? "online" : "offline"))
+    }
+
+    try {
+      // A blip drops the server snapshot (the screen paints the mirror) but
+      // must not leave a validator behind: after reconnecting, the API answers
+      // 304 for an unchanged body, and a 304 with no snapshot would strand the
+      // screen on the mirror forever.
+      setOnline(false)
+      await waitForSource(screen, "mirror")
+
+      setOnline(true)
+      await waitForSource(screen, "server")
+      await eventually(() => expect(screen.getByText("کار سرور")).toBeTruthy())
+    } finally {
+      Object.defineProperty(navigator, "onLine", { configurable: true, value: true })
+    }
+    screen.unmount()
+  })
+
   it("keeps projected recurrence occurrences read-only", async () => {
     const series = source({
       title: "ورزش",

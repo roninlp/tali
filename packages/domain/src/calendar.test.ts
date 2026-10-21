@@ -251,4 +251,19 @@ describe("month read model", () => {
     expect(busyLevelOf(4)).toBe(2)
     expect(busyLevelOf(9)).toBe(3)
   })
+
+  it("projects a drill-down day that lies outside the month grid", () => {
+    const model = buildMonthReadModel({
+      year: 1405,
+      month: 1,
+      weekStart: "saturday",
+      timeZone: "Asia/Tehran",
+      day: "2026-06-01",
+      tasks: [task({ id: "far", title: "دور", dueDate: "2026-06-01" })]
+    })
+    expect(model.days.some((cell) => cell.date === "2026-06-01")).toBe(false)
+    expect(model.day?.date).toBe("2026-06-01")
+    expect(model.day?.tasks.map((item) => item.id)).toEqual(["far"])
+    expect(model.totals).toEqual({ busyDays: 0, tasks: 0 })
+  })
 })

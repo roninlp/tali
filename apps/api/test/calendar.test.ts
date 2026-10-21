@@ -619,6 +619,27 @@ describe("GET /month", () => {
     expect(c.day!.tasks.map((item) => item.title)).toEqual(["خانه دیگر"])
   })
 
+  it("reads the drill-down day even when it falls outside the month grid", async () => {
+    const h = await setup()
+    // Nothing else is seeded, so only the out-of-grid day's own rows can show.
+    const far = uuidV7()
+    seedTask(h.db, { id: far, title: "روز دور", dueDate: "2026-06-01" })
+
+    // Farvardin 1405's grid ends on 2026-04-24, so 2026-06-01 is not loaded by
+    // the grid query. A drill-down for it must still be answered, not silently
+    // empty (and the month totals must not absorb it).
+    const model = (await month(h, {
+      token: TOKEN_A,
+      anchor: "2026-03-21",
+      day: "2026-06-01"
+    })).model!
+
+    expect(model.day?.date).toBe("2026-06-01")
+    expect(model.day?.tasks.map((item) => item.title)).toEqual(["روز دور"])
+    expect(model.totals).toEqual({ busyDays: 0, tasks: 0 })
+    expect(model.days.some((cell) => cell.date === "2026-06-01")).toBe(false)
+  })
+
   it("answers 304 for a matching ETag and validates query dates", async () => {
     const h = await setup()
     seedWeek(h)

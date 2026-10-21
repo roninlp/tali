@@ -35,24 +35,6 @@ import { TodayService, type TodayViewer } from "./today-service.js"
  * typed boundary instead of leaking a malformed shape.
  */
 
-/**
- * `GET /today` — the aggregated dashboard read model (ticket #42; FR-VIEW-01).
- *
- * Plain HTTP rather than RPC because the read needs HTTP caching semantics:
- * the body is deterministic for a day + data set, so it is hashed into a strong
- * `ETag` and a matching `If-None-Match` answers `304` with no body. The session
- * is still the cookie, so the response is `private, no-cache` (a shared cache
- * must never reuse one household's dashboard for another).
- *
- * Authorization is not re-implemented here: authenticated requests become a
- * viewer, and `TodayService` delegates to the #36/#40 services, which already
- * scope by household and hide another member's private rows.
- *
- * GET has no request body or query parameters to validate; the payload itself
- * is encoded through `TodayReadModel` below, so a service regression fails the
- * typed boundary instead of leaking a malformed shape.
- */
-
 export const TodayRoutes = HttpRouter.use((router) =>
   Effect.gen(function*() {
     const auth = yield* AuthService
