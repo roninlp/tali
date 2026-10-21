@@ -1,5 +1,8 @@
 import { Schema } from "effect"
 import {
+  type HabitEntry,
+  type HabitEntryLogInput,
+  type HabitEntryStatus,
   SyncBootstrapResponse,
   SyncPullResponse,
   SyncPushResponse,
@@ -9,6 +12,7 @@ import {
 } from "@tali/domain"
 import { API_URL } from "./config"
 import type { LocalStore } from "./local-store/types"
+import { api } from "./rpc"
 
 /**
  * The client half of the sync engine (ticket #18) — the implementation behind
@@ -28,7 +32,55 @@ export interface SyncTransport {
   readonly pull: (cursor: number, limit: number) => Promise<SyncPullResponse>
   readonly bootstrap: (offset: number, limit: number) => Promise<SyncBootstrapResponse>
   readonly push: (entries: ReadonlyArray<SyncPushEntry>) => Promise<SyncPushResponse>
+  /**
+   * The explicit service path that revives a habit day (#64).
+   *
+   * The generic push resolver keeps tombstone-wins, so a queued tap for a day
+   * the server has tombstoned comes back as `tombstone` (or as a
+   * `UniqueViolation` rejection when this device minted a different id for the
+   * day). Rather than resurrecting the row inside the generic resolver, the
+   * engine calls the habit logging mutation, which resolves the day and CASes
+   * the revive in one batch. Optional so a test transport can omit it (the
+   * entry is then acked like any other non-applied result).
+   */
+  readonly logHabitEntry?: (input: HabitEntryLogInput) => Promise<HabitEntry>
 }
+
+/** The server row shape for a habit entry the revive path returned. */
+const habitEntryRow = (entry: HabitEntry): SyncEntityRow => ({
+  entityType: "habitEntry",
+  entityId: entry.id,
+  version: entry.version,
+  updatedAt: entry.updatedAt,
+  deletedAt: entry.deletedAt,
+  data: { ...entry }
+})
+
+const isHabitEntryStatus = (value: unknown): value is HabitEntryStatus =>
+  value === "done" || value === "partial" || value === "missed"
+
+/**
+ * Typed refusals from the logging mutation that retrying cannot change: the
+ * habit went away/changed scope, or the tap's day is outside the window.
+ * Anything else (a network/RPC failure) is retried by leaving the outbox alone.
+ */
+const PERMANENT_REVIVE_ERRORS: ReadonlySet<string> = new Set([
+  "HabitEntryOutOfWindow",
+  "HabitEntryNotFound",
+  "HabitNotFound",
+  "HabitForbidden",
+  "HabitValidationError",
+  "Unauthorized"
+])
+
+/**
+ * A push outcome the habit tap can still rescue: the row is tombstoned, or the
+ * unique `(habit, day)` key belongs to a row this device does not know.
+ */
+const repairableHabitEntry = (result: SyncPushResult): boolean =>
+  result.entityType === "habitEntry" &&
+  (result._tag === "tombstone" ||
+    (result._tag === "rejected" && result.code === "UniqueViolation"))
 
 /** A non-2xx sync response; the stable code and details travel to the engine. */
 export class SyncRejected extends Error {
@@ -83,7 +135,8 @@ export const httpSyncTransport = (): SyncTransport => ({
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ entries })
-    })
+    }),
+  logHabitEntry: (input) => api.logHabitEntry(input)
 })
 
 const asServerRows = (result: SyncPushResult): ReadonlyArray<SyncEntityRow> =>
@@ -194,7 +247,65 @@ export const createSyncEngine = (
         }
         continue
       }
+      const repairedRows: Array<SyncEntityRow> = []
+      const repairedOriginalIds = new Set<string>()
+
       for (const result of response.results) {
+        /**
+         * A queued tap for a day the server tombstoned (or for a day another
+         * device already owns under a different id) is not lost: the generic
+         * resolver refuses it by design, so the explicit logging mutation
+         * resolves the day and revives/updates the existing row. It runs before
+         * the entry is acked, so a transient failure leaves the outbox intact.
+         */
+        if (repairableHabitEntry(result) && transport.logHabitEntry !== undefined) {
+          const queued = batch.find(
+            (entry) => entry.clientMutationId === result.clientMutationId
+          )
+          const habitId = queued?.patch.habitId
+          const localDate = queued?.patch.localDate
+          const status = queued?.patch.status
+          const timeZone = queued?.patch.timeZone
+          if (
+            queued !== undefined &&
+            queued.op === "upsert" &&
+            typeof habitId === "string" &&
+            typeof localDate === "string" &&
+            isHabitEntryStatus(status)
+          ) {
+            try {
+              const revived = await transport.logHabitEntry({
+                id: queued.entityId as HabitEntry["id"],
+                clientMutationId: queued.clientMutationId,
+                habitId: habitId as HabitEntry["habitId"],
+                localDate: localDate as HabitEntry["localDate"],
+                status,
+                ...(typeof timeZone === "string" ? { timeZone } : {})
+              })
+              if (revived.id !== queued.entityId) {
+                repairedOriginalIds.add(queued.entityId)
+              }
+              repairedRows.push(habitEntryRow(revived))
+              versionByEntity.set(`habitEntry\u0000${revived.id}`, revived.version)
+              if (revived.id !== queued.entityId) {
+                versionByEntity.set(`habitEntry\u0000${queued.entityId}`, revived.version)
+              }
+            } catch (cause) {
+              const tag = (cause as { readonly _tag?: unknown })._tag
+              if (typeof tag !== "string" || !PERMANENT_REVIVE_ERRORS.has(tag)) {
+                // Transient (offline, 5xx, timeout): keep the outbox entry and
+                // try again on the next reconcile.
+                throw cause
+              }
+              console.warn(
+                `[sync] stopped reviving habitEntry/${queued.entityId} (${tag}): ${
+                  cause instanceof Error ? cause.message : String(cause)
+                }`
+              )
+            }
+            continue
+          }
+        }
         // A rejected entry can never apply as written (invalid patch, duplicate
         // live tag name, missing FK parent). Acking it below drops it from the
         // outbox so it cannot wedge every later entry; the mirror row stays
@@ -210,7 +321,7 @@ export const createSyncEngine = (
           result.version
         )
       }
-      const rows = response.results.flatMap(asServerRows)
+      const rows = [...response.results.flatMap(asServerRows), ...repairedRows]
       // Deliberately no cursor here: a push's highest `seq` is not contiguous
       // with what this device has pulled. A remote change committed between
       // our pull and our push would be skipped forever if we jumped to it.
@@ -218,6 +329,11 @@ export const createSyncEngine = (
         response.results.map((result) => result.clientMutationId),
         rows
       )
+      // The revive resolved the day to a different server row: drop the local
+      // placeholder so the mirror holds exactly one row for the day.
+      for (const entityId of repairedOriginalIds) {
+        await store.removeFromMirror("habitEntry", entityId)
+      }
       // Defensive: a server result set with no ids would otherwise spin.
       if (response.results.length === 0) return
     }

@@ -10,10 +10,14 @@ import {
   HabitFrequency,
   type HabitFrequencyChange,
   habitFrequencyHistoryAfter,
+  HABIT_LOG_BACKDATE_DAYS,
+  habitLogWindow,
+  isHabitLogDateInWindow,
   HabitPatch,
   HabitReminderTime,
   localDateIn,
   localDateInOption,
+  nextHabitEntryStatus,
   sameHabitFrequency
 } from "./index.js"
 import type { HabitEntryId, HabitId } from "./common.js"
@@ -351,5 +355,38 @@ describe("HabitEntry model", () => {
     expect(() => Schema.decodeUnknownSync(HabitEntry)({ ...entry, localDate: "2026/10/21" }))
       .toThrow()
     expect(() => Schema.decodeUnknownSync(HabitEntry)({ ...entry, habitId: "habit-1" })).toThrow()
+  })
+})
+
+describe("habit logging window (#64)", () => {
+  it("allows today and the seven days before it, and nothing older or later", () => {
+    // A leap day boundary keeps the arithmetic honest.
+    const today = "2028-03-01" as const
+    expect(HABIT_LOG_BACKDATE_DAYS).toBe(7)
+    expect(habitLogWindow(today)).toEqual({ earliest: "2028-02-23", latest: today })
+
+    expect(isHabitLogDateInWindow("2028-03-01", today)).toBe(true)
+    expect(isHabitLogDateInWindow("2028-02-23", today)).toBe(true)
+    expect(isHabitLogDateInWindow("2028-02-22", today)).toBe(false)
+    expect(isHabitLogDateInWindow("2028-03-02", today)).toBe(false)
+  })
+
+  it("counts the window on the local calendar, not UTC", () => {
+    // 2026-10-20T21:30Z is already the 21st in Tehran.
+    const today = localDateIn("2026-10-20T21:30:00.000Z", "Asia/Tehran")
+    expect(today).toBe("2026-10-21")
+    expect(isHabitLogDateInWindow("2026-10-14", today)).toBe(true)
+    expect(isHabitLogDateInWindow("2026-10-13", today)).toBe(false)
+    expect(isHabitLogDateInWindow("2026-10-21", today)).toBe(true)
+    expect(isHabitLogDateInWindow("2026-10-22", today)).toBe(false)
+  })
+})
+
+describe("habit status cycle (#64)", () => {
+  it("walks Done → Partial → Missed → Done", () => {
+    expect(nextHabitEntryStatus(null)).toBe("done")
+    expect(nextHabitEntryStatus("done")).toBe("partial")
+    expect(nextHabitEntryStatus("partial")).toBe("missed")
+    expect(nextHabitEntryStatus("missed")).toBe("done")
   })
 })

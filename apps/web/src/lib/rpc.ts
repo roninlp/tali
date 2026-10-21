@@ -3,6 +3,9 @@ import { FetchHttpClient } from "effect/http"
 import { RpcClient, RpcSerialization } from "effect/rpc"
 import { ApiRpcs, type ApiClient } from "@tali/rpc"
 import type {
+  HabitEntry,
+  HabitEntryLogInput,
+  HabitEntryRangeInput,
   List,
   ListCreateInput,
   ListItemCheckInput,
@@ -149,6 +152,17 @@ export const api = {
 
   listTrashNotes: (): Promise<ReadonlyArray<Note>> =>
     Effect.runPromise(withClient((client) => client.ListTrashNotes())),
+
+  // ── Habit entries (#64) ────────────────────────────────────────────────
+  // The tap writes the mirror first (`lib/habits/log.ts`); this is the server
+  // path the sync engine calls to revive a day whose generic push met a
+  // tombstone, plus the range read Today/statistics use.
+
+  logHabitEntry: (input: HabitEntryLogInput): Promise<HabitEntry> =>
+    Effect.runPromise(withClient((client) => client.LogHabitEntry(input))),
+
+  listHabitEntries: (input: HabitEntryRangeInput): Promise<ReadonlyArray<HabitEntry>> =>
+    Effect.runPromise(withClient((client) => client.ListHabitEntries(input))),
 
   // ── Reminders (#60) ────────────────────────────────────────────────────
   // The reminder screens write through the local mirror; these are the

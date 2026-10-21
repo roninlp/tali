@@ -61,9 +61,9 @@ import { HouseholdId, UserId, Visibility } from "../common.js"
  * own table so a tap is one idempotent upsert and a 7/30/90-day window is one
  * indexed range scan.
  *
- * The daily tap itself (the status cycle, the ≤ 7-day backdating window) is
- * ticket #64; this module ships the shape, the table and the sync path the tap
- * will write through.
+ * The daily tap (#64) is built on this shape: `HabitEntryLogInput` in
+ * `habit-service.ts`, the pure `habitLogWindow` / `nextHabitEntryStatus`
+ * helpers below, and the service CAS that revives a tombstoned day in place.
  */
 
 // ── Frequency ─────────────────────────────────────────────────────────────
@@ -317,6 +317,64 @@ export class Habit extends Model.Class<Habit>("Habit")({
 /** The three states a day can be logged with (FR-HAB-02). */
 export const HabitEntryStatus = Schema.Literals(["done", "partial", "missed"])
 export type HabitEntryStatus = Schema.Schema.Type<typeof HabitEntryStatus>
+
+/**
+ * How many days back a tap may be logged (#64; FR-HAB-02).
+ *
+ * The window is inclusive of both ends: today and the seven days before it are
+ * loggable, a day eight days old is not. It is counted on the **user's local
+ * calendar** (the viewer's IANA zone), because "yesterday" is a wall date, not
+ * a UTC instant.
+ */
+export const HABIT_LOG_BACKDATE_DAYS = 7
+
+/** The inclusive local-date window a tap may write into (`[earliest, latest]`). */
+export interface HabitLogWindow {
+  readonly earliest: LocalDate
+  readonly latest: LocalDate
+}
+
+/**
+ * The backdating window for "today" in the user's zone.
+ *
+ * Pure, so the RPC service and the client tap helper agree on the same
+ * boundary. The latest day is today: a future day cannot be logged (it has not
+ * happened yet).
+ */
+export const habitLogWindow = (today: LocalDate): HabitLogWindow => ({
+  earliest: addDays(today, -HABIT_LOG_BACKDATE_DAYS),
+  latest: today
+})
+
+/** Is `localDate` inside the inclusive window whose "today" is `today`? */
+export const isHabitLogDateInWindow = (localDate: LocalDate, today: LocalDate): boolean => {
+  const window = habitLogWindow(today)
+  return localDate >= window.earliest && localDate <= window.latest
+}
+
+/**
+ * The status a fresh tap records: a cycle of Done → Partial → Missed → Done.
+ *
+ * A day is one row for all time, so the tap never inserts a second answer — it
+ * replaces the day's status. The cycle is pure because the offline tap has to
+ * compute the next status before it writes (local-first), and the server must
+ * not invent a different one. `null` means the day has not been logged yet, so
+ * the first tap is Done.
+ */
+export const nextHabitEntryStatus = (
+  current: HabitEntryStatus | null
+): HabitEntryStatus => {
+  switch (current) {
+    case null:
+      return "done"
+    case "done":
+      return "partial"
+    case "partial":
+      return "missed"
+    case "missed":
+      return "done"
+  }
+}
 
 /**
  * One day's log for one habit.

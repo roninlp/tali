@@ -8,7 +8,7 @@ import { D1Client } from "@effect/sql-d1"
 import { RpcClient, RpcGroup } from "effect/rpc"
 import * as RpcTest from "effect/rpc/RpcTest"
 import { ApiRpcs } from "@tali/rpc"
-import { uuidV7 } from "@tali/domain"
+import { habitLogWindow, localDateIn, uuidV7 } from "@tali/domain"
 import { AuthServiceLive } from "../src/auth-service.js"
 import { HabitServiceLive } from "../src/habit-service.js"
 import { PreferencesServiceLive } from "../src/preferences-service.js"
@@ -194,6 +194,76 @@ describe("Habit RPC round-trip", () => {
       readonly n: number
     }
     expect(count.n).toBe(0)
+  })
+
+  it("logs a day, cycles the status in place, and reads the range (#64)", async () => {
+    const h = await makeHarness()
+    const habitId = uuidV7()
+
+    const today = localDateIn(new Date().toISOString(), "Asia/Tehran")
+    const window = habitLogWindow(today)
+    const shift = (date: string, days: number): string => {
+      const instant = new Date(`${date}T00:00:00.000Z`)
+      instant.setUTCDate(instant.getUTCDate() + days)
+      return instant.toISOString().slice(0, 10)
+    }
+    const tooOld = shift(window.earliest, -1)
+    const nextDay = shift(today, 1)
+
+    const result = await h.withClient(TOKEN_A, (client) =>
+      Effect.gen(function*() {
+        yield* client.CreateHabit({
+          id: habitId,
+          clientMutationId: "rpc-entry-habit",
+          title: "کتاب",
+          frequency: { _tag: "daily" }
+        })
+        const first = yield* client.LogHabitEntry({
+          clientMutationId: "rpc-entry-1",
+          habitId,
+          localDate: today,
+          status: "done"
+        })
+        const second = yield* client.LogHabitEntry({
+          clientMutationId: "rpc-entry-2",
+          habitId,
+          localDate: today,
+          status: "partial"
+        })
+        const entries = yield* client.ListHabitEntries({ from: today, before: nextDay })
+        return { first, second, entries }
+      })
+    )
+
+    expect(result.first).toMatchObject({ localDate: today, status: "done", version: 1 })
+    expect(result.second).toMatchObject({
+      id: result.first.id,
+      status: "partial",
+      version: 2
+    })
+    expect(result.entries.map((entry) => [entry.id, entry.status])).toEqual([
+      [result.first.id, "partial"]
+    ])
+    const count = h.db
+      .prepare("SELECT COUNT(*) AS n FROM habit_entries WHERE habit_id = ?")
+      .get(habitId) as { readonly n: number }
+    expect(count.n).toBe(1)
+
+    const failure = await h.withClient(TOKEN_A, (client) =>
+      client.LogHabitEntry({
+        clientMutationId: "rpc-entry-old",
+        habitId,
+        localDate: tooOld,
+        status: "done"
+      })
+    ).catch((cause: unknown) => cause)
+
+    expect(failure).toMatchObject({
+      _tag: "HabitEntryOutOfWindow",
+      localDate: tooOld,
+      earliest: window.earliest,
+      latest: window.latest
+    })
   })
 
   it("maps a member without a household to HabitForbidden", async () => {

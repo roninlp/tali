@@ -336,8 +336,13 @@ export const RpcHandlers = ApiRpcs.toLayer({
       HabitService.pipe(Effect.flatMap((svc) => svc.restore(viewer, input)))),
   ListHabits: (_input, { headers }) =>
     withHabitViewer(headers, (viewer) =>
-      HabitService.pipe(Effect.flatMap((svc) => svc.list(viewer))))
-,
+      HabitService.pipe(Effect.flatMap((svc) => svc.list(viewer)))),
+  LogHabitEntry: (input, { headers }) =>
+    withHabitViewer(headers, (viewer) =>
+      HabitService.pipe(Effect.flatMap((svc) => svc.logEntry(viewer, input)))),
+  ListHabitEntries: (input, { headers }) =>
+    withHabitViewer(headers, (viewer) =>
+      HabitService.pipe(Effect.flatMap((svc) => svc.entries(viewer, input)))),
 
   // ── Reminders ──────────────────────────────────────────────────────────
   CreateReminder: (input, { headers }) =>

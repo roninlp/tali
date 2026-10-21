@@ -1,7 +1,11 @@
 import { Schema } from "effect"
 import { Visibility } from "../common.js"
-import { HabitId, TimeZone } from "./common.js"
-import { HabitFrequency, HabitReminderTime } from "./habit.js"
+import { HabitEntryId, HabitId, LocalDate, TimeZone } from "./common.js"
+import {
+  HabitEntryStatus,
+  HabitFrequency,
+  HabitReminderTime
+} from "./habit.js"
 
 /**
  * HabitService contract (ticket #63; FR-HAB-01).
@@ -23,10 +27,20 @@ import { HabitFrequency, HabitReminderTime } from "./habit.js"
  * `restore` with the same id and gets the habit back — no second habit, no
  * lost history. Both calls carry their own `clientMutationId`.
  *
+ * ## The daily tap (#64)
+ *
+ * `HabitEntryLogInput` is the log mutation: one row per `(habitId, localDate)`
+ * for all time, so a tap replaces the day's status instead of appending. The
+ * server owns the backdating window (≤ 7 days in the viewer's local calendar)
+ * and revives a tombstoned day in place — the generic sync push's
+ * tombstone-wins rule refuses that, which is why the tap has a service/RPC
+ * path of its own. `HabitEntryRangeInput` is the half-open range read that
+ * Today and the statistics use.
+ *
  * ## Not here
  *
- * The daily tap (#64), the streak/stats maths (#65) and the screens (#66) are
- * separate tickets. This contract is definition + persistence + sync only.
+ * The streak/stats maths (#65) and the screens (#66) are separate tickets. This
+ * contract is definition + persistence + logging + sync only.
  */
 
 // ── Typed errors (`docs/error-model-draft.md` §2) ────────────────────────
@@ -60,11 +74,38 @@ export class HabitConflict extends Schema.TaggedError<HabitConflict>()("HabitCon
   id: Schema.String
 }) {}
 
+/**
+ * A tap outside the ≤ 7-day backdating window (#64; FR-HAB-02).
+ *
+ * The bounds are the inclusive local dates the tap could have used. This is a
+ * **typed** refusal, never a clamp: silently writing "today" instead of the
+ * day the user chose was the #63 review's finding, and the opposite mistake
+ * (dropping the tap) would be just as wrong.
+ */
+export class HabitEntryOutOfWindow extends Schema.TaggedError<HabitEntryOutOfWindow>()(
+  "HabitEntryOutOfWindow",
+  {
+    localDate: LocalDate,
+    earliest: LocalDate,
+    latest: LocalDate
+  }
+) {}
+
+/** The replayed entry no longer exists (already purged past its trash window). */
+export class HabitEntryNotFound extends Schema.TaggedError<HabitEntryNotFound>()(
+  "HabitEntryNotFound",
+  {
+    id: HabitEntryId
+  }
+) {}
+
 export const HabitServiceError = Schema.Union([
   HabitNotFound,
   HabitForbidden,
   HabitValidationError,
-  HabitConflict
+  HabitConflict,
+  HabitEntryOutOfWindow,
+  HabitEntryNotFound
 ])
 export type HabitServiceError = Schema.Schema.Type<typeof HabitServiceError>
 
@@ -134,6 +175,48 @@ export const HabitMutationInput = Schema.Struct({
   clientMutationId: Schema.String
 })
 export type HabitMutationInput = Schema.Schema.Type<typeof HabitMutationInput>
+
+/**
+ * Log (or re-log) one habit day (#64; FR-HAB-02).
+ *
+ * `localDate` is the wall date being logged, in the **tap's** zone, and
+ * `status` is the answer the tap computed — the client cycles Done → Partial →
+ * Missed locally (`nextHabitEntryStatus`) so the write is already complete when
+ * it lands in the mirror. The server validates the day against the ≤ 7-day
+ * window in the viewer's zone, resolves the day's existing row (live or
+ * tombstoned) by `(habitId, localDate)` and updates it in place; `id` is only
+ * used when the day has never been logged, so two devices can never end up
+ * with two rows for one day.
+ *
+ * `visibility` is deliberately absent: the entry inherits the habit's, exactly
+ * like the sync path, so a tap can never widen a private habit's log.
+ */
+export const HabitEntryLogInput = Schema.Struct({
+  /** A client-minted id for a brand-new day; ignored when the day has a row. */
+  id: Schema.optional(HabitEntryId),
+  clientMutationId: Schema.String,
+  habitId: HabitId,
+  localDate: LocalDate,
+  status: HabitEntryStatus,
+  /** The zone the tap happened in; defaults to the viewer's profile zone. */
+  timeZone: Schema.optional(TimeZone)
+})
+export type HabitEntryLogInput = Schema.Schema.Type<typeof HabitEntryLogInput>
+
+/**
+ * The range read that feeds Today and the statistics (#64 → #66).
+ *
+ * `[from, before)` is half-open, matching every other date-range read in the
+ * codebase: consecutive windows concatenate without counting a day twice. The
+ * result is scoped to the viewer's household and to their own or shared
+ * entries, so a private habit's log cannot leak through this read.
+ */
+export const HabitEntryRangeInput = Schema.Struct({
+  from: LocalDate,
+  before: LocalDate,
+  habitId: Schema.optional(HabitId)
+})
+export type HabitEntryRangeInput = Schema.Schema.Type<typeof HabitEntryRangeInput>
 
 // ── Query inputs ─────────────────────────────────────────────────────────
 
