@@ -1629,7 +1629,6 @@ const habitEntryDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition =>
       deleted_at = ${state.deletedAt}
     WHERE id = ${state.entityId} AND version = ${expectedVersion}
   `
-  }
 })
 
 // ── Reminder ──────────────────────────────────────────────────────────────

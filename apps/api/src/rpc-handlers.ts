@@ -141,8 +141,12 @@ const withHabitViewer = <A, E, R>(
     Effect.mapError((error) =>
       error._tag === "TaskForbidden"
         ? new HabitForbidden({ id: error.id, reason: error.reason })
+        : error
+    ),
+    Effect.flatMap(run)
+  )
 
-
+/**
  * Reminders have their own typed forbidden error (same pattern as notes,
  * lists and events), so the edge's "no household" failure is mapped before
  * the handler runs.

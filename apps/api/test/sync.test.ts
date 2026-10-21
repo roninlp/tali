@@ -965,14 +965,14 @@ describe("sync engine", () => {
         householdId: HOUSEHOLD,
         entries: [
           entry({
-            entityType: "habit",
+            entityType: "occasion",
             entityId: uuidV7(),
             baseVersion: 0,
             patch: { title: "یادآور" }
           })
         ]
       })
-    ).rejects.toMatchObject({ _tag: "UnsupportedSyncEntity", entityType: "habit" })
+    ).rejects.toMatchObject({ _tag: "UnsupportedSyncEntity", entityType: "occasion" })
   })
 
   it("guards patch values and rejects an insert the aggregate cannot accept", async () => {
