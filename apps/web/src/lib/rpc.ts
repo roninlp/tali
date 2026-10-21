@@ -3,9 +3,11 @@ import { FetchHttpClient } from "effect/http"
 import { RpcClient, RpcSerialization } from "effect/rpc"
 import { ApiRpcs, type ApiClient } from "@tali/rpc"
 import type {
+  Habit,
   HabitEntry,
   HabitEntryLogInput,
   HabitEntryRangeInput,
+  HabitMutationInput,
   List,
   ListCreateInput,
   ListItemCheckInput,
@@ -173,6 +175,15 @@ export const api = {
 
   listHabitEntries: (input: HabitEntryRangeInput): Promise<ReadonlyArray<HabitEntry>> =>
     Effect.runPromise(withClient((client) => client.ListHabitEntries(input))),
+
+  /**
+   * Undo a habit soft delete (#63). This is a real service mutation, not a
+   * generic push: `/sync/push` keeps tombstone-wins, so a queued upsert cannot
+   * revive a deleted habit by itself. The `habits` screen restores the mirror
+   * locally first; the sync engine calls this to make the server agree.
+   */
+  restoreHabit: (input: HabitMutationInput): Promise<Habit> =>
+    Effect.runPromise(withClient((client) => client.RestoreHabit(input))),
 
   // ── Reminders (#60) ────────────────────────────────────────────────────
   // The reminder screens write through the local mirror; these are the

@@ -1,8 +1,10 @@
 import "fake-indexeddb/auto"
 import { describe, expect, it, vi } from "vitest"
 import {
+  type Habit,
   type HabitEntry,
   type HabitEntryLogInput,
+  type HabitMutationInput,
   type SyncBootstrapResponse,
   type SyncPullResponse,
   type SyncPushEntry,
@@ -47,11 +49,13 @@ const transport = (parts: {
   readonly bootstrap?: (offset: number, limit: number) => Promise<SyncBootstrapResponse>
   readonly push?: (entries: ReadonlyArray<SyncPushEntry>) => Promise<SyncPushResponse>
   readonly logHabitEntry?: (input: HabitEntryLogInput) => Promise<HabitEntry>
+  readonly restoreHabit?: (input: HabitMutationInput) => Promise<Habit>
 }): SyncTransport => ({
   pull: parts.pull ?? (async (cursor) => emptyPull(cursor)),
   bootstrap: parts.bootstrap ?? (async () => ({ items: [], nextOffset: 0, hasMore: false, cursor: 0 })),
   push: parts.push ?? (async () => ({ results: [], cursor: 0 })),
-  ...(parts.logHabitEntry === undefined ? {} : { logHabitEntry: parts.logHabitEntry })
+  ...(parts.logHabitEntry === undefined ? {} : { logHabitEntry: parts.logHabitEntry }),
+  ...(parts.restoreHabit === undefined ? {} : { restoreHabit: parts.restoreHabit })
 })
 
 describe("client sync engine", () => {
@@ -607,6 +611,84 @@ describe("client sync engine", () => {
       version: 3,
       deletedAt: null,
       data: { status: "done" }
+    })
+    store.close()
+  })
+
+  it("restores a queued habit undo through RestoreHabit when the push meets a tombstone (#66)", async () => {
+    const store = await open()
+    const habitId = uuidV7()
+    const now = "2026-10-21T09:30:00.000Z"
+    // The screen's undo is a local-first empty-patch upsert; tombstone-wins
+    // answers it with a tombstone, which the explicit service path repairs.
+    await store.writeLocal({
+      entityType: "habit",
+      entityId: habitId,
+      op: "upsert",
+      patch: {},
+      deletedAt: null,
+      now
+    })
+
+    const restored: Array<HabitMutationInput> = []
+    const engine = createSyncEngine(
+      transport({
+        push: async (entries) => ({
+          results: [
+            {
+              _tag: "tombstone" as const,
+              clientMutationId: entries[0]!.clientMutationId,
+              entityType: "habit" as const,
+              entityId: habitId,
+              version: 2,
+              seq: 9,
+              item: {
+                entityType: "habit" as const,
+                entityId: habitId,
+                version: 2,
+                updatedAt: now,
+                deletedAt: now,
+                data: {}
+              }
+            }
+          ],
+          cursor: 9
+        }),
+        restoreHabit: async (input) => {
+          restored.push(input)
+          return {
+            id: habitId,
+            type: "habit",
+            title: "کتاب",
+            description: null,
+            icon: "📚",
+            ownerId: "user",
+            householdId: "household",
+            visibility: "shared",
+            color: null,
+            startedOn: "2026-10-01",
+            frequency: { _tag: "daily" },
+            frequencyHistory: [{ effectiveFrom: "2026-10-01", frequency: { _tag: "daily" } }],
+            reminderTime: null,
+            timeZone: "Asia/Tehran",
+            createdAt: now,
+            updatedAt: "2026-10-21T09:30:01.000Z",
+            version: 3,
+            deletedAt: null
+          } as unknown as Habit
+        }
+      })
+    )
+
+    await engine.sync(store)
+
+    expect(restored).toHaveLength(1)
+    expect(restored[0]).toMatchObject({ id: habitId, clientMutationId: expect.any(String) })
+    expect(await store.pending()).toHaveLength(0)
+    expect(await store.get("habit", habitId)).toMatchObject({
+      version: 3,
+      deletedAt: null,
+      data: { title: "کتاب" }
     })
     store.close()
   })
