@@ -133,6 +133,25 @@ describe("tier and snooze presets", () => {
       .toBe("2026-10-20T08:10:00.000Z")
     expect(snoozeInstant("2026-10-20T08:00:00.000Z", 7)).toBeNull()
   })
+
+  it("lets a snooze land inside quiet hours (#79)", () => {
+    // 23:50 Tehran, ten more minutes: the target is inside the window and the
+    // policy is deliberately not consulted.
+    const target = snoozeInstant("2026-10-20T20:20:00.000Z", 10)!
+    expect(target).toBe("2026-10-20T20:30:00.000Z")
+    expect(isQuietHoursInstant(target, TEHRAN)).toBe(true)
+  })
+
+  it("walks a snooze chain through the night without a cap (#79)", () => {
+    // 23:40 → 00:10 → 00:40 in Tehran, each link a fresh tap.
+    const first = snoozeInstant("2026-10-20T20:10:00.000Z", 30)!
+    const second = snoozeInstant(first, 30)!
+    expect(first).toBe("2026-10-20T20:40:00.000Z")
+    expect(second).toBe("2026-10-20T21:10:00.000Z")
+    for (const target of [first, second]) {
+      expect(isQuietHoursInstant(target, TEHRAN)).toBe(true)
+    }
+  })
 })
 
 describe("missed inbox", () => {

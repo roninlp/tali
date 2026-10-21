@@ -214,8 +214,9 @@ a medication reminder, and it is a different thing from a **Snooze**.
 "Tell me again in X minutes", for one occurrence only (5, 10, 15, 30 or 60). It
 closes the current dispatch as answered `snooze` with a compare-and-set (so a
 double tap opens one child) and opens a new one at `now + X`; the series'
-schedule does not move. A snoozed fire is not held by **Quiet Hours** — asking
-again is consent (ADR-0005 §5; a derived default pending owner confirmation).
+schedule does not move. A snoozed fire is never held by **Quiet Hours**, and a
+snooze of a snooze may keep walking through the night: asking again is consent
+(ADR-0005 §5; settled in #79).
 
 ### Missed Inbox
 

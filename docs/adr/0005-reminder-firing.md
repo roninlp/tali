@@ -1,6 +1,6 @@
 # ADR-0005: One per-minute cron sweep claims each fire in the dispatch ledger
 
-- **Status:** Accepted (2026-10-21) — the mechanism is decided; one delivery default (snooze inside quiet hours) is still pending owner confirmation, see Consequences.
+- **Status:** Accepted (2026-10-21) — the mechanism is decided; the snooze-inside-quiet-hours default was confirmed by the owner in #79 (§5).
 - **Deciders:** Tali owner + developer (wayfinder #67); delivery details marked _(default)_ are the architect's, amendable until #61 lands. The 07:00 push cap recorded in #67 is **not** adopted here — see §10.
 - **Related:** tickets #67 (firing mechanism), #60 (reminder aggregate), #61 (delivery), #13 (scheduling policy), #4 (Web Push research), #3 (Alchemy cron), #44 (`alchemy dev`), #20 (push shell), ADR-0002 (the owner's time zone), ADR-0004 (the reserved `ReminderLink`)
 
@@ -147,8 +147,9 @@ queue product: a held dispatch is an ordinary owed row whose `deliver_at` is
 07:00, and the ordinary sweep flushes it. The inbox shows a held fire on the next
 app open even before 07:00, which is #13's "window's end or next app open" path.
 A snooze child is written with its `deliver_at` already set (§6), so it does not
-pass through the quiet-hours branch; that exemption is a derived default (see
-Consequences). **Silence is not a hold:** #13's `silencedUntil` pauses the series,
+pass through the quiet-hours branch: **quiet hours never hold a snooze**, and a
+snooze chain may walk through the night because every link needs a fresh tap
+(#79). **Silence is not a hold:** #13's `silencedUntil` pauses the series,
 so a fire inside it produces no dispatch and the series advances past it. Setting
 a silence or deleting a reminder also expires any dispatch already owed, so a
 held row cannot push after the owner has changed their mind.
@@ -313,13 +314,17 @@ against the running stack (never registered in a deployed Worker); and workerd's
   inline retry already give, at the cost of a second durable store and engine.
   The sweep+queue hybrid — only pays off beyond ~10 devices per tick and is
   recorded, with DO alarms, as the upgrade path.
-- **Pending owner confirmation:** the snooze-inside-quiet-hours exemption (§5).
-  #13 settles that a snooze is this-occurrence-only but not how it interacts
-  with quiet hours; the ADR keeps the exemption because a 23:00 "remind me in 10
-  minutes" that waits until 07:00 is not a snooze, but the owner should confirm
-  it before #61. The strict-#13 alternative is one line in the policy: a snooze
-  whose `deliver_at` falls in [23:00, 07:00) moves to the next 07:00. The 07:00
-  push cap in #67 is the other product decision — not adopted here (§10);
+- **Settled (owner, #79):** a snooze is **not** held by quiet hours, and a
+  snooze chain is **not** capped. A snooze target inside [23:00, 07:00) fires at
+  its target; the alternative — a snooze whose tap was made outside the window
+  holding to the next 07:00 — was rejected because a "5 more minutes" tap at
+  22:59 would silently become an eight-hour delay, and the strict-#13
+  alternative (every target inside the window moves to 07:00) because it turns
+  "remind me in ten minutes" into "remind me tomorrow". The exemption rests on
+  consent: the preset set bounds any single snooze to an hour, and every link in
+  a chain requires the owner to be awake and answering at that moment, so the
+  chain needs no separate cap. The 07:00 push cap in #67 is the other product
+  decision — not adopted here (§10);
   reinstating it is a #13 amendment.
 - **Revisit if:** a third household makes the 10-fetch cap measurable, a 07:00
   flush proves too noisy (a cap would then be a #13 product amendment, not a
