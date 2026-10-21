@@ -118,6 +118,43 @@ const seedTask = (db: DatabaseSync, task: TaskSeed): void => {
   )
 }
 
+interface EventSeed {
+  readonly id: string
+  readonly title: string
+  readonly ownerId?: string
+  readonly householdId?: string
+  readonly visibility?: "shared" | "private"
+  readonly startAt?: string | null
+  readonly endAt?: string | null
+  readonly allDayDate?: string | null
+  readonly timeZone?: string
+  readonly recurrence?: RecurrenceRule | null
+}
+
+const seedEvent = (db: DatabaseSync, event: EventSeed): void => {
+  db.prepare(
+    `INSERT INTO events
+      (id, title, owner_id, household_id, visibility, start_at, end_at,
+       all_day_date, time_zone, recurrence, exceptions, created_at, updated_at, version)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, 1)`
+  ).run(
+    event.id,
+    event.title,
+    event.ownerId ?? USER_A,
+    event.householdId ?? HOUSEHOLD,
+    event.visibility ?? "shared",
+    event.startAt ?? null,
+    event.endAt ?? null,
+    event.allDayDate ?? null,
+    event.timeZone ?? TZ,
+    event.recurrence === undefined || event.recurrence === null
+      ? null
+      : JSON.stringify(event.recurrence),
+    NOW,
+    NOW
+  )
+}
+
 const makeHarness = async (): Promise<Harness> => {
   const db = new DatabaseSync(":memory:")
   for (const file of migrationFiles()) {
@@ -437,6 +474,68 @@ describe("GET /week", () => {
     expect(after.count).toBe(before.count)
   })
 
+  it("expands a recurring event series into the week's event lane", async () => {
+    const h = await setup()
+    const series = uuidV7()
+    const privateB = uuidV7()
+    const weekly: RecurrenceRule = {
+      frequency: "weekly",
+      interval: 1,
+      byDay: [1, 3, 5],
+      end: { _tag: "never" }
+    }
+    // Monday 10:00 Tehran (06:30Z); Mon/Wed/Fri occurrences.
+    seedEvent(h.db, {
+      id: series,
+      title: "جلسهٔ هفتگی",
+      startAt: "2026-10-19T06:30:00.000Z",
+      endAt: "2026-10-19T07:30:00.000Z",
+      recurrence: weekly
+    })
+    seedEvent(h.db, {
+      id: privateB,
+      title: "قرار خصوصی ب",
+      ownerId: USER_B,
+      visibility: "private",
+      allDayDate: "2026-10-20"
+    })
+
+    const before = h.db.prepare("SELECT version FROM events WHERE id = ?").get(series) as {
+      readonly version: number
+    }
+    const model = (await week(h, { token: TOKEN_A, anchor: "2026-10-19" })).model!
+    expect(model.start).toBe("2026-10-17")
+
+    const eventDays = model.days.flatMap((day) =>
+      day.events.map((event) => [day.date, event.instanceId, event.projected])
+    )
+    expect(eventDays).toEqual([
+      ["2026-10-19", "2026-10-19", false],
+      ["2026-10-21", "2026-10-21", true],
+      ["2026-10-23", "2026-10-23", true]
+    ])
+    expect(dayOf(model, "2026-10-21").counts).toEqual({
+      tasks: 0,
+      events: 1,
+      reminders: 0,
+      habits: 0
+    })
+    expect(dayOf(model, "2026-10-21").empty).toMatchObject({ tasks: true, events: false })
+
+    // B's private event is not visible to A, but is visible to B.
+    expect(model.days.flatMap((day) => day.events.map((event) => event.title))).not.toContain(
+      "قرار خصوصی ب"
+    )
+    const b = (await week(h, { token: TOKEN_B, anchor: "2026-10-19" })).model!
+    expect(dayOf(b, "2026-10-20").events.map((event) => event.title)).toContain("قرار خصوصی ب")
+
+    // Projection is a read: the series row was not versioned or rewritten.
+    const after = h.db.prepare("SELECT version FROM events WHERE id = ?").get(series) as {
+      readonly version: number
+    }
+    expect(after.version).toBe(before.version)
+  })
+
   it("honors Saturday, Sunday and Monday week starts from preferences", async () => {
     const h = await setup()
     seedWeek(h)
@@ -570,6 +669,44 @@ describe("GET /month", () => {
     expect(model.totals.tasks).toBeGreaterThan(10)
   })
 
+  it("counts events in the busy marks and the day drill-down", async () => {
+    const h = await setup()
+    const series = uuidV7()
+    seedEvent(h.db, {
+      id: series,
+      title: "جلسهٔ هفتگی",
+      startAt: "2026-10-19T06:30:00.000Z",
+      endAt: "2026-10-19T07:30:00.000Z",
+      recurrence: { frequency: "weekly", interval: 1, byDay: [1, 3, 5], end: { _tag: "never" } }
+    })
+
+    const model = (await month(h, {
+      token: TOKEN_A,
+      anchor: "2026-10-19",
+      day: "2026-10-21"
+    })).model!
+
+    const cell = model.days.find((day) => day.date === "2026-10-21")!
+    expect(cell).toMatchObject({ inMonth: true, isBusy: true, tasks: 0, events: 1 })
+    expect(cell.busyLevel).toBe(1)
+    expect(cell.counts).toEqual({ tasks: 0, events: 1, reminders: 0, habits: 0 })
+
+    // 10-19 and 10-21 are inside Mehr; 10-23 is a borrowed trailing cell.
+    expect(model.totals.events).toBe(2)
+    expect(model.days.find((day) => day.date === "2026-10-23")).toMatchObject({
+      inMonth: false,
+      events: 1
+    })
+
+    expect(model.day?.date).toBe("2026-10-21")
+    expect(model.day?.events).toHaveLength(1)
+    expect(model.day?.events[0]).toMatchObject({
+      instanceId: "2026-10-21",
+      projected: true,
+      title: "جلسهٔ هفتگی"
+    })
+  })
+
   it("crosses a Jalali month edge and counts adjacent-month cells separately", async () => {
     const h = await setup()
     // Esfand 1404 ends 2026-03-20; Nowruz starts Farvardin on 2026-03-21.
@@ -595,7 +732,7 @@ describe("GET /month", () => {
       isBusy: true
     })
     // Totals ignore cells borrowed from either neighbour.
-    expect(farvardin.totals).toEqual({ busyDays: 1, tasks: 1 })
+    expect(farvardin.totals).toEqual({ busyDays: 1, tasks: 1, events: 0 })
   })
 
   it("scopes by household and hides another member's private rows", async () => {
@@ -636,7 +773,7 @@ describe("GET /month", () => {
 
     expect(model.day?.date).toBe("2026-06-01")
     expect(model.day?.tasks.map((item) => item.title)).toEqual(["روز دور"])
-    expect(model.totals).toEqual({ busyDays: 0, tasks: 0 })
+    expect(model.totals).toEqual({ busyDays: 0, tasks: 0, events: 0 })
     expect(model.days.some((cell) => cell.date === "2026-06-01")).toBe(false)
   })
 

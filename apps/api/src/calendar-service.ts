@@ -8,6 +8,7 @@ import {
   singleDayRange,
   taskBucketBounds,
   weekRange,
+  type CalendarEventSource,
   type CalendarRange,
   type CalendarTaskSource,
   type HouseholdId,
@@ -18,7 +19,7 @@ import {
   type WeekReadModel,
   type WeekStart
 } from "@tali/domain"
-import { TaskRepo, TaskRepoLive } from "@tali/sql"
+import { EventRepo, EventRepoLive, TaskRepo, TaskRepoLive } from "@tali/sql"
 
 /**
  * `CalendarService` — the week and month read models (ticket #43;
@@ -39,8 +40,12 @@ import { TaskRepo, TaskRepoLive } from "@tali/sql"
  * week or month grid. Done rows are excluded: the calendar is about the work
  * still to plan.
  *
- * Events, reminders and habits are honest zeros until their slices land; the
- * read-model shape reserves their lanes so no client code has to change later.
+ * Since #58 the event lane is real, with the same three steps: the events
+ * anchored inside the range plus every live recurring series, expanded by the
+ * pure `eventOccurrences` builder (which reuses the same #38 engine and marks
+ * generated occurrences read-only). Reminder and habit lanes stay honest zeros
+ * until their slices land; the read-model shape reserves them so no client code
+ * has to change later.
  */
 
 export interface CalendarViewer {
@@ -75,6 +80,7 @@ export class CalendarService extends Context.Service<CalendarService>()(
   {
     make: Effect.gen(function*() {
       const tasks = yield* TaskRepo
+      const events = yield* EventRepo
 
       /**
        * The rows a range needs: tasks due inside it plus live recurring rows.
@@ -107,6 +113,37 @@ export class CalendarService extends Context.Service<CalendarService>()(
           return [...byId.values()]
         })
 
+      /**
+       * The events a range needs: the rows anchored inside it plus every live
+       * recurring series (a series anchored months earlier still has
+       * occurrences inside the window). Merged by id because a recurring row
+       * can satisfy both queries.
+       */
+      const loadRangeEvents = (
+        viewer: CalendarViewer,
+        range: CalendarRange
+      ): Effect.Effect<ReadonlyArray<CalendarEventSource>> =>
+        Effect.gen(function*() {
+          const scope = {
+            householdId: viewer.householdId,
+            userId: viewer.userId
+          }
+          const inRange = yield* events
+            .listInRange({
+              ...scope,
+              dateFrom: range.start,
+              dateBefore: range.endExclusive,
+              instantFrom: localDateStartInstant(range.start, viewer.timeZone),
+              instantBefore: localDateStartInstant(range.endExclusive, viewer.timeZone)
+            })
+            .pipe(Effect.orDie)
+          const recurring = yield* events.listRecurringLive(scope).pipe(Effect.orDie)
+
+          const byId = new Map<string, CalendarEventSource>()
+          for (const event of [...inRange, ...recurring]) byId.set(event.id, event)
+          return [...byId.values()]
+        })
+
       const week = (
         viewer: CalendarViewer,
         anchor?: LocalDate,
@@ -116,8 +153,10 @@ export class CalendarService extends Context.Service<CalendarService>()(
           const date = anchor ?? taskBucketBounds(viewer.timeZone, now).today
           const range = weekRange(date, viewer.weekStart)
           const rows = yield* loadRangeTasks(viewer, range)
+          const eventRows = yield* loadRangeEvents(viewer, range)
           return buildWeekReadModel({
             tasks: rows,
+            events: eventRows,
             anchor: date,
             weekStart: viewer.weekStart,
             timeZone: viewer.timeZone
@@ -135,16 +174,21 @@ export class CalendarService extends Context.Service<CalendarService>()(
           const range = monthRange(year, monthOfYear, viewer.weekStart)
           const day = options.day ?? null
           const rows = yield* loadRangeTasks(viewer, range)
+          const eventRows = yield* loadRangeEvents(viewer, range)
           // The drill-down accepts any date, and a client may ask for one
           // outside the month grid (a stale selection, an adjacent-month day).
           // The grid query never covered it, so read that day too instead of
           // answering an empty day for a day that has tasks.
           let drillRows: ReadonlyArray<CalendarTaskSource> = []
+          let drillEvents: ReadonlyArray<CalendarEventSource> = []
           if (day !== null && (day < range.start || day > range.end)) {
-            drillRows = yield* loadRangeTasks(viewer, singleDayRange(day))
+            const drillRange = singleDayRange(day)
+            drillRows = yield* loadRangeTasks(viewer, drillRange)
+            drillEvents = yield* loadRangeEvents(viewer, drillRange)
           }
           return buildMonthReadModel({
             tasks: [...rows, ...drillRows],
+            events: [...eventRows, ...drillEvents],
             year,
             month: monthOfYear,
             weekStart: viewer.weekStart,
@@ -161,4 +205,4 @@ export class CalendarService extends Context.Service<CalendarService>()(
 export const CalendarServiceLive = Layer.effect(
   CalendarService,
   CalendarService.make
-).pipe(Layer.provide(TaskRepoLive))
+).pipe(Layer.provide(TaskRepoLive), Layer.provide(EventRepoLive))

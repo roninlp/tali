@@ -1,8 +1,13 @@
 import { Schema } from "effect"
 import { Visibility } from "../common.js"
 import { RecurrenceRule } from "../recurrence.js"
-import { EventId, LocalDate, OccasionId, TimeZone } from "./common.js"
-import { EventException, EventTiming } from "./event.js"
+import { EventExceptionId, EventId, LocalDate, OccasionId, TimeZone } from "./common.js"
+import {
+  Event,
+  EventException,
+  EventExceptionOverrides,
+  EventTiming
+} from "./event.js"
 
 /**
  * EventService contract (ticket #57; FR-CAL-01).
@@ -138,6 +143,62 @@ export const EventMutationInput = Schema.Struct({
   clientMutationId: Schema.String
 })
 export type EventMutationInput = Schema.Schema.Type<typeof EventMutationInput>
+
+// ── Occurrence-level edits (ticket #58; FR-CAL-03) ───────────────────────
+
+/**
+ * Which part of a recurring series an edit applies to.
+ *
+ * - `thisOccurrence` writes one exception on the series row.
+ * - `thisAndFollowing` splits the series at the occurrence.
+ */
+export const EventEditScope = Schema.Literals(["thisOccurrence", "thisAndFollowing"])
+export type EventEditScope = Schema.Schema.Type<typeof EventEditScope>
+
+/**
+ * Edit one occurrence: a new time/title/location/colour, scoped to that
+ * occurrence or to it and the rest of the series.
+ *
+ * `instanceId` is the occurrence key (its local start date in the event's own
+ * zone, per ADR-0004). `followingId`/`followingMutationId` are required only
+ * for a split; the client mints them so a retry is exactly-once even though
+ * the batch writes two rows.
+ */
+export const EventOccurrenceEditInput = Schema.Struct({
+  id: EventId,
+  instanceId: LocalDate,
+  clientMutationId: Schema.String,
+  scope: EventEditScope,
+  /** Optional client-minted exception id (a stable handle for the occurrence). */
+  exceptionId: Schema.optional(EventExceptionId),
+  /** The new series row's id, for `thisAndFollowing`. */
+  followingId: Schema.optional(EventId),
+  /** The new series row's replay key, for `thisAndFollowing`. */
+  followingMutationId: Schema.optional(Schema.String),
+  overrides: EventExceptionOverrides
+})
+export type EventOccurrenceEditInput = Schema.Schema.Type<typeof EventOccurrenceEditInput>
+
+/** Delete one occurrence, or everything from it on. */
+export const EventOccurrenceDeleteInput = Schema.Struct({
+  id: EventId,
+  instanceId: LocalDate,
+  clientMutationId: Schema.String,
+  scope: EventEditScope,
+  /** Optional client-minted exception id for a `thisOccurrence` delete. */
+  exceptionId: Schema.optional(EventExceptionId)
+})
+export type EventOccurrenceDeleteInput = Schema.Schema.Type<typeof EventOccurrenceDeleteInput>
+
+/**
+ * What an occurrence edit wrote: the series row (as stored) and, for a split,
+ * the new tail row. `following` is `null` for every non-split edit.
+ */
+export const EventOccurrenceChange = Schema.Struct({
+  series: Event,
+  following: Schema.NullOr(Event)
+})
+export type EventOccurrenceChange = Schema.Schema.Type<typeof EventOccurrenceChange>
 
 // ── Query inputs ─────────────────────────────────────────────────────────
 

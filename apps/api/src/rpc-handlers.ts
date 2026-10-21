@@ -1,8 +1,15 @@
 import { Effect } from "effect"
 import type { Headers } from "effect/http/Headers"
 import { ApiRpcs } from "@tali/rpc"
-import { ListForbidden, NoteForbidden, TaskForbidden, Unauthorized } from "@tali/domain"
+import {
+  EventForbidden,
+  ListForbidden,
+  NoteForbidden,
+  TaskForbidden,
+  Unauthorized
+} from "@tali/domain"
 import { AuthService } from "./auth-service.js"
+import { EventService, type EventViewer } from "./event-service.js"
 import { ListService, type ListViewer } from "./list-service.js"
 import { NoteService } from "./note-service.js"
 import { PreferencesService } from "./preferences-service.js"
@@ -96,6 +103,23 @@ const withListViewer = <A, E, R>(
     Effect.mapError((error) =>
       error._tag === "TaskForbidden"
         ? new ListForbidden({ id: error.id, reason: error.reason })
+        : error
+    ),
+    Effect.flatMap(run)
+  )
+
+/**
+ * Events have their own typed forbidden error, so the edge's "no household"
+ * failure is mapped before the handler runs (same pattern as notes/lists).
+ */
+const withEventViewer = <A, E, R>(
+  headers: Headers,
+  run: (viewer: EventViewer) => Effect.Effect<A, E, R>
+): Effect.Effect<A, E | Unauthorized | EventForbidden, AuthService | PreferencesService | R> =>
+  viewerFromHeaders(headers).pipe(
+    Effect.mapError((error) =>
+      error._tag === "TaskForbidden"
+        ? new EventForbidden({ id: error.id, reason: error.reason })
         : error
     ),
     Effect.flatMap(run)
@@ -225,5 +249,32 @@ export const RpcHandlers = ApiRpcs.toLayer({
       NoteService.pipe(Effect.flatMap((svc) => svc.listPinned(viewer)))),
   ListTrashNotes: (_input, { headers }) =>
     withNoteViewer(headers, (viewer) =>
-      NoteService.pipe(Effect.flatMap((svc) => svc.listTrash(viewer))))
+      NoteService.pipe(Effect.flatMap((svc) => svc.listTrash(viewer)))),
+
+  // ── Events ────────────────────────────────────────────────────────────
+
+  CreateEvent: (input, { headers }) =>
+    withEventViewer(headers, (viewer) =>
+      EventService.pipe(Effect.flatMap((svc) => svc.create(viewer, input)))),
+  GetEvent: ({ id }, { headers }) =>
+    withEventViewer(headers, (viewer) =>
+      EventService.pipe(Effect.flatMap((svc) => svc.get(viewer, id)))),
+  UpdateEvent: (input, { headers }) =>
+    withEventViewer(headers, (viewer) =>
+      EventService.pipe(Effect.flatMap((svc) => svc.update(viewer, input)))),
+  DeleteEvent: (input, { headers }) =>
+    withEventViewer(headers, (viewer) =>
+      EventService.pipe(Effect.flatMap((svc) => svc.delete(viewer, input)))),
+  ListEvents: (input, { headers }) =>
+    withEventViewer(headers, (viewer) =>
+      EventService.pipe(Effect.flatMap((svc) => svc.list(viewer, input)))),
+  ListEventOccurrences: (input, { headers }) =>
+    withEventViewer(headers, (viewer) =>
+      EventService.pipe(Effect.flatMap((svc) => svc.occurrences(viewer, input)))),
+  EditEventOccurrence: (input, { headers }) =>
+    withEventViewer(headers, (viewer) =>
+      EventService.pipe(Effect.flatMap((svc) => svc.editOccurrence(viewer, input)))),
+  DeleteEventOccurrence: (input, { headers }) =>
+    withEventViewer(headers, (viewer) =>
+      EventService.pipe(Effect.flatMap((svc) => svc.deleteOccurrence(viewer, input))))
 })

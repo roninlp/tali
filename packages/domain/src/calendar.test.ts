@@ -218,7 +218,7 @@ describe("month read model", () => {
       inMonth: true
     })
     expect(second.counts).toEqual({ tasks: 2, events: 0, reminders: 0, habits: 0 })
-    expect(model.totals).toEqual({ busyDays: 2, tasks: 3 })
+    expect(model.totals).toEqual({ busyDays: 2, tasks: 3, events: 0 })
     expect(model.day?.date).toBe("2026-03-22")
     expect(model.day?.tasks.map((item) => item.title)).toEqual(["سه", "دو"])
   })
@@ -242,7 +242,7 @@ describe("month read model", () => {
       inMonth: false,
       isBusy: true
     })
-    expect(model.totals).toEqual({ busyDays: 1, tasks: 1 })
+    expect(model.totals).toEqual({ busyDays: 1, tasks: 1, events: 0 })
   })
 
   it("scales the busy mark to three dots", () => {
@@ -264,6 +264,6 @@ describe("month read model", () => {
     expect(model.days.some((cell) => cell.date === "2026-06-01")).toBe(false)
     expect(model.day?.date).toBe("2026-06-01")
     expect(model.day?.tasks.map((item) => item.id)).toEqual(["far"])
-    expect(model.totals).toEqual({ busyDays: 0, tasks: 0 })
+    expect(model.totals).toEqual({ busyDays: 0, tasks: 0, events: 0 })
   })
 })
