@@ -1,26 +1,24 @@
-import { Effect, Layer } from "effect"
+import { Layer } from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/http"
 import { RpcServer, RpcSerialization } from "effect/rpc"
 import { ApiRpcs } from "@tali/rpc"
-import { ListItemRepoLive, PushSubscriptionRepoLive } from "@tali/sql"
-import { ListItemService, ListItemServiceLive } from "./list-item-service.js"
+import {
+  ListItemRepoLive,
+  ProjectRepoLive,
+  PushSubscriptionRepoLive,
+  TagRepoLive,
+  TaskRepoLive
+} from "@tali/sql"
 import { AuthServiceLive } from "./auth-service.js"
 import { AuthRoutes } from "./auth-routes.js"
-import { PushRoutes } from "./push-routes.js"
+import { ListItemServiceLive } from "./list-item-service.js"
 import { PreferencesRoutes } from "./preferences-routes.js"
 import { PreferencesServiceLive } from "./preferences-service.js"
+import { PushRoutes } from "./push-routes.js"
+import { RpcHandlers } from "./rpc-handlers.js"
 import { SyncRoutes } from "./sync.js"
 import { SyncServiceLive } from "./sync-service.js"
-
-/** Implement the RPC contract. Each handler yields the service, then delegates. */
-const RpcHandlers = ApiRpcs.toLayer({
-  CreateListItem: (input) =>
-    ListItemService.pipe(Effect.flatMap((svc) => svc.create(input))),
-  ListListItems: () =>
-    ListItemService.pipe(Effect.flatMap((svc) => svc.list())),
-  ToggleListItem: ({ id, checked }) =>
-    ListItemService.pipe(Effect.flatMap((svc) => svc.setChecked(id, checked)))
-})
+import { TaskServiceLive } from "./task-service.js"
 
 /** Mount `POST /rpc` over plain HTTP (ndjson). */
 const RpcLayer = RpcServer.layerHttp({
@@ -50,6 +48,10 @@ export const AppLayer = Layer.mergeAll(
   Layer.provide(PreferencesServiceLive),
   Layer.provide(SyncServiceLive),
   Layer.provide(ListItemServiceLive),
+  Layer.provide(TaskServiceLive),
   Layer.provide(ListItemRepoLive),
+  Layer.provide(ProjectRepoLive),
+  Layer.provide(TagRepoLive),
+  Layer.provide(TaskRepoLive),
   Layer.provide(PushSubscriptionRepoLive)
 )

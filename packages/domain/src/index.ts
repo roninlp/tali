@@ -25,7 +25,9 @@ export {
   TimestampUtc,
   commonItemFields
 } from "./planning/common"
+export * from "./planning/buckets"
 export * from "./planning/task"
+export * from "./planning/task-service"
 export * from "./planning/project"
 export * from "./planning/tag"
 export * from "./planning/list"
