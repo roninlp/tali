@@ -22,6 +22,8 @@ import { RpcHandlers } from "./rpc-handlers.js"
 import { SyncRoutes } from "./sync.js"
 import { SyncServiceLive } from "./sync-service.js"
 import { TaskServiceLive } from "./task-service.js"
+import { TodayRoutes } from "./today-routes.js"
+import { TodayServiceLive } from "./today-service.js"
 
 /** Mount `POST /rpc` over plain HTTP (ndjson). */
 const RpcLayer = RpcServer.layerHttp({
@@ -44,6 +46,7 @@ export const AppLayer = Layer.mergeAll(
   SyncRoutes,
   AuthRoutes,
   PreferencesRoutes,
+  TodayRoutes,
   PushRoutes,
   RpcLayer
 ).pipe(
@@ -54,6 +57,7 @@ export const AppLayer = Layer.mergeAll(
   Layer.provide(ListItemServiceLive),
   Layer.provide(TaskServiceLive),
   Layer.provide(NoteServiceLive),
+  Layer.provide(TodayServiceLive),
   Layer.provide(ListItemRepoLive),
   Layer.provide(NoteRepoLive),
   Layer.provide(ProjectRepoLive),

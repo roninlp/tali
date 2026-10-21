@@ -115,6 +115,7 @@ const TASKS_CSS = `
 .tasks-board ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; min-width: 0; }
 .tasks-card { min-width: 0; background: ${tokens.color.surface}; border: 1px solid ${tokens.color.line}; border-radius: ${tokens.radius.md}; padding: 8px 10px; display: grid; gap: 6px; }
 .tasks-card[data-overdue="true"] { background: #fff8ec; border-color: #f0dfc0; }
+.tasks-card:target { border-color: ${tokens.color.brand}; background: #eef4ff; }
 .tasks-card[data-dragging="true"] { opacity: 0.5; }
 .tasks-card-row { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
 .tasks-card-title { all: unset; box-sizing: border-box; cursor: pointer; flex: 1; min-width: 0; overflow-wrap: anywhere; line-height: 1.7; font-weight: 500; }

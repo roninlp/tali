@@ -52,7 +52,14 @@ const corsHeaders = (origin: string): Record<string, string> => ({
   "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
   // Effect's HTTP client adds B3/trace propagation headers to requests, and the
   // RPC transport posts ndjson; both must pass the browser's preflight.
-  "access-control-allow-headers": "content-type, authorization, traceparent, b3",
+  // `if-none-match` is not a CORS-safelisted request header, so a cross-origin
+  // `/today` revalidation carrying the stored ETag needs it allowed explicitly.
+  "access-control-allow-headers":
+    "content-type, authorization, traceparent, b3, if-none-match",
+  // `etag` is not a CORS-safelisted response header either: without this the
+  // browser hands `fetch` a null ETag on the :3000 → :8787 dev split and the
+  // dashboard silently never revalidates (200 every time, no 304).
+  "access-control-expose-headers": "etag",
   "access-control-max-age": "600"
 })
 

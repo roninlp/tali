@@ -1,34 +1,73 @@
-import { createEffect, createSignal, For, Show } from "solid-js"
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  untrack
+} from "solid-js"
 import { Title } from "@solidjs/meta"
-import { Button, tokens } from "@tali/ui"
-import { DEFAULT_TIME_ZONE, formatJalaliDate, todayInTimeZone, uuidV7 } from "@tali/domain"
+import { useNavigate } from "@solidjs/router"
+import {
+  DEFAULT_TIME_ZONE,
+  formatJalaliDate,
+  localizeDigits,
+  moveDashboardSection,
+  normalizeDashboardSectionOrder,
+  taskBucketBounds,
+  taskBucketOf,
+  toIsoDate,
+  todayInTimeZone,
+  type DashboardSection,
+  type TodayReadModel
+} from "@tali/domain"
 import { AppHeader } from "../components/app-header"
 import { Guard } from "../components/guard"
 import { TextInput } from "../components/form"
-import { useAuth } from "../lib/auth"
+import { TodayStyles, TODAY_MAIN, TODAY_ROOT } from "../components/today/ui"
 import { usePreferences } from "../lib/preferences"
+import { authErrorMessage } from "../lib/auth-copy"
 import { weekDaysFor } from "../lib/preferences-format"
 import { useLocalStore } from "../lib/local-store"
 import type { MirrorRecord } from "../lib/local-store"
+import { fetchToday } from "../lib/today/api"
+import {
+  fromMirrorToday,
+  fromServerToday,
+  overlayPendingToday,
+  type TodayView
+} from "../lib/today/model"
+import {
+  completeTaskInMirror,
+  createTaskInMirror,
+  dueLabel,
+  moveTaskInMirror,
+  type TaskRow
+} from "../lib/tasks/model"
+import type { NoteRow } from "../lib/notes/mirror"
 
 const DRAFT_KEY = "today.quickAdd.title"
 
-const titleOf = (row: MirrorRecord): string =>
-  typeof row.data.title === "string" ? row.data.title : ""
+/** Events/reminders/habits stay quiet until Slices 3–4; do not fake content. */
+const QUIET_COPY: Readonly<Record<"events" | "reminders" | "habits", string>> = {
+  events: "امروز رویدادی نیست؛ تقویم در گام بعدی می‌آید.",
+  reminders: "یادآوری‌ای برای امروز نیست.",
+  habits: "عادتی برای امروز ثبت نشده است."
+}
 
-const checkedOf = (row: MirrorRecord): boolean => row.data.checked === true
+const SECTION_TITLES: Readonly<Record<DashboardSection, string>> = {
+  tasks: "کارهای امروز",
+  events: "رویدادها",
+  reminders: "یادآورها",
+  habits: "عادت‌ها",
+  notes: "یادداشت‌های پین‌شده"
+}
 
-const sortOrderOf = (row: MirrorRecord): number =>
-  typeof row.data.sortOrder === "number" ? row.data.sortOrder : 0
-
-/**
- * The dashboard quick list only owns the legacy scaffold rows (no `listId`).
- * Items created in a `/lists` list are ordinary `listItem` rows in the same
- * mirror, and showing them here would dump every shopping list onto Today
- * (#39 keeps the scaffold path intact by scoping it).
- */
-const isQuickItem = (row: MirrorRecord): boolean =>
-  row.data.listId === undefined || row.data.listId === null || row.data.listId === ""
+const SOURCE_HINT: Readonly<Record<string, string>> = {
+  offline: "آفلاین — نمایش از حافظهٔ محلی",
+  error: "ارتباط با سرور برقرار نشد؛ نمایش از حافظهٔ محلی"
+}
 
 export default function TodayRoute() {
   return (
@@ -42,52 +81,114 @@ export default function TodayRoute() {
 }
 
 /**
- * The first signed-in screen. Slice 2 fills it with the dashboard sections;
- * today it proves the local-first loop: a write lands in the IndexedDB mirror
- * (and the outbox) before anything touches the network, survives a reload,
- * and the header says whether the device is offline or still has queued work.
+ * The daily picture (FR-VIEW-01, ticket #42).
+ *
+ * Online, the `GET /today` read model paints the screen and its ETag
+ * revalidates without re-downloading; pending local writes are overlaid on it
+ * until the outbox drains. Offline (or when the API is unreachable) the same
+ * view is aggregated from the IndexedDB mirror, so Today never blanks. Inline
+ * actions always go through the #37 local-first helpers; section order comes
+ * from the #35 preferences signal, so a settings change re-renders without a
+ * reload.
  */
 function TodayPage() {
-  const auth = useAuth()
   const preferences = usePreferences()
   const local = useLocalStore()
+  const navigate = useNavigate()
 
-  const [items, setItems] = createSignal<ReadonlyArray<MirrorRecord>>([])
+  const [mirrorTasks, setMirrorTasks] = createSignal<ReadonlyArray<MirrorRecord>>([])
+  const [mirrorNotes, setMirrorNotes] = createSignal<ReadonlyArray<MirrorRecord>>([])
+  const [pendingKeys, setPendingKeys] = createSignal<ReadonlySet<string>>(new Set<string>())
+  /**
+   * Rows this screen wrote locally and has not yet seen come back from the
+   * read model. An outbox entry is only half the story: once the sync engine
+   * acks it, the pending set empties while `GET /today` (and its ETag) still
+   * describes the pre-write world, so the completed row would flash back until
+   * the refetch lands. These keys keep the optimistic state on screen across
+   * that window and are dropped only by a fresh 200.
+   */
+  const [dirtyKeys, setDirtyKeys] = createSignal<ReadonlySet<string>>(new Set<string>())
+  const [server, setServer] = createSignal<TodayReadModel>()
+  const [serverEtag, setServerEtag] = createSignal<string>()
+  const [fetchState, setFetchState] = createSignal<"idle" | "ready" | "offline" | "error">("idle")
+  const [now, setNow] = createSignal(new Date().toISOString())
   const [draft, setDraft] = createSignal("")
   const [addBusy, setAddBusy] = createSignal(false)
+  const [pageError, setPageError] = createSignal<string>()
+  const [announcement, setAnnouncement] = createSignal("")
+  const [orderBusy, setOrderBusy] = createSignal(false)
+  const [orderError, setOrderError] = createSignal<string>()
+  const [orderOpen, setOrderOpen] = createSignal(false)
 
+  let inputRef: HTMLInputElement | undefined
   let draftTimer: ReturnType<typeof setTimeout> | undefined
+  let refreshGeneration = 0
 
-  const name = () => auth.session()?.user.displayName ?? ""
   const digits = () => preferences.preferences().digits
-  const today = () => {
+  const timeZone = () => {
+    const zone = preferences.preferences().timeZone
     try {
-      return todayInTimeZone(preferences.preferences().timeZone)
+      new Intl.DateTimeFormat("en-US", { timeZone: zone })
+      return zone
     } catch {
-      return todayInTimeZone(DEFAULT_TIME_ZONE)
+      return DEFAULT_TIME_ZONE
     }
   }
-  // Preferences drive both the week's first day and its numerals; reading the
-  // store here is what makes a settings PATCH re-render this screen live.
-  const week = () => weekDaysFor(today(), preferences.preferences())
-  const sorted = () => [...items()].sort((a, b) => sortOrderOf(a) - sortOrderOf(b))
+  const todayDate = () => todayInTimeZone(timeZone())
+  const todayIso = () => toIsoDate(todayDate())
+  const week = () => weekDaysFor(todayDate(), preferences.preferences())
+  const bounds = () => taskBucketBounds(timeZone(), now())
+  const order = () =>
+    normalizeDashboardSectionOrder(preferences.preferences().dashboardSectionOrder)
 
-  // Hydrate from the mirror as soon as the store opens; the outbox is replayed
-  // into the mirror by construction (writeLocal writes both together), so the
-  // screen already shows the user's intent before any server contact.
+  /**
+   * Move one section and persist the whole order. The control can only swap
+   * adjacent items of the normalized permutation, so it can never send a
+   * duplicate or a missing section; an out-of-range move is disabled. The
+   * settings signal updates in the same tick, so the dashboard re-renders
+   * without a reload.
+   */
+  const moveSection = async (
+    section: DashboardSection,
+    direction: "up" | "down"
+  ): Promise<void> => {
+    if (orderBusy()) return
+    const current = order()
+    const next = moveDashboardSection(current, section, direction)
+    if (next.every((value, index) => value === current[index])) return
+    setOrderBusy(true)
+    setOrderError(undefined)
+    const result = await preferences.update({ dashboardSectionOrder: next })
+    setOrderBusy(false)
+    if (!result.ok) {
+      setOrderError(authErrorMessage(result.code))
+      return
+    }
+    setAnnouncement(`ترتیب بخش‌ها به‌روز شد: ${SECTION_TITLES[section]}`)
+  }
+
+  // Reflect the mirror immediately; `subscribe` fires after local writes and
+  // server acks, which is also how an offline action updates the picture.
   createEffect(
     () => local.store(),
     (store) => {
       if (store === undefined) {
-        setItems([])
+        setMirrorTasks([])
+        setMirrorNotes([])
+        setPendingKeys(new Set<string>())
+        setDirtyKeys(new Set<string>())
         return
       }
       let cancelled = false
       const reload = () => {
-        void store
-          .list("listItem")
-          .then((rows) => {
-            if (!cancelled) setItems(rows.filter(isQuickItem))
+        void Promise.all([store.list("task"), store.list("note"), store.pending()])
+          .then(([tasks, notes, queued]) => {
+            if (cancelled) return
+            setMirrorTasks(tasks)
+            setMirrorNotes(notes)
+            setPendingKeys(
+              new Set(queued.map((entry) => `${entry.entityType}\u0000${entry.entityId}`))
+            )
           })
           .catch(() => {
             // The store closed (sign-out) while the read was in flight.
@@ -96,13 +197,16 @@ function TodayPage() {
       reload()
       const unsubscribe = store.subscribe(reload)
 
-      // Recover a half-typed quick-add after a reload or an accidental close.
-      void store.readDraft(DRAFT_KEY).then((saved) => {
-        if (cancelled || saved === undefined) return
-        setDraft((current) => (current === "" ? saved : current))
-      }).catch(() => {
-        // Drafts are best-effort; a read failure must not block the list.
-      })
+      // Recover a half-typed quick add after a reload or an accidental close.
+      void store
+        .readDraft(DRAFT_KEY)
+        .then((saved) => {
+          if (cancelled || saved === undefined) return
+          setDraft((current) => (current === "" ? saved : current))
+        })
+        .catch(() => {
+          // Drafts are best-effort; a read failure must not block the screen.
+        })
 
       return () => {
         cancelled = true
@@ -110,6 +214,112 @@ function TodayPage() {
       }
     }
   )
+
+  const refreshToday = async (online: boolean, pending: number): Promise<void> => {
+    if (!online || pending > 0) return
+    const ticket = ++refreshGeneration
+    const existing = untrack(server)
+    const inFlightDirty = untrack(dirtyKeys)
+    const result = await fetchToday(existing === undefined ? undefined : serverEtag())
+    if (ticket !== refreshGeneration) return
+    // A local write may have landed while this was in flight; the mirror is
+    // then newer than the server response (its outbox entry has not pushed).
+    if (!untrack(() => local.online() && local.pending() === 0)) return
+    if (!result.ok) {
+      setServer(undefined)
+      setFetchState(result.error.code === "Network" ? "offline" : "error")
+      return
+    }
+    if (result.notModified) {
+      // 304 means the server still describes the world before those writes
+      // (a rejected push, or a push that has not committed yet): keep them.
+      setFetchState("ready")
+      return
+    }
+    setServer(result.model)
+    setServerEtag(result.etag)
+    setFetchState("ready")
+    if (inFlightDirty.size > 0) {
+      setDirtyKeys((current) => {
+        const next = new Set(current)
+        for (const key of inFlightDirty) next.delete(key)
+        return next
+      })
+    }
+  }
+
+  // Revalidate on boot, reconnect, and once the outbox is empty again. While
+  // writes are queued, the view overlays them on the read model instead of
+  // accepting a response the outbox has not reached the server with yet.
+  createEffect(
+    () => ({ online: local.online(), pending: local.pending() }),
+    (state) => {
+      if (!state.online) {
+        setServer(undefined)
+        setFetchState("offline")
+        return
+      }
+      if (state.pending > 0) {
+        setFetchState("idle")
+        return
+      }
+      void refreshToday(state.online, state.pending)
+    }
+  )
+
+  // Keep "today" and shared items current while the screen stays open.
+  createEffect(
+    () => null,
+    () => {
+      const clock = setInterval(() => setNow(new Date().toISOString()), 60_000)
+      const poll = setInterval(() => {
+        const state = untrack(() => ({
+          online: local.online(),
+          pending: local.pending()
+        }))
+        void refreshToday(state.online, state.pending)
+      }, 60_000)
+      return () => {
+        clearInterval(clock)
+        clearInterval(poll)
+      }
+    }
+  )
+
+  onCleanup(() => {
+    clearTimeout(draftTimer)
+    refreshGeneration += 1
+  })
+
+  const overlayKeys = (): ReadonlySet<string> => {
+    const keys = new Set(pendingKeys())
+    for (const key of dirtyKeys()) keys.add(key)
+    return keys
+  }
+
+  const markDirty = (entityType: string, entityId: string) => {
+    const key = `${entityType}\u0000${entityId}`
+    setDirtyKeys((current) => new Set([...current, key]))
+  }
+
+  const view = createMemo<TodayView>(() => {
+    const model = server()
+    if (model !== undefined && local.online() && model.today === todayIso()) {
+      return overlayPendingToday(fromServerToday(model), {
+        tasks: mirrorTasks(),
+        notes: mirrorNotes(),
+        pending: overlayKeys(),
+        timeZone: timeZone(),
+        now: now()
+      })
+    }
+    return fromMirrorToday({
+      tasks: mirrorTasks(),
+      notes: mirrorNotes(),
+      timeZone: timeZone(),
+      now: now()
+    })
+  })
 
   const updateDraft = (value: string) => {
     setDraft(value)
@@ -122,215 +332,326 @@ function TodayPage() {
     }, 300)
   }
 
-  const addItem = async (event: SubmitEvent) => {
+  const reportError = (cause: unknown) => {
+    setPageError(cause instanceof Error ? cause.message : "ذخیره در حافظه‌ی محلی ناموفق بود")
+  }
+
+  const focusQuickAdd = () => inputRef?.focus()
+
+  const addTask = async (event: SubmitEvent) => {
     event.preventDefault()
     const store = local.store()
     const title = draft().trim()
     if (store === undefined || title === "" || addBusy()) return
 
     setAddBusy(true)
+    setPageError(undefined)
     try {
-      const now = new Date().toISOString()
-      const id = uuidV7()
-      const nextOrder = items().reduce((max, row) => Math.max(max, sortOrderOf(row)), -1) + 1
-      await store.writeLocal({
-        entityType: "listItem",
-        entityId: id,
-        op: "upsert",
-        patch: { id, title, checked: false, sortOrder: nextOrder, createdAt: now },
-        now
+      const id = await createTaskInMirror(store, {
+        title,
+        dueDate: todayIso(),
+        priority: "medium",
+        projectId: null,
+        tagIds: [],
+        timeZone: timeZone()
       })
+      markDirty("task", id)
       clearTimeout(draftTimer)
       setDraft("")
       await store.clearDraft(DRAFT_KEY)
+      setAnnouncement(`کار تازه: ${title}`)
+    } catch (cause) {
+      reportError(cause)
     } finally {
       setAddBusy(false)
     }
   }
 
-  const toggleItem = async (row: MirrorRecord) => {
+  const complete = async (task: TaskRow) => {
     const store = local.store()
     if (store === undefined) return
-    const now = new Date().toISOString()
-    await store.writeLocal({
-      entityType: "listItem",
-      entityId: row.entityId,
-      op: "upsert",
-      patch: { checked: !checkedOf(row) },
-      now
-    })
+    try {
+      await completeTaskInMirror(store, task.id)
+      markDirty("task", task.id)
+      setAnnouncement(`انجام شد: ${task.title}`)
+    } catch (cause) {
+      reportError(cause)
+    }
   }
 
-  return (
-    <div
-      dir="rtl"
-      lang="fa"
-      style={{
-        "min-height": "100dvh",
-        "font-family": tokens.font.sans,
-        color: tokens.color.ink,
-        background: "#f7f9fd"
-      }}
-    >
-      <AppHeader active="today" />
+  const moveToTomorrow = async (task: TaskRow) => {
+    const store = local.store()
+    if (store === undefined) return
+    const tomorrow = view().tomorrow
+    try {
+      await moveTaskInMirror(store, task.id, tomorrow, timeZone())
+      markDirty("task", task.id)
+      setAnnouncement(`به فردا منتقل شد: ${task.title}`)
+    } catch (cause) {
+      reportError(cause)
+    }
+  }
 
-      <main style={{ padding: tokens.space.lg, display: "grid", gap: tokens.space.md, "max-width": "720px" }}>
-        <h1 style={{ margin: 0, "font-size": "1.5rem" }}>امروز</h1>
-        <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.9rem" }}>
-          {formatJalaliDate(today(), { digits: digits() })}
-        </p>
+  const newNote = (event: MouseEvent) => {
+    event.preventDefault()
+    navigate("/notes")
+  }
 
-        <section
-          aria-label="هفته‌ی جاری"
-          style={{
-            background: tokens.color.surface,
-            border: `1px solid ${tokens.color.line}`,
-            "border-radius": tokens.radius.lg,
-            padding: tokens.space.md,
-            display: "grid",
-            gap: tokens.space.sm
-          }}
-        >
-          <ul
-            style={{
-              "list-style": "none",
-              margin: 0,
-              padding: 0,
-              display: "grid",
-              "grid-template-columns": "repeat(7, minmax(0, 1fr))",
-              gap: "4px"
-            }}
-          >
-            <For each={week()}>
-              {(cell) => (
-                <li
-                  aria-label={cell.label}
-                  aria-current={cell.isToday ? "date" : undefined}
-                  style={{
-                    display: "grid",
-                    "justify-items": "center",
-                    gap: "2px",
-                    padding: "6px 2px",
-                    "border-radius": tokens.radius.md,
-                    border: `1px solid ${cell.isToday ? tokens.color.brand : tokens.color.line}`,
-                    background: cell.isToday ? "#eaf0ff" : tokens.color.surface
-                  }}
-                >
-                  <span aria-hidden="true" style={{ "font-size": "0.72rem", color: tokens.color.inkSoft }}>
-                    {cell.shortWeekday}
-                  </span>
-                  <span
-                    style={{
-                      "font-size": "1rem",
-                      "font-weight": cell.isToday ? 700 : 400,
-                      color: cell.isToday ? tokens.color.brand : tokens.color.ink
-                    }}
-                  >
-                    {cell.day}
-                  </span>
-                </li>
-              )}
-            </For>
-          </ul>
-          <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.78rem" }}>
-            {formatJalaliDate(week()[0]!.date, { style: "short", digits: digits() })} تا{" "}
-            {formatJalaliDate(week()[6]!.date, { style: "short", digits: digits() })} — شروع هفته از تنظیمات.
-          </p>
-        </section>
+  const sectionCount = (section: DashboardSection): number => view().counts[section]
 
-        <section
-          style={{
-            background: tokens.color.surface,
-            border: `1px solid ${tokens.color.line}`,
-            "border-radius": tokens.radius.lg,
-            padding: tokens.space.lg,
-            display: "grid",
-            gap: tokens.space.md
-          }}
-        >
-          <header style={{ display: "grid", gap: "4px" }}>
-            <h2 style={{ margin: 0, "font-size": "1.05rem" }}>فهرست امروز</h2>
-            <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.85rem", "line-height": "1.8" }}>
-              هر تغییر اول روی همین دستگاه ذخیره می‌شود؛ بی‌نیاز از اینترنت.
-            </p>
-          </header>
+  const isOverdue = (task: TaskRow): boolean =>
+    taskBucketOf(
+      { dueAt: task.dueAt, dueDate: task.dueDate, status: task.status },
+      bounds()
+    ) === "overdue"
 
-          <form onSubmit={(event) => void addItem(event)} style={{ display: "flex", gap: tokens.space.sm }}>
+  const renderSection = (section: DashboardSection) => {
+    if (section === "tasks") {
+      return (
+        <>
+          <form class="today-quick" onSubmit={(event) => void addTask(event)}>
             <TextInput
-              aria-label="کار تازه"
-              placeholder="یک کار تازه…"
+              ref={(element) => (inputRef = element)}
+              aria-label="کار تازه برای امروز"
+              placeholder="یک کار تازه برای امروز…"
               value={draft()}
               onInput={(event) => updateDraft(event.currentTarget.value)}
               disabled={local.store() === undefined}
             />
-            <Button type="submit" disabled={local.store() === undefined || addBusy() || draft().trim() === ""}>
+            <button
+              type="submit"
+              disabled={local.store() === undefined || addBusy() || draft().trim() === ""}
+            >
               افزودن
-            </Button>
+            </button>
           </form>
 
           <Show
-            when={sorted().length > 0}
+            when={view().tasks.length > 0}
             fallback={
-              <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.9rem" }}>
-                هنوز کاری برای امروز ثبت نشده است.
-              </p>
+              <div class="today-empty">
+                <p>امروز خالی است. یک کار کوچک برای شروع کافی است.</p>
+                <button type="button" onClick={focusQuickAdd}>
+                  پیشنهاد: افزودن اولین کار
+                </button>
+              </div>
             }
           >
-            <ul style={{ "list-style": "none", margin: 0, padding: 0, display: "grid", gap: "2px" }}>
-              <For each={sorted()}>
-                {(row) => (
-                  <li
-                    style={{
-                      display: "flex",
-                      "align-items": "center",
-                      gap: tokens.space.sm,
-                      padding: `${tokens.space.sm} 0`,
-                      "border-bottom": `1px solid ${tokens.color.line}`
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checkedOf(row)}
-                      aria-label={titleOf(row)}
-                      onChange={() => void toggleItem(row)}
-                      style={{ width: "18px", height: "18px", "accent-color": tokens.color.brand }}
-                    />
-                    <span
-                      style={{
-                        "line-height": "1.8",
-                        "text-decoration": checkedOf(row) ? "line-through" : "none",
-                        color: checkedOf(row) ? tokens.color.inkSoft : tokens.color.ink
-                      }}
+            <ul class="today-list">
+              <For each={view().tasks}>
+                {(task) => (
+                  <li class="today-row" data-overdue={isOverdue(task) ? "true" : undefined}>
+                    <button
+                      type="button"
+                      role="checkbox"
+                      aria-checked="false"
+                      class="today-check"
+                      aria-label={`انجام ${task.title}`}
+                      disabled={local.store() === undefined}
+                      onClick={() => void complete(task)}
                     >
-                      {titleOf(row)}
-                    </span>
+                      ✓
+                    </button>
+                    <div class="today-row-main">
+                      <a class="today-row-title" href={`/tasks#task-${task.id}`}>
+                        {task.title}
+                      </a>
+                      <p class="today-row-meta">
+                        {isOverdue(task)
+                          ? `عقب‌افتاده · ${dueLabel(task, bounds(), digits())}`
+                          : dueLabel(task, bounds(), digits())}
+                      </p>
+                    </div>
+                    <div class="today-actions">
+                      <button
+                        type="button"
+                        class="today-action"
+                        aria-label={`فردا کردن ${task.title}`}
+                        disabled={local.store() === undefined}
+                        onClick={() => void moveToTomorrow(task)}
+                      >
+                        فردا
+                      </button>
+                    </div>
                   </li>
                 )}
               </For>
             </ul>
           </Show>
+        </>
+      )
+    }
 
-          <Show when={!local.canSync() && local.pending() > 0}>
-            <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.78rem", "line-height": "1.8" }}>
-              این تغییرها در صف محلی نگه داشته شده‌اند تا همگام‌سازی فعال شود.
-            </p>
-          </Show>
-        </section>
-
-        <section
-          style={{
-            background: tokens.color.surface,
-            border: `1px solid ${tokens.color.line}`,
-            "border-radius": tokens.radius.lg,
-            padding: tokens.space.lg,
-            "line-height": "2"
-          }}
+    if (section === "notes") {
+      return (
+        <Show
+          when={view().notes.length > 0}
+          fallback={
+            <div class="today-empty">
+              <p>یادداشتی پین نشده است.</p>
+              <button type="button" onClick={newNote}>
+                پیشنهاد: ساخت یادداشت تازه
+              </button>
+            </div>
+          }
         >
-          <p style={{ margin: 0 }}>سلام {name()} — به تالی خوش آمدید.</p>
-          <p style={{ margin: "8px 0 0", color: tokens.color.inkSoft, "font-size": "0.92rem" }}>
-            اینجا به‌زودی کارها، یادداشت‌ها و عادت‌های امروز را می‌بینید.
+          <ul class="today-list">
+            <For each={view().notes}>
+              {(note: NoteRow) => (
+                <li class="today-row">
+                  <span aria-hidden="true" class="today-pin">
+                    📌
+                  </span>
+                  <div class="today-row-main">
+                    <a class="today-row-title" href={`/notes/${note.id}`}>
+                      {note.title}
+                    </a>
+                    <Show when={note.excerpt !== ""}>
+                      <p class="today-note-excerpt">{note.excerpt}</p>
+                    </Show>
+                  </div>
+                  <div class="today-actions">
+                    <a
+                      class="today-action"
+                      href={`/notes/${note.id}`}
+                      aria-label={`باز کردن ${note.title}`}
+                    >
+                      باز کردن
+                    </a>
+                  </div>
+                </li>
+              )}
+            </For>
+          </ul>
+        </Show>
+      )
+    }
+
+    return <p class="today-quiet">{QUIET_COPY[section]}</p>
+  }
+
+  return (
+    <div class="today-root" dir="rtl" lang="fa" style={TODAY_ROOT}>
+      <TodayStyles />
+      <AppHeader active="today" compact />
+
+      <main style={TODAY_MAIN}>
+        <header class="today-head">
+          <div>
+            <h1>امروز</h1>
+            <p class="today-date">{formatJalaliDate(todayDate(), { digits: digits() })}</p>
+          </div>
+          <div class="today-head-actions">
+            <Show
+              when={!local.online() || fetchState() === "offline" || fetchState() === "error"}
+            >
+              <p class="today-source" role="status">
+                {SOURCE_HINT[local.online() ? fetchState() : "offline"]}
+              </p>
+            </Show>
+            <button
+              type="button"
+              class="today-order-toggle"
+              aria-expanded={orderOpen() ? "true" : "false"}
+              aria-controls="today-order-panel"
+              onClick={() => setOrderOpen((open) => !open)}
+            >
+              ترتیب بخش‌ها
+            </button>
+          </div>
+        </header>
+
+        <ul class="today-week" aria-label="هفته‌ی جاری">
+          <For each={week()}>
+            {(cell) => (
+              <li aria-label={cell.label} aria-current={cell.isToday ? "date" : undefined}>
+                <span aria-hidden="true" class="today-weekday">
+                  {cell.shortWeekday}
+                </span>
+                <span class="today-day">{cell.day}</span>
+              </li>
+            )}
+          </For>
+        </ul>
+
+        <Show when={orderOpen()}>
+          <section
+            id="today-order-panel"
+            class="today-order"
+            aria-labelledby="today-order-title"
+          >
+            <h2 id="today-order-title" class="today-order-title">
+              ترتیب بخش‌ها
+            </h2>
+            <p class="today-order-hint">
+              جای هر بخش را با دکمه‌های بالا و پایین تغییر دهید؛ تغییر بلافاصله ذخیره
+              می‌شود.
+            </p>
+            <ol class="today-order-list" aria-label="ترتیب بخش‌های امروز">
+              <For each={order()}>
+                {(section, index) => (
+                  <li class="today-order-row">
+                    <span class="today-order-name">{SECTION_TITLES[section]}</span>
+                    <span class="today-order-actions">
+                      <button
+                        type="button"
+                        class="today-order-move"
+                        aria-label={`انتقال ${SECTION_TITLES[section]} به بالا`}
+                        disabled={index() === 0 || orderBusy()}
+                        onClick={() => void moveSection(section, "up")}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        class="today-order-move"
+                        aria-label={`انتقال ${SECTION_TITLES[section]} به پایین`}
+                        disabled={index() === order().length - 1 || orderBusy()}
+                        onClick={() => void moveSection(section, "down")}
+                      >
+                        ↓
+                      </button>
+                    </span>
+                  </li>
+                )}
+              </For>
+            </ol>
+            <Show when={orderBusy()}>
+              <p class="today-order-status" role="status">
+                در حال ذخیره‌ی ترتیب…
+              </p>
+            </Show>
+            <Show when={orderError()}>
+              <p class="today-alert" role="alert">
+                {orderError()}
+              </p>
+            </Show>
+          </section>
+        </Show>
+
+        <Show when={pageError()}>
+          <p class="today-alert" role="alert">
+            {pageError()}
           </p>
-        </section>
+        </Show>
+
+        <For each={order()}>
+          {(section) => (
+            <section class="today-section" data-section={section} aria-labelledby={`today-${section}`}>
+              <header class="today-section-head">
+                <h2 id={`today-${section}`}>{SECTION_TITLES[section]}</h2>
+                <span class="today-count" aria-label={`${localizeDigits(sectionCount(section), digits())} مورد`}>
+                  {localizeDigits(sectionCount(section), digits())}
+                </span>
+              </header>
+              {renderSection(section)}
+            </section>
+          )}
+        </For>
+
+        <p class="today-sr" role="status" aria-live="polite">
+          {announcement()}
+        </p>
       </main>
     </div>
   )

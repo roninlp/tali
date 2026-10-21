@@ -65,6 +65,57 @@ export const DashboardSectionOrder = Schema.Array(DashboardSection).check(
 )
 export type DashboardSectionOrder = Schema.Schema.Type<typeof DashboardSectionOrder>
 
+/**
+ * Defensive display order for consumers reading a possibly stale cache.
+ *
+ * A persisted order is validated as a full permutation, but a browser can hold
+ * an older cached value across a release that adds a section. Drop unknown and
+ * duplicate ids, then append any missing known section in product order — so
+ * `Today` always renders every section exactly once instead of silently
+ * hiding a new one.
+ */
+export const normalizeDashboardSectionOrder = (
+  order: ReadonlyArray<string> | undefined
+): ReadonlyArray<DashboardSection> => {
+  const seen = new Set<DashboardSection>()
+  const result: Array<DashboardSection> = []
+  for (const candidate of order ?? []) {
+    if (!(DASHBOARD_SECTIONS as ReadonlyArray<string>).includes(candidate)) continue
+    const section = candidate as DashboardSection
+    if (seen.has(section)) continue
+    seen.add(section)
+    result.push(section)
+  }
+  for (const section of DASHBOARD_SECTIONS) {
+    if (!seen.has(section)) result.push(section)
+  }
+  return result
+}
+
+export type DashboardSectionMove = "up" | "down"
+
+/**
+ * The one operation the reorder control needs: swap a section with its
+ * neighbour. Normalizing first means even a stale/duplicate cached order
+ * yields a full known permutation, and moving the first section up or the last
+ * one down is a no-op rather than an invalid array.
+ */
+export const moveDashboardSection = (
+  order: ReadonlyArray<string>,
+  section: DashboardSection,
+  direction: DashboardSectionMove
+): DashboardSectionOrder => {
+  const current = normalizeDashboardSectionOrder(order)
+  const from = current.indexOf(section)
+  if (from < 0) return current
+  const to = direction === "up" ? from - 1 : from + 1
+  if (to < 0 || to >= current.length) return current
+  const next = [...current]
+  next[from] = current[to]!
+  next[to] = current[from]!
+  return next
+}
+
 export class UserPreferences extends Model.Class<UserPreferences>("UserPreferences")({
   userId: UserId,
   /** IANA zone used for "today", week boundaries and all-day dates. */
