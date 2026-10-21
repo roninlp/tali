@@ -15,6 +15,7 @@ export * from "./note-search"
 export {
   EventExceptionId,
   EventId,
+  HabitEntryId,
   HabitId,
   ItemType,
   ListCheckedPlacement,
@@ -47,6 +48,8 @@ export * from "./planning/note-service"
 export * from "./planning/event"
 export * from "./planning/event-recurrence"
 export * from "./planning/event-service"
+export * from "./planning/habit"
+export * from "./planning/habit-service"
 export * from "./planning/reminder-link"
 // The real `ListItem` aggregate collides with the pre-Slice-2 scaffold stub
 // (`./list-item`), which sync still speaks for the web mirror (#34). Re-export
