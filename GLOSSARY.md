@@ -113,12 +113,17 @@ which string RRULE parsers do not implement. See
 ### Reminder
 
 A standing intention to tell its owner something at a time — "take your
-medication at 08:00", "the bin goes out on Tuesday". It carries a **Tier**
-(medication is critical by its kind, never chosen by hand), a **Repeat**, the
-next **Fire** instant, a **Reminder Link** to the task/event/habit it is about,
-and an optional **Silence**.
+medication at 08:00", "the bin goes out on Tuesday". It carries a **Tier**, a
+**Repeat**, the next **Fire** instant, a **Reminder Link** to the task, event or
+habit it is about, and an optional **Silence**.
 
 _Avoid:_ "notification" for the reminder itself — that is the delivery.
+
+### Tier
+
+The delivery class derived from a reminder's kind: `critical` for medication,
+`normal` for everything else. It is never chosen by hand. Critical fires bypass
+**Quiet Hours**; the only way to quiet one is a per-reminder **Silence**.
 
 ### Fire
 
@@ -128,61 +133,75 @@ anybody being told.
 
 ### Dispatch
 
-One attempt to tell the owner about one **Fire**, recorded as a ledger row
-before anything is sent. Its state is *owed*, *done* (a response: done, snooze,
-dismiss) or *expired* (nobody could be told usefully). The dispatch ledger, not
-the push, is the truth about whether a reminder happened. See
-[ADR-0005](docs/adr/0005-reminder-firing.md).
+One attempt to tell the owner about one **Fire**, recorded as a ledger row before
+anything is sent. It has two axes: **delivery** — `push_outcome` is *pending*,
+*accepted* (the push service took it), *failed* (transient, retryable) or
+*expired* (no further attempt) — and the **answer** — `response` is `done`,
+`snooze` or `dismiss`. A dispatch is **owed** while it has no response and has not
+expired. The dispatch ledger, not the push, is the truth about whether a reminder
+happened. See [ADR-0005](docs/adr/0005-reminder-firing.md).
 
 ### Claim
 
 Writing the dispatch row that makes a fire *this* sweep's responsibility. One
 claim per (reminder, fire instant, origin) is enforced by the ledger's unique
-key, so a repeated, late or overlapping sweep cannot notify twice.
+key, and the claim batch advances the series' `fire_at` under a compare-and-set,
+so a repeated, late or overlapping sweep cannot notify twice or skip an
+occurrence.
 
 ### Sweep
 
-The once-a-minute pass that claims every due fire and every owed dispatch, then
-lets the policy decide when each one may be delivered. It is a catch-up query
-rather than a timer: nothing is scheduled ahead, so nothing is lost when the
-Worker is down.
+The once-a-minute pass that claims due fires, then pushes every owed dispatch
+whose **Deliver At** has arrived. The policy runs at claim time; the sweep itself
+just compares `deliver_at`. It is a catch-up query rather than a timer: nothing
+is scheduled ahead, so nothing is lost when the Worker is down.
+
+### Quiet Hours
+
+The owner's 23:00–07:00 local window in which normal-tier fires do not push. A
+held fire is an owed dispatch whose **Deliver At** is the end of the window; it
+is shown in the inbox on the next app open and flushed at 07:00. Critical fires
+skip the window. The window is fixed in Must; the settings UI is deferred (#13).
 
 ### Overnight Queue
 
-The normal-tier dispatches held back inside 23:00–07:00 in the owner's zone.
-They are not a message queue and not a second store: a held dispatch is an owed
-dispatch whose **Deliver At** is the end of the window. Medication-tier fires
-never enter it.
+The normal-tier dispatches held back inside **Quiet Hours**. They are not a
+message queue and not a second store: a held dispatch is an owed dispatch whose
+**Deliver At** is the end of the window. Medication-tier fires never enter it.
 
 ### Deliver At
 
-The instant a dispatch may actually be pushed, chosen by the policy when the
-fire is claimed: the fire instant, the end of quiet hours, or the end of a
-**Silence**. The sweep compares one column and asks no further questions.
+The instant a dispatch may actually be pushed, chosen by the policy when the fire
+is claimed: the fire instant or the end of **Quiet Hours**. A **Silence** produces
+no dispatch at all. The sweep compares one column and asks no further questions.
 
 ### Silence
 
 `Reminder.silencedUntil` — the point past which the whole series may fire again.
-It is the only way to quiet a medication reminder, and it is a different thing
-from a **Snooze**.
+Fires inside the silence produce no dispatch; the series advances past it, and
+setting the silence expires any dispatch already owed. It is the only way to quiet
+a medication reminder, and it is a different thing from a **Snooze**.
 
 ### Snooze
 
 "Tell me again in X minutes", for one occurrence only (5, 10, 15, 30 or 60). It
-closes the current dispatch as answered `snooze` and opens a new one at
-`now + X`; the series' schedule does not move. A snoozed fire ignores quiet
-hours — asking again is consent.
+closes the current dispatch as answered `snooze` with a compare-and-set (so a
+double tap opens one child) and opens a new one at `now + X`; the series'
+schedule does not move. A snoozed fire is not held by **Quiet Hours** — asking
+again is consent (ADR-0005 §5; a derived default pending owner confirmation).
 
 ### Missed Inbox
 
 The list of dispatches that are due and unanswered — whether or not a push ever
 reached a browser. It is derived from the ledger, so "delivered but ignored" and
 "browser was closed" land in one place, and nothing leaves it by being deleted:
-after 24 hours an unanswered dispatch moves from the inbox view to history.
+after 24 hours from `scheduledFor` an unanswered dispatch moves from the inbox
+view to history.
 
 ### On-time
 
-The adherence measure: a dispatch is on-time when it was answered `done` no
-later than 30 minutes after its fire instant. Snoozed-then-done is *late*; a
-dismiss or an unanswered dispatch is not on-time.
+The adherence measure: a dispatch is on-time when it was answered `done` at or
+before 30 minutes after its **root** fire instant (an early `done` counts).
+Snoozed-then-done is *late* because the grace window does not restart at the
+snooze; a dismiss or an unanswered dispatch is not on-time.
 
