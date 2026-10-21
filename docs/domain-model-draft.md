@@ -154,6 +154,15 @@ export class Membership extends Model.Class<Membership>("Membership")({
 
 ### 3.2 `Habit` + `HabitEntry`
 
+> **Implemented in ticket [#63](https://github.com/roninlp/tali/issues/63)** — `packages/domain/src/planning/habit.ts`,
+> `packages/sql/migrations/0011_habits.sql`, `packages/sql/src/habit-repo.ts` + `habit-entry-repo.ts`, the
+> `habit`/`habitEntry` entries of the sync registry, and `apps/api/src/habit-service.ts`. The shipped shape
+> adds a per-habit `timeZone` and `startedOn`, names the entry's day `localDate` (not `date`), stores the
+> frequency as **eras** whose boundaries are computed at change time and never back-dated, and proves the
+> union on both write paths; the decisions are recorded in `docs/adr/0006-habit-shape.md`. The daily tap
+> (#64), the streak function itself (#65, `docs/streak-algorithm.md`) and the screens (#66) are still open
+> — none of them needs a migration.
+
 ```ts
 export const HabitFrequency = Schema.Union(
   Schema.Struct({ _tag: Schema.Literal("daily") }),
@@ -170,14 +179,17 @@ export class Habit extends Model.Class<Habit>("Habit")({
   visibility: Visibility,
   color: Schema.NullOr(Schema.String),
   icon: Schema.NullOr(Schema.String),
+  startedOn: Schema.DateFromString,        // the owner's local creation date (#65); stats start here
   frequency: HabitFrequency,
-  // Frequency history — changing frequency must NOT rewrite past stats (FR-HAB-03 edge case):
-  // stored as a list of { effectiveFrom: date, frequency: HabitFrequency }.
+  // Frequency eras — changing frequency must NOT rewrite past stats (FR-HAB-03 edge case):
+  // stored as a list of { effectiveFrom: date, frequency: HabitFrequency }, oldest first,
+  // strictly increasing, never back-dated; era 0 starts on startedOn.
   frequencyHistory: Schema.Array(Schema.Struct({
     effectiveFrom: Schema.DateFromString,
     frequency: HabitFrequency
   })),
   reminderTime: Schema.NullOr(Schema.String), // local "HH:mm", optional
+  timeZone: TimeZone,                      // the habit's IANA zone (reminder time + history dates)
   createdAt: Model.DateTimeInsertFromDate,
   updatedAt: Model.DateTimeUpdateFromDate,
   version: Schema.Int,
@@ -189,7 +201,9 @@ export class HabitEntry extends Model.Class<HabitEntry>("HabitEntry")({
   id: Model.UuidV7Insert(HabitEntryId),
   habitId: HabitId,
   ownerId: UserId,                         // denormalized for per-user filtering
-  date: Schema.DateFromString,             // local date (owner's timezone); backdating window ≤ 7 days
+  householdId: HouseholdId,                // denormalized for the sync pull filter
+  visibility: Visibility,                  // inherited from the habit at write time
+  localDate: Schema.DateFromString,        // local date (owner's timezone); backdating window ≤ 7 days
   timeZone: Schema.String,                 // IANA, so "date" is unambiguous
   status: HabitEntryStatus,
   createdAt: Model.DateTimeInsertFromDate,
@@ -199,20 +213,18 @@ export class HabitEntry extends Model.Class<HabitEntry>("HabitEntry")({
 }) {}
 ```
 
-> `HabitEntry` is the one entity that also needs a **unique** `(habitId, date)` — modeled as a D1 `UNIQUE` index, not a schema invariant (schemas validate shape, not cross-row uniqueness).
+> `HabitEntry` is the one entity that also needs a **unique** `(habitId, localDate)` — modeled as a D1 `UNIQUE` index, not a schema invariant (schemas validate shape, not cross-row uniqueness). The shipped index covers tombstones too, so a cleared day is revived in place rather than duplicated (#63).
 
-> **Decision [#65](https://github.com/roninlp/tali/issues/65):** the shape above
-> needs two additions when #63 lands — a **`startedOn: LocalDate`** (the owner's
-> local creation date; `createdAt` is an instant and must not decide which day a
-> habit began) and **eras** in `frequencyHistory`. Era 0 is written at creation
-> with `effectiveFrom = startedOn`; every later era starts at the first boundary
-> of the new unit that does not fall inside a period of the old one (a Saturday
-> for a week unit; the next day for a day unit, pushed to the following Saturday
-> when the current counting week is still open). It is **not** the day of the
-> edit, so the period a change lands in keeps the rule it opened with. The streak
-> itself has no columns: it is a pure function over `HabitEntry` +
-> `frequencyHistory` + `startedOn`, specified in
-> `docs/streak-algorithm.md` and [ADR-0007](adr/0007-habit-streak-periods.md).
+> **Streak decision [#65](https://github.com/roninlp/tali/issues/65):** the
+> frequency eras above are judged one period at a time. Era 0 is `startedOn`;
+> every later era starts at the first boundary of the new unit that does not fall
+> inside a period of the old one (a Saturday for a week unit; the next day for a
+> day unit, pushed to the following Saturday when the current counting week is
+> still open) — never the day of the edit. The period containing `startedOn` is
+> judged by era 0 even when its Saturday is earlier. The streak itself has no
+> columns: it is a pure function over `HabitEntry` + `frequencyHistory` +
+> `startedOn`, specified in `docs/streak-algorithm.md` and
+> [ADR-0007](adr/0007-habit-streak-periods.md).
 
 ### 3.3 `Event` (+ occurrence exceptions)
 

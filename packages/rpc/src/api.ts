@@ -14,6 +14,12 @@ import {
   EventOccurrenceQuery,
   EventServiceError,
   EventUpdateInput,
+  Habit,
+  HabitCreateInput,
+  HabitId,
+  HabitMutationInput,
+  HabitServiceError,
+  HabitUpdateInput,
   List,
   ListCreateInput,
   ListId,
@@ -363,6 +369,47 @@ class DeleteEventOccurrence extends Rpc.make("DeleteEventOccurrence", {
   error: EventRpcError
 }) {}
 
+// ── Habits (ticket #63; FR-HAB-01) ───────────────────────────────────────
+
+const HabitRpcError = Schema.Union([HabitServiceError, Unauthorized])
+
+class CreateHabit extends Rpc.make("CreateHabit", {
+  payload: HabitCreateInput,
+  success: Habit,
+  error: HabitRpcError
+}) {}
+
+class GetHabit extends Rpc.make("GetHabit", {
+  payload: Schema.Struct({ id: HabitId }),
+  success: Habit,
+  error: HabitRpcError
+}) {}
+
+class UpdateHabit extends Rpc.make("UpdateHabit", {
+  payload: HabitUpdateInput,
+  success: Habit,
+  error: HabitRpcError
+}) {}
+
+/** Soft delete — the row keeps its history for the undo toast. */
+class DeleteHabit extends Rpc.make("DeleteHabit", {
+  payload: HabitMutationInput,
+  success: Habit,
+  error: HabitRpcError
+}) {}
+
+/** Undo a soft delete: the same habit comes back, history intact. */
+class RestoreHabit extends Rpc.make("RestoreHabit", {
+  payload: HabitMutationInput,
+  success: Habit,
+  error: HabitRpcError
+}) {}
+
+class ListHabits extends Rpc.make("ListHabits", {
+  success: Schema.Array(Habit),
+  error: HabitRpcError
+}) {}
+
 export const ApiRpcs = RpcGroup.make(
   CreateList,
   GetList,
@@ -410,7 +457,13 @@ export const ApiRpcs = RpcGroup.make(
   ListEvents,
   ListEventOccurrences,
   EditEventOccurrence,
-  DeleteEventOccurrence
+  DeleteEventOccurrence,
+  CreateHabit,
+  GetHabit,
+  UpdateHabit,
+  DeleteHabit,
+  RestoreHabit,
+  ListHabits
 )
 
 /** The derived, shared client type the web app imports. */

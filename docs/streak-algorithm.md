@@ -33,7 +33,7 @@
 | **R10** | **Frequency changes are judged period by period.** The frequency in force when a period *started* governs that whole period, and an era boundary is always the first period start of the new unit (§5.2), never the day of the edit. Same-unit changes (2×/week → 3×/week) do **not** interrupt the streak; a change of **unit** (daily ↔ X/week) closes it, keeps it in `best`, and starts a new streak at the new unit's first period. |
 | **R11** | A habit's **first period** can only start a streak, never break one. There is no pro-rating for a habit created mid-week. |
 | **R12** | All arithmetic is on **local calendar dates** (`PlainDate`). No `Instant` arithmetic anywhere: DST, Jalali leap years and a device time-zone change cannot add, remove or move a day. Only "what is today" reads a zone. |
-| **R13** | The **success rate** is quota-relative and capped at 100% (R15–R16). An open period counts toward it only once it is satisfied — so an unfinished **today** is outside a day rate's denominator, and an unsatisfied open week is outside a week rate. |
+| **R13** | The **success rate** is quota-relative and capped at 100% (R15–R16). An open period counts toward it only once it is satisfied — so an unfinished **today** (blank or missed) is outside a day rate's denominator, and an unsatisfied open week is outside a week rate. |
 | **R14** | **Best streak is kept per unit** (`days` and `weeks`). A day streak and a week streak are not comparable numbers. |
 | **R15** | The rate window is **N local days ending today** (`7`, `30` or `90`; the PRD's "weekly" and "monthly" figures are the 7-day and 30-day windows). A period qualifies when it is **closed and fully inside the window**, or when it is the **open period and satisfied** (R13); it must also have begun at or after `startedOn` **and belong to the current unit** (`current.unit`). Nothing is prorated. |
 | **R16** | The rate is defined per unit in §5.5: for a week unit it is the **mean of the capped per-period ratios** over the qualifying weeks; for a day unit it is the **pooled weighted credit** of the qualifying expected days — plus the weight of in-window bonus days — divided by the number of qualifying expected days, capped at 100%. If no period qualifies (or the day-unit denominator is 0), `rate` is `null` and the UI shows the open period's progress instead. |
@@ -369,9 +369,9 @@ the open period and satisfied (R13). Then:
   `rate = min(1, (Σ weight(included expected days) + Σ weight(bonus days)) ÷ count(included expected days))`
   where **bonus days** are days in the window, at or after `startedOn`, inside a
   **day-unit** era, that the frequency did not expect and that carry an entry.
-  The open day is today: an undone today is neither satisfied nor closed, so it
-  is **not** in the denominator; a done or partial today is in both. A rest-day
-  entry adds weight but never a denominator place (E12).
+  The open day is today: an undone today (blank or missed) is neither satisfied nor
+  closed, so it is **not** in the denominator; a done or partial today is in both.
+  A rest-day entry adds weight but never a denominator place (E12).
 - **Week unit**
   `rate = mean(min(1, weighted ÷ times))` over the included weeks.
 - If no period qualifies, or the day-unit denominator is 0 → `rate = null`.
@@ -500,7 +500,7 @@ Berlin, `daily`, done Sat 24 Oct, **Sun 25 Oct 2026** (a 25-hour day: the
 fall-back adds an hour), Mon 26 Oct:
 
 ```
-current = { unit: "day", count: 3, since: "2026-10-24" }
+current = { unit: "day", count: 3, since: 2026-10-24 }
 ```
 
 Each period is a `PlainDate`; the 25-hour day is still one day (R12), and a
@@ -571,8 +571,9 @@ next day period.
 
 The **rate** follows the same boundary: before Sat 24 it is the day-unit rate; from
 Sat 24 the 30-day window still holds day periods but the function reports the
-`week` rate only (R15, §5.5), and W0 is open, so `rate = null` until a week
-closes. Mixing the two denominators would produce a number that means neither.
+`week` rate only (R15, §5.5). W0 is open, so `rate = null` until a week of the new
+unit qualifies — a closed week, or the open week once it is satisfied. Mixing the
+two denominators would produce a number that means neither.
 
 ### E12 — a rest-day `done` is a bonus, not a bridge
 
@@ -662,7 +663,7 @@ date in the habit's own IANA zone, immutable, and era 0's `effectiveFrom`);
 keyed `UNIQUE(habit_id, local_date)` with the three-state status; and no cached
 streak columns. The field is `localDate`/`local_date`, not `date`.
 
-What #63 does **not** ship, and the contract still requires:
+What this contract still requires:
 
 - The **pure function** itself (`habit-streak.ts`): #63 deliberately stops at the
   data, so the module in §4.1 lands with its first consumer (#66) or a follow-up
@@ -671,10 +672,11 @@ What #63 does **not** ship, and the contract still requires:
   nothing else in the chain may re-implement the rules.
 - The **entry range read** the function needs is `HabitEntryRepo.listInRange`
   (already shipped); `today` is resolved once per request by the caller.
-- **No `kind` field in Must** (decided in #65): a medication habit is an ordinary
-  daily habit with a strict streak. A "record instead of streak" mode would need
-  a habit kind and is explicitly deferred; #63 must not grow the field
-  speculatively.
+
+**No `kind` field** (decided in #65): the shipped model has none, and Must adds
+none. A medication habit is an ordinary daily habit with a strict streak; a
+"record instead of a streak" mode would need a habit kind and is explicitly
+deferred, not smuggled into #63 or #66.
 
 ### #64 — logging and backfill
 
@@ -693,7 +695,7 @@ What #63 does **not** ship, and the contract still requires:
   (`open.credit` of `open.requirement`). It never prints a bare number.
 - `rate === null` renders progress, not `0%`; the rate is for `current.unit`, so
   a unit change can leave the 30/90-day tab without a rate until a period of the
-  new unit closes.
+  new unit qualifies (a closed one, or the open one once satisfied).
 - For a weekly habit, name the counting period on the stats row (e.g.
   «۲۵ مهر – ۱ آبان») so the fixed Sat–Fri turn is visible when the display Week
   Start is Sunday or Monday (E7).

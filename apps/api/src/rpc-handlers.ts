@@ -3,6 +3,7 @@ import type { Headers } from "effect/http/Headers"
 import { ApiRpcs } from "@tali/rpc"
 import {
   EventForbidden,
+  HabitForbidden,
   ListForbidden,
   NoteForbidden,
   TaskForbidden,
@@ -10,6 +11,7 @@ import {
 } from "@tali/domain"
 import { AuthService } from "./auth-service.js"
 import { EventService, type EventViewer } from "./event-service.js"
+import { HabitService, type HabitViewer } from "./habit-service.js"
 import { ListService, type ListViewer } from "./list-service.js"
 import { NoteService } from "./note-service.js"
 import { PreferencesService } from "./preferences-service.js"
@@ -120,6 +122,23 @@ const withEventViewer = <A, E, R>(
     Effect.mapError((error) =>
       error._tag === "TaskForbidden"
         ? new EventForbidden({ id: error.id, reason: error.reason })
+        : error
+    ),
+    Effect.flatMap(run)
+  )
+
+/**
+ * Habits have their own typed forbidden error, so the edge's "no household"
+ * failure is mapped before the handler runs (same pattern as notes/lists/events).
+ */
+const withHabitViewer = <A, E, R>(
+  headers: Headers,
+  run: (viewer: HabitViewer) => Effect.Effect<A, E, R>
+): Effect.Effect<A, E | Unauthorized | HabitForbidden, AuthService | PreferencesService | R> =>
+  viewerFromHeaders(headers).pipe(
+    Effect.mapError((error) =>
+      error._tag === "TaskForbidden"
+        ? new HabitForbidden({ id: error.id, reason: error.reason })
         : error
     ),
     Effect.flatMap(run)
@@ -276,5 +295,26 @@ export const RpcHandlers = ApiRpcs.toLayer({
       EventService.pipe(Effect.flatMap((svc) => svc.editOccurrence(viewer, input)))),
   DeleteEventOccurrence: (input, { headers }) =>
     withEventViewer(headers, (viewer) =>
-      EventService.pipe(Effect.flatMap((svc) => svc.deleteOccurrence(viewer, input))))
+      EventService.pipe(Effect.flatMap((svc) => svc.deleteOccurrence(viewer, input)))),
+
+  // ── Habits ────────────────────────────────────────────────────────────
+
+  CreateHabit: (input, { headers }) =>
+    withHabitViewer(headers, (viewer) =>
+      HabitService.pipe(Effect.flatMap((svc) => svc.create(viewer, input)))),
+  GetHabit: ({ id }, { headers }) =>
+    withHabitViewer(headers, (viewer) =>
+      HabitService.pipe(Effect.flatMap((svc) => svc.get(viewer, id)))),
+  UpdateHabit: (input, { headers }) =>
+    withHabitViewer(headers, (viewer) =>
+      HabitService.pipe(Effect.flatMap((svc) => svc.update(viewer, input)))),
+  DeleteHabit: (input, { headers }) =>
+    withHabitViewer(headers, (viewer) =>
+      HabitService.pipe(Effect.flatMap((svc) => svc.delete(viewer, input)))),
+  RestoreHabit: (input, { headers }) =>
+    withHabitViewer(headers, (viewer) =>
+      HabitService.pipe(Effect.flatMap((svc) => svc.restore(viewer, input)))),
+  ListHabits: (_input, { headers }) =>
+    withHabitViewer(headers, (viewer) =>
+      HabitService.pipe(Effect.flatMap((svc) => svc.list(viewer))))
 })

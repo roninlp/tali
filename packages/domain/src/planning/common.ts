@@ -70,13 +70,26 @@ export const OccasionId = Schema.String.check(Schema.isUUID(7)).pipe(Schema.bran
 export type OccasionId = Schema.Schema.Type<typeof OccasionId>
 
 /**
- * Habit id — **reserved** for ticket #63 (`Habit`).
+ * `Habit` aggregate id (Slice 4 / ticket #63).
  *
- * Only the `ReminderLink` union needs it today (the reminder link's habit
- * variant); the habit aggregate itself is not built yet.
+ * The brand existed before the aggregate (the `ReminderLink` union's habit
+ * variant) so the reminder slice needs no redefinition.
  */
 export const HabitId = Schema.String.check(Schema.isUUID(7)).pipe(Schema.brand("HabitId"))
 export type HabitId = Schema.Schema.Type<typeof HabitId>
+
+/**
+ * One day's log of a habit (ticket #63; FR-HAB-02).
+ *
+ * An entry is a **separate row**, not a field on the habit (settled in #7):
+ * a streak/heatmap reads a date range, and the tap is an idempotent upsert
+ * keyed by `(habitId, localDate)`. The id is client-mintable like every other
+ * row so an offline tap can write immediately.
+ */
+export const HabitEntryId = Schema.String.check(Schema.isUUID(7)).pipe(
+  Schema.brand("HabitEntryId")
+)
+export type HabitEntryId = Schema.Schema.Type<typeof HabitEntryId>
 
 // ── Enums (docs/domain-model-draft.md §2.3) ───────────────────────────────
 
