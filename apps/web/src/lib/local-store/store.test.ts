@@ -217,6 +217,32 @@ describe("local store", () => {
     second.close()
   })
 
+  it("keeps soft-deleted rows in trash and restores them in place", async () => {
+    const store = await open(freshUser())
+    const id = uuidV7()
+
+    await writeTitle(store, id, "قابل بازیابی")
+    await store.writeLocal({ entityType: "listItem", entityId: id, op: "delete", patch: {} })
+
+    expect(await store.list("listItem")).toHaveLength(0)
+    const trash = await store.listTrashed("listItem")
+    expect(trash.map((row) => row.entityId)).toEqual([id])
+    expect(trash[0]!.deletedAt).not.toBeNull()
+    // The tab-off mutation carries the same intent to the server.
+    expect((await store.pending()).map((entry) => entry.op)).toEqual(["upsert", "delete"])
+
+    await store.writeLocal({
+      entityType: "listItem",
+      entityId: id,
+      op: "upsert",
+      patch: {},
+      deletedAt: null
+    })
+    expect((await store.list("listItem")).map((row) => row.entityId)).toEqual([id])
+    expect(await store.listTrashed("listItem")).toHaveLength(0)
+    store.close()
+  })
+
   it("isolates mirrors per user", async () => {
     const a = await open(freshUser())
     const b = await open(freshUser())

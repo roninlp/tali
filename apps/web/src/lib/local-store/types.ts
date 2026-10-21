@@ -35,6 +35,12 @@ export interface LocalWrite {
   readonly op: SyncOp
   /** Only the fields that changed (field-level LWW input). */
   readonly patch: Readonly<Record<string, unknown>>
+  /**
+   * Override the mirror's tombstone state. A `delete` sets `deletedAt` to the
+   * write time; an `upsert` otherwise preserves the existing tombstone. The
+   * notes trash view uses `null` for an optimistic local restore.
+   */
+  readonly deletedAt?: string | null
   /** Override for tests / replays; normally minted by the store. */
   readonly clientMutationId?: string
   /** Override for tests; defaults to the current time. */
@@ -70,6 +76,11 @@ export interface LocalStore {
 
   /** Live rows for an entity type, newest `updatedAt` last. */
   list: (entityType: SyncEntityType) => Promise<ReadonlyArray<MirrorRecord>>
+  /**
+   * Soft-deleted rows for the trash view. Trash is a tombstone in the mirror,
+   * not a separate store: the same row can be restored in place.
+   */
+  listTrashed: (entityType: SyncEntityType) => Promise<ReadonlyArray<MirrorRecord>>
   get: (entityType: SyncEntityType, entityId: string) => Promise<MirrorRecord | undefined>
 
   /**
