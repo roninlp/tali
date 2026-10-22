@@ -122,6 +122,10 @@ function TodayPage() {
   const [habitCount, setHabitCount] = createSignal(0)
   const [orderError, setOrderError] = createSignal<string>()
   const [orderOpen, setOrderOpen] = createSignal(false)
+  /** Keyboard cursor over the pending task list (ArrowUp/Down + Enter). */
+  const [cursor, setCursor] = createSignal(0)
+  /** Only draw the cursor once the keyboard or a timeline mark asked for it. */
+  const [cursorActive, setCursorActive] = createSignal(false)
 
   let inputRef: HTMLInputElement | undefined
   let draftTimer: ReturnType<typeof setTimeout> | undefined
@@ -414,24 +418,170 @@ function TodayPage() {
       bounds()
     ) === "overdue"
 
+  /**
+   * The day strip. Tasks carry an optional timed `dueAt` (today's quick add
+   * only sets a day), so the strip is data-driven and simply hides when the
+   * day has no timed work. Minutes are resolved in the household's zone.
+   */
+  const zoneParts = (iso: string): { hour: number; minute: number } => {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: timeZone(),
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23"
+    }).formatToParts(new Date(iso))
+    return {
+      hour: Number(parts.find((part) => part.type === "hour")?.value ?? "0"),
+      minute: Number(parts.find((part) => part.type === "minute")?.value ?? "0")
+    }
+  }
+
+  const zoneMinutes = (iso: string): number => {
+    const { hour, minute } = zoneParts(iso)
+    return hour * 60 + minute
+  }
+
+  const timeLabel = (iso: string): string => {
+    const { hour, minute } = zoneParts(iso)
+    return localizeDigits(`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`, digits())
+  }
+
+  const STRIP_START = 6 * 60
+  const STRIP_END = 24 * 60
+  const stripTicks = [6, 9, 12, 15, 18, 21] as const
+  const stripPct = (minutes: number): number =>
+    Math.min(100, Math.max(0, ((minutes - STRIP_START) / (STRIP_END - STRIP_START)) * 100))
+
+  /** Timed work reads top-to-bottom by the clock; all-day work follows it. */
+  const orderedTasks = (): ReadonlyArray<TaskRow> =>
+    view()
+      .tasks.slice()
+      .sort((a, b) => {
+        const aMinutes = a.dueAt === null ? null : zoneMinutes(a.dueAt)
+        const bMinutes = b.dueAt === null ? null : zoneMinutes(b.dueAt)
+        if (aMinutes === null && bMinutes === null) return 0
+        if (aMinutes === null) return 1
+        if (bMinutes === null) return -1
+        return aMinutes - bMinutes
+      })
+
+  const timedTasks = (): ReadonlyArray<TaskRow> =>
+    orderedTasks().filter((task) => task.dueAt !== null)
+
+  const nowMinutes = (): number => zoneMinutes(now())
+
+  const nextTimed = (): TaskRow | undefined =>
+    timedTasks().find((task) => zoneMinutes(task.dueAt ?? "") >= nowMinutes())
+
+  const jumpToTask = (task: TaskRow): void => {
+    const index = orderedTasks().findIndex((entry) => entry.id === task.id)
+    if (index < 0) return
+    setCursor(index)
+    setCursorActive(true)
+    requestAnimationFrame(() => {
+      document.getElementById(`today-task-${task.id}`)?.scrollIntoView({ block: "nearest" })
+    })
+  }
+
+  // Keyboard-first, like the workbench it is: arrows move the cursor, Enter
+  // completes, `/` jumps to capture. Controls keep their own Enter/space.
+  createEffect(
+    () => null,
+    () => {
+      const onKeyDown = (event: KeyboardEvent) => {
+        const target = event.target
+        if (
+          target instanceof HTMLElement &&
+          (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(target.tagName))
+        ) return
+        if (event.metaKey || event.ctrlKey || event.altKey) return
+        if (event.key === "/") {
+          event.preventDefault()
+          focusQuickAdd()
+          return
+        }
+        const list = orderedTasks()
+        if (list.length === 0) return
+        const index = Math.min(cursor(), list.length - 1)
+        if (event.key === "ArrowDown") {
+          event.preventDefault()
+          const wasActive = untrack(cursorActive)
+          setCursorActive(true)
+          // The first arrow reveals the cursor; after that it moves.
+          setCursor(wasActive ? Math.min(index + 1, list.length - 1) : index)
+        } else if (event.key === "ArrowUp") {
+          event.preventDefault()
+          const wasActive = untrack(cursorActive)
+          setCursorActive(true)
+          setCursor(wasActive ? Math.max(index - 1, 0) : index)
+        } else if (event.key === "Enter" && untrack(cursorActive)) {
+          event.preventDefault()
+          const task = list[index]
+          if (task !== undefined) void complete(task)
+        }
+      }
+      document.addEventListener("keydown", onKeyDown)
+      return () => document.removeEventListener("keydown", onKeyDown)
+    }
+  )
+
   const renderSection = (section: DashboardSection) => {
     if (section === "tasks") {
       return (
         <>
+          <Show when={timedTasks().length > 0}>
+            <section class="today-timeline" aria-label="نوار زمان امروز">
+              <div class="today-track">
+                <span class="today-axis" aria-hidden="true" />
+                <For each={stripTicks}>
+                  {(hour) => (
+                    <span
+                      class="today-tick"
+                      style={{ "inset-inline-start": `${Math.max(stripPct(hour * 60), 2.5)}%` }}
+                    >
+                      {localizeDigits(hour, digits())}
+                    </span>
+                  )}
+                </For>
+                <span class="today-tick" style={{ "inset-inline-end": "2px", transform: "none" }}>
+                  {localizeDigits(24, digits())}
+                </span>
+                <span
+                  class="today-now"
+                  style={{ "inset-inline-start": `${stripPct(nowMinutes())}%` }}
+                  aria-hidden="true"
+                />
+                <For each={timedTasks()}>
+                  {(task) => (
+                    <button
+                      type="button"
+                      class="today-mark"
+                      style={{ "inset-inline-start": `${stripPct(zoneMinutes(task.dueAt ?? ""))}%` }}
+                      aria-label={`${timeLabel(task.dueAt ?? "")}، ${task.title}`}
+                      title={`${timeLabel(task.dueAt ?? "")} — ${task.title}`}
+                      onClick={() => jumpToTask(task)}
+                    />
+                  )}
+                </For>
+              </div>
+            </section>
+          </Show>
+
           <form class="today-quick" onSubmit={(event) => void addTask(event)}>
             <TextInput
               ref={(element) => (inputRef = element)}
               aria-label="کار تازه برای امروز"
-              placeholder="یک کار تازه برای امروز…"
+              placeholder="افزودن کار…"
               value={draft()}
               onInput={(event) => updateDraft(event.currentTarget.value)}
               disabled={local.store() === undefined}
             />
             <button
               type="submit"
+              aria-label="افزودن کار"
               disabled={local.store() === undefined || addBusy() || draft().trim() === ""}
             >
-              افزودن
+              +
             </button>
           </form>
 
@@ -441,15 +591,20 @@ function TodayPage() {
               <div class="today-empty">
                 <p>امروز خالی است. یک کار کوچک برای شروع کافی است.</p>
                 <button type="button" onClick={focusQuickAdd}>
-                  پیشنهاد: افزودن اولین کار
+                  افزودن اولین کار
                 </button>
               </div>
             }
           >
             <ul class="today-list">
-              <For each={view().tasks}>
-                {(task) => (
-                  <li class="today-row" data-overdue={isOverdue(task) ? "true" : undefined}>
+              <For each={orderedTasks()}>
+                {(task, index) => (
+                  <li
+                    id={`today-task-${task.id}`}
+                    class="today-row"
+                    data-overdue={isOverdue(task) ? "true" : undefined}
+                    data-cursor={cursorActive() && cursor() === index() ? "true" : undefined}
+                  >
                     <button
                       type="button"
                       role="checkbox"
@@ -457,18 +612,19 @@ function TodayPage() {
                       class="today-check"
                       aria-label={`انجام ${task.title}`}
                       disabled={local.store() === undefined}
-                      onClick={() => void complete(task)}
-                    >
-                      ✓
-                    </button>
+                      onClick={() => {
+                        setCursor(index())
+                        void complete(task)
+                      }}
+                    />
                     <div class="today-row-main">
                       <a class="today-row-title" href={`/tasks#task-${task.id}`}>
                         {task.title}
                       </a>
                       <p class="today-row-meta">
-                        {isOverdue(task)
-                          ? `عقب‌افتاده · ${dueLabel(task, bounds(), digits())}`
-                          : dueLabel(task, bounds(), digits())}
+                        {isOverdue(task) ? "عقب‌افتاده · " : ""}
+                        {task.dueAt !== null ? `${timeLabel(task.dueAt)} · ` : ""}
+                        {dueLabel(task, bounds(), digits())}
                       </p>
                     </div>
                     <div class="today-actions">
@@ -486,6 +642,11 @@ function TodayPage() {
                 )}
               </For>
             </ul>
+            <footer class="today-hints">
+              <span><kbd>↑</kbd><kbd>↓</kbd> حرکت</span>
+              <span><kbd>Enter</kbd> انجام</span>
+              <span><kbd>/</kbd> افزودن</span>
+            </footer>
           </Show>
         </>
       )
@@ -493,13 +654,15 @@ function TodayPage() {
 
     if (section === "habits") {
       return (
-        <TodayHabits
-          store={local.store()}
-          timeZone={timeZone()}
-          digits={digits()}
-          today={todayIso() as LocalDate}
-          onCount={setHabitCount}
-        />
+        <div class="today-habits">
+          <TodayHabits
+            store={local.store()}
+            timeZone={timeZone()}
+            digits={digits()}
+            today={todayIso() as LocalDate}
+            onCount={setHabitCount}
+          />
+        </div>
       )
     }
 
@@ -520,9 +683,7 @@ function TodayPage() {
             <For each={view().notes}>
               {(note: NoteRow) => (
                 <li class="today-row">
-                  <span aria-hidden="true" class="today-pin">
-                    📌
-                  </span>
+                  <span aria-hidden="true" class="today-note-dot" />
                   <div class="today-row-main">
                     <a class="today-row-title" href={`/notes/${note.id}`}>
                       {note.title}
@@ -555,25 +716,27 @@ function TodayPage() {
     )
   }
 
+  const offline = (): boolean =>
+    !local.online() || fetchState() === "offline" || fetchState() === "error"
+  const sourceText = (): string =>
+    offline() ? SOURCE_HINT[local.online() ? fetchState() : "offline"] : "برخط"
+
   return (
     <div class="today-root" dir="rtl" lang="fa" style={TODAY_ROOT}>
       <TodayStyles />
       <AppHeader active="today" />
 
-      <main style={TODAY_MAIN}>
-        <header class="today-head">
-          <div>
+      <main class="today-shell" style={TODAY_MAIN}>
+        <header class="today-bar">
+          <div class="today-bar-title">
             <h1>امروز</h1>
-            <p class="today-date">{formatJalaliDate(todayDate(), { digits: digits() })}</p>
+            <p>{formatJalaliDate(todayDate(), { digits: digits() })}</p>
           </div>
-          <div class="today-head-actions">
-            <Show
-              when={!local.online() || fetchState() === "offline" || fetchState() === "error"}
-            >
-              <p class="today-source" role="status">
-                {SOURCE_HINT[local.online() ? fetchState() : "offline"]}
-              </p>
-            </Show>
+          <div class="today-bar-actions">
+            <p class="today-source" data-offline={offline() ? "true" : undefined} role="status">
+              <span class="today-source-dot" aria-hidden="true" />
+              {sourceText()}
+            </p>
             <button
               type="button"
               class="today-order-toggle"
@@ -586,23 +749,10 @@ function TodayPage() {
           </div>
         </header>
 
-        <ul class="today-week" aria-label="هفته‌ی جاری">
-          <For each={week()}>
-            {(cell) => (
-              <li aria-label={cell.label} aria-current={cell.isToday ? "date" : undefined}>
-                <span aria-hidden="true" class="today-weekday">
-                  {cell.shortWeekday}
-                </span>
-                <span class="today-day">{cell.day}</span>
-              </li>
-            )}
-          </For>
-        </ul>
-
         <Show when={orderOpen()}>
           <section
             id="today-order-panel"
-            class="today-order"
+            class="today-panel today-order"
             aria-labelledby="today-order-title"
           >
             <h2 id="today-order-title" class="today-order-title">
@@ -660,19 +810,98 @@ function TodayPage() {
           </p>
         </Show>
 
-        <For each={order()}>
-          {(section) => (
-            <section class="today-section" data-section={section} aria-labelledby={`today-${section}`}>
-              <header class="today-section-head">
-                <h2 id={`today-${section}`}>{SECTION_TITLES[section]}</h2>
-                <span class="today-count" aria-label={`${localizeDigits(sectionCount(section), digits())} مورد`}>
-                  {localizeDigits(sectionCount(section), digits())}
-                </span>
-              </header>
-              {renderSection(section)}
+        <div class="today-layout">
+          <div class="today-col">
+            <For each={order()}>
+              {(section) => (
+                <section
+                  class="today-panel today-section"
+                  data-section={section}
+                  aria-labelledby={`today-${section}`}
+                >
+                  <header class="today-section-head">
+                    <h2 id={`today-${section}`}>{SECTION_TITLES[section]}</h2>
+                    <span
+                      class="today-count"
+                      aria-label={`${localizeDigits(sectionCount(section), digits())} مورد`}
+                    >
+                      {localizeDigits(sectionCount(section), digits())}
+                    </span>
+                  </header>
+                  <div class="today-section-body">
+                    {renderSection(section)}
+                  </div>
+                </section>
+              )}
+            </For>
+          </div>
+
+          <aside class="today-rail" aria-label="خلاصه‌ی امروز">
+            <section class="today-card" aria-label="کار بعدی">
+              <div class="today-card-head">
+                <span class="today-eyebrow">بعدی</span>
+                <Show when={nextTimed()}>
+                  {(task) => <span class="today-pill">{timeLabel(task().dueAt ?? "")}</span>}
+                </Show>
+              </div>
+              <Show
+                when={nextTimed()}
+                fallback={<p class="today-card-empty">برای امروز کار زمان‌داری نمانده است.</p>}
+              >
+                {(task) => (
+                  <>
+                    <p class="today-next-title">{task().title}</p>
+                    <p class="today-next-meta">{dueLabel(task(), bounds(), digits())}</p>
+                  </>
+                )}
+              </Show>
             </section>
-          )}
-        </For>
+
+            <section class="today-card" aria-label="امروز در یک نگاه">
+              <div class="today-card-head">
+                <span class="today-eyebrow">امروز در یک نگاه</span>
+              </div>
+              <div class="today-glance">
+                <div class="today-glance-row">
+                  <span>کارهای باقی‌مانده</span>
+                  <span>{localizeDigits(view().counts.tasks, digits())}</span>
+                </div>
+                <Show when={view().counts.overdue > 0}>
+                  <div class="today-glance-row" data-alert="true">
+                    <span>عقب‌افتاده</span>
+                    <span>{localizeDigits(view().counts.overdue, digits())}</span>
+                  </div>
+                </Show>
+                <div class="today-glance-row">
+                  <span>عادت‌ها</span>
+                  <span>{localizeDigits(habitCount(), digits())}</span>
+                </div>
+                <div class="today-glance-row">
+                  <span>یادداشت‌ها</span>
+                  <span>{localizeDigits(view().counts.notes, digits())}</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="today-card" aria-label="هفته‌ی جاری">
+              <div class="today-card-head">
+                <span class="today-eyebrow">این هفته</span>
+              </div>
+              <ul class="today-week">
+                <For each={week()}>
+                  {(cell) => (
+                    <li aria-label={cell.label} aria-current={cell.isToday ? "date" : undefined}>
+                      <span aria-hidden="true" class="today-weekday">
+                        {cell.shortWeekday}
+                      </span>
+                      <span class="today-day">{cell.day}</span>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </section>
+          </aside>
+        </div>
 
         <p class="today-sr" role="status" aria-live="polite">
           {announcement()}
