@@ -40,6 +40,31 @@ export const Database = Cloudflare.D1.Database("TaliDatabase", {
 })
 
 /**
+ * Nightly D1 backups (ticket #85).
+ *
+ * The api Worker dumps D1 into this bucket and keeps a 14-day window; the
+ * bucket's lifecycle rule is a second, longer safety net (30 days) in case the
+ * Worker is ever down long enough to miss its own cleanup. The dump is built by
+ * the Worker rather than the provider export endpoint because D1 cannot export
+ * a database containing FTS5 virtual tables (`notes_fts`). See
+ * `docs/adr/0009-nightly-backup-and-trash-purge.md`.
+ *
+ * The bucket has no public access and no extra API token: the Worker reaches it
+ * through an `r2_bucket` binding, the same way it reaches D1.
+ */
+export const Backups = Cloudflare.R2.Bucket("TaliBackups", {
+  lifecycleRules: [
+    {
+      id: "expire-stale-backups",
+      prefix: "backups/",
+      deleteObjectsTransition: {
+        condition: { type: "Age", maxAge: 30 * 24 * 60 * 60 }
+      }
+    }
+  ]
+})
+
+/**
  * VAPID identity (ticket #61; RFC 8292).
  *
  * The private key is a **Workers Secret** supplied out of band; the public key
@@ -117,14 +142,25 @@ const vapid = (() => {
  * the schedule at deploy time; `alchemy dev` runs no cron triggers, which is
  * why the app also exposes the dev-only `POST /dev/reminders/sweep` route
  * (`DEV_ROUTES=1` below, never set on a deploy).
+ *
+ * Ticket #85 adds two nightly triggers: purge at 03:17 UTC and backup at 03:47
+ * UTC. They are separate invocations so each stays inside D1's per-invocation
+ * query budget; the backup runs after the purge, so it captures the pruned
+ * database. The expressions are mirrored in `apps/api/src/index.ts`, which has
+ * to dispatch on `controller.cron`.
  */
 export const Api = Cloudflare.Worker("TaliApi", {
   main: join(repoRoot, "apps/api/src/index.ts"),
   compatibility: { date: "2026-10-09", flags: ["nodejs_compat"] },
   dev: { port: 8787, strictPort: true },
-  crons: ["* * * * *"],
+  crons: ["* * * * *", "17 3 * * *", "47 3 * * *"],
   env: {
     DB: Database,
+    // Nightly backup target and its window (ticket #85). The bucket is private;
+    // the Worker writes through the binding, so no API token is involved.
+    BACKUP_BUCKET: Backups,
+    BACKUP_DATABASE_NAME: "tali",
+    BACKUP_RETENTION_DAYS: "14",
     // Plain config (public by design); the private key binds as a secret.
     VAPID_PUBLIC_KEY: vapid.publicKey,
     VAPID_SUBJECT: vapid.subject,
@@ -138,6 +174,7 @@ export default Alchemy.Stack(
   { providers: Cloudflare.providers(), state },
   Effect.gen(function* () {
     const database = yield* Database
+    const backups = yield* Backups
     const api = yield* Api
 
     /**
@@ -157,6 +194,7 @@ export default Alchemy.Stack(
 
     return {
       database: database.databaseName,
+      backupBucket: backups.bucketName,
       apiUrl: api.url,
       webUrl: web.url
     }

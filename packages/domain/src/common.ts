@@ -36,6 +36,14 @@ export type Digits = Schema.Schema.Type<typeof Digits>
 export const Visibility = Schema.Literals(["private", "shared"])
 export type Visibility = Schema.Schema.Type<typeof Visibility>
 
+/**
+ * Trash retention (settled in #7): a soft-deleted row is restorable for 30
+ * days, then the nightly purge hard-deletes it together with its feed/search
+ * entries. One constant for every aggregate so a note cannot outlive a task.
+ */
+export const TRASH_RETENTION_DAYS = 30
+export const TRASH_RETENTION_MS = TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000
+
 /** Household membership role; the first user is the `owner`, the second a `member`. */
 export const MembershipRole = Schema.Literals(["owner", "member"])
 export type MembershipRole = Schema.Schema.Type<typeof MembershipRole>

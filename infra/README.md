@@ -1,19 +1,25 @@
 # infra — Alchemy
 
-The Tali stack as typed TypeScript. `alchemy.run.ts` declares three resources and
+The Tali stack as typed TypeScript. `alchemy.run.ts` declares four resources and
 is the single owner of how the app runs:
 
 | Resource | Type | Local (`alchemy dev`) | Deploy |
 | --- | --- | --- | --- |
 | `TaliDatabase` | `Cloudflare.D1.Database` | local simulator; `packages/sql/migrations` applied on every reconcile | real D1; migrations applied on deploy |
-| `TaliApi` | `Cloudflare.Worker` | `apps/api/src/index.ts` in workerd on :8787 | uploaded Worker with the `DB` binding |
+| `TaliBackups` | `Cloudflare.R2.Bucket` | local R2 simulator | private R2 bucket; nightly D1 dumps, 30-day lifecycle safety net |
+| `TaliApi` | `Cloudflare.Worker` | `apps/api/src/index.ts` in workerd on :8787 | uploaded Worker with the `DB` + `BACKUP_BUCKET` bindings |
 | `TaliWeb` | `Cloudflare.Website.StaticSite` | `pnpm run dev` (Vite) on :3000 | `pnpm run build` → `apps/web/dist/client` as static assets |
 
-The api Worker also declares one **per-minute Cron trigger**
-(`crons: ["* * * * *"]`, ADR-0005): `scheduled()` runs the reminder sweep.
-`alchemy dev` does not run cron triggers, so a local tick is driven by hand at
-`POST /dev/reminders/sweep?at=<ISO>` — registered only when the stack runs under
-`alchemy dev` (`DEV_ROUTES=1`).
+The api Worker declares **three** cron triggers:
+
+- `* * * * *` — the reminder sweep (ADR-0005);
+- `17 3 * * *` — the 30-day trash purge (#85);
+- `47 3 * * *` — the nightly D1 backup to `TaliBackups` (#85).
+
+`alchemy dev` does not run cron triggers, so local ticks are driven by hand at
+`/cdn-cgi/local/scheduled?cron=<expression>&time=<epoch-ms>`. The purge and
+backup decisions are in ADR-0009; the restore runbook is
+`docs/backup-restore.md`.
 
 ## Run it
 
