@@ -1,5 +1,5 @@
 import "fake-indexeddb/auto"
-import { flush } from "solid-js"
+import { Show, flush, type ParentProps } from "solid-js"
 import { fireEvent, render, waitFor, within } from "@solidjs/testing-library"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import {
@@ -20,8 +20,8 @@ import {
   type SessionContext,
   type UserPreferences
 } from "@tali/domain"
-import { AuthProvider } from "../../lib/auth"
-import { PreferencesProvider } from "../../lib/preferences"
+import { AuthProvider, useAuth } from "../../lib/auth"
+import { PreferencesProvider, usePreferences } from "../../lib/preferences"
 import { LocalStoreProvider } from "../../lib/local-store"
 import { openLocalStore } from "../../lib/local-store/store"
 import type { LocalStore } from "../../lib/local-store/types"
@@ -183,12 +183,32 @@ const waitForStore = async (
   })
 }
 
+/**
+ * Mount the screen only after auth and the saved preferences have settled.
+ *
+ * `CalendarScreen` seeds its date anchor from the current preference zone, so
+ * mounting during boot would pin it to the `Asia/Tehran` default. On a host
+ * whose zone is on the other side of Jalali midnight that renders a different
+ * month/day than the fixtures derived from `TIME_ZONE`.
+ */
+const Ready = (props: ParentProps) => {
+  const auth = useAuth()
+  const preferences = usePreferences()
+  return (
+    <Show when={auth.status() === "signedIn" && preferences.source() !== "default"}>
+      {props.children}
+    </Show>
+  )
+}
+
 const mountCalendar = () =>
   render(() => (
     <AuthProvider>
       <PreferencesProvider>
         <LocalStoreProvider>
-          <CalendarScreen />
+          <Ready>
+            <CalendarScreen />
+          </Ready>
         </LocalStoreProvider>
       </PreferencesProvider>
     </AuthProvider>
@@ -842,6 +862,7 @@ describe("Calendar event and occasion lanes (#62)", () => {
     stubNetwork({ month: "fail" })
 
     const screen = mountCalendar()
+    await waitForSource(screen, "server")
     fireEvent.click(screen.getByRole("button", { name: "ماه" }))
     await waitForSource(screen, "mirror")
     await eventually(() => {

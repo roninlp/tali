@@ -14,5 +14,6 @@ allowBuilds:
   "@cloudflare/workerd-linux-64": true
 
 minimumReleaseAgeExclude:
-  - miniflare@5.20261012.1-beta
-  - wrangler@4.151.1
+  - miniflare@5.20261012.1-beta || 5.20261019.2-beta
+  - wrangler@4.151.1 || 4.152.0
+  - '@cloudflare/vitest-plugin@1.4.7'

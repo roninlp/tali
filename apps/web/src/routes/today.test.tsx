@@ -476,7 +476,7 @@ describe("Today dashboard", () => {
 
     fireEvent.input(input, { target: { value: "آب خوردن" } })
     flush()
-    fireEvent.click(screen.getByRole("button", { name: "افزودن" }))
+    fireEvent.click(screen.getByRole("button", { name: "افزودن کار" }))
 
     await eventually(() => expect(screen.getByText("آب خوردن")).toBeTruthy())
     await withStore(async (store) => {
