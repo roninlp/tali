@@ -93,6 +93,13 @@ export const entityKey = (ref: EntityRef): string =>
  */
 const MAX_IN_PARAMS = 90
 
+/**
+ * D1's SQLite build allows at most five terms in a compound `SELECT`
+ * (`too many terms in compound SELECT`). Node's bundled SQLite allows far more,
+ * so a service-direct suite cannot catch an unbounded `UNION ALL`.
+ */
+const MAX_COMPOUND_SELECT_TERMS = 5
+
 const chunked = <A>(values: ReadonlyArray<A>, size: number): ReadonlyArray<ReadonlyArray<A>> => {
   const chunks: Array<ReadonlyArray<A>> = []
   for (let index = 0; index < values.length; index += size) {
@@ -220,6 +227,13 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
      * paging/ordering is one global sequence: `updated_at`, then type/id as a
      * stable tiebreak. Hydration happens in `findEntities` on the page refs —
      * this query only decides *which* rows belong to the page.
+     *
+     * D1's SQLite build caps a **compound SELECT at five terms**, while the
+     * registry has more aggregates: one `UNION ALL` over every table fails with
+     * `too many terms in compound SELECT` (the boundary suite caught this;
+     * Node's unbounded SQLite hid it). So the branches are grouped into chunks
+     * of at most five, each chunk reads its own prefix up to the page end, and
+     * the chunks are merged by the same ordering before slicing.
      */
     const bootstrapPage = (input: {
       readonly householdId: string
@@ -228,22 +242,52 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
       readonly limit: number
     }) =>
       Effect.gen(function*() {
-        const branches = registry.all().map((def) =>
-          sql`
-            SELECT ${def.entityType} AS entityType, id, updated_at AS updatedAt
-            FROM ${sql.literal(def.table)}
-            WHERE ${sql.literal(def.scope.householdId)} = ${input.householdId}
-              AND ${sql.literal(def.softDeleteColumn)} IS NULL
-              AND (${sql.literal(def.scope.ownerId)} = ${input.userId}
-                OR ${sql.literal(def.scope.visibility)} = 'shared')
-          `
-        )
-        const rows = yield* sql<{ readonly entityType: SyncEntityType; readonly id: string }>`
-          ${sql.join(" UNION ALL ", false)(branches)}
-          ORDER BY updatedAt ASC, entityType ASC, id ASC
-          LIMIT ${input.limit + 1} OFFSET ${input.offset}
-        `
-        return rows.map((row) => ({ entityType: row.entityType, entityId: row.id }))
+        // The global page can only draw rows that are inside every group's
+        // `offset + limit + 1` prefix, so each chunk reads that many rows.
+        const prefix = input.offset + input.limit + 1
+        const rows: Array<{
+          readonly entityType: SyncEntityType
+          readonly id: string
+          readonly updatedAt: string
+        }> = []
+
+        for (const group of chunked(registry.all(), MAX_COMPOUND_SELECT_TERMS)) {
+          const branches = group.map((def) =>
+            sql`
+              SELECT ${def.entityType} AS entityType, id, updated_at AS updatedAt
+              FROM ${sql.literal(def.table)}
+              WHERE ${sql.literal(def.scope.householdId)} = ${input.householdId}
+                AND ${sql.literal(def.softDeleteColumn)} IS NULL
+                AND (${sql.literal(def.scope.ownerId)} = ${input.userId}
+                  OR ${sql.literal(def.scope.visibility)} = 'shared')
+            `
+          )
+          rows.push(...(yield* sql<{
+            readonly entityType: SyncEntityType
+            readonly id: string
+            readonly updatedAt: string
+          }>`
+            ${sql.join(" UNION ALL ", false)(branches)}
+            ORDER BY updatedAt ASC, entityType ASC, id ASC
+            LIMIT ${prefix}
+          `))
+        }
+
+        rows.sort((left, right) => {
+          // SQLite orders with BINARY collation; keep the merge identical so a
+          // chunk-local LIMIT prefix cannot disagree with the global order.
+          if (left.updatedAt !== right.updatedAt) {
+            return left.updatedAt < right.updatedAt ? -1 : 1
+          }
+          if (left.entityType !== right.entityType) {
+            return left.entityType < right.entityType ? -1 : 1
+          }
+          if (left.id === right.id) return 0
+          return left.id < right.id ? -1 : 1
+        })
+        return rows
+          .slice(input.offset, input.offset + input.limit + 1)
+          .map((row) => ({ entityType: row.entityType, entityId: row.id }))
       })
 
     /** Hydrate a page of bootstrap refs into wire rows. */

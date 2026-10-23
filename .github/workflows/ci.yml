@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# One run per ref: a new push supersedes the previous run on the same PR/branch.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  TURBO_TELEMETRY_DISABLED: "1"
+  # Keep boundary/service tests on one host zone in CI and in the Turbo hash.
+  TZ: UTC
+
+jobs:
+  test:
+    name: Typecheck, build, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12.6.0
+          run_install: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # Turbo's local cache is content-addressed by package inputs, so restoring
+      # it across runs reuses unchanged typecheck/build/test tasks. The pnpm
+      # store is cached by setup-node above.
+      - uses: actions/cache@v6
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+
+      - run: pnpm build
+
+      # Unit + SQL integration (fake-d1) + the workerd boundary suite.
+      - run: pnpm test

@@ -6,7 +6,8 @@
   "scripts": {
     "build": "vite build",
     "serve": "vite preview",
-    "test": "vitest",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "lint": "oxlint src",
     "typecheck": "tsc --noEmit"
   },

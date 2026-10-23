@@ -1,0 +1,21 @@
+// Test-only Worker config for the boundary suite (ticket #82).
+//
+// The deployed Worker is declared in `infra/alchemy.run.ts`; this file exists
+// only so `@cloudflare/vitest-plugin` can boot the real `src/index.ts` in
+// workerd with a local D1 binding. It is never deployed.
+//
+// Compatibility settings mirror `infra/alchemy.run.ts` on purpose: a test
+// Worker on a different date/flags can behave differently from production.
+{
+  "name": "tali-api-test",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-09",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tali-api-test",
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ]
+}
