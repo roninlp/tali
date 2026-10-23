@@ -1,3 +1,4 @@
+import { exports } from "cloudflare:workers"
 import { describe, expect, it } from "vitest"
 import { jsonRequest, register, WEB_ORIGIN, workerFetch } from "./support.js"
 
@@ -8,6 +9,10 @@ import { jsonRequest, register, WEB_ORIGIN, workerFetch } from "./support.js"
  * the session cookie when both the preflight and the actual response say
  * `access-control-allow-credentials: true` and echo the exact origin. This is
  * invisible to a service-direct test.
+ *
+ * `WEB_ORIGIN` is deliberately unset in the test Worker config, exactly like
+ * `alchemy dev`/deploy: these tests exercise the localhost dev fallback and the
+ * deployed "no allowlist" path.
  */
 
 const PREFLIGHT = {
@@ -63,6 +68,18 @@ describe("CORS with credentials", () => {
     expect(actual.status).toBe(200)
     expect(actual.headers.get("access-control-allow-origin")).toBeNull()
     expect(actual.headers.get("access-control-allow-credentials")).toBeNull()
+  })
+
+  it("does not allow the dev origin on a non-local Worker origin", async () => {
+    // A deployed Worker is reverse-proxied on the web origin, so it has no
+    // allowlist: a request it serves from a non-local hostname must not echo
+    // the dev origin, even with a matching Origin header.
+    const response = await exports.default.fetch("https://api.tali.test/auth/login", {
+      method: "OPTIONS",
+      headers: { origin: WEB_ORIGIN, ...PREFLIGHT }
+    })
+    expect(response.status).toBe(403)
+    expect(response.headers.get("access-control-allow-origin")).toBeNull()
   })
 
   it("serves the health route the CI smoke check reads", async () => {

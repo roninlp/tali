@@ -15,6 +15,8 @@ permissions:
 
 env:
   TURBO_TELEMETRY_DISABLED: "1"
+  # Keep boundary/service tests on one host zone in CI and in the Turbo hash.
+  TZ: UTC
 
 jobs:
   test:
@@ -23,14 +25,14 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 12.6.0
           run_install: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
@@ -38,7 +40,7 @@ jobs:
       # Turbo's local cache is content-addressed by package inputs, so restoring
       # it across runs reuses unchanged typecheck/build/test tasks. The pnpm
       # store is cached by setup-node above.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: .turbo
           key: turbo-${{ runner.os }}-${{ github.sha }}

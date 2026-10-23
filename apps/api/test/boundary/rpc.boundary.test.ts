@@ -104,17 +104,24 @@ describe("POST /rpc", () => {
     const alice = await sessionWithHousehold()
     const bob = await sessionWithHousehold()
     const aliceTask = uuidV7()
+    const bobTask = uuidV7()
 
     await rpc(
       "CreateTask",
       { id: aliceTask, clientMutationId: "boundary-rpc-alice", title: "مال آلیس" },
       alice.session.cookie
     )
+    await rpc(
+      "CreateTask",
+      { id: bobTask, clientMutationId: "boundary-rpc-bob", title: "مال باب" },
+      bob.session.cookie
+    )
 
     const { messages } = await rpc("ListTasks", {}, bob.session.cookie)
     const exit = exitOf(messages)
     expect(exit.exit._tag).toBe("Success")
     const listed = (exit.exit as { readonly value: ReadonlyArray<{ id: string }> }).value
+    expect(listed.map((task) => task.id)).toContain(bobTask)
     expect(listed.map((task) => task.id)).not.toContain(aliceTask)
   })
 })

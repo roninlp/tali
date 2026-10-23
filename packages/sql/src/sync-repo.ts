@@ -273,11 +273,18 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
           `))
         }
 
-        rows.sort((left, right) =>
-          left.updatedAt.localeCompare(right.updatedAt) ||
-          left.entityType.localeCompare(right.entityType) ||
-          left.id.localeCompare(right.id)
-        )
+        rows.sort((left, right) => {
+          // SQLite orders with BINARY collation; keep the merge identical so a
+          // chunk-local LIMIT prefix cannot disagree with the global order.
+          if (left.updatedAt !== right.updatedAt) {
+            return left.updatedAt < right.updatedAt ? -1 : 1
+          }
+          if (left.entityType !== right.entityType) {
+            return left.entityType < right.entityType ? -1 : 1
+          }
+          if (left.id === right.id) return 0
+          return left.id < right.id ? -1 : 1
+        })
         return rows
           .slice(input.offset, input.offset + input.limit + 1)
           .map((row) => ({ entityType: row.entityType, entityId: row.id }))

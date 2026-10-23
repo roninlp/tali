@@ -9,7 +9,8 @@
       "dependsOn": ["^typecheck"]
     },
     "test": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build"],
+      "env": ["TZ"]
     },
     "dev": {
       "cache": false,

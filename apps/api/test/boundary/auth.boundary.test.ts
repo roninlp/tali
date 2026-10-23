@@ -22,6 +22,10 @@ interface ErrorEnvelope {
   readonly error: { readonly code: string; readonly retryable?: boolean }
 }
 
+/** The cookie's `Max-Age` in seconds, or `NaN` when the attribute is absent. */
+const maxAgeOf = (setCookie: string | undefined): number =>
+  Number(/max-age=(\d+)/i.exec(setCookie ?? "")?.[1])
+
 describe("POST /auth/register", () => {
   it("mints an HTTP-only session cookie alongside the created user", async () => {
     const response = await workerFetch(
@@ -43,7 +47,7 @@ describe("POST /auth/register", () => {
     expect(session).toMatch(/httponly/i)
     expect(session).toMatch(/samesite=lax/i)
     expect(session).toMatch(/path=\//i)
-    expect(session).toMatch(/max-age=/i)
+    expect(maxAgeOf(session)).toBeGreaterThan(0)
 
     const body = await response.json() as {
       readonly user: { readonly id: string; readonly displayName: string }
@@ -101,6 +105,32 @@ describe("GET /auth/me", () => {
 })
 
 describe("POST /auth/login", () => {
+  it("mints a session cookie for the right login key", async () => {
+    const registered = await register()
+    const response = await workerFetch(
+      "/auth/login",
+      jsonRequest("POST", undefined, {
+        email: registered.email,
+        loginKey: LOGIN_KEY
+      })
+    )
+
+    expect(response.status).toBe(200)
+    const header = response.headers
+      .getSetCookie()
+      .find((value) => value.startsWith(`${SESSION_COOKIE}=`))
+    expect(maxAgeOf(header)).toBeGreaterThan(0)
+    const cookie = sessionCookieOf(response)
+    if (cookie === undefined) throw new Error("login did not mint a session cookie")
+    expect(cookie).toMatch(new RegExp(`^${SESSION_COOKIE}=`))
+
+    const me = await workerFetch("/auth/me", { headers: { cookie } })
+    expect(me.status).toBe(200)
+    expect((await me.json() as { readonly user: { readonly id: string } }).user.id).toBe(
+      registered.userId
+    )
+  })
+
   it("rejects a wrong login key without leaking which field failed", async () => {
     const session = await register()
     const response = await workerFetch(
@@ -152,6 +182,19 @@ describe("household routes", () => {
 
     // The join response re-stamps the cookie, so the client keeps its session.
     expect(sessionCookieOf(join)).toBeDefined()
+  })
+
+  it("rejects an unknown invite code with the InviteInvalid envelope", async () => {
+    const stranger = await register("stranger@example.com")
+    const response = await workerFetch(
+      "/household/join",
+      jsonRequest("POST", stranger.cookie, { inviteCode: "not-a-real-invite" })
+    )
+
+    expect(response.status).toBe(404)
+    expect(await response.json<ErrorEnvelope>()).toMatchObject({
+      error: { code: "InviteInvalid" }
+    })
   })
 
   it("refuses a household create without a session", async () => {

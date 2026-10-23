@@ -1,3 +1,4 @@
+import { env } from "cloudflare:workers"
 import { describe, expect, it } from "vitest"
 import { uuidV7 } from "@tali/domain"
 import {
@@ -20,6 +21,7 @@ interface SyncBody {
   readonly items: ReadonlyArray<{ readonly entityId: string }>
   readonly hasMore: boolean
   readonly nextCursor?: number
+  readonly nextOffset?: number
   readonly cursor?: number
   readonly results: ReadonlyArray<{
     readonly _tag: string
@@ -169,6 +171,31 @@ describe("GET /sync/bootstrap", () => {
     expect(body.cursor).toBeGreaterThan(0)
   })
 
+  it("honours offset when paging across the registry", async () => {
+    const { session } = await sessionWithHousehold()
+    const ids = [uuidV7(), uuidV7(), uuidV7()]
+    await push(session.cookie, ids.map((id, index) =>
+      pushTask(id, `صفحه ${index}`, `boundary-offset-${index}`)
+    ))
+
+    const page = async (offset: number) => {
+      const response = await workerFetch(
+        `/sync/bootstrap?offset=${offset}&limit=1`,
+        { headers: { cookie: session.cookie } }
+      )
+      expect(response.status).toBe(200)
+      return response.json() as Promise<SyncBody>
+    }
+
+    const [first, second, third] = await Promise.all([page(0), page(1), page(2)])
+    expect(second.items).toHaveLength(1)
+    expect(second.nextOffset).toBe(2)
+    expect(second.hasMore).toBe(true)
+    // Same timestamp for one push, so the stable tiebreak is id ascending.
+    expect([...first.items, ...second.items, ...third.items].map((item) => item.entityId))
+      .toEqual([...ids].sort())
+  })
+
   it("refuses a malformed offset the same way as pull", async () => {
     const { session } = await sessionWithHousehold()
     const response = await workerFetch(
@@ -184,9 +211,13 @@ describe("sync household scoping", () => {
     const alice = await sessionWithHousehold()
     const bob = await sessionWithHousehold()
     const aliceTask = uuidV7()
+    const bobTask = uuidV7()
 
     await push(alice.session.cookie, [
-      pushTask(aliceTask, "خصوصی خانه", "boundary-scope")
+      pushTask(aliceTask, "مال آلیس", "boundary-scope-alice")
+    ])
+    await push(bob.session.cookie, [
+      pushTask(bobTask, "مال باب", "boundary-scope-bob")
     ])
 
     const response = await workerFetch("/sync/pull?cursor=0", {
@@ -194,6 +225,65 @@ describe("sync household scoping", () => {
     })
     expect(response.status).toBe(200)
     const body = await response.json() as SyncBody
+    expect(body.items.map((item) => item.entityId)).toContain(bobTask)
     expect(body.items.map((item) => item.entityId)).not.toContain(aliceTask)
+  })
+})
+
+describe("POST /sync/push contention", () => {
+  it("returns a retryable 409 when another writer wins the version race", async () => {
+    const { session } = await sessionWithHousehold()
+    const taskId = uuidV7()
+    const projectId = uuidV7()
+    await push(session.cookie, [pushTask(taskId, "قبل", "boundary-race-seed")])
+
+    // The boundary layer cannot hook the repo between its pre-read and its
+    // batch (the fake-d1 suite uses `beforeBatch` for this). A one-shot trigger
+    // plays the concurrent writer: projects are dependency-ranked before tasks
+    // in the same push, so this bumps the task's version after the pre-read and
+    // before the task's compare-and-set.
+    // D1 forbids bound variables inside a trigger body; `taskId` is a
+    // generated UUID, never client input.
+    await env.DB.prepare(
+      `CREATE TRIGGER boundary_race AFTER INSERT ON projects
+       BEGIN
+         UPDATE tasks SET version = version + 1 WHERE id = '${taskId}';
+       END`
+    ).run()
+
+    try {
+      const response = await workerFetch(
+        "/sync/push",
+        jsonRequest("POST", session.cookie, {
+          entries: [
+            {
+              clientMutationId: "boundary-race-project",
+              entityType: "project",
+              entityId: projectId,
+              baseVersion: 0,
+              op: "upsert",
+              patch: { title: "پروژه" },
+              clientUpdatedAt: new Date().toISOString()
+            },
+            { ...pushTask(taskId, "بعد", "boundary-race-task"), baseVersion: 1 }
+          ]
+        })
+      )
+
+      expect(response.status).toBe(409)
+      expect(await response.json()).toMatchObject({
+        error: { code: "Conflict", retryable: true }
+      })
+    } finally {
+      await env.DB.prepare("DROP TRIGGER boundary_race").run()
+    }
+
+    // The losing write left the row untouched; the client retries from fresh
+    // state rather than overwriting the winner.
+    const page = await workerFetch("/sync/pull?cursor=0", {
+      headers: { cookie: session.cookie }
+    })
+    const body = await page.json() as { readonly items: ReadonlyArray<{ readonly entityId: string; readonly data: { readonly title: string } }> }
+    expect(body.items.find((item) => item.entityId === taskId)?.data.title).toBe("قبل")
   })
 })

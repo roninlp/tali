@@ -8,6 +8,7 @@ import {
   uuidV7,
   type SyncEntityRow,
   type SyncEntityType,
+  type SyncBootstrapResponse,
   type SyncPullResponse,
   type SyncPushEntry
 } from "@tali/domain"
@@ -94,6 +95,22 @@ const push = (
     Effect.gen(function*() {
       const sync = yield* SyncService
       return yield* sync.push(input)
+    })
+  )
+
+const bootstrap = (
+  harness: Harness,
+  input: {
+    readonly userId: string
+    readonly householdId: string
+    readonly offset?: number
+    readonly limit?: number
+  }
+): Promise<SyncBootstrapResponse> =>
+  harness.run(
+    Effect.gen(function*() {
+      const sync = yield* SyncService
+      return yield* sync.bootstrap(input)
     })
   )
 
@@ -519,6 +536,64 @@ describe("sync engine", () => {
     })
     expect(next.resetRequired).toBe(false)
     expect(next.entries).toHaveLength(0)
+  })
+
+  it("pages bootstrap by the global order across registry chunks", async () => {
+    const h = makeHarness()
+    const taskEarly = uuidV7()
+    const noteMiddle = uuidV7()
+    const taskThird = uuidV7()
+    const occasionFourth = uuidV7()
+    const noteFifth = uuidV7()
+    const taskLast = uuidV7()
+    const at = (day: number) => `2026-01-0${day}T00:00:00.000Z`
+
+    // Rows are spread across three compound-SELECT chunks (tasks, notes,
+    // occasions) and interleaved in time. A per-chunk `LIMIT limit + 1`
+    // instead of the page-end prefix would drop the last rows here.
+    h.db.exec(`
+      INSERT INTO tasks (id, title, owner_id, household_id, created_at, updated_at, version)
+      VALUES
+        ('${taskEarly}', 'اول', '${USER_A}', '${HOUSEHOLD}', '${at(1)}', '${at(1)}', 1),
+        ('${taskThird}', 'سوم', '${USER_A}', '${HOUSEHOLD}', '${at(3)}', '${at(3)}', 1),
+        ('${taskLast}', 'ششم', '${USER_A}', '${HOUSEHOLD}', '${at(6)}', '${at(6)}', 1);
+      INSERT INTO notes (id, title, owner_id, household_id, created_at, updated_at, version)
+      VALUES
+        ('${noteMiddle}', 'دوم', '${USER_A}', '${HOUSEHOLD}', '${at(2)}', '${at(2)}', 1),
+        ('${noteFifth}', 'پنجم', '${USER_A}', '${HOUSEHOLD}', '${at(5)}', '${at(5)}', 1);
+      INSERT INTO occasions
+        (id, title, owner_id, household_id, origin_date, created_at, updated_at, version)
+      VALUES
+        ('${occasionFourth}', 'چهارم', '${USER_A}', '${HOUSEHOLD}', '2026-01-04',
+         '${at(4)}', '${at(4)}', 1)
+    `)
+
+    const second = await bootstrap(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      offset: 1,
+      limit: 1
+    })
+    expect(second.items.map((item) => item.entityId)).toEqual([noteMiddle])
+    expect(second.nextOffset).toBe(2)
+    expect(second.hasMore).toBe(true)
+
+    // Walk every offset: proves the per-chunk prefix is deep enough for a
+    // page that starts past each chunk's first few rows.
+    const expected = [taskEarly, noteMiddle, taskThird, occasionFourth, noteFifth, taskLast]
+    const seen: Array<string> = []
+    for (let offset = 0; offset < expected.length; offset += 1) {
+      const page = await bootstrap(h, {
+        userId: USER_A,
+        householdId: HOUSEHOLD,
+        offset,
+        limit: 1
+      })
+      seen.push(...page.items.map((item) => item.entityId))
+      expect(page.nextOffset).toBe(offset + 1)
+      expect(page.hasMore).toBe(offset < expected.length - 1)
+    }
+    expect(seen).toEqual(expected)
   })
 
   it("still requires a reset when every feed entry is outside the window", async () => {
