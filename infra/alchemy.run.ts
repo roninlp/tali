@@ -152,7 +152,9 @@ const vapid = (() => {
  */
 export const Api = Cloudflare.Worker("TaliApi", {
   main: join(repoRoot, "apps/api/src/index.ts"),
-  compatibility: { date: "2026-10-09", flags: ["nodejs_compat"] },
+  // `nodejs_compat` is the default from 2026-08-04, so the flag is redundant;
+  // newer workerd builds reject it outright instead of warning.
+  compatibility: { date: "2026-10-09" },
   dev: { port: 8787, strictPort: true },
   crons: [...CRON_EXPRESSIONS],
   env: {
