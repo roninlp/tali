@@ -1,6 +1,7 @@
 import { Layer, String as Str } from "effect"
 import { HttpRouter } from "effect/http"
 import { D1Client } from "@effect/sql-d1"
+import { CRON } from "@tali/config"
 import { makeAppLayer } from "./http-layer.js"
 import { runD1Backup } from "./d1-backup.js"
 import { vapidConfigOf } from "./push-gateway.js"
@@ -43,15 +44,15 @@ interface Env {
 /**
  * Cron expressions declared on this Worker in `infra/alchemy.run.ts`.
  *
- * They are kept here as well because `scheduled()` receives only the fired
- * expression: the reminder sweep is every minute (ADR-0005), while the two
- * maintenance jobs run once a night in separate invocations so each gets its
- * own D1 per-invocation query budget. Purge runs first so the backup captures
- * the post-purge database.
+ * Both sides import them from `@tali/config`, because `scheduled()` receives
+ * only the fired expression string: the reminder sweep is every minute
+ * (ADR-0005), while the two maintenance jobs run once a night in separate
+ * invocations so each gets its own D1 per-invocation query budget. Purge runs
+ * first so the backup captures the post-purge database.
  */
-export const REMINDER_CRON = "* * * * *"
-export const PURGE_CRON = "17 3 * * *"
-export const BACKUP_CRON = "47 3 * * *"
+export const REMINDER_CRON = CRON.reminder
+export const PURGE_CRON = CRON.purge
+export const BACKUP_CRON = CRON.backup
 
 /** The Vite dev server's origin. `127.0.0.1` is deliberately absent: it is a
  * different site from `localhost` for cookies (`SameSite=Lax`), so a page
@@ -156,10 +157,11 @@ export default {
    *   the retention window. It is a separate invocation from the purge so each
    *   job stays inside D1's per-invocation query ceiling.
    *
-   * Errors are caught and logged rather than rethrown: a failed tick is not
-   * recoverable by Cloudflare's retry (the purge and backup are idempotent, so
-   * the next night repairs a miss), and a throw would only mark the invocation
-   * failed.
+   * The maintenance jobs deliberately opt out of Cloudflare's retry with
+   * `controller.noRetry()` and catch their own errors: both are idempotent, a
+   * failed nightly tick is repaired by the next night, and an immediate retry
+   * would only repeat a large dump or a partially applied sweep. The
+   * per-minute reminder sweep keeps its catch-up semantics.
    */
   async scheduled(
     controller: ScheduledController,
@@ -169,6 +171,7 @@ export default {
     const now = new Date(controller.scheduledTime).toISOString()
 
     if (controller.cron === PURGE_CRON) {
+      controller.noRetry()
       ctx.waitUntil(
         runTrashPurge(env, now)
           .then((result) => {
@@ -188,6 +191,7 @@ export default {
     }
 
     if (controller.cron === BACKUP_CRON) {
+      controller.noRetry()
       ctx.waitUntil(
         runD1Backup(env, now)
           .then((result) => {

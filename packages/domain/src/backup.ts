@@ -133,28 +133,48 @@ export interface BackupRetentionInput {
 /**
  * Which keys the nightly job may delete.
  *
- * A backup is retained for `retentionDays` **days from its date**, not "the
- * newest N files": a missed night must not silently shrink the window, and a
- * re-run on the same date overwrites its own objects rather than counting as a
- * second backup. The newest backup is never deleted even if the clock jumped
- * far ahead — losing the last known-good dump is the one failure a retention
- * policy must not introduce. Keys outside the backup layout are ignored.
+ * A backup is retained for `retentionDays` **calendar days including today**,
+ * not "the newest N files": a missed night must not silently shrink the
+ * window, and a re-run on the same date overwrites its own objects rather than
+ * counting as a second backup. The newest **complete** backup is never deleted
+ * even if the clock jumped far ahead — losing the last known-good dump is the
+ * one failure a retention policy must not introduce. Keys outside the backup
+ * layout are ignored.
+ *
+ * A dated group without both a `.sql` dump and its manifest is an interrupted
+ * upload. It is unusable (the manifest is the commit marker), so retention
+ * removes it instead of keeping a truncated backup for the whole window.
  */
 export const planBackupRetention = (input: BackupRetentionInput): ReadonlyArray<string> => {
-  const retentionDays = input.retentionDays ?? BACKUP_RETENTION_DAYS
-  const dated = input.keys
-    .map((key) => ({ key, date: backupDateOfKey(key) }))
-    .filter((entry): entry is { readonly key: string; readonly date: string } =>
-      entry.date !== undefined
-    )
-  if (dated.length === 0) return []
+  const retentionDays = Math.max(1, input.retentionDays ?? BACKUP_RETENTION_DAYS)
+  const groups = new Map<string, {
+    readonly keys: Array<string>
+    dump: boolean
+    manifest: boolean
+  }>()
+  for (const key of input.keys) {
+    const date = backupDateOfKey(key)
+    if (date === undefined) continue
+    const group = groups.get(date) ?? { keys: [], dump: false, manifest: false }
+    group.keys.push(key)
+    if (key.endsWith(".sql")) group.dump = true
+    if (key === backupManifestKey(date)) group.manifest = true
+    groups.set(date, group)
+  }
+  if (groups.size === 0) return []
 
-  const newest = dated.reduce((latest, entry) => (entry.date > latest ? entry.date : latest), "")
+  const complete = [...groups.entries()]
+    .filter(([, group]) => group.dump && group.manifest)
+    .map(([date]) => date)
+  const newestComplete = complete.reduce((latest, date) => (date > latest ? date : latest), "")
+  // Include today: 14 retained days means today plus the previous 13.
   const cutoff = new Date(
-    Date.parse(input.now) - retentionDays * DAY_MS
+    Date.parse(input.now) - (retentionDays - 1) * DAY_MS
   ).toISOString().slice(0, 10)
 
-  return dated
-    .filter((entry) => entry.date !== newest && entry.date < cutoff)
-    .map((entry) => entry.key)
+  return [...groups.entries()].flatMap(([date, group]) => {
+    const incomplete = !group.dump || !group.manifest
+    const expired = date !== newestComplete && date < cutoff
+    return incomplete || expired ? group.keys : []
+  })
 }

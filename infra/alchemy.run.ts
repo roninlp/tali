@@ -16,6 +16,7 @@
 // root with `--config infra/alchemy.run.ts`.
 import * as Alchemy from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
+import { CRON_EXPRESSIONS } from "@tali/config"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
 import { createECDH } from "node:crypto"
@@ -146,14 +147,14 @@ const vapid = (() => {
  * Ticket #85 adds two nightly triggers: purge at 03:17 UTC and backup at 03:47
  * UTC. They are separate invocations so each stays inside D1's per-invocation
  * query budget; the backup runs after the purge, so it captures the pruned
- * database. The expressions are mirrored in `apps/api/src/index.ts`, which has
- * to dispatch on `controller.cron`.
+ * database. The expressions and the Worker's dispatch share
+ * `@tali/config`'s `CRON_EXPRESSIONS`, so the two cannot drift.
  */
 export const Api = Cloudflare.Worker("TaliApi", {
   main: join(repoRoot, "apps/api/src/index.ts"),
   compatibility: { date: "2026-10-09", flags: ["nodejs_compat"] },
   dev: { port: 8787, strictPort: true },
-  crons: ["* * * * *", "17 3 * * *", "47 3 * * *"],
+  crons: [...CRON_EXPRESSIONS],
   env: {
     DB: Database,
     // Nightly backup target and its window (ticket #85). The bucket is private;

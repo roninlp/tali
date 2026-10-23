@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url"
 import { DatabaseSync } from "node:sqlite"
 import { describe, expect, it } from "vitest"
 import { TRASH_RETENTION_MS } from "@tali/domain"
-import worker, { BACKUP_CRON, PURGE_CRON } from "../src/index.js"
+import worker, { BACKUP_CRON, PURGE_CRON, REMINDER_CRON } from "../src/index.js"
 import { FakeD1 } from "./fake-d1.js"
 import { FakeR2 } from "./fake-r2.js"
 
@@ -15,7 +15,7 @@ import { FakeR2 } from "./fake-r2.js"
  * job, `scheduledTime` is the nominal clock, both jobs run through
  * `ctx.waitUntil`, and the D1 + R2 bindings are the same ones the fetch handler
  * gets. It is the closest local equivalent of workerd's
- * `/cdn-cgi/local/scheduled` route.
+ * `/cdn-cgi/handler/scheduled` route.
  */
 
 const MIGRATIONS_DIR = new URL("../../../packages/sql/migrations/", import.meta.url)
@@ -66,8 +66,9 @@ const runScheduled = async (
   cron: string,
   at: string,
   env: ReturnType<typeof scheduledEnv>
-): Promise<void> => {
+): Promise<number> => {
   const pending: Array<Promise<unknown>> = []
+  let noRetryCalls = 0
   const ctx = {
     waitUntil: (promise: Promise<unknown>) => pending.push(promise),
     passThroughOnException: () => {}
@@ -75,11 +76,14 @@ const runScheduled = async (
   const controller = {
     cron,
     scheduledTime: Date.parse(at),
-    noRetry: () => {}
+    noRetry: () => {
+      noRetryCalls += 1
+    }
   } as unknown as ScheduledController
 
   await worker.scheduled(controller, env as never, ctx)
   await Promise.all(pending)
+  return noRetryCalls
 }
 
 const count = (db: DatabaseSync, sql: string, ...params: ReadonlyArray<string>): number =>
@@ -89,10 +93,25 @@ describe("nightly maintenance cron", () => {
   it("routes the purge expression to the trash purge", async () => {
     const db = makeDatabase()
     seedOldNote(db, "old-note")
+    // A newer live feed row keeps the max-seq guard from retaining the purged
+    // row's only feed entry.
+    db.prepare(
+      `INSERT INTO change_feed
+        (household_id, entity_type, entity_id, op, version, updated_at, owner_id, visibility)
+       VALUES ('household-a', 'note', 'live-note', 'upsert', 1, ?, 'user-a', 'shared')`
+    ).run("2026-10-23T03:18:00.000Z")
     const fake = new FakeD1(db)
     const r2 = new FakeR2()
 
     await runScheduled(PURGE_CRON, "2026-10-23T03:17:00.000Z", scheduledEnv(fake, r2))
+
+    // A maintenance tick deliberately opts out of Cloudflare's retry.
+    const noRetry = await runScheduled(
+      PURGE_CRON,
+      "2026-10-23T03:17:00.000Z",
+      scheduledEnv(fake, r2)
+    )
+    expect(noRetry).toBe(1)
 
     expect(count(db, "SELECT COUNT(*) AS n FROM notes WHERE id = 'old-note'")).toBe(0)
     expect(count(db, "SELECT COUNT(*) AS n FROM notes_fts WHERE note_id = 'old-note'")).toBe(0)
@@ -115,5 +134,23 @@ describe("nightly maintenance cron", () => {
     expect(r2.objects.has("backups/2026-10-23/manifest.json")).toBe(true)
     // The backup night does not also purge.
     expect(count(db, "SELECT COUNT(*) AS n FROM notes WHERE id = 'old-note'")).toBe(1)
+  })
+
+  it("leaves the reminder expression on the reminder sweep", async () => {
+    const db = makeDatabase()
+    seedOldNote(db, "old-note")
+    const fake = new FakeD1(db)
+    const r2 = new FakeR2()
+
+    const noRetry = await runScheduled(
+      REMINDER_CRON,
+      "2026-10-23T03:47:00.000Z",
+      scheduledEnv(fake, r2)
+    )
+
+    expect(noRetry).toBe(0)
+    // Neither maintenance job ran.
+    expect(count(db, "SELECT COUNT(*) AS n FROM notes WHERE id = 'old-note'")).toBe(1)
+    expect(r2.objects.size).toBe(0)
   })
 })

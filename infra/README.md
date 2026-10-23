@@ -16,9 +16,10 @@ The api Worker declares **three** cron triggers:
 - `17 3 * * *` — the 30-day trash purge (#85);
 - `47 3 * * *` — the nightly D1 backup to `TaliBackups` (#85).
 
-`alchemy dev` does not run cron triggers, so local ticks are driven by hand at
-`/cdn-cgi/local/scheduled?cron=<expression>&time=<epoch-ms>`. The purge and
-backup decisions are in ADR-0009; the restore runbook is
+`alchemy dev` runs its own cron timer at the matching minute; a specific tick can
+also be driven by hand at `POST /cdn-cgi/handler/scheduled?cron=<expression>&time=<epoch-ms>`.
+The dev-only reminder trigger `POST /dev/reminders/sweep?at=<ISO>` is unchanged.
+The purge and backup decisions are in ADR-0009; the restore runbook is
 `docs/backup-restore.md`.
 
 ## Run it

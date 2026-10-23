@@ -326,6 +326,23 @@ describe("trash purge", () => {
     expect(countWhere(h.db, "SELECT COUNT(*) AS n FROM notes_fts")).toBe(0)
   })
 
+  it("does not report a backlog when exactly one tick's capacity is present", async () => {
+    const h = makeHarness()
+    for (let index = 0; index < PURGE_MAX_ROWS_PER_AGGREGATE; index += 1) {
+      seedRow(h.db, "note", `exact-note-${index}`, OLD)
+      insertFeed(h.db, "note", `exact-note-${index}`)
+    }
+
+    const result = await h.purge(NOW)
+    expect(result.purged).toBe(PURGE_MAX_ROWS_PER_AGGREGATE)
+    expect(result.capped).toBe(false)
+    expect(result.entities.find((entity) => entity.entityType === "note")).toEqual({
+      entityType: "note",
+      selected: PURGE_MAX_ROWS_PER_AGGREGATE,
+      purged: PURGE_MAX_ROWS_PER_AGGREGATE
+    })
+  })
+
   it("never deletes a row restored between the selection read and the batch", async () => {
     const h = makeHarness()
     seedRow(h.db, "task", "restored-task", OLD)
@@ -349,5 +366,178 @@ describe("trash purge", () => {
         "SELECT COUNT(*) AS n FROM change_feed WHERE entity_id = 'restored-task'"
       )
     ).toBe(1)
+  })
+
+  it("never deletes a restored parent's children", async () => {
+    const h = makeHarness()
+    seedRow(h.db, "habit", "restored-habit", OLD)
+    h.db.prepare(
+      `INSERT INTO habit_entries
+        (id, habit_id, owner_id, household_id, visibility, local_date, time_zone,
+         status, created_at, updated_at, version, deleted_at)
+       VALUES ('entry-of-restored-habit', 'restored-habit', ?, ?, 'shared', '2025-01-01',
+         'UTC', 'done', '2025-01-01T00:00:00.000Z', '2025-01-01T00:00:00.000Z', 1, NULL)`
+    ).run(USER, HOUSEHOLD)
+    insertFeed(h.db, "habit", "restored-habit")
+    insertFeed(h.db, "habitEntry", "entry-of-restored-habit")
+
+    let restored = false
+    h.fake.beforeBatch = () => {
+      if (restored) return
+      restored = true
+      h.db.exec("UPDATE habits SET deleted_at = NULL WHERE id = 'restored-habit'")
+    }
+
+    await h.purge(NOW)
+
+    expect(countWhere(h.db, "SELECT COUNT(*) AS n FROM habits WHERE id = 'restored-habit'"))
+      .toBe(1)
+    expect(
+      countWhere(
+        h.db,
+        "SELECT COUNT(*) AS n FROM habit_entries WHERE id = 'entry-of-restored-habit'"
+      )
+    ).toBe(1)
+    expect(
+      countWhere(
+        h.db,
+        "SELECT COUNT(*) AS n FROM change_feed WHERE entity_id = 'entry-of-restored-habit'"
+      )
+    ).toBe(1)
+  })
+
+  it("uses the exact 30-day boundary: equal is kept, one millisecond older is purged", async () => {
+    const h = makeHarness()
+    const boundary = new Date(Date.parse(NOW) - TRASH_RETENTION_MS).toISOString()
+    const justOlder = new Date(Date.parse(boundary) - 1).toISOString()
+    seedRow(h.db, "note", "boundary-note", boundary)
+    seedRow(h.db, "note", "older-note", justOlder)
+    insertFeed(h.db, "note", "boundary-note")
+    insertFeed(h.db, "note", "older-note")
+    // Keep the max-seq guard from preserving the only purged feed row.
+    seedRow(h.db, "note", "live-note", null)
+    insertFeed(h.db, "note", "live-note")
+
+    const result = await h.purge(NOW)
+    expect(result.purged).toBe(1)
+    expect(countWhere(h.db, "SELECT COUNT(*) AS n FROM notes WHERE id = 'boundary-note'")).toBe(1)
+    expect(countWhere(h.db, "SELECT COUNT(*) AS n FROM notes WHERE id = 'older-note'")).toBe(0)
+  })
+
+  it("deletes a purged habit's entries and their feed rows", async () => {
+    const h = makeHarness()
+    seedRow(h.db, "habit", "old-habit", OLD)
+    h.db.prepare(
+      `INSERT INTO habit_entries
+        (id, habit_id, owner_id, household_id, visibility, local_date, time_zone,
+         status, created_at, updated_at, version, deleted_at)
+       VALUES ('entry-of-old-habit', 'old-habit', ?, ?, 'shared', '2025-01-01',
+         'UTC', 'done', '2025-01-01T00:00:00.000Z', '2025-01-01T00:00:00.000Z', 1, NULL)`
+    ).run(USER, HOUSEHOLD)
+    insertFeed(h.db, "habit", "old-habit")
+    insertFeed(h.db, "habitEntry", "entry-of-old-habit")
+    // A newer live feed row keeps the max-seq guard from retaining the child row.
+    seedRow(h.db, "note", "live-note", null)
+    insertFeed(h.db, "note", "live-note")
+
+    await h.purge(NOW)
+
+    expect(countWhere(h.db, "SELECT COUNT(*) AS n FROM habits WHERE id = 'old-habit'")).toBe(0)
+    expect(
+      countWhere(h.db, "SELECT COUNT(*) AS n FROM habit_entries WHERE id = 'entry-of-old-habit'")
+    ).toBe(0)
+    expect(
+      countWhere(
+        h.db,
+        "SELECT COUNT(*) AS n FROM change_feed WHERE entity_id = 'entry-of-old-habit'"
+      )
+    ).toBe(0)
+    expect(
+      countWhere(h.db, "SELECT COUNT(*) AS n FROM change_feed WHERE entity_id = 'old-habit'")
+    ).toBe(0)
+  })
+
+  it("repairs live tasks when their project is purged, with a feed row and new version", async () => {
+    const h = makeHarness()
+    seedRow(h.db, "project", "old-project", OLD)
+    h.db.prepare(
+      `INSERT INTO tasks
+        (id, title, owner_id, household_id, visibility, status, priority, time_zone,
+         project_id, tag_ids, created_at, updated_at, version, deleted_at)
+       VALUES ('live-task', 'task', ?, ?, 'shared', 'todo', 'medium', 'UTC',
+         'old-project', '[]', '2025-01-01T00:00:00.000Z', '2025-01-01T00:00:00.000Z', 1, NULL)`
+    ).run(USER, HOUSEHOLD)
+    insertFeed(h.db, "project", "old-project")
+
+    await h.purge(NOW)
+
+    const task = h.db.prepare(
+      "SELECT project_id AS projectId, version, updated_at AS updatedAt FROM tasks WHERE id = 'live-task'"
+    ).get() as { projectId: string | null; version: number; updatedAt: string }
+    expect(task.projectId).toBeNull()
+    expect(task.version).toBe(2)
+    expect(task.updatedAt).toBe(NOW)
+    expect(
+      countWhere(
+        h.db,
+        `SELECT COUNT(*) AS n FROM change_feed
+         WHERE entity_type = 'task' AND entity_id = 'live-task' AND version = 2`
+      )
+    ).toBe(1)
+    expect(
+      countWhere(h.db, "SELECT COUNT(*) AS n FROM change_feed WHERE entity_id = 'old-project'")
+    ).toBe(0)
+  })
+
+  it("removes a purged tag from live items' tag_ids and feeds that change", async () => {
+    const h = makeHarness()
+    seedRow(h.db, "tag", "old-tag", OLD)
+    h.db.prepare(
+      `INSERT INTO tasks
+        (id, title, owner_id, household_id, visibility, status, priority, time_zone,
+         tag_ids, created_at, updated_at, version, deleted_at)
+       VALUES ('live-task', 'task', ?, ?, 'shared', 'todo', 'medium', 'UTC',
+         '["old-tag","live-tag"]', '2025-01-01T00:00:00.000Z',
+         '2025-01-01T00:00:00.000Z', 1, NULL)`
+    ).run(USER, HOUSEHOLD)
+    h.db.prepare(
+      `INSERT INTO notes
+        (id, title, body, plain_text, owner_id, household_id, visibility,
+         is_pinned, is_archived, tag_ids, created_at, updated_at, version, deleted_at)
+       VALUES ('live-note', 'note', NULL, 'note', ?, ?, 'shared', 0, 0,
+         '["old-tag"]', '2025-01-01T00:00:00.000Z', '2025-01-01T00:00:00.000Z', 1, NULL)`
+    ).run(USER, HOUSEHOLD)
+    h.db.exec(`
+      INSERT INTO item_tags (item_id, item_type, tag_id, household_id, created_at) VALUES
+        ('live-task', 'task', 'old-tag', '${HOUSEHOLD}', '${NOW}'),
+        ('live-note', 'note', 'old-tag', '${HOUSEHOLD}', '${NOW}')
+    `)
+    insertFeed(h.db, "tag", "old-tag")
+
+    await h.purge(NOW)
+
+    const task = h.db.prepare(
+      "SELECT tag_ids AS tagIds, version, updated_at AS updatedAt FROM tasks WHERE id = 'live-task'"
+    ).get() as { tagIds: string; version: number; updatedAt: string }
+    expect(JSON.parse(task.tagIds)).toEqual(["live-tag"])
+    expect(task.version).toBe(2)
+    expect(task.updatedAt).toBe(NOW)
+
+    const note = h.db.prepare(
+      "SELECT tag_ids AS tagIds, version FROM notes WHERE id = 'live-note'"
+    ).get() as { tagIds: string; version: number }
+    expect(JSON.parse(note.tagIds)).toEqual([])
+    expect(note.version).toBe(2)
+
+    expect(
+      countWhere(h.db, "SELECT COUNT(*) AS n FROM item_tags WHERE tag_id = 'old-tag'")
+    ).toBe(0)
+    expect(
+      countWhere(
+        h.db,
+        `SELECT COUNT(*) AS n FROM change_feed
+         WHERE entity_type IN ('task', 'note') AND version = 2`
+      )
+    ).toBe(2)
   })
 })

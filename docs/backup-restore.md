@@ -32,8 +32,10 @@ backups/<UTC date>/<database>.sql   the importable dump (schema + rows + FTS)
 backups/<UTC date>/manifest.json    size, SHA-256, table row counts, expiry
 ```
 
-and keeps 14 days by default (`BACKUP_RETENTION_DAYS`). The manifest is written
-last: **a dump with no manifest is an incomplete backup**.
+and keeps 14 calendar days by default (`BACKUP_RETENTION_DAYS`, including
+today). An interrupted upload with no manifest (or no `.sql`) is removed as
+incomplete. The manifest is written last: **a dump with no manifest is not a
+usable backup**.
 
 ## Verify locally (no Cloudflare credentials)
 
@@ -51,33 +53,38 @@ It covers:
 - old tombstones gone from rows + feed + FTS while recent/live rows survive,
   and old tag/item joins removed;
 - idempotent re-runs and the per-tick statement ceiling;
-- a row restored between the selection read and the batch survives;
+- a restored row (and its children, project/tag references) survives between
+  the selection read and the batch;
 - one backup + manifest per night for N nights, manifest verification and the
-  retention window (including “never delete the newest”);
+  retention window (including “never delete the newest complete backup”);
 - a full rebuild: migrations → dump → fresh database → sync bootstrap + push +
   pull + FTS search.
 
-To drive the **real Worker** path locally (not just the functions), boot the
-stack and invoke the scheduled handler with the real cron expression:
+To drive the **real Worker** path locally, boot the stack and invoke the
+scheduled handler with a real cron expression. `alchemy dev` also runs its own
+cron timer at the matching minute, so this manual POST is for reproducing a
+specific nominal time immediately:
 
 ```sh
 pnpm dev          # api on :8787 with local D1 + local R2
 
 # Purge (03:17 UTC)
-curl "http://localhost:8787/cdn-cgi/local/scheduled?cron=17+3+*+*+*&time=1792725420000"
+curl -X POST "http://localhost:8787/cdn-cgi/handler/scheduled?cron=17+3+*+*+*&time=1792725420000"
 
 # Backup (03:47 UTC)
-curl "http://localhost:8787/cdn-cgi/local/scheduled?cron=47+3+*+*+*&time=1792727220000"
+curl -X POST "http://localhost:8787/cdn-cgi/handler/scheduled?cron=47+3+*+*+*&time=1792727220000"
 
 # The per-minute reminder sweep still works
-curl "http://localhost:8787/cdn-cgi/local/scheduled?cron=*+*+*+*+*"
+curl -X POST "http://localhost:8787/cdn-cgi/handler/scheduled?cron=*+*+*+*+*"
+
+# The dev-only reminder trigger is unchanged
+curl -X POST "http://localhost:8787/dev/reminders/sweep?at=2026-10-23T07:00:00.000Z"
 ```
 
 The local R2 objects live under the Alchemy local state and can be inspected
 with the Local Explorer or by looking for the `backups/` prefix in the local R2
-gateway storage. The response is `{"outcome":"ok"}` when the handler was invoked;
-the job's own result is in the dev-server log line (`trash.purge` /
-`d1.backup`).
+gateway storage. Add `&format=json` for `{"outcome":"ok","noRetry":true}`; the
+job's own result is in the dev-server log line (`trash.purge` / `d1.backup`).
 
 ## Restore from a nightly backup
 
@@ -179,7 +186,8 @@ operational:
   product is a two-user household; if a table ever grows beyond Worker memory,
   the dump needs per-table paging (and a larger CPU budget).
 - `wrangler d1 execute --file` is subject to D1's statement-size limit. The dump
-  splits `INSERT`s at 60 KB / 100 rows, well below it; a single note body above
-  that limit still becomes its own statement and is safe.
+  splits `INSERT`s at 60 KB / 100 rows, measured in UTF-8 bytes (so Persian text
+  gets the same margin). A single row larger than the 60 KB budget cannot be
+  split, so the backup fails loudly instead of writing an unimportable file.
 - Retention deletes by UTC date. A backup re-run later on the same date
   overwrites that date's pair instead of creating a second nightly copy.

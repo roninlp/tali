@@ -52,6 +52,8 @@ const asR2Object = (key: string, stored: StoredObject, body: boolean) => ({
 
 export class FakeR2 {
   readonly objects = new Map<string, StoredObject>()
+  /** Test hook: force pagination even for small object counts. */
+  pageSize = 1000
 
   async put(
     key: string,
@@ -86,10 +88,16 @@ export class FakeR2 {
     const keys = [...this.objects.keys()]
       .filter((key) => key.startsWith(prefix))
       .sort()
+    const start = options.cursor === undefined
+      ? 0
+      : Math.max(0, keys.indexOf(options.cursor) + 1)
+    const limit = Math.min(options.limit ?? this.pageSize, this.pageSize)
+    const page = keys.slice(start, start + limit)
+    const truncated = start + page.length < keys.length
     return {
-      objects: keys.map((key) => asR2Object(key, this.objects.get(key)!, false)),
-      truncated: false,
-      cursor: undefined,
+      objects: page.map((key) => asR2Object(key, this.objects.get(key)!, false)),
+      truncated,
+      cursor: truncated ? page[page.length - 1] : undefined,
       delimitedPrefixes: []
     }
   }

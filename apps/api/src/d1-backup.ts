@@ -65,6 +65,9 @@ export const sha256Hex = async (bytes: Uint8Array): Promise<string> => {
     .join("")
 }
 
+/** R2 accepts at most 1000 keys in one `delete` call. */
+export const R2_DELETE_BATCH = 1000
+
 const listAllKeys = async (bucket: R2Bucket, prefix: string): Promise<ReadonlyArray<string>> => {
   const keys: Array<string> = []
   let cursor: string | undefined
@@ -74,6 +77,12 @@ const listAllKeys = async (bucket: R2Bucket, prefix: string): Promise<ReadonlyAr
     cursor = page.truncated ? page.cursor : undefined
   } while (cursor !== undefined)
   return keys
+}
+
+const deleteKeys = async (bucket: R2Bucket, keys: ReadonlyArray<string>): Promise<void> => {
+  for (let index = 0; index < keys.length; index += R2_DELETE_BATCH) {
+    await bucket.delete([...keys.slice(index, index + R2_DELETE_BATCH)])
+  }
 }
 
 /**
@@ -116,7 +125,7 @@ export const runD1Backup = async (env: BackupEnv, now: string): Promise<BackupRe
 
   const keys = await listAllKeys(bucket, BACKUP_PREFIX)
   const expired = planBackupRetention({ keys, now, retentionDays })
-  if (expired.length > 0) await bucket.delete([...expired])
+  if (expired.length > 0) await deleteKeys(bucket, expired)
 
   return {
     at: now,

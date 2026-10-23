@@ -11,7 +11,8 @@ import {
   parseBackupManifest,
   planBackupRetention
 } from "@tali/domain"
-import { runD1Backup } from "../src/d1-backup.js"
+import { runD1Backup, sha256Hex } from "../src/d1-backup.js"
+import { renderSqlDump } from "../src/d1-dump.js"
 import { FakeD1 } from "./fake-d1.js"
 import { FakeR2 } from "./fake-r2.js"
 
@@ -108,7 +109,29 @@ describe("backup retention", () => {
       retentionDays: 3
     })
 
-    expect(expired).toEqual(keysFor(["2026-10-18", "2026-10-19"]))
+    expect(expired).toEqual(keysFor(["2026-10-18", "2026-10-19", "2026-10-20"]))
+  })
+
+  it("keeps exactly the retention count of daily backups", () => {
+    const dates = ["2026-10-17", "2026-10-18", "2026-10-19", "2026-10-20", "2026-10-21"]
+    const expired = planBackupRetention({
+      keys: keysFor(dates),
+      now: "2026-10-23T03:47:00.000Z",
+      retentionDays: 3
+    })
+    // 23, 22 and 21 are the three retained days; 21 is kept even though it is
+    // the oldest one in the window.
+    expect(expired).toEqual(keysFor(["2026-10-17", "2026-10-18", "2026-10-19", "2026-10-20"]))
+  })
+
+  it("removes an interrupted dump that has no manifest", () => {
+    const incomplete = backupObjectKey("2026-10-23", "tali")
+    const expired = planBackupRetention({
+      keys: [incomplete],
+      now: "2026-10-23T03:47:00.000Z",
+      retentionDays: 14
+    })
+    expect(expired).toEqual([incomplete])
   })
 
   it("never removes the newest backup even when the clock jumps past the window", () => {
@@ -141,6 +164,8 @@ describe("nightly backup runner", () => {
     seed(db, "note-1")
     const fakeDb = new FakeD1(db)
     const r2 = new FakeR2()
+    // Force the runner's R2 listing loop to paginate even with a few objects.
+    r2.pageSize = 2
     const env = {
       DB: fakeDb.asD1Database(),
       BACKUP_BUCKET: r2.asR2Bucket(),
@@ -153,14 +178,17 @@ describe("nightly backup runner", () => {
       await runD1Backup(env, night(date))
     }
 
-    // 20th fell out of the window when the 24th landed; the newest is kept.
+    // 20 and 21 fell out of the 3-day window when the 24th landed; the newest
+    // complete backup (24) is kept.
     expect([...r2.objects.keys()].some((key) => key.includes("2026-10-20"))).toBe(false)
-    for (const date of nights.slice(1)) {
+    expect([...r2.objects.keys()].some((key) => key.includes("2026-10-21"))).toBe(false)
+    for (const date of nights.slice(2)) {
       const objectKey = `backups/${date}/tali.sql`
       const manifestKey = `backups/${date}/manifest.json`
       expect(r2.objects.has(objectKey)).toBe(true)
       expect(r2.objects.has(manifestKey)).toBe(true)
 
+      const bytes = r2.objects.get(objectKey)!.bytes
       const manifest = parseBackupManifest(
         new TextDecoder().decode(r2.objects.get(manifestKey)!.bytes)
       )
@@ -168,8 +196,8 @@ describe("nightly backup runner", () => {
       expect(manifest?.id).toBe(date)
       expect(manifest?.objectKey).toBe(objectKey)
       expect(manifest?.tables.find((table) => table.name === "notes")?.rows).toBe(1)
-      expect(manifest?.sha256).toMatch(/^[0-9a-f]{64}$/)
-      expect(manifest?.bytes).toBe(r2.objects.get(objectKey)!.bytes.byteLength)
+      expect(manifest?.sha256).toBe(await sha256Hex(bytes))
+      expect(manifest?.bytes).toBe(bytes.byteLength)
     }
 
     const dump = new TextDecoder().decode(
@@ -185,5 +213,14 @@ describe("nightly backup runner", () => {
     await expect(
       runD1Backup({ DB: new FakeD1(db).asD1Database() }, night("2026-10-23"))
     ).rejects.toThrow(/BACKUP_BUCKET/)
+  })
+
+  it("refuses a single row larger than D1's INSERT limit", () => {
+    expect(() =>
+      renderSqlDump({
+        schema: [],
+        tables: [{ name: "notes", rows: [{ body: "x".repeat(70_000) }] }]
+      })
+    ).toThrow(/exceeds/)
   })
 })

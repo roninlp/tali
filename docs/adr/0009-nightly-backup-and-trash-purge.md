@@ -33,19 +33,26 @@ The backup target had two plausible shapes:
 ### Trash purge
 
 - **One nightly cron trigger on the existing Worker** (`17 3 * * *`), handled by
-  the module's `scheduled()` next to the per-minute reminder sweep. Cron
-  expressions are declared in `infra/alchemy.run.ts`.
+  the module's `scheduled()` next to the per-minute reminder sweep. The cron
+  expressions live in `@tali/config` and are imported by both
+  `infra/alchemy.run.ts` and the Worker, so a schedule change cannot silently
+  dispatch to the wrong job.
 - **30 days, one constant.** `TRASH_RETENTION_DAYS`/`TRASH_RETENTION_MS` live in
   `packages/domain/src/common.ts`; the note service's restore refusal uses the
   same value.
 - **Every sync-registered aggregate.** The sweep iterates the #34 registry, so
-  adding an aggregate to sync automatically adds it to the purge. It never
-  hard-codes table names.
-- **One batch per id chunk, three effects together:** delete the row, delete
-  every `change_feed` entry for it, and delete derived state (`notes_fts`,
-  `item_tags`) — all in the same `D1Client.batch()`. A crash cannot leave the
-  feed or search index describing a row that no longer exists.
-- **Bounded.** At most 40 rows per aggregate and at most 45 statements per
+  adding an aggregate to sync automatically adds it to the purge. Aggregate
+  specific cleanup (FTS rows, tag joins, reference repairs) lives in a
+  registry-level `purge` hook next to the aggregate; parent/child ordering and
+  child-feed cleanup come from the registry's existing `parent` metadata.
+- **One batch per id chunk, together:** delete child rows and their feed
+  entries, run the aggregate's `purge` hook, delete the row, and delete every
+  `change_feed` entry for it — all in the same `D1Client.batch()`. A crash
+  cannot leave the feed or search index describing a row that no longer exists.
+  The feed delete keeps the newest row (mirroring the 90-day prune guard) so
+  `minSeq` never becomes empty; the pull path additionally treats a non-zero
+  cursor against an empty feed as stale.
+- **Bounded.** At most 40 rows per aggregate and at most 48 statements per
   tick (D1 Free allows 50 queries per invocation); a backlog drains over
   successive nights. Chunks are 40 ids, far under D1's 100-parameter limit.
 - **Idempotent and restore-safe.** The delete repeats `deleted_at < cutoff`,
@@ -69,10 +76,13 @@ The backup target had two plausible shapes:
 - **The manifest is the commit marker.** It records the size, SHA-256, per-table
   row counts and expiry; an upload interrupted between the two objects leaves a
   dump with no manifest.
-- **Retention is 14 days by default** (`BACKUP_RETENTION_DAYS`), enforced by
-  `planBackupRetention` over whole dated prefixes. The newest backup is never
-  removed even if the clock jumps. The bucket also declares a 30-day lifecycle
-  delete rule as a deliberately longer safety net if the Worker misses nights.
+- **Retention is 14 calendar days by default** (`BACKUP_RETENTION_DAYS`,
+  including today), enforced by `planBackupRetention` over whole dated
+  prefixes. The newest complete backup is never removed even if the clock
+  jumps; a dated prefix missing its `.sql` or manifest is an interrupted upload
+  and is removed. The bucket also declares a 30-day lifecycle delete rule as a
+  deliberately longer safety net if the Worker misses nights. Deletion is
+  chunked to R2's 1000-key limit.
 - **No new secret.** The bucket is private and reachable only through the
   Worker's R2 binding. `BACKUP_BUCKET`, `BACKUP_DATABASE_NAME` and
   `BACKUP_RETENTION_DAYS` are declared in Alchemy alongside D1.
@@ -84,19 +94,30 @@ The backup target had two plausible shapes:
 
 ## Consequences
 
-- A trashed row disappears from rows, feed and search at the same instant. A
-  client whose cursor predates the purge either sees nothing (the row is gone
-  from bootstrap) or gets a `resetRequired` from the existing 90-day feed rule;
-  it can never hydrate a half-purged entity.
-- Purging a reminder or habit also removes dependent rows through the schema's
-  `ON DELETE CASCADE` (dispatch ledger / habit entries). Those child rows are
-  not separately synced history; the parent is the source of truth.
+- A trashed row disappears from rows, feed and search at the same instant. The
+  feed guard keeps the newest feed row, and a stale cursor against an otherwise
+  empty feed is treated as `resetRequired`, so a client can never keep a
+  purged mirror forever. This can force the reset at roughly 30 days, earlier
+  than the 90-day feed-retention window.
+- Purging a habit explicitly removes its `habit_entries` and their feed rows
+  before the parent row; `habitEntry` is one of the 11 synced, client-writable
+  aggregates, so leaving its feed behind was a real dangling reference. A
+  purged reminder still relies on the dispatch ledger's `ON DELETE CASCADE`
+  (the ledger is server-written, not a sync aggregate).
+- Deleting a project repairs every live task that referenced it as a real
+  mutation: `project_id = NULL`, version + 1, `updated_at` = the tick, and a
+  feed row. A purge can therefore never silently null a task in the database
+  while leaving every mirror on the old value.
+- Deleting a tag removes it from live items' denormalized `tag_ids` with the
+  same version/feed contract as any other mutation, so the UI does not keep a
+  dead chip.
 - The FTS index travels in the dump, so a restored database is immediately
   searchable with the exact folded text it had. Rebuilding it from `notes`
   would have lost the folded spelling.
 - A backup is one object per night. Re-running the job on the same UTC date
   overwrites the same keys, which makes the cron idempotent and makes a manual
-  drill safe.
+  drill safe. A single row larger than the dump's 60 KB INSERT budget fails the
+  backup loudly rather than producing an unimportable file.
 - The provider's D1 export endpoint is intentionally unused; if a future
   migration drops `notes_fts`, the endpoint could be reconsidered, but it would
   still require an account API token that the current design does not need.

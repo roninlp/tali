@@ -215,12 +215,14 @@ for an Effect worker, which this is not.) `alchemy plan`/`drift` show the
 trigger, and a deploy is the only way to change it (cron changes propagate in up
 to 15 minutes). The VAPID private key is a secret binding
 (`Config.Redacted("VAPID_PRIVATE_KEY")` per #3); the public key and `sub` are
-plaintext config. `alchemy dev` boots the stack but **does not run cron
-triggers**, so the sweep is `reminders.sweep(scheduledTime)` behind an injectable
-clock, exercised three ways: tests call it with a fake clock and a fake push
-gateway; a local-only `POST /dev/reminders/sweep?at=<ISO>` drives it by hand
-against the running stack (never registered in a deployed Worker); and workerd's
-`/cdn-cgi/local/scheduled?time=…` exercises the real `scheduled()` path.
+plaintext config. `alchemy dev` runs its own cron timer at the matching minute,
+so the sweep also fires locally; a specific tick can still be driven by hand
+(the sweep is `reminders.sweep(scheduledTime)` behind an injectable clock,
+exercised three ways): tests call it with a fake clock and a fake push gateway;
+a local-only `POST /dev/reminders/sweep?at=<ISO>` drives it by hand against the
+running stack (never registered in a deployed Worker); and the Alchemy dev
+runtime's `/cdn-cgi/handler/scheduled?cron=…&time=…` route exercises the real
+`scheduled()` path (the legacy `/cdn-cgi/mf/scheduled` path is also accepted).
 
 ## Consequences
 

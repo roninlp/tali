@@ -43,35 +43,31 @@ export interface DatabaseDump {
   readonly bytes: number
 }
 
-/** Create tables in FK-safe order; unknown tables are appended alphabetically. */
-const DATA_ORDER: ReadonlyArray<string> = [
-  "users",
-  "households",
-  "memberships",
-  "sessions",
-  "login_attempts",
-  "user_preferences",
-  "push_subscriptions",
-  "projects",
-  "tags",
-  "lists",
-  "list_items",
-  "tasks",
-  "notes",
-  "item_tags",
-  "events",
-  "habits",
-  "habit_entries",
-  "reminders",
-  "occasions",
-  "reminder_dispatches",
-  "change_feed",
-  "applied_mutations",
-  "notes_fts"
-]
+/** Create tables in the order the migrations created them (parents first). */
+const orderedTables = (
+  tables: ReadonlyArray<DumpTable>,
+  schema: ReadonlyArray<SchemaStatement>
+): ReadonlyArray<DumpTable> => {
+  const rank = new Map(
+    schema
+      .filter((statement) => statement.type === "table")
+      .map((statement, index) => [statement.name, index])
+  )
+  return [...tables].sort((a, b) => {
+    const left = rank.get(a.name) ?? Number.MAX_SAFE_INTEGER
+    const right = rank.get(b.name) ?? Number.MAX_SAFE_INTEGER
+    if (left !== right) return left - right
+    return a.name.localeCompare(b.name)
+  })
+}
 
 const MAX_INSERT_BYTES = 60_000
 const MAX_INSERT_ROWS = 100
+
+const encoder = new TextEncoder()
+
+/** D1 caps a statement's UTF-8 size, so string `.length` is not the unit. */
+const utf8Bytes = (text: string): number => encoder.encode(text).byteLength
 
 const quoteIdent = (name: string): string => `"${name.replace(/"/g, '""')}"`
 
@@ -107,16 +103,6 @@ const terminate = (statement: string): string => {
   return trimmed.endsWith(";") ? trimmed : `${trimmed};`
 }
 
-const orderedTables = (tables: ReadonlyArray<DumpTable>): ReadonlyArray<DumpTable> => {
-  const rank = new Map(DATA_ORDER.map((name, index) => [name, index]))
-  return [...tables].sort((a, b) => {
-    const left = rank.get(a.name) ?? DATA_ORDER.length
-    const right = rank.get(b.name) ?? DATA_ORDER.length
-    if (left !== right) return left - right
-    return a.name.localeCompare(b.name)
-  })
-}
-
 const insertStatements = (table: DumpTable): ReadonlyArray<string> => {
   if (table.rows.length === 0) return []
   const columns = [...new Set(table.rows.flatMap((row) => Object.keys(row)))]
@@ -127,9 +113,16 @@ const insertStatements = (table: DumpTable): ReadonlyArray<string> => {
 
   const flush = () => {
     if (rows.length === 0) return
-    statements.push(
+    const statement =
       `INSERT INTO ${quoteIdent(table.name)} (${columnList}) VALUES\n  ${rows.join(",\n  ")};`
-    )
+    // A single row larger than D1's statement limit cannot be split; fail the
+    // backup loudly instead of writing a file that cannot be imported.
+    if (utf8Bytes(statement) > MAX_INSERT_BYTES) {
+      throw new Error(
+        `backup: one ${table.name} row exceeds the ${MAX_INSERT_BYTES}-byte INSERT limit`
+      )
+    }
+    statements.push(statement)
     rows = []
     bytes = 0
   }
@@ -137,12 +130,12 @@ const insertStatements = (table: DumpTable): ReadonlyArray<string> => {
   for (const row of table.rows) {
     const values = columns.map((column) => sqlValue(row[column]))
     const rendered = `(${values.join(", ")})`
-    const nextBytes = bytes + rendered.length + 3
-    if (rows.length > 0 && (nextBytes > MAX_INSERT_BYTES || rows.length >= MAX_INSERT_ROWS)) {
+    const rowBytes = utf8Bytes(rendered) + 3
+    if (rows.length > 0 && (bytes + rowBytes > MAX_INSERT_BYTES || rows.length >= MAX_INSERT_ROWS)) {
       flush()
     }
     rows.push(rendered)
-    bytes += rendered.length + 3
+    bytes += rowBytes
   }
   flush()
   return statements
@@ -164,7 +157,7 @@ export const renderSqlDump = (input: RenderDumpInput): string => {
   for (const statement of input.schema) {
     lines.push(terminate(statement.sql))
   }
-  for (const table of orderedTables(input.tables)) {
+  for (const table of orderedTables(input.tables, input.schema)) {
     lines.push(...insertStatements(table))
   }
   return `${lines.join("\n")}\n`
