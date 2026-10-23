@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { Visibility } from "../common.js"
+import { TRASH_RETENTION_MS, Visibility } from "../common.js"
 import { NoteId, TagIds } from "./common.js"
 
 /**
@@ -85,7 +85,7 @@ export type NoteServiceError = Schema.Schema.Type<typeof NoteServiceError>
 
 // ── FR-NOTE-03: 30-day trash retention (purge job lands with Slice 5) ────
 
-export const NOTE_TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
+export const NOTE_TRASH_RETENTION_MS = TRASH_RETENTION_MS
 
 // ── Mutation inputs ──────────────────────────────────────────────────────
 

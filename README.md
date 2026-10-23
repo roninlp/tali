@@ -70,18 +70,24 @@ pnpm test:push
 
 ## How the stack is wired
 
-`infra/alchemy.run.ts` declares three resources:
+`infra/alchemy.run.ts` declares four resources:
 
 | Resource | Local (`alchemy dev`) | Deploy (`alchemy deploy`) |
 | --- | --- | --- |
 | `TaliDatabase` (D1) | local simulator + migrations | real D1 + migrations |
-| `TaliApi` (Worker) | workerd on :8787 | uploaded Worker, `DB` binding |
+| `TaliBackups` (R2) | local R2 simulator | private bucket for nightly dumps |
+| `TaliApi` (Worker) | workerd on :8787 | uploaded Worker, `DB` + `BACKUP_BUCKET` bindings |
 | `TaliWeb` (StaticSite) | `vite` dev server on :3000 | `vite build` → `dist/client` assets |
 
 The api entry stays a plain `async fetch(request, env)` module: Alchemy binds
 `env.DB` as a native `D1Database`, which is what `@effect/sql-d1` already
 consumes. State is `localState()` under `.alchemy/state` during dev and
 `Cloudflare.state()` when deploying.
+
+The Worker also runs three cron triggers: the per-minute reminder sweep
+(ADR-0005), the nightly 30-day trash purge, and the nightly D1 backup to R2.
+The last two are decided in ADR-0009; restoring a dump is documented in
+`docs/backup-restore.md`.
 
 ## The scaffold round-trip (dummy aggregate: `ListItem`)
 

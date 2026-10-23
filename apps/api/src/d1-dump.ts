@@ -1,0 +1,225 @@
+import { Effect } from "effect"
+import { SqlClient } from "effect/sql"
+
+/**
+ * A self-contained SQLite dump of the Tali D1 database (ticket #85).
+ *
+ * Cloudflare's D1 export endpoint cannot export a database that contains
+ * virtual tables, and `notes_fts` is an FTS5 virtual table (#41), so the
+ * nightly job builds the dump itself from the D1 binding:
+ *
+ * - `sqlite_schema` supplies every `CREATE TABLE` / `CREATE INDEX` /
+ *   `CREATE VIRTUAL TABLE` statement (FTS5 shadow tables are skipped — creating
+ *   the virtual table recreates them);
+ * - one `SELECT *` per table reads the rows;
+ * - the result is a plain `.sql` script that `wrangler d1 execute --file` (or
+ *   the local restore drill) can replay into an empty database.
+ *
+ * The dump is intentionally **not** a streaming format: the product is a
+ * two-user household, so the whole script fits comfortably in a Worker's
+ * memory. The row/statement batching below keeps each `INSERT` small enough
+ * for D1's statement-size limit, which is what makes a large note body safe.
+ */
+
+export interface SchemaStatement {
+  readonly type: string
+  readonly name: string
+  readonly sql: string
+}
+
+export interface DumpTable {
+  readonly name: string
+  readonly rows: ReadonlyArray<Record<string, unknown>>
+}
+
+export interface TableStat {
+  readonly name: string
+  readonly rows: number
+}
+
+export interface DatabaseDump {
+  readonly sql: string
+  readonly tables: ReadonlyArray<TableStat>
+  readonly bytes: number
+}
+
+/** Create tables in the order the migrations created them (parents first). */
+const orderedTables = (
+  tables: ReadonlyArray<DumpTable>,
+  schema: ReadonlyArray<SchemaStatement>
+): ReadonlyArray<DumpTable> => {
+  const rank = new Map(
+    schema
+      .filter((statement) => statement.type === "table")
+      .map((statement, index) => [statement.name, index])
+  )
+  return [...tables].sort((a, b) => {
+    const left = rank.get(a.name) ?? Number.MAX_SAFE_INTEGER
+    const right = rank.get(b.name) ?? Number.MAX_SAFE_INTEGER
+    if (left !== right) return left - right
+    return a.name.localeCompare(b.name)
+  })
+}
+
+const MAX_INSERT_BYTES = 60_000
+const MAX_INSERT_ROWS = 100
+
+const encoder = new TextEncoder()
+
+/** D1 caps a statement's UTF-8 size, so string `.length` is not the unit. */
+const utf8Bytes = (text: string): number => encoder.encode(text).byteLength
+
+const quoteIdent = (name: string): string => `"${name.replace(/"/g, '""')}"`
+
+const quoteText = (value: string): string => `'${value.replace(/'/g, "''")}'`
+
+const bytesOf = (value: unknown): Uint8Array | undefined => {
+  if (value instanceof Uint8Array) return value
+  if (value instanceof ArrayBuffer) return new Uint8Array(value)
+  if (ArrayBuffer.isView(value)) {
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+  }
+  return undefined
+}
+
+const sqlValue = (value: unknown): string => {
+  if (value === null || value === undefined) return "NULL"
+  if (typeof value === "bigint") return value.toString()
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? String(value) : "NULL"
+  }
+  if (typeof value === "boolean") return value ? "1" : "0"
+  if (typeof value === "string") return quoteText(value)
+  const bytes = bytesOf(value)
+  if (bytes !== undefined) {
+    const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("")
+    return `X'${hex}'`
+  }
+  return quoteText(JSON.stringify(value))
+}
+
+const terminate = (statement: string): string => {
+  const trimmed = statement.trim()
+  return trimmed.endsWith(";") ? trimmed : `${trimmed};`
+}
+
+const insertStatements = (table: DumpTable): ReadonlyArray<string> => {
+  if (table.rows.length === 0) return []
+  const columns = [...new Set(table.rows.flatMap((row) => Object.keys(row)))]
+  const columnList = columns.map(quoteIdent).join(", ")
+  const statements: Array<string> = []
+  let rows: Array<string> = []
+  let bytes = 0
+
+  const flush = () => {
+    if (rows.length === 0) return
+    const statement =
+      `INSERT INTO ${quoteIdent(table.name)} (${columnList}) VALUES\n  ${rows.join(",\n  ")};`
+    // A single row larger than D1's statement limit cannot be split; fail the
+    // backup loudly instead of writing a file that cannot be imported.
+    if (utf8Bytes(statement) > MAX_INSERT_BYTES) {
+      throw new Error(
+        `backup: one ${table.name} row exceeds the ${MAX_INSERT_BYTES}-byte INSERT limit`
+      )
+    }
+    statements.push(statement)
+    rows = []
+    bytes = 0
+  }
+
+  for (const row of table.rows) {
+    const values = columns.map((column) => sqlValue(row[column]))
+    const rendered = `(${values.join(", ")})`
+    const rowBytes = utf8Bytes(rendered) + 3
+    if (rows.length > 0 && (bytes + rowBytes > MAX_INSERT_BYTES || rows.length >= MAX_INSERT_ROWS)) {
+      flush()
+    }
+    rows.push(rendered)
+    bytes += rowBytes
+  }
+  flush()
+  return statements
+}
+
+export interface RenderDumpInput {
+  readonly schema: ReadonlyArray<SchemaStatement>
+  readonly tables: ReadonlyArray<DumpTable>
+}
+
+/** Render schema + rows as the importable SQL script. Pure, so it is easy to test. */
+export const renderSqlDump = (input: RenderDumpInput): string => {
+  const lines: Array<string> = [
+    "-- Tali D1 backup (generated by the nightly Worker job)",
+    "-- Restore into an empty database; the script includes schema and data.",
+    "PRAGMA defer_foreign_keys = true;"
+  ]
+
+  for (const statement of input.schema) {
+    lines.push(terminate(statement.sql))
+  }
+  for (const table of orderedTables(input.tables, input.schema)) {
+    lines.push(...insertStatements(table))
+  }
+  return `${lines.join("\n")}\n`
+}
+
+const isInternalTable = (name: string): boolean =>
+  name.startsWith("sqlite_") || name.startsWith("_cf_")
+
+/**
+ * FTS5 keeps its content in shadow tables (`<name>_data`, `_idx`, …). They are
+ * recreated by `CREATE VIRTUAL TABLE`, so dumping them would make the restore
+ * fail with "table already exists".
+ */
+const shadowTablesOf = (schema: ReadonlyArray<SchemaStatement>): ReadonlySet<string> => {
+  const virtual = schema.filter(
+    (statement) =>
+      statement.type === "table" &&
+      /^\s*CREATE\s+VIRTUAL\s+TABLE/i.test(statement.sql)
+  )
+  const shadow = new Set<string>()
+  for (const table of virtual) {
+    for (const statement of schema) {
+      if (statement.name.startsWith(`${table.name}_`)) shadow.add(statement.name)
+    }
+  }
+  return shadow
+}
+
+const DUMPABLE_TYPES: ReadonlySet<string> = new Set(["table", "index", "trigger", "view"])
+
+/** Read the whole database as a dump script. */
+export const dumpDatabase: Effect.Effect<DatabaseDump, unknown, SqlClient.SqlClient> =
+  Effect.gen(function*() {
+    const sql = yield* SqlClient.SqlClient
+
+    const schema = yield* sql<SchemaStatement>`
+      SELECT type, name, sql FROM sqlite_schema
+      WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'
+      ORDER BY rowid ASC
+    `
+
+    const shadow = shadowTablesOf(schema)
+    const kept = schema.filter(
+      (statement) =>
+        DUMPABLE_TYPES.has(statement.type) &&
+        !isInternalTable(statement.name) &&
+        !shadow.has(statement.name)
+    )
+
+    const tables: Array<DumpTable> = []
+    for (const statement of kept) {
+      if (statement.type !== "table") continue
+      const rows = yield* sql<Record<string, unknown>>`
+        SELECT * FROM ${sql.literal(statement.name)}
+      `
+      tables.push({ name: statement.name, rows })
+    }
+
+    const dump = renderSqlDump({ schema: kept, tables })
+    return {
+      sql: dump,
+      tables: tables.map((table) => ({ name: table.name, rows: table.rows.length })),
+      bytes: new TextEncoder().encode(dump).byteLength
+    }
+  })

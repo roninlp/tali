@@ -1,9 +1,12 @@
 import { Layer, String as Str } from "effect"
 import { HttpRouter } from "effect/http"
 import { D1Client } from "@effect/sql-d1"
+import { CRON } from "@tali/config"
 import { makeAppLayer } from "./http-layer.js"
+import { runD1Backup } from "./d1-backup.js"
 import { vapidConfigOf } from "./push-gateway.js"
 import { runReminderSweep } from "./reminder-sweep-runner.js"
+import { runTrashPurge } from "./trash-purge-runner.js"
 
 /**
  * Cloudflare Worker entrypoint.
@@ -30,7 +33,26 @@ interface Env {
   VAPID_SUBJECT?: string
   /** `1` only when the stack was started by `alchemy dev` (#61's sweep trigger). */
   DEV_ROUTES?: string
+  /** Durable backup target (R2); declared in `infra/alchemy.run.ts` (#85). */
+  BACKUP_BUCKET?: R2Bucket
+  /** Logical database name recorded in each backup manifest. */
+  BACKUP_DATABASE_NAME?: string
+  /** Nightly backup retention window in days, as an Alchemy var binding. */
+  BACKUP_RETENTION_DAYS?: string
 }
+
+/**
+ * Cron expressions declared on this Worker in `infra/alchemy.run.ts`.
+ *
+ * Both sides import them from `@tali/config`, because `scheduled()` receives
+ * only the fired expression string: the reminder sweep is every minute
+ * (ADR-0005), while the two maintenance jobs run once a night in separate
+ * invocations so each gets its own D1 per-invocation query budget. Purge runs
+ * first so the backup captures the post-purge database.
+ */
+export const REMINDER_CRON = CRON.reminder
+export const PURGE_CRON = CRON.purge
+export const BACKUP_CRON = CRON.backup
 
 /** The Vite dev server's origin. `127.0.0.1` is deliberately absent: it is a
  * different site from `localhost` for cookies (`SameSite=Lax`), so a page
@@ -120,16 +142,26 @@ export default {
   },
 
   /**
-   * The per-minute reminder sweep (ticket #61; ADR-0005).
+   * Scheduled entry point.
    *
-   * Cron put us here, so the clock is `controller.scheduledTime` — the nominal
-   * minute boundary — never `Date.now()`: two invocations for the same minute
-   * compute the same window and converge on the same claim. The sweep is a
-   * catch-up query, so a late, skipped or repeated tick loses nothing.
+   * Three cron expressions share this Worker:
    *
-   * Errors are caught and logged rather than rethrown: a failed tick is not
-   * recoverable by Cloudflare's retry (the next minute's query sees the same
-   * rows), and a throw would only mark the invocation failed.
+   * - `* * * * *` — the reminder sweep (ticket #61; ADR-0005). The clock is
+   *   `controller.scheduledTime`, the nominal minute boundary, never
+   *   `Date.now()`: two invocations for the same minute compute the same
+   *   window and converge on the same claim. The sweep is a catch-up query, so
+   *   a late, skipped or repeated tick loses nothing.
+   * - `17 3 * * *` — the trash purge (ticket #85): hard-delete tombstones older
+   *   than the 30-day retention window together with their feed/search rows.
+   * - `47 3 * * *` — the nightly D1 backup (ticket #85): dump to R2 and apply
+   *   the retention window. It is a separate invocation from the purge so each
+   *   job stays inside D1's per-invocation query ceiling.
+   *
+   * The maintenance jobs deliberately opt out of Cloudflare's retry with
+   * `controller.noRetry()` and catch their own errors: both are idempotent, a
+   * failed nightly tick is repaired by the next night, and an immediate retry
+   * would only repeat a large dump or a partially applied sweep. The
+   * per-minute reminder sweep keeps its catch-up semantics.
    */
   async scheduled(
     controller: ScheduledController,
@@ -137,6 +169,49 @@ export default {
     ctx: ExecutionContext
   ): Promise<void> {
     const now = new Date(controller.scheduledTime).toISOString()
+
+    if (controller.cron === PURGE_CRON) {
+      controller.noRetry()
+      ctx.waitUntil(
+        runTrashPurge(env, now)
+          .then((result) => {
+            console.log(JSON.stringify({ event: "trash.purge", ...result }))
+          })
+          .catch((error: unknown) => {
+            console.error(
+              JSON.stringify({
+                event: "trash.purge.failed",
+                at: now,
+                message: error instanceof Error ? error.message : String(error)
+              })
+            )
+          })
+      )
+      return
+    }
+
+    if (controller.cron === BACKUP_CRON) {
+      controller.noRetry()
+      ctx.waitUntil(
+        runD1Backup(env, now)
+          .then((result) => {
+            console.log(JSON.stringify({ event: "d1.backup", ...result }))
+          })
+          .catch((error: unknown) => {
+            console.error(
+              JSON.stringify({
+                event: "d1.backup.failed",
+                at: now,
+                message: error instanceof Error ? error.message : String(error)
+              })
+            )
+          })
+      )
+      return
+    }
+
+    // Every other trigger (including an `undefined` cron from a local
+    // invocation) keeps the pre-#85 reminder behaviour.
     ctx.waitUntil(
       runReminderSweep(env, now)
         .then((result) => {

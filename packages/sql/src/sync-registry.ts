@@ -180,6 +180,16 @@ export interface SyncEntityDefinition {
    */
   readonly index?: (state: SyncEntityState) => ReadonlyArray<Statement.Statement<unknown>>
   /**
+   * Optional statements for a hard delete (the 30-day trash purge, #85).
+   *
+   * They run **before** the row delete, in the same batch, so a purge owns its
+   * derived state (`notes_fts`, `item_tags`) and any references that would
+   * otherwise be silently repaired by a foreign key. Gating follows the same
+   * rule as `index`: a concurrent restore must survive, so a cleanup of the
+   * row's own derived state checks that the row is not live.
+   */
+  readonly purge?: (input: SyncPurgeInput) => ReadonlyArray<Statement.Statement<unknown>>
+  /**
    * Optional parent row this entity belongs to (a habit entry logs a habit).
    *
    * The engine resolves it before planning a write so a child can never carry a
@@ -204,8 +214,20 @@ export interface SyncParentRule {
   readonly entityType: SyncEntityType
   /** Data/patch field naming the parent id. */
   readonly field: string
+  /** Physical column holding the parent id (the purge uses SQL, not patches). */
+  readonly column: string
   /** Copy the parent's visibility onto the child on every write. */
   readonly inheritVisibility: boolean
+}
+
+/** Input to an aggregate's `purge` hook (ticket #85). */
+export interface SyncPurgeInput {
+  /** The tombstoned row ids this chunk is deleting. */
+  readonly ids: ReadonlyArray<string>
+  /** The cron tick's nominal instant, for reference repairs. */
+  readonly now: string
+  /** The retention cutoff; also the "still live?" boundary for derived state. */
+  readonly cutoff: string
 }
 
 export interface SyncSpawnInput {
@@ -368,6 +390,129 @@ const withSchema = <A>(
   }
 }
 
+// ── Purge hooks (ticket #85) ─────────────────────────────────────────────
+
+/**
+ * Drop an item's `item_tags` joins when the item is hard-deleted. The gate is
+ * "not live": the hook runs before the row delete, so a row restored between
+ * the purge selection and the batch keeps its joins.
+ */
+const purgeItemTagJoins = (
+  sql: SqlClient.SqlClient,
+  entityType: SyncEntityType,
+  table: string
+): NonNullable<SyncEntityDefinition["purge"]> =>
+  (input) => [
+    sql`
+      DELETE FROM item_tags
+      WHERE item_type = ${entityType}
+        AND ${sql.in("item_id", input.ids)}
+        AND NOT EXISTS (
+          SELECT 1 FROM ${sql.literal(table)} AS live
+          WHERE live.id = item_tags.item_id AND live.deleted_at IS NULL
+        )
+    `
+  ]
+
+/** Drop a note's FTS5 row when the note is hard-deleted (same "not live" gate). */
+const purgeNoteSearch = (
+  sql: SqlClient.SqlClient
+): NonNullable<SyncEntityDefinition["purge"]> =>
+  (input) => [
+    sql`
+      DELETE FROM notes_fts
+      WHERE ${sql.in("note_id", input.ids)}
+        AND NOT EXISTS (
+          SELECT 1 FROM notes AS live
+          WHERE live.id = notes_fts.note_id AND live.deleted_at IS NULL
+        )
+    `
+  ]
+
+/**
+ * Remove a purged tag id from the denormalized `tag_ids` JSON on live items,
+ * bump their version and append a feed row — the same contract as any other
+ * mutation, so mirrors converge instead of showing a dead tag chip.
+ *
+ * The feed insert runs before the update in the same batch, using the version
+ * the update is about to write. `json_group_array` returns NULL for an empty
+ * set, hence the `COALESCE(..., '[]')`.
+ */
+const purgeTagReferences = (
+  sql: SqlClient.SqlClient
+): NonNullable<SyncEntityDefinition["purge"]> =>
+  (input) => {
+    const tables: ReadonlyArray<{ readonly table: string; readonly entityType: SyncEntityType }> = [
+      { table: "tasks", entityType: "task" },
+      { table: "notes", entityType: "note" },
+      { table: "list_items", entityType: "listItem" }
+    ]
+    return tables.flatMap(({ table, entityType }) => {
+      const tableRef = sql.literal(table)
+      const hasTag = sql`EXISTS (
+        SELECT 1 FROM json_each(${tableRef}.tag_ids)
+        WHERE ${sql.in("value", input.ids)}
+      )`
+      const tagNotLive = sql`NOT EXISTS (
+        SELECT 1 FROM tags
+        WHERE ${sql.in("id", input.ids)} AND deleted_at IS NULL
+      )`
+      return [
+        sql`
+          INSERT INTO change_feed
+            (household_id, entity_type, entity_id, op, version, updated_at, owner_id, visibility)
+          SELECT household_id, ${entityType}, id, 'upsert', version + 1, ${input.now},
+                 owner_id, visibility
+          FROM ${tableRef}
+          WHERE deleted_at IS NULL AND ${hasTag} AND ${tagNotLive}
+        `,
+        sql`
+          UPDATE ${tableRef}
+          SET tag_ids = COALESCE((
+                SELECT json_group_array(value)
+                FROM json_each(${tableRef}.tag_ids)
+                WHERE NOT (${sql.in("value", input.ids)})
+              ), '[]'),
+              version = version + 1,
+              updated_at = ${input.now}
+          WHERE deleted_at IS NULL AND ${hasTag} AND ${tagNotLive}
+        `
+      ]
+    })
+  }
+
+/**
+ * A project's `ON DELETE SET NULL` would silently null live tasks'
+ * `project_id` without a version bump or feed row, leaving every mirror
+ * permanently behind. Repair the references first, as real mutations: append
+ * the feed rows from the current row state, then update the rows in the same
+ * batch, before the project delete.
+ */
+const purgeProjectReferences = (
+  sql: SqlClient.SqlClient
+): NonNullable<SyncEntityDefinition["purge"]> =>
+  (input) => {
+    const projectNotLive = sql`NOT EXISTS (
+      SELECT 1 FROM projects
+      WHERE ${sql.in("id", input.ids)} AND deleted_at IS NULL
+    )`
+    return [
+      sql`
+        INSERT INTO change_feed
+          (household_id, entity_type, entity_id, op, version, updated_at, owner_id, visibility)
+        SELECT household_id, 'task', id, 'upsert', version + 1, ${input.now},
+               owner_id, visibility
+        FROM tasks
+        WHERE deleted_at IS NULL AND ${sql.in("project_id", input.ids)} AND ${projectNotLive}
+      `,
+      sql`
+        UPDATE tasks
+        SET project_id = NULL, version = version + 1, updated_at = ${input.now}
+        WHERE deleted_at IS NULL AND ${sql.in("project_id", input.ids)} AND ${projectNotLive}
+      `
+    ]
+  }
+
 // ── Shared column projection ──────────────────────────────────────────────
 
 const META_COLUMNS =
@@ -498,6 +643,7 @@ const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   softDeleteColumn: "deleted_at",
   writable: TASK_WRITABLE,
   completion: TASK_COMPLETION,
+  purge: purgeItemTagJoins(sql, "task", "tasks"),
   ...taskCodec,
   defaults: (patch, context) => ({
     id: context.entityId,
@@ -661,6 +807,7 @@ const projectDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     ["color", isNullableString],
     ["visibility", isOneOf("private", "shared")]
   ]),
+  purge: purgeProjectReferences(sql),
   ...projectCodec,
   defaults: (patch, context) => ({
     id: context.entityId,
@@ -723,6 +870,17 @@ const tagDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     ["color", isNullableString],
     ["visibility", isOneOf("private", "shared")]
   ]),
+  purge: (input) => [
+    ...purgeTagReferences(sql)(input),
+    sql`
+      DELETE FROM item_tags
+      WHERE ${sql.in("tag_id", input.ids)}
+        AND NOT EXISTS (
+          SELECT 1 FROM tags AS live
+          WHERE live.id = item_tags.tag_id AND live.deleted_at IS NULL
+        )
+    `
+  ],
   ...tagCodec,
   defaults: (patch, context) => ({
     id: context.entityId,
@@ -976,6 +1134,7 @@ const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
     ]),
     // Checklist done-wins: "I ticked it" beats "I renamed it" (§6.3).
     completion: LIST_ITEM_COMPLETION,
+    purge: purgeItemTagJoins(sql, "listItem", "list_items"),
     defaults: (patch, context) => {
       const raw = normalizeListItemPatch(patch)
       const title = listItemTitle(raw)
@@ -1093,6 +1252,10 @@ const noteDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     ["tagIds", isStringArray],
     ["visibility", isOneOf("private", "shared")]
   ]),
+  purge: (input) => [
+    ...purgeNoteSearch(sql)(input),
+    ...purgeItemTagJoins(sql, "note", "notes")(input)
+  ],
   ...noteCodec,
   defaults: (patch, context) => ({
     id: context.entityId,
@@ -1590,7 +1753,12 @@ const habitEntryDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition =>
   scope: SYNC_SCOPE_COLUMNS,
   softDeleteColumn: "deleted_at",
   writable: HABIT_ENTRY_WRITABLE,
-  parent: { entityType: "habit", field: "habitId", inheritVisibility: true },
+  parent: {
+    entityType: "habit",
+    field: "habitId",
+    column: "habit_id",
+    inheritVisibility: true
+  },
   strict: ["habitId", "localDate", "status"],
   ...habitEntryCodec,
   defaults: (patch, context) => {

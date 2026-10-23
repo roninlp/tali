@@ -942,8 +942,14 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
         // The feed can't serve entries between the cursor and the oldest
         // retained seq. Cursor 0 on an aged feed is stale too: fresh mirrors
         // re-bootstrap rather than silently missing live rows (§3.2/DP-8).
+        // An empty feed with a non-zero cursor is the same situation: the trash
+        // purge can remove the last row's feed entry at ~30 days, and a client
+        // that still holds that row must be told to re-bootstrap rather than
+        // keep a purged mirror forever.
         const min = yield* repo.minSeq.pipe(Effect.orDie)
-        const resetRequired = Option.isSome(min) && input.cursor < min.value - 1
+        const resetRequired =
+          (Option.isSome(min) && input.cursor < min.value - 1) ||
+          (Option.isNone(min) && input.cursor > 0)
         if (resetRequired) {
           return {
             entries: [],

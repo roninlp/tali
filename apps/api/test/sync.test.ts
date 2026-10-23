@@ -1443,4 +1443,27 @@ describe("sync engine", () => {
     const retry = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] })
     expect(retry.results[0]?._tag).toBe("applied")
   })
+
+  it("requires a reset for a non-zero cursor against an empty feed", async () => {
+    const h = makeHarness()
+    // The trash purge can remove the last feed row at ~30 days; a mirror that
+    // still holds the purged row must be told to re-bootstrap.
+    h.db.exec("DELETE FROM change_feed")
+
+    const fresh = await pull(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      cursor: 0
+    })
+    expect(fresh.resetRequired).toBe(false)
+
+    const stale = await pull(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      cursor: 7
+    })
+    expect(stale.resetRequired).toBe(true)
+    expect(stale.entries).toEqual([])
+    expect(stale.nextCursor).toBe(7)
+  })
 })

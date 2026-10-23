@@ -1,4 +1,5 @@
 export * from "./common"
+export * from "./backup"
 export * from "./digits"
 export * from "./jalali"
 export * from "./ids"

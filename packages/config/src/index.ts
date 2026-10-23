@@ -16,3 +16,17 @@ export const AppConfig = Config.all({
   ),
   logLevel: Config.String("LOG_LEVEL").pipe(Config.withDefault("info"))
 })
+
+/**
+ * The Worker's cron expressions, shared by the Alchemy stack and the Worker's
+ * `scheduled()` dispatch. They must stay in the same file: `controller.cron`
+ * is a string, so a second copy in `infra/alchemy.run.ts` would let a schedule
+ * change silently run the reminder sweep instead of the maintenance job.
+ */
+export const CRON = {
+  reminder: "* * * * *",
+  purge: "17 3 * * *",
+  backup: "47 3 * * *"
+} as const
+
+export const CRON_EXPRESSIONS = [CRON.reminder, CRON.purge, CRON.backup] as const

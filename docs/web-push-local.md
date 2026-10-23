@@ -121,8 +121,8 @@ curl -X POST 'http://localhost:8787/dev/reminders/sweep?at=2026-10-21T09:00:00.0
 # 2. Omit `at` to sweep "now"
 curl -X POST 'http://localhost:8787/dev/reminders/sweep'
 
-# 3. The real scheduled() path, through workerd's local cron route
-curl 'http://localhost:8787/cdn-cgi/local/scheduled?cron=*+*+*+*+*'
+# 3. The real scheduled() path, through the local cron route
+curl -X POST 'http://localhost:8787/cdn-cgi/handler/scheduled?cron=*+*+*+*+*'
 ```
 
 The response is the tick's counters: `claimed`, `pushed`, `accepted`, `failed`,
