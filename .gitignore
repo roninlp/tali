@@ -14,3 +14,7 @@ dist/
 .push-subscription.json
 .DS_Store
 .alchemy/
+# Playwright gate flows: seeded identities, traces and reports.
+packages/e2e/.state/
+packages/e2e/test-results/
+packages/e2e/playwright-report/

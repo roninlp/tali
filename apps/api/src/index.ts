@@ -49,10 +49,15 @@ interface Env {
  * (ADR-0005), while the two maintenance jobs run once a night in separate
  * invocations so each gets its own D1 per-invocation query budget. Purge runs
  * first so the backup captures the post-purge database.
+ *
+ * They stay module-local on purpose: `alchemy dev` registers a Worker's named
+ * exports as entrypoints, and any non-handler export makes workerd refuse to
+ * start it ("Incorrect type for map entry"). Tests read them from
+ * `@tali/config` instead.
  */
-export const REMINDER_CRON = CRON.reminder
-export const PURGE_CRON = CRON.purge
-export const BACKUP_CRON = CRON.backup
+const REMINDER_CRON = CRON.reminder
+const PURGE_CRON = CRON.purge
+const BACKUP_CRON = CRON.backup
 
 /** The Vite dev server's origin. `127.0.0.1` is deliberately absent: it is a
  * different site from `localhost` for cookies (`SameSite=Lax`), so a page
