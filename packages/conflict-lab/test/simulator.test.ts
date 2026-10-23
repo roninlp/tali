@@ -1,9 +1,12 @@
+import { env } from "cloudflare:workers"
 import fc from "fast-check"
-import { describe, it } from "vitest"
+import { describe, expect, it } from "vitest"
 import { uuidV7 } from "@tali/domain"
 import {
+  assertAcknowledgements,
   assertConverged,
   createHousehold,
+  LAB_MODE,
   openDevice,
   queueWrite,
   registerAccount,
@@ -14,6 +17,14 @@ import {
   type Account,
   type Device
 } from "./harness"
+import { resolveLabMode } from "./mode"
+import {
+  decodeWriteToken,
+  TOKEN,
+  TOKEN_COUNT,
+  WRITE_TOKEN_COUNT,
+  type WriteKind
+} from "./program"
 
 /**
  * The conflict simulator (ticket #83 / the #81 verification strategy).
@@ -26,11 +37,12 @@ import {
  * sequence of real device actions.
  */
 
-const nightly = process.env.CONFLICT_LAB_NIGHTLY === "1"
-
-/** Bounded for PR CI; the nightly run explores five times as much. */
-const NUM_RUNS = nightly ? 100 : 20
-const MAX_STEPS = nightly ? 45 : 30
+/**
+ * Injected by `vitest.config.ts` (workerd cannot read `process.env`). The
+ * mode test below fails if the injection stops tracking the CLI flag.
+ */
+const NUM_RUNS = LAB_MODE.numRuns
+const MAX_STEPS = LAB_MODE.maxSteps
 
 type EntityType = "task" | "listItem" | "note"
 
@@ -59,8 +71,9 @@ const title = (step: number): string => `عنوان-${step}`
 const writeToken = async (
   device: Device,
   slot: Slot,
-  kind: 0 | 1 | 2 | 3,
-  step: number
+  kind: WriteKind,
+  step: number,
+  run: string
 ): Promise<void> => {
   const current = await device.store.get(slot.entityType, slot.id)
 
@@ -68,7 +81,7 @@ const writeToken = async (
     await queueWrite(
       device,
       { entityType: slot.entityType, entityId: slot.id, op: "delete", patch: {} },
-      `${device.label}-${step}-delete`
+      `${run}-${device.label}-${step}-delete`
     )
     return
   }
@@ -84,7 +97,7 @@ const writeToken = async (
         op: "upsert",
         patch: { title: title(step) }
       },
-      `${device.label}-${step}-revive`
+      `${run}-${device.label}-${step}-revive`
     )
     return
   }
@@ -119,12 +132,9 @@ const writeToken = async (
   await queueWrite(
     device,
     { entityType: slot.entityType, entityId: slot.id, op: "upsert", patch },
-    `${device.label}-${step}-write`
+    `${run}-${device.label}-${step}-write`
   )
 }
-
-/** The token alphabet: 24 writes (12 per device), 5 sync flavours, 2 probes. */
-const TOKEN_COUNT = 31
 
 /** An edit instant relative to the lab's real clock. */
 const future = (offsetMs: number): string =>
@@ -145,7 +155,8 @@ interface Probe {
  */
 const runDisjointProbe = async (
   devices: readonly [Device, Device],
-  step: number
+  step: number,
+  run: string
 ): Promise<Probe> => {
   const id = uuidV7()
   const expectedTitle = `probe-a-${step}`
@@ -158,7 +169,7 @@ const runDisjointProbe = async (
       patch: { title: "probe", priority: "medium" },
       now: future(0)
     },
-    `probe${step}-create`
+    `${run}-probe${step}-create`
   )
   await syncDevice(devices[0])
   await syncDevice(devices[1])
@@ -172,7 +183,7 @@ const runDisjointProbe = async (
       patch: { title: expectedTitle },
       now: future(10_000)
     },
-    `probe${step}-title`
+    `${run}-probe${step}-title`
   )
   await queueWrite(
     devices[1],
@@ -183,7 +194,7 @@ const runDisjointProbe = async (
       patch: { priority: "high" },
       now: future(11_000)
     },
-    `probe${step}-priority`
+    `${run}-probe${step}-priority`
   )
   await syncConcurrently(devices)
   return { id, field: "title", expected: expectedTitle }
@@ -196,7 +207,8 @@ const runDisjointProbe = async (
  */
 const runLwwProbe = async (
   devices: readonly [Device, Device],
-  step: number
+  step: number,
+  run: string
 ): Promise<Probe> => {
   const id = uuidV7()
   const newer = `lww-newer-${step}`
@@ -209,7 +221,7 @@ const runLwwProbe = async (
       patch: { title: "base" },
       now: future(0)
     },
-    `lww${step}-create`
+    `${run}-lww${step}-create`
   )
   await syncDevice(devices[0])
   await syncDevice(devices[1])
@@ -225,7 +237,7 @@ const runLwwProbe = async (
       patch: { title: newer },
       now: future(10_000)
     },
-    `lww${step}-newer`
+    `${run}-lww${step}-newer`
   )
   // Land the newer edit before the older one is even written.
   await settle([devices[0]])
@@ -238,7 +250,7 @@ const runLwwProbe = async (
       patch: { title: `lww-older-${step}` },
       now: past(0)
     },
-    `lww${step}-older`
+    `${run}-lww${step}-older`
   )
   await settle([devices[1]])
   return { id, field: "title", expected: newer }
@@ -250,48 +262,53 @@ const runProgram = async (
   tokens: ReadonlyArray<number>
 ): Promise<ReadonlyArray<Probe>> => {
   const probes: Array<Probe> = []
+  // `applied_mutations` is keyed only by `clientMutationId`, so ids must be
+  // unique across *every* fast-check run, not just within one program.
+  const run = uuidV7()
   let disjointProbes = 0
   let lwwProbes = 0
   for (let step = 0; step < tokens.length; step += 1) {
     const token = tokens[step]!
-    if (token < 24) {
-      const device = devices[token < 12 ? 0 : 1]
-      const local = token % 12
-      const slot = slots[local % slots.length]!
-      const kind = Math.floor(local / slots.length) as 0 | 1 | 2 | 3
-      await writeToken(device, slot, kind, step)
+    if (token < WRITE_TOKEN_COUNT) {
+      const write = decodeWriteToken(token)
+      await writeToken(devices[write.device], slots[write.slot]!, write.kind, step, run)
       continue
     }
-    if (token === 24) {
-      await syncDevice(devices[0])
-      continue
-    }
-    if (token === 25) {
-      await syncDevice(devices[1])
-      continue
-    }
-    if (token === 26) {
-      await syncConcurrently(devices)
-      continue
-    }
-    if (token === 27 || token === 28) {
-      const device = devices[token === 27 ? 0 : 1]
-      device.options.duplicatePush = true
-      try {
-        await syncDevice(device)
-      } finally {
-        device.options.duplicatePush = false
+    switch (token) {
+      case TOKEN.syncA:
+        await syncDevice(devices[0])
+        break
+      case TOKEN.syncB:
+        await syncDevice(devices[1])
+        break
+      case TOKEN.concurrentSync:
+        await syncConcurrently(devices)
+        break
+      case TOKEN.duplicatePushA:
+      case TOKEN.duplicatePushB: {
+        const device = devices[token === TOKEN.duplicatePushA ? 0 : 1]
+        device.options.duplicatePush = true
+        try {
+          await syncDevice(device)
+        } finally {
+          device.options.duplicatePush = false
+        }
+        break
       }
-      continue
-    }
-    if (token === 29 && disjointProbes < 3) {
-      disjointProbes += 1
-      probes.push(await runDisjointProbe(devices, step))
-      continue
-    }
-    if (token === 30 && lwwProbes < 3) {
-      lwwProbes += 1
-      probes.push(await runLwwProbe(devices, step))
+      case TOKEN.disjointProbe:
+        if (disjointProbes < 3) {
+          disjointProbes += 1
+          probes.push(await runDisjointProbe(devices, step, run))
+        }
+        break
+      case TOKEN.lwwProbe:
+        if (lwwProbes < 3) {
+          lwwProbes += 1
+          probes.push(await runLwwProbe(devices, step, run))
+        }
+        break
+      default:
+        throw new Error(`unknown token ${token}`)
     }
   }
   return probes
@@ -329,54 +346,12 @@ const assertProbes = async (
   }
 }
 
-/**
- * Every queued mutation came back resolved, and no mutation applied twice.
- *
- * `conflict` and `tombstone` are legitimate resolutions (a no-op field merge
- * and a delete-wins refusal); `alreadyApplied` is the duplicate-push path.
- * The only accepted `rejected` is the documented create-create race: two
- * devices insert the same new id concurrently, the loser's INSERT no-ops, and
- * it converges by pull. Any other rejection is a generator or product bug.
- */
-const assertAcknowledgements = (devices: ReadonlyArray<Device>): void => {
-  for (const device of devices) {
-    const resultsById = new Map<string, Array<{ tag: string; code?: string }>>()
-    for (const result of device.telemetry.results) {
-      const tags = resultsById.get(result.clientMutationId) ?? []
-      tags.push({
-        tag: result._tag,
-        ...(result._tag === "rejected" ? { code: result.code } : {})
-      })
-      resultsById.set(result.clientMutationId, tags)
-    }
-    for (const id of device.mutationIds) {
-      const results = resultsById.get(id)
-      if (results === undefined) {
-        throw new Error(`${device.label} lost the ack for ${id}`)
-      }
-      const applied = results.filter((result) => result.tag === "applied").length
-      if (applied > 1) {
-        throw new Error(`${device.label} applied ${id} ${applied} times`)
-      }
-      const unresolved = results.every(
-        (result) => result.tag === "rejected" && result.code !== "UniqueViolation"
-      )
-      if (unresolved) {
-        throw new Error(
-          `${device.label} did not resolve ${id}: ${results.map((result) => `${result.tag}${result.code === undefined ? "" : `/${result.code}`}`).join(",")}`
-        )
-      }
-    }
-    for (const id of resultsById.keys()) {
-      if (!device.mutationIds.has(id)) {
-        throw new Error(`${device.label} saw an unknown mutation id ${id}`)
-      }
-    }
-  }
-}
-
 describe("two-device convergence", () => {
   it("converges over arbitrary interleavings of writes, pulls and pushes", async () => {
+    // The run length must follow the CLI flag, not a `process.env` read that
+    // workerd cannot see (that silently made nightly == PR CI).
+    expect(LAB_MODE).toEqual(resolveLabMode(env.CONFLICT_LAB_NIGHTLY))
+    expect(NUM_RUNS).toBe(LAB_MODE.nightly ? 100 : 20)
     await fc.assert(
       fc.asyncProperty(
         fc.array(fc.integer({ min: 0, max: TOKEN_COUNT - 1 }), {

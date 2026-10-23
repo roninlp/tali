@@ -15,6 +15,7 @@ import { openLocalStore } from "@tali/web/src/lib/local-store/store"
 import type { LocalStore, MirrorRecord } from "@tali/web/src/lib/local-store/types"
 import { createSyncEngine, SyncRejected, type SyncEngine, type SyncTransport } from "@tali/web/src/lib/sync-engine"
 import { api } from "@tali/web/src/lib/rpc"
+import type { LabMode } from "./mode"
 
 /**
  * Shared plumbing for the conflict lab (#83).
@@ -121,8 +122,10 @@ export const freshHousehold = async (): Promise<{
 export interface Telemetry {
   /** Every per-entry result the server returned, across retries. */
   readonly results: Array<SyncPushResult>
-  /** Cursors returned by pulls; used to prove the client never rewinds. */
+  /** Cursors *returned* by pulls/bootstrap; proves the server never rewinds. */
   readonly pullCursors: Array<number>
+  /** Cursors the client *asked* for; proves it never re-reads from behind. */
+  readonly pullRequests: Array<number>
   /** Push requests, for diagnosing a failure trace. */
   pushes: number
 }
@@ -130,8 +133,12 @@ export interface Telemetry {
 export const newTelemetry = (): Telemetry => ({
   results: [],
   pullCursors: [],
+  pullRequests: [],
   pushes: 0
 })
+
+/** Length settings injected by `vitest.config.ts` (see `mode.ts`). */
+export const LAB_MODE: LabMode = __CONFLICT_LAB_MODE__
 
 export interface TransportOptions {
   readonly telemetry: Telemetry
@@ -200,6 +207,7 @@ export const makeTransport = (
 
   return {
     pull: async (cursor, limit) => {
+      options.telemetry.pullRequests.push(cursor)
       const page = await call(
         `/sync/pull?cursor=${cursor}&limit=${limit}`,
         SyncPullResponse
@@ -232,38 +240,52 @@ export const makeTransport = (
 }
 
 /**
+ * Serialises `withRpc` calls so two overlapping devices cannot interleave
+ * their global-`fetch` swaps.
+ *
+ * Without this, `A → B → restore(A) → restore(B)` leaves B pointing at A's
+ * shim (and its cookie): a silent cross-account leak in the harness.
+ */
+let rpcTail: Promise<unknown> = Promise.resolve()
+
+/**
  * Run the web client's Effect RPC stack against the test Worker.
  *
  * In the browser the cookie rides the session jar and the origin is the real
  * API; inside workerd neither exists. Route `globalThis.fetch` through
  * `exports.default.fetch` and add this account's session cookie.
  */
-export const withRpc = async <A>(
+export const withRpc = <A>(
   account: Account,
   run: () => Promise<A>
 ): Promise<A> => {
-  const original = globalThis.fetch
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const base = input instanceof Request ? input : new Request(input, init)
-    const source = new URL(base.url)
-    const headers = new Headers(base.headers)
-    headers.set("cookie", account.cookie)
-    const rewritten = new Request(
-      `http://localhost${source.pathname}${source.search}`,
-      {
-        method: base.method,
-        headers,
-        body: base.body,
-        duplex: "half"
-      } as RequestInit
-    )
-    return exports.default.fetch(rewritten)
-  }) as typeof fetch
-  try {
-    return await run()
-  } finally {
-    globalThis.fetch = original
+  const call = async (): Promise<A> => {
+    const original = globalThis.fetch
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const base = input instanceof Request ? input : new Request(input, init)
+      const source = new URL(base.url)
+      const headers = new Headers(base.headers)
+      headers.set("cookie", account.cookie)
+      const rewritten = new Request(
+        `http://localhost${source.pathname}${source.search}`,
+        {
+          method: base.method,
+          headers,
+          body: base.body,
+          duplex: "half"
+        } as RequestInit
+      )
+      return exports.default.fetch(rewritten)
+    }) as typeof fetch
+    try {
+      return await run()
+    } finally {
+      globalThis.fetch = original
+    }
   }
+  const queued = rpcTail.then(call)
+  rpcTail = queued.then(() => undefined, () => undefined)
+  return queued
 }
 
 // ── Devices ───────────────────────────────────────────────────────────────
@@ -333,6 +355,50 @@ export const serverSnapshot = async (
   }
 }
 
+/**
+ * Every visible row for this account **including tombstones**, paged from the
+ * start of the feed.
+ *
+ * `/sync/bootstrap` deliberately returns only live rows, so it cannot prove a
+ * tombstone ever reached a mirror. `/sync/pull` hydrates the current state of
+ * every visible feed entry (live or deleted); dedupe by entity and keep the
+ * highest version.
+ */
+const pullAllRows = async (
+  account: Account
+): Promise<{
+  readonly rows: ReadonlyArray<SyncEntityRow>
+  /** Last visible feed seq for this account, or null when the feed was reset. */
+  readonly highWater: number | null
+}> => {
+  const rows = new Map<string, SyncEntityRow>()
+  const transport = makeTransport(account, { telemetry: newTelemetry() })
+  let cursor = 0
+  for (;;) {
+    const page = await transport.pull(cursor, 500)
+    if (page.resetRequired) {
+      // A pruned feed cannot be replayed; fall back to the live set and skip
+      // the cursor-progress check.
+      for (const row of await serverSnapshot(account)) rows.set(rowKey(row), row)
+      return { rows: [...rows.values()], highWater: null }
+    }
+    for (const row of page.items) {
+      const key = rowKey(row)
+      const seen = rows.get(key)
+      if (seen === undefined || row.version >= seen.version) rows.set(key, row)
+    }
+    if (!page.hasMore) return { rows: [...rows.values()], highWater: page.nextCursor }
+    if (page.nextCursor <= cursor) {
+      return { rows: [...rows.values()], highWater: cursor }
+    }
+    cursor = page.nextCursor
+  }
+}
+
+export const serverSnapshotAll = async (
+  account: Account
+): Promise<ReadonlyArray<SyncEntityRow>> => (await pullAllRows(account)).rows
+
 export const mirrorSnapshot = async (
   store: LocalStore
 ): Promise<ReadonlyArray<MirrorRecord>> => {
@@ -390,15 +456,19 @@ const comparable = (row: {
   })
 
 /**
- * Strong post-quiescence assertion: each device's live mirror is the server's
- * authoritative row **field by field**, and the two devices agree on live and
- * tombstoned rows alike.
+ * Strong post-quiescence assertion: each device's mirror equals the server's
+ * authoritative row **field by field — tombstones included** — and the two
+ * devices agree on live and tombstoned rows alike.
  */
 export const assertConverged = async (
   devices: ReadonlyArray<Device>,
   account: Account
 ): Promise<void> => {
-  const server = await serverSnapshot(account)
+  // The full visible feed doubles as the household's high-water seq: the
+  // device must have pulled up to the last row this account can see. (Bootstrapping
+  // would return the *global* max, which includes other households' runs.)
+  const snapshot = await pullAllRows(account)
+  const server = snapshot.rows
   const serverByKey = new Map(server.map((row) => [rowKey(row), row]))
   const snapshots = new Map<string, Map<string, string>>()
   const tombstones = new Map<string, Map<string, string>>()
@@ -410,6 +480,14 @@ export const assertConverged = async (
         `${device.label} still has ${pending} queued mutation(s) after quiescence`
       )
     }
+    // A cursor that never advances (or stops short) is as wrong as one that
+    // rewinds: the device is re-reading or has missed the newest changes.
+    const cursor = await device.store.cursor()
+    if (snapshot.highWater !== null && cursor !== snapshot.highWater) {
+      throw new Error(
+        `${device.label} cursor ${cursor} has not reached the household high-water ${snapshot.highWater}`
+      )
+    }
     const mirror = await mirrorSnapshot(device.store)
     const live = new Map<string, string>()
     const trashed = new Map<string, string>()
@@ -418,29 +496,26 @@ export const assertConverged = async (
       const key = rowKey(row)
       if (seen.has(key)) throw new Error(`${device.label} mirror has two rows for ${key}`)
       seen.add(key)
-      if (row.deletedAt !== null) {
-        if (serverByKey.has(key)) {
-          throw new Error(`${device.label} shows ${key} as deleted but the server has it live`)
-        }
-        trashed.set(key, canonical(row))
-        continue
-      }
       const authoritative = serverByKey.get(key)
       if (authoritative === undefined) {
         throw new Error(`${device.label} holds ${key}, which the server does not expose`)
       }
       if (comparable(row) !== comparable(authoritative)) {
         throw new Error(
-          `${device.label} diverged on ${key}\n` +
+          `${device.label} diverged on ${key}${row.deletedAt === null ? "" : " (tombstone)"}\n` +
             `  mirror: ${comparable(row)}\n` +
             `  server: ${comparable(authoritative)}`
         )
       }
+      if (row.deletedAt !== null) {
+        trashed.set(key, canonical(row))
+        continue
+      }
       live.set(key, comparable(row))
     }
     for (const key of serverByKey.keys()) {
-      if (!live.has(key)) {
-        throw new Error(`${device.label} is missing live server row ${key}`)
+      if (!live.has(key) && !trashed.has(key)) {
+        throw new Error(`${device.label} is missing server row ${key}`)
       }
     }
     snapshots.set(device.label, live)
@@ -483,6 +558,107 @@ export const assertConverged = async (
 }
 
 /**
+ * A device-shaped source for the acknowledgement assertion, so the rule can be
+ * unit-tested without standing up IndexedDB + a Worker.
+ */
+export interface AckSource {
+  readonly label: string
+  readonly mutationIds: ReadonlySet<string>
+  readonly telemetry: Telemetry
+}
+
+/**
+ * Every queued mutation came back resolved, **exactly once**.
+ *
+ * `conflict` and `tombstone` are legitimate resolutions (a lost field-LWW
+ * merge and a delete-wins refusal); `alreadyApplied` is the duplicate-push
+ * path. A `rejected/UniqueViolation` is accepted only as the whole outcome of
+ * a create-create race — two devices inserting the same new id concurrently.
+ *
+ * A replay is only correct when every attempt after the first `applied` is
+ * `alreadyApplied`. Accepting any other result after an `applied` (e.g.
+ * `rejected/UniqueViolation`, which a broken `applied_mutations` dedupe
+ * produces for a replayed create) hides exactly the bug this asserts against.
+ */
+export const assertAcknowledgements = (
+  devices: ReadonlyArray<AckSource>
+): void => {
+  for (const device of devices) {
+    const resultsById = new Map<string, Array<{ tag: string; code?: string }>>()
+    for (const result of device.telemetry.results) {
+      const tags = resultsById.get(result.clientMutationId) ?? []
+      tags.push({
+        tag: result._tag,
+        ...(result._tag === "rejected" ? { code: result.code } : {})
+      })
+      resultsById.set(result.clientMutationId, tags)
+    }
+    for (const id of device.mutationIds) {
+      const results = resultsById.get(id)
+      if (results === undefined) {
+        throw new Error(`${device.label} lost the ack for ${id}`)
+      }
+      const firstApplied = results.findIndex((result) => result.tag === "applied")
+      if (
+        firstApplied !== -1 &&
+        results.slice(firstApplied + 1).some((result) => result.tag !== "alreadyApplied")
+      ) {
+        throw new Error(
+          `${device.label} re-executed ${id} after acknowledging it: ${describeTags(results)}`
+        )
+      }
+      const resolved = results.some(
+        (result) =>
+          result.tag === "applied" ||
+          result.tag === "alreadyApplied" ||
+          result.tag === "conflict" ||
+          result.tag === "tombstone"
+      )
+      const createCreateRace =
+        results.length > 0 &&
+        results.every((result) => result.tag === "rejected" && result.code === "UniqueViolation")
+      if (!resolved && !createCreateRace) {
+        throw new Error(
+          `${device.label} did not resolve ${id}: ${describeTags(results)}`
+        )
+      }
+    }
+    for (const id of resultsById.keys()) {
+      if (!device.mutationIds.has(id)) {
+        throw new Error(`${device.label} saw an unknown mutation id ${id}`)
+      }
+    }
+  }
+}
+
+const describeTags = (results: ReadonlyArray<{ tag: string; code?: string }>): string =>
+  results.map((result) =>
+    `${result.tag}${result.code === undefined ? "" : `/${result.code}`}`
+  ).join(",")
+
+/**
+ * Assert a cursor sequence never threatens to re-read from behind.
+ *
+ * `LocalStore.setCursor` itself refuses to move backwards, so watching only
+ * the store cannot catch a cursor regression in the engine or the server. This
+ * helper also runs over the cursors the *server returned* and the cursors the
+ * client *asked for* (`Telemetry.pullCursors` / `pullRequests`), which is where
+ * a rewind would actually originate.
+ */
+export const assertCursorsNonDecreasing = (
+  label: string,
+  cursors: ReadonlyArray<number>
+): void => {
+  for (let index = 1; index < cursors.length; index += 1) {
+    const previous = cursors[index - 1]!
+    const current = cursors[index]!
+    if (current < previous) {
+      throw new Error(`${label} cursor rewound: ${previous} -> ${current}`)
+    }
+  }
+}
+
+/**
  * Record version/cursor monotonicity after a pass. Called at the end of every
  * sync so a rewind or a decreased version is attributed to the step that
  * caused it.
@@ -495,6 +671,8 @@ export const observeMonotonicity = async (device: Device): Promise<void> => {
     )
   }
   device.cursor.value = cursor
+  assertCursorsNonDecreasing(`${device.label} pull request`, device.telemetry.pullRequests)
+  assertCursorsNonDecreasing(`${device.label} pull response`, device.telemetry.pullCursors)
   const rows = await mirrorSnapshot(device.store)
   for (const row of rows) {
     const key = rowKey(row)
@@ -591,11 +769,24 @@ export interface QueuedWrite {
  * Queue one mutation with an explicit id so the lab can prove every queued
  * mutation came back acked.
  */
+/**
+ * `applied_mutations.client_mutation_id` is unique across the whole database,
+ * while a test file shares one D1 between tests. Reusing a literal id in two
+ * accounts therefore makes the second push apply its row but silently skip its
+ * ledger insert, surfacing as a 409 on a write that actually landed. Fail
+ * loudly instead.
+ */
+const queuedMutationIds = new Set<string>()
+
 export const queueWrite = async (
   device: Device,
   write: QueuedWrite,
   clientMutationId = uuidV7()
 ): Promise<string> => {
+  if (queuedMutationIds.has(clientMutationId)) {
+    throw new Error(`clientMutationId reused within a test file: ${clientMutationId}`)
+  }
+  queuedMutationIds.add(clientMutationId)
   device.mutationIds.add(clientMutationId)
   const { now, ...rest } = write
   await device.store.writeLocal({

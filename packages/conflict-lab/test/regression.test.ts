@@ -10,6 +10,7 @@ import {
   queueWrite,
   registerAccount,
   serverSnapshot,
+  serverSnapshotAll,
   settle,
   syncDevice,
   type Account,
@@ -33,6 +34,10 @@ const closeAll = (devices: ReadonlyArray<Device>): void => {
  */
 const after = (offsetMs: number): string =>
   new Date(Date.now() + 60_000 + offsetMs).toISOString()
+
+/** An edit instant safely behind the server's commit clock. */
+const before = (offsetMs: number): string =>
+  new Date(Date.now() - 60_000 + offsetMs).toISOString()
 
 /** Two devices for one user, both in sync on an empty household. */
 const twoDevices = async (
@@ -160,10 +165,14 @@ describe("conflict regression table", () => {
           op: "upsert",
           patch: { title: "خصوصی", visibility: "private" }
         },
-        "owner-private"
+        "private-owner"
       )
       await settle([ownerDevice])
+      // The partner pulls while the row exists: *pull* must not leak it either,
+      // not just the push authorisation below.
+      expect(await syncDevice(partnerDevice)).toBe(true)
       expect(await partnerDevice.store.get("task", taskId)).toBeUndefined()
+      expect(await partnerDevice.store.pendingCount()).toBe(0)
 
       // The partner never saw the row, but tries to write the same id: the
       // server must refuse, and the engine must drop the forged local row.
@@ -195,22 +204,102 @@ describe("conflict regression table", () => {
     }
   })
 
-  it("completion wins over a concurrent rename, and the rename still lands", async () => {
-    const { account, a, b } = await twoDevices("done-wins")
+  it("a visibility flip removes the row from the partner's mirror", async () => {
+    const { owner, partner } = await freshHousehold()
+    const ownerDevice = await openDevice(owner, "A")
+    const partnerDevice = await openDevice(partner, "P")
     try {
-      const taskId = await seedShared(a, b, "task", { title: "کار" })
+      const taskId = uuidV7()
+      await queueWrite(
+        ownerDevice,
+        {
+          entityType: "task",
+          entityId: taskId,
+          op: "upsert",
+          patch: { title: "مشترک", visibility: "shared" },
+          now: after(0)
+        },
+        "visibility-flip-create"
+      )
+      await settle([ownerDevice])
+      expect(await syncDevice(partnerDevice)).toBe(true)
+      expect((await partnerDevice.store.get("task", taskId))?.data.title).toBe("مشترک")
 
+      // Owner flips it private: the partner must learn it can no longer see
+      // the row (the feed's `removed` path, not a tombstone).
+      await queueWrite(
+        ownerDevice,
+        {
+          entityType: "task",
+          entityId: taskId,
+          op: "upsert",
+          patch: { visibility: "private" },
+          now: after(1_000)
+        },
+        "visibility-flip-update"
+      )
+      expect(await syncDevice(ownerDevice)).toBe(true)
+      expect(await syncDevice(partnerDevice)).toBe(true)
+
+      expect(await partnerDevice.store.get("task", taskId)).toBeUndefined()
+      expect(await partnerDevice.store.pendingCount()).toBe(0)
+      expect((await ownerDevice.store.get("task", taskId))?.data.visibility).toBe("private")
+    } finally {
+      closeAll([ownerDevice, partnerDevice])
+    }
+  })
+
+  it("a pull never clobbers an unsent local edit", async () => {
+    const { account, a, b } = await twoDevices("offline-mirror")
+    try {
+      const taskId = await seedShared(a, b, "task", { title: "پایه" })
+
+      // A is offline with a local edit queued; B's edit reaches the server.
       await queueWrite(
         a,
         {
           entityType: "task",
           entityId: taskId,
           op: "upsert",
-          patch: { status: "done" },
+          patch: { title: "محلی" },
           now: after(0)
         },
-        "done-a"
+        "offline-a"
       )
+      await queueWrite(
+        b,
+        {
+          entityType: "task",
+          entityId: taskId,
+          op: "upsert",
+          patch: { title: "دور" },
+          now: after(5_000)
+        },
+        "remote-b"
+      )
+      expect(await syncDevice(b)).toBe(true)
+
+      const serverRow = (await serverSnapshot(account))
+        .find((row) => row.entityId === taskId)
+      expect(serverRow?.data.title).toBe("دور")
+
+      // Pulling the newer server row must leave the optimistic mirror and the
+      // outbox alone until the push resolves.
+      expect(await a.store.mergeServer([serverRow!])).toBe(0)
+      expect((await a.store.get("task", taskId))?.data.title).toBe("محلی")
+      expect(await a.store.pendingCount()).toBe(1)
+    } finally {
+      closeAll([a, b])
+    }
+  })
+
+  it("completion wins even when its edit loses field LWW, and the rename still lands", async () => {
+    const { account, a, b } = await twoDevices("done-wins")
+    try {
+      const taskId = await seedShared(a, b, "task", { title: "کار" })
+
+      // B renames first with a newer edit instant, so the server row is newer
+      // than A's completion when A's stale push arrives.
       await queueWrite(
         b,
         {
@@ -222,14 +311,33 @@ describe("conflict regression table", () => {
         },
         "rename-b"
       )
-
-      expect(await syncDevice(a)).toBe(true)
       expect(await syncDevice(b)).toBe(true)
-      await settle([a, b])
 
+      // A's completion is queued against version 1 and carries an older
+      // clientUpdatedAt: without the done-wins rule it is dropped by field LWW.
+      await queueWrite(
+        a,
+        {
+          entityType: "task",
+          entityId: taskId,
+          op: "upsert",
+          patch: { status: "done" },
+          now: before(0)
+        },
+        "done-a"
+      )
+      expect(await syncDevice(a)).toBe(true)
+
+      const tags = a.telemetry.results
+        .filter((result) => result.clientMutationId === "done-a")
+        .map((result) => result._tag)
+      expect(tags).toEqual(["conflict"])
       const row = await a.store.get("task", taskId)
       expect(row?.data.status).toBe("done")
       expect(row?.data.title).toBe("نام بهتر")
+      expect(row?.version).toBe(3)
+
+      await settle([a, b])
       await assertConverged([a, b], account)
     } finally {
       closeAll([a, b])
@@ -271,6 +379,51 @@ describe("conflict regression table", () => {
       expect((await a.store.get("task", taskId))?.deletedAt).not.toBeNull()
       const server = await serverSnapshot(account)
       expect(server.some((row) => row.entityId === taskId)).toBe(false)
+      const tombstone = (await serverSnapshotAll(account))
+        .find((row) => row.entityId === taskId)
+      expect(tombstone?.deletedAt).not.toBeNull()
+      await assertConverged([a, b], account)
+    } finally {
+      closeAll([a, b])
+    }
+  })
+
+  it("delete wins over an edit that already landed (stale delete anchor)", async () => {
+    const { account, a, b } = await twoDevices("delete-stale")
+    try {
+      const taskId = await seedShared(a, b, "task", { title: "ویرایش‌شدنی" })
+
+      // B's edit lands first, so A's queued delete is stale by one version.
+      await queueWrite(
+        b,
+        {
+          entityType: "task",
+          entityId: taskId,
+          op: "upsert",
+          patch: { title: "نام تازه" },
+          now: after(0)
+        },
+        "edit-b"
+      )
+      expect(await syncDevice(b)).toBe(true)
+
+      await queueWrite(
+        a,
+        { entityType: "task", entityId: taskId, op: "delete", patch: {} },
+        "delete-stale-a"
+      )
+      expect(await syncDevice(a)).toBe(true)
+
+      const tags = a.telemetry.results
+        .filter((result) => result.clientMutationId === "delete-stale-a")
+        .map((result) => result._tag)
+      expect(tags).toEqual(["applied"])
+      const row = await a.store.get("task", taskId)
+      expect(row?.deletedAt).not.toBeNull()
+      expect(row?.version).toBe(3)
+
+      await settle([a, b])
+      expect(await serverSnapshot(account)).toHaveLength(0)
       await assertConverged([a, b], account)
     } finally {
       closeAll([a, b])
@@ -315,6 +468,52 @@ describe("conflict regression table", () => {
       const row = await a.store.get("note", noteId)
       expect(row?.data.title).toBe("عنوان الف")
       expect(row?.data.plainText).toBe("متن ب")
+      await assertConverged([a, b], account)
+    } finally {
+      closeAll([a, b])
+    }
+  })
+
+  it("field LWW keeps the newer value when the older edit arrives last", async () => {
+    const { account, a, b } = await twoDevices("lww-same-field")
+    try {
+      const taskId = await seedShared(a, b, "task", { title: "پایه" })
+
+      // B's newer edit lands first; A's older edit then arrives against a stale
+      // anchor. A resolver that always applies the patch would overwrite it.
+      await queueWrite(
+        b,
+        {
+          entityType: "task",
+          entityId: taskId,
+          op: "upsert",
+          patch: { title: "تازه" },
+          now: after(5_000)
+        },
+        "lww-newer-b"
+      )
+      expect(await syncDevice(b)).toBe(true)
+
+      await queueWrite(
+        a,
+        {
+          entityType: "task",
+          entityId: taskId,
+          op: "upsert",
+          patch: { title: "کهنه" },
+          now: before(0)
+        },
+        "lww-older-a"
+      )
+      expect(await syncDevice(a)).toBe(true)
+
+      const tags = a.telemetry.results
+        .filter((result) => result.clientMutationId === "lww-older-a")
+        .map((result) => result._tag)
+      expect(tags).toEqual(["conflict"])
+      expect((await a.store.get("task", taskId))?.data.title).toBe("تازه")
+
+      await settle([a, b])
       await assertConverged([a, b], account)
     } finally {
       closeAll([a, b])

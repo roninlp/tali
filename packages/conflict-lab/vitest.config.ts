@@ -21,12 +21,29 @@ const migrationsDir = fileURLToPath(
 
 export default defineConfig(async () => {
   const migrations = await readD1Migrations(migrationsDir)
+  // Resolved here, in Node: workerd does not receive the host `process.env`.
+  // `define` carries it into the test module; the binding lets the harness
+  // prove the two agree (harness.test.ts pins this against `resolveLabMode`).
+  const nightly = process.env.CONFLICT_LAB_NIGHTLY === "1"
+  const mode = {
+    nightly,
+    numRuns: nightly ? 100 : 20,
+    maxSteps: nightly ? 70 : 40
+  }
 
   return {
+    define: {
+      __CONFLICT_LAB_MODE__: JSON.stringify(mode)
+    },
     plugins: [
       cloudflareTest({
         wrangler: { configPath: `${apiDir}wrangler.test.jsonc` },
-        miniflare: { bindings: { TEST_MIGRATIONS: migrations } }
+        miniflare: {
+          bindings: {
+            TEST_MIGRATIONS: migrations,
+            CONFLICT_LAB_NIGHTLY: process.env.CONFLICT_LAB_NIGHTLY ?? ""
+          }
+        }
       })
     ],
     test: {
@@ -34,7 +51,7 @@ export default defineConfig(async () => {
       setupFiles: ["./test/setup.ts"],
       // Shrinking a failing two-device trace reruns real IndexedDB + D1 work;
       // give the property suite room without letting a hang pin CI.
-      testTimeout: process.env.CONFLICT_LAB_NIGHTLY === "1" ? 1_200_000 : 120_000,
+      testTimeout: mode.nightly ? 1_200_000 : 300_000,
       hookTimeout: 60_000
     }
   }

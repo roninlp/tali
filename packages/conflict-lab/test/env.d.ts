@@ -1,4 +1,5 @@
 import type { D1Migration } from "@cloudflare/vitest-plugin"
+import type { LabMode } from "./mode"
 
 /**
  * The bindings this lab's Worker config declares (it reuses
@@ -6,11 +7,16 @@ import type { D1Migration } from "@cloudflare/vitest-plugin"
  * `exports.default` and `env.DB` are typed without generated `wrangler types`.
  */
 declare global {
+  /** Injected by `vitest.config.ts` (workerd cannot read `process.env`). */
+  var __CONFLICT_LAB_MODE__: LabMode
+
   namespace Cloudflare {
     interface Env {
       DB: D1Database
       WEB_ORIGIN?: string
       TEST_MIGRATIONS: D1Migration[]
+      /** `vitest.config.ts` forwards the CLI flag so the worker can see it. */
+      CONFLICT_LAB_NIGHTLY?: string
     }
 
     interface GlobalProps {
