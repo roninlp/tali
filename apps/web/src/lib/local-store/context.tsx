@@ -33,6 +33,8 @@ export interface LocalStoreContextValue {
   online: () => boolean
   /** Mutations waiting in the outbox. */
   pending: () => number
+  /** Rows whose last push was rejected; they need an explicit retry. */
+  failed: () => number
   syncing: () => boolean
   /** True once a sync handler is registered (the engine lands in #18). */
   canSync: () => boolean
@@ -54,6 +56,7 @@ export function LocalStoreProvider(props: ParentProps) {
   const [store, setStore] = createSignal<LocalStore>()
   const [online, setOnline] = createSignal(readOnline())
   const [pending, setPending] = createSignal(0)
+  const [failed, setFailed] = createSignal(0)
   const [syncing, setSyncing] = createSignal(false)
   const [error, setError] = createSignal<string>()
   const [syncHandler, setSyncHandler] = createSignal<SyncHandler>()
@@ -61,12 +64,17 @@ export function LocalStoreProvider(props: ParentProps) {
   let generation = 0
   let unsubscribe: (() => void) | undefined
 
-  const refreshPendingOf = async (current: LocalStore) => {
+  const refreshCountsOf = async (current: LocalStore) => {
     if (current.closed) return
     try {
-      setPending(await current.pendingCount())
+      const [pendingCount, failedCount] = await Promise.all([
+        current.pendingCount(),
+        current.failedCount()
+      ])
+      setPending(pendingCount)
+      setFailed(failedCount)
     } catch {
-      // The store closed mid-read (sign-out); the next open resets the count.
+      // The store closed mid-read (sign-out); the next open resets the counts.
     }
   }
 
@@ -78,6 +86,7 @@ export function LocalStoreProvider(props: ParentProps) {
     if (current !== undefined) current.close()
     setStore(undefined)
     setPending(0)
+    setFailed(0)
     setStatus("idle")
     setError(undefined)
   }
@@ -123,7 +132,7 @@ export function LocalStoreProvider(props: ParentProps) {
     } finally {
       trailingRun = false
       setSyncing(false)
-      await refreshPendingOf(current)
+      await refreshCountsOf(current)
     }
   }
 
@@ -145,9 +154,9 @@ export function LocalStoreProvider(props: ParentProps) {
             return
           }
           setStore(opened)
-          unsubscribe = opened.subscribe(() => void refreshPendingOf(opened))
+          unsubscribe = opened.subscribe(() => void refreshCountsOf(opened))
           setStatus("ready")
-          await refreshPendingOf(opened)
+          await refreshCountsOf(opened)
         } catch (cause) {
           if (ticket !== generation) return
           setError(cause instanceof Error ? cause.message : "IndexedDB unavailable")
@@ -184,6 +193,7 @@ export function LocalStoreProvider(props: ParentProps) {
     store,
     online,
     pending,
+    failed,
     syncing,
     canSync: () => syncHandler() !== undefined,
     error,

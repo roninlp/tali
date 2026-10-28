@@ -129,7 +129,38 @@ The store keeps a local `sent` flag that is set immediately before a push leaves
 
 - The client's outbox is a **FIFO with per-entity causal order**: for a given `entityId`, entries must be sent and applied in the order created (each `baseVersion` references the previous entry's assigned `version`). Entries for *different* entities are independent and may be interleaved arbitrarily. The queued `baseVersion` is authoritative only for the **first un-acked entry per entity**; the engine replaces the anchor of every subsequent entry with the `version` from the preceding push result before sending it.
 - The server assigns `seq` and `version` in **arrival order** — the server's ordering is authoritative. The client's local optimistic values are **discarded** on ack; the client adopts the server's returned `version` and advances its cursor to the returned `seq`.
-- The push **response** returns, per entry, `{ _tag: "applied", entityId, version, seq }` (or `"alreadyApplied"` / `"conflict"` / `"tombstone"` / `"rejected"`). A `"rejected"` result carries a stable `code` and a diagnostic `message`, and no `version`/`seq`: the entry cannot apply as written (invalid patch, duplicate live tag name, missing FK parent), so the client acks and drops it rather than retrying forever. Because the response carries the authoritative `seq`, the client can advance its pull cursor past its own writes without a second round-trip.
+- The push **response** returns, per entry, `{ _tag: "applied", entityId, version, seq }` (or `"alreadyApplied"` / `"conflict"` / `"tombstone"` / `"rejected"`). A `"rejected"` result carries a stable `code` and a diagnostic `message`, and no `version`/`seq`: the entry cannot apply as written (invalid patch, duplicate live tag name, missing FK parent), so the client acks and drops it rather than retrying forever. Because the response carries the authoritative `seq`, the client can advance its pull cursor past its own writes without a second round-trip. Dropping the entry must not mean losing the edit: see §4.4.
+
+### 4.4 Rejected pushes: durable marker, visible failure, explicit retry
+
+A rejected entry is still acked (an unackable entry would wedge every later one), but the mirror row keeps the user's local data **and** records a `syncError` marker in the same ack transaction:
+
+```ts
+syncError?: {
+  code: string               // the server's stable rejection code
+  message: string            // diagnostic only; never shown raw in UI
+  at: string                 // when the rejection was seen
+  clientMutationId: string   // the acked entry this marker belongs to
+}
+```
+
+The marker matters because a rejected push never moved the row's `change_feed` seq: no later pull will re-deliver it, so without a marker the local and server copies diverge silently while the badge drops to zero. IndexedDB records are per-record schemaless, so existing rows simply read without the field and no database version bump is needed.
+
+Lifecycle:
+
+- **Set** by `ack(..., failures)` for every `rejected` result. The outbox entry is removed in the same transaction; the mirror row stays.
+- **Clear** when a later result for that entity lands (an authoritative row replaces the marker, or an applied result clears it), when a pull replaces the row, or when the user explicitly retries.
+- A normal local write **keeps** the marker: a new patch is not proof that the previously rejected fields reached the server.
+- **Retry** (`retryFailed`) clears the marker and queues the mirror's current data as a fresh `upsert` with a new `clientMutationId`, `baseVersion` = the mirror's current version and `clientUpdatedAt` = now. It never replays the acked entry and never folds into a queued one. If the server rejects it again, the marker returns.
+
+Client policy per code (Persian copy lives in `apps/web/src/lib/sync-copy.ts`; no raw codes reach the UI):
+
+- `InvalidPatch` / `ValidationError`: retry only helps after the data changes, so the editor asks the user to fix the text/labels first.
+- `UniqueViolation`: the server row moved or another row owns the unique key now; retrying with the mirror's fresh anchor can converge.
+- `AttributionLimit`: the cause was not attributed inside the server's isolation budget; one retry is worth trying.
+- `Forbidden`: stays on the existing 403 path — the entry and its mirror row are dropped because the row is no longer visible; it normally never becomes a marker.
+
+The sync badge separates the two states: pending entries still show "N changes waiting", while any marker shows "N changes not saved" in the error tone. The note editor shows the per-code message and the retry action.
 
 ---
 

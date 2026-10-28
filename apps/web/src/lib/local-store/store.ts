@@ -62,6 +62,12 @@ const advanceCursor = (meta: IDBObjectStore, seq: number): void => {
 const isEmptyPatch = (patch: Readonly<Record<string, unknown>>): boolean =>
   Object.keys(patch).length === 0
 
+const withoutSyncError = (record: MirrorRecord): MirrorRecord => {
+  if (record.syncError === undefined) return record
+  const { syncError: _cleared, ...rest } = record
+  return rest
+}
+
 /** Compare edit instants, not the text: the strings may carry an offset. */
 const laterInstant = (a: string, b: string): string =>
   Date.parse(b) > Date.parse(a) ? b : a
@@ -159,6 +165,20 @@ export const openLocalStore = async (
       return rows.filter((row) => row.deletedAt === null)
     },
 
+    async listFailed() {
+      ensureOpen()
+      const tx = db.transaction(MIRROR, "readonly")
+      const rows = await requestResult(tx.objectStore(MIRROR).getAll()) as ReadonlyArray<MirrorRecord>
+      return rows.filter((row) => row.syncError !== undefined)
+    },
+
+    async failedCount() {
+      ensureOpen()
+      const tx = db.transaction(MIRROR, "readonly")
+      const rows = await requestResult(tx.objectStore(MIRROR).getAll()) as ReadonlyArray<MirrorRecord>
+      return rows.reduce((count, row) => (row.syncError === undefined ? count : count + 1), 0)
+    },
+
     async listTrashed(entityType) {
       ensureOpen()
       const tx = db.transaction(MIRROR, "readonly")
@@ -201,7 +221,10 @@ export const openLocalStore = async (
             : write.op === "delete"
               ? now
               : (current?.deletedAt ?? null),
-          data: { ...current?.data, ...write.patch }
+          data: { ...current?.data, ...write.patch },
+          // A newer local edit is not proof that the older rejected fields
+          // reached the server; keep the marker until a push result clears it.
+          syncError: current?.syncError
         }
         mirror.put(record)
         committed = record
@@ -328,9 +351,14 @@ export const openLocalStore = async (
       return applied
     },
 
-    async ack(clientMutationIds, rows = []) {
+    async ack(clientMutationIds, rows = [], failures = [], resolved = []) {
       ensureOpen()
-      if (clientMutationIds.length === 0 && rows.length === 0) return
+      if (
+        clientMutationIds.length === 0 &&
+        rows.length === 0 &&
+        failures.length === 0 &&
+        resolved.length === 0
+      ) return
       const tx = db.transaction([MIRROR, OUTBOX], "readwrite")
       const outbox = tx.objectStore(OUTBOX)
       const byMutation = outbox.index("byClientMutationId")
@@ -342,10 +370,69 @@ export const openLocalStore = async (
         }
       }
       const mirror = tx.objectStore(MIRROR)
+      // An authoritative row replaces the marker too: a later applied result
+      // means the mirror is no longer diverging.
       for (const row of rows) mirror.put(row)
+      for (const ref of resolved) {
+        const read = mirror.get([ref.entityType, ref.entityId]) as IDBRequest<
+          MirrorRecord | undefined
+        >
+        read.onsuccess = () => {
+          const current = read.result
+          if (current === undefined || current.syncError === undefined) return
+          mirror.put(withoutSyncError(current))
+        }
+      }
+      for (const failure of failures) {
+        const { entityType, entityId, code, message, at, clientMutationId } = failure
+        const read = mirror.get([entityType, entityId]) as IDBRequest<MirrorRecord | undefined>
+        read.onsuccess = () => {
+          const current = read.result
+          // A rejected upsert always wrote its mirror row locally first; if the
+          // row is gone (removed or purged), there is nothing left to mark.
+          if (current === undefined) return
+          mirror.put({
+            ...current,
+            syncError: { code, message, at, clientMutationId }
+          })
+        }
+      }
 
       await txDone(tx)
       notify()
+    },
+
+    async retryFailed(entityType, entityId) {
+      ensureOpen()
+      const now = new Date().toISOString()
+      const tx = db.transaction([MIRROR, OUTBOX], "readwrite")
+      const mirror = tx.objectStore(MIRROR)
+      const outbox = tx.objectStore(OUTBOX)
+
+      let retried: MirrorRecord | undefined
+      const existing = mirror.get([entityType, entityId]) as IDBRequest<
+        MirrorRecord | undefined
+      >
+      existing.onsuccess = () => {
+        const current = existing.result
+        if (current === undefined) return
+        retried = { ...withoutSyncError(current), updatedAt: now }
+        mirror.put(retried)
+        outbox.add({
+          clientMutationId: uuidV7(),
+          entityType,
+          entityId,
+          baseVersion: current.version,
+          op: "upsert",
+          patch: { ...current.data },
+          clientUpdatedAt: now,
+          sent: false
+        } satisfies Omit<OutboxRecord, "seq">)
+      }
+
+      await txDone(tx)
+      if (retried !== undefined) notify()
+      return retried
     },
 
     async removeFromMirror(entityType, entityId) {
