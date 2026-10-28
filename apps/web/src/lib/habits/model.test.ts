@@ -124,9 +124,10 @@ describe("habit local-first model", () => {
     expect(afterMissed.current.count).toBe(2)
     expect(afterMissed.open).toMatchObject({ credit: 0, satisfied: false })
 
-    // One row per day for all time; every tap queued, still offline.
+    // One row per day for all time; the three taps on today are one unsent
+    // mutation, so the queue is create + two earlier days + today.
     expect(await readEntries(store)).toHaveLength(3)
-    expect(await store.pending()).toHaveLength(6)
+    expect(await store.pending()).toHaveLength(4)
 
     store.close()
   })

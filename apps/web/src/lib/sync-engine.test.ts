@@ -113,27 +113,88 @@ describe("client sync engine", () => {
     store.close()
   })
 
-  it("chains a row's queued edits through the version returned by the previous push", async () => {
+  it("collapses edits queued while nothing is in flight into one push request", async () => {
     const store = await open()
     const id = uuidV7()
     await store.writeLocal({
       entityType: "listItem",
       entityId: id,
       op: "upsert",
-      patch: { title: "اول" }
+      patch: { title: "اول" },
+      now: "2026-10-19T08:00:00.000Z"
     })
     await store.writeLocal({
       entityType: "listItem",
       entityId: id,
       op: "upsert",
-      patch: { checked: true }
+      patch: { checked: true },
+      now: "2026-10-19T08:00:01.000Z"
+    })
+
+    const pushed: Array<ReadonlyArray<SyncPushEntry>> = []
+    const engine = createSyncEngine(
+      transport({
+        push: async (entries) => {
+          pushed.push(entries)
+          return {
+            results: entries.map((entry) => ({
+              _tag: "applied" as const,
+              clientMutationId: entry.clientMutationId,
+              entityType: entry.entityType,
+              entityId: entry.entityId,
+              version: 1,
+              seq: 9
+            })),
+            cursor: 9
+          }
+        }
+      })
+    )
+
+    await engine.sync(store)
+
+    // One edit session, one request: the two patches travel as one entry.
+    expect(pushed).toHaveLength(1)
+    expect(pushed[0]).toHaveLength(1)
+    expect(pushed[0]![0]).toMatchObject({
+      baseVersion: 0,
+      patch: { title: "اول", checked: true }
+    })
+    expect(await store.pending()).toHaveLength(0)
+    store.close()
+  })
+
+  it("chains a row's edit queued while a send is in flight through the returned version", async () => {
+    const store = await open()
+    const id = uuidV7()
+    await store.writeLocal({
+      entityType: "listItem",
+      entityId: id,
+      op: "upsert",
+      patch: { title: "اول" },
+      now: "2026-10-19T08:00:00.000Z"
     })
 
     const anchors: Array<number> = []
+    const pushed: Array<ReadonlyArray<SyncPushEntry>> = []
+    const inFlight: Array<ReadonlyArray<boolean>> = []
     const engine = createSyncEngine(
       transport({
         push: async (entries) => {
           anchors.push(entries[0]!.baseVersion)
+          pushed.push(entries)
+          if (anchors.length === 1) {
+            // The entry is marked before the request leaves, so this edit
+            // cannot fold into it: it becomes the next chain link.
+            inFlight.push((await store.pending()).map((entry) => entry.sent))
+            await store.writeLocal({
+              entityType: "listItem",
+              entityId: id,
+              op: "upsert",
+              patch: { checked: true },
+              now: "2026-10-19T08:00:01.000Z"
+            })
+          }
           const entry = entries[0]!
           return {
             results: [
@@ -148,7 +209,7 @@ describe("client sync engine", () => {
                   entityType: entry.entityType,
                   entityId: entry.entityId,
                   version: anchors.length,
-                  updatedAt: new Date().toISOString(),
+                  updatedAt: "2026-10-19T08:00:01.000Z",
                   deletedAt: null,
                   data: { id, type: "listItem", title: "اول", checked: true, sortOrder: 0 }
                 }
@@ -164,7 +225,127 @@ describe("client sync engine", () => {
 
     // One entry per entity per request: 0, then the version the server gave us.
     expect(anchors).toEqual([0, 1])
+    expect(inFlight).toEqual([[true]])
+    // The in-flight edit carries only its own patch, anchored to the reply.
+    expect(pushed[1]![0]).toMatchObject({ baseVersion: 1, patch: { checked: true } })
     expect(await store.pending()).toHaveLength(0)
+    store.close()
+  })
+
+  it("sends a write that folds in between the queue read and the send mark", async () => {
+    const store = await open()
+    const id = uuidV7()
+    await store.writeLocal({
+      entityType: "listItem",
+      entityId: id,
+      op: "upsert",
+      patch: { title: "اول" },
+      now: "2026-10-19T08:00:00.000Z"
+    })
+
+    // The engine reads the queue, then a keystroke folds into that entry
+    // before the send mark. The marked entry is what the ack will remove, so
+    // the request must carry the folded patch, not the stale copy.
+    let raced = false
+    const racing: LocalStore = {
+      ...store,
+      pending: async () => {
+        const rows = await store.pending()
+        if (!raced) {
+          raced = true
+          await store.writeLocal({
+            entityType: "listItem",
+            entityId: id,
+            op: "upsert",
+            patch: { checked: true },
+            now: "2026-10-19T08:00:01.000Z"
+          })
+        }
+        return rows
+      }
+    }
+
+    const pushed: Array<ReadonlyArray<SyncPushEntry>> = []
+    const engine = createSyncEngine(
+      transport({
+        push: async (entries) => {
+          pushed.push(entries)
+          return {
+            results: entries.map((entry) => ({
+              _tag: "applied" as const,
+              clientMutationId: entry.clientMutationId,
+              entityType: entry.entityType,
+              entityId: entry.entityId,
+              version: 1,
+              seq: 9
+            })),
+            cursor: 9
+          }
+        }
+      })
+    )
+
+    await engine.sync(racing)
+
+    expect(pushed).toHaveLength(1)
+    expect(pushed[0]![0]!.patch).toEqual({ title: "اول", checked: true })
+    expect(await store.pendingCount()).toBe(0)
+    store.close()
+  })
+
+  it("drains 30 title patches and 8 body saves for one note in one request", async () => {
+    // The measured editing session from the sync-latency review: every
+    // keystroke wrote the title and every 700 ms saved the body, which used to
+    // queue 37 entries and take 37 sequential round trips.
+    const store = await open()
+    const id = uuidV7()
+    const start = Date.parse("2026-10-19T08:00:00.000Z")
+    for (let index = 0; index < 30; index += 1) {
+      await store.writeLocal({
+        entityType: "note",
+        entityId: id,
+        op: "upsert",
+        patch: { title: `عنوان ${index}` },
+        now: new Date(start + index).toISOString()
+      })
+    }
+    for (let index = 0; index < 8; index += 1) {
+      await store.writeLocal({
+        entityType: "note",
+        entityId: id,
+        op: "upsert",
+        patch: { plainText: `متن ${index}` },
+        now: new Date(start + 100 + index * 700).toISOString()
+      })
+    }
+
+    const requests: Array<ReadonlyArray<SyncPushEntry>> = []
+    const engine = createSyncEngine(
+      transport({
+        push: async (entries) => {
+          requests.push(entries)
+          return {
+            results: entries.map((entry) => ({
+              _tag: "applied" as const,
+              clientMutationId: entry.clientMutationId,
+              entityType: entry.entityType,
+              entityId: entry.entityId,
+              version: 1,
+              seq: 37
+            })),
+            cursor: 37
+          }
+        }
+      })
+    )
+
+    await engine.sync(store)
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]).toHaveLength(1)
+    // Later value wins per field, so the server gets the final text only.
+    expect(requests[0]![0]!.patch).toEqual({ title: "عنوان 29", plainText: "متن 7" })
+    expect(await store.pendingCount()).toBe(0)
     store.close()
   })
 
@@ -900,7 +1081,9 @@ describe("client sync engine", () => {
     const serverId = uuidV7()
     const now = "2026-10-20T09:30:00.000Z"
 
-    // Two taps on the same day: the mirror keeps one id, the outbox two patches.
+    // Two taps on the same day: the mirror keeps one id, the outbox two
+    // patches. The first tap was already handed to a send, so the second is
+    // the next chain link rather than a fold into it.
     await store.writeLocal({
       entityType: "habitEntry",
       entityId: localId,
@@ -908,6 +1091,7 @@ describe("client sync engine", () => {
       patch: { habitId, localDate: "2026-10-20", timeZone: "Asia/Tehran", status: "done" },
       now
     })
+    await store.markSent((await store.pending()).map((entry) => entry.clientMutationId))
     await store.writeLocal({
       entityType: "habitEntry",
       entityId: localId,

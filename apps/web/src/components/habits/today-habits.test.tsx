@@ -77,7 +77,9 @@ describe("TodayHabits", () => {
     expect(screen.getByLabelText("زنجیره: بدون زنجیره · ۰ از ۱ امروز")).toBeTruthy()
 
     expect(network).not.toHaveBeenCalled()
-    expect(await store.pending()).toHaveLength(4)
+    // The habit create plus one folded entry for the day: the three taps are
+    // one unsent mutation, not three.
+    expect(await store.pending()).toHaveLength(2)
 
     screen.unmount()
     store.close()

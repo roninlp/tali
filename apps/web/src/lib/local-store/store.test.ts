@@ -67,29 +67,128 @@ describe("local store", () => {
     second.close()
   })
 
-  it("chains writes on the same row without inventing a server version", async () => {
+  it("folds unsent upserts for one row without inventing a server version", async () => {
     const store = await open(freshUser())
     const id = uuidV7()
 
-    await writeTitle(store, id, "اول")
+    await writeTitle(store, id, "اول", "2026-10-20T09:00:00.000Z")
+    const [first] = await store.pending()
     await store.writeLocal({
       entityType: "listItem",
       entityId: id,
       op: "upsert",
-      patch: { checked: true }
+      patch: { checked: true },
+      now: "2026-10-20T09:00:01.000Z"
     })
 
     const [row] = await store.list("listItem")
     expect(row!.version).toBe(0)
     expect(row!.data).toEqual({ title: "اول", checked: true })
 
+    // Neither write invents a server version: the folded entry still
+    // references the last version the client saw (0), and the push engine
+    // rewrites any later anchor from the result of this one (sync-protocol
+    // §4.1/§4.3).
+    const pending = await store.pending()
+    expect(pending).toHaveLength(1)
+    expect(pending[0]).toMatchObject({
+      seq: first!.seq,
+      clientMutationId: first!.clientMutationId,
+      baseVersion: 0,
+      op: "upsert",
+      patch: { title: "اول", checked: true },
+      clientUpdatedAt: "2026-10-20T09:00:01.000Z",
+      sent: false
+    })
+    store.close()
+  })
+
+  it("keeps the chain serial once an entry has been sent", async () => {
+    const store = await open(freshUser())
+    const id = uuidV7()
+    await writeTitle(store, id, "اول", "2026-10-20T09:00:00.000Z")
+    const [first] = await store.pending()
+
+    // A push may already have applied this entry; its patch is frozen.
+    await store.markSent([first!.clientMutationId])
+    await store.writeLocal({
+      entityType: "listItem",
+      entityId: id,
+      op: "upsert",
+      patch: { checked: true },
+      now: "2026-10-20T09:00:01.000Z"
+    })
+
     const pending = await store.pending()
     expect(pending).toHaveLength(2)
-    // Neither entry invents a server version: both still reference the last
-    // version the client saw (0). The push engine rewrites the second anchor
-    // from the first entry's push result (sync-protocol §4.1/§4.3).
-    expect(pending.map((entry) => entry.baseVersion)).toEqual([0, 0])
-    expect(pending[1]!.patch).toEqual({ checked: true })
+    expect(pending[0]).toMatchObject({
+      clientMutationId: first!.clientMutationId,
+      patch: { title: "اول" },
+      sent: true
+    })
+    expect(pending[1]).toMatchObject({
+      op: "upsert",
+      patch: { checked: true },
+      baseVersion: 0,
+      sent: false
+    })
+    store.close()
+  })
+
+  it("does not fold a write into another entity's entry", async () => {
+    const store = await open(freshUser())
+    const first = uuidV7()
+    const second = uuidV7()
+
+    await writeTitle(store, first, "یکی")
+    await writeTitle(store, second, "دیگری")
+
+    const pending = await store.pending()
+    expect(pending.map((entry) => entry.entityId)).toEqual([first, second])
+    expect(pending.map((entry) => entry.patch)).toEqual([{ title: "یکی" }, { title: "دیگری" }])
+    store.close()
+  })
+
+  it("keeps delete and the empty-patch habit restore serial", async () => {
+    const store = await open(freshUser())
+    const id = uuidV7()
+    const now = (second: number) => `2026-10-20T09:00:0${second}.000Z`
+
+    await store.writeLocal({
+      entityType: "habit",
+      entityId: id,
+      op: "upsert",
+      patch: { title: "کتاب" },
+      now: now(0)
+    })
+    await store.writeLocal({ entityType: "habit", entityId: id, op: "delete", patch: {}, now: now(1) })
+    // The undo the screen queues: an empty upsert the engine repairs through
+    // `RestoreHabit`. Folding it would erase the signal it is recognised by.
+    await store.writeLocal({
+      entityType: "habit",
+      entityId: id,
+      op: "upsert",
+      patch: {},
+      deletedAt: null,
+      now: now(2)
+    })
+    // An edit right after the undo must not swallow it either.
+    await store.writeLocal({
+      entityType: "habit",
+      entityId: id,
+      op: "upsert",
+      patch: { title: "ورزش" },
+      now: now(3)
+    })
+
+    const pending = await store.pending()
+    expect(pending.map((entry) => entry.op)).toEqual(["upsert", "delete", "upsert", "upsert"])
+    expect(pending.map((entry) => entry.patch)).toEqual([
+      { title: "کتاب" },
+      {},
+      {},
+      { title: "ورزش" }
+    ])
     store.close()
   })
 
