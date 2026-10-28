@@ -14,27 +14,39 @@ export function SyncStatus() {
   const local = useLocalStore()
 
   const tone = () => {
-    if (!local.online()) return "#b45309"
     if (local.status() === "error") return "#b91c1c"
+    // A rejected push is durable and needs the user, unlike a queue that is
+    // merely waiting or a network that may come back on its own.
+    if (local.failed() > 0) return "#b91c1c"
+    if (!local.online()) return "#b45309"
     if (local.pending() > 0) return "#b45309"
     return tokens.color.accent
   }
 
   const label = () => {
-    if (!local.online()) return "آفلاین"
     if (local.status() === "opening") return "در حال آماده‌سازی…"
     if (local.status() === "error") return "حافظه‌ی محلی در دسترس نیست"
+    if (local.failed() > 0) {
+      return `${faNumber.format(local.failed())} تغییر ذخیره نشد`
+    }
+    if (!local.online()) return "آفلاین"
     if (local.pending() > 0) {
       return `${faNumber.format(local.pending())} تغییر در انتظار ارسال`
     }
     return local.canSync() ? "همگام" : "حافظه‌ی محلی فعال"
   }
 
+  const hint = () =>
+    local.error() ??
+    (local.failed() > 0
+      ? "این تغییرات روی سرور ذخیره نشدند؛ از داخل یادداشت دوباره تلاش کنید."
+      : undefined)
+
   return (
     <span
       role="status"
       aria-live="polite"
-      title={local.error()}
+      title={hint()}
       style={{
         display: "inline-flex",
         "align-items": "center",

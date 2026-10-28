@@ -644,6 +644,128 @@ describe("client sync engine", () => {
     store.close()
   })
 
+  it("keeps a rejected result as a durable marker and clears it when a later result applies", async () => {
+    const store = await open()
+    const id = uuidV7()
+    await store.writeLocal({
+      entityType: "note",
+      entityId: id,
+      op: "upsert",
+      patch: { title: "محلی" },
+      now: "2026-10-19T08:00:00.000Z"
+    })
+
+    let calls = 0
+    const engine = createSyncEngine(
+      transport({
+        push: async (entries) => {
+          calls += 1
+          if (calls === 1) {
+            return {
+              results: entries.map((entry) => ({
+                _tag: "rejected" as const,
+                clientMutationId: entry.clientMutationId,
+                entityType: entry.entityType,
+                entityId: entry.entityId,
+                code: "InvalidPatch",
+                message: "The patch value for \"title\" is not valid"
+              })),
+              cursor: 0
+            }
+          }
+          return {
+            results: entries.map((entry) => ({
+              _tag: "applied" as const,
+              clientMutationId: entry.clientMutationId,
+              entityType: entry.entityType,
+              entityId: entry.entityId,
+              version: 2,
+              seq: 8,
+              item: {
+                entityType: entry.entityType,
+                entityId: entry.entityId,
+                version: 2,
+                updatedAt: "2026-10-19T08:00:02.000Z",
+                deletedAt: null,
+                data: { title: "محلی", plainText: "تازه" }
+              }
+            })),
+            cursor: 8
+          }
+        }
+      })
+    )
+
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    await engine.sync(store)
+    warn.mockRestore()
+
+    // Acked, so the queue is empty and the badge cannot be stuck…
+    expect(await store.pendingCount()).toBe(0)
+    // …but the mirror row is still marked with the server's reason.
+    expect((await store.get("note", id))!.syncError).toMatchObject({
+      code: "InvalidPatch",
+      message: "The patch value for \"title\" is not valid",
+      clientMutationId: expect.any(String)
+    })
+    expect(await store.failedCount()).toBe(1)
+
+    // A new local edit does not erase the unresolved failure…
+    await store.writeLocal({
+      entityType: "note",
+      entityId: id,
+      op: "upsert",
+      patch: { plainText: "تازه" },
+      now: "2026-10-19T08:00:01.000Z"
+    })
+    expect((await store.get("note", id))!.syncError).not.toBeUndefined()
+
+    // …and a later applied result for the same entity clears it.
+    await engine.sync(store)
+    expect(await store.pendingCount()).toBe(0)
+    expect((await store.get("note", id))!.syncError).toBeUndefined()
+    expect(await store.failedCount()).toBe(0)
+    store.close()
+  })
+
+  it("keeps a rejected marker across a store reopen", async () => {
+    const userId = freshUser()
+    const id = uuidV7()
+    const first = await openLocalStore(userId)
+    await first.writeLocal({
+      entityType: "note",
+      entityId: id,
+      op: "upsert",
+      patch: { title: "ماندگار" }
+    })
+    const engine = createSyncEngine(
+      transport({
+        push: async (entries) => ({
+          results: entries.map((entry) => ({
+            _tag: "rejected" as const,
+            clientMutationId: entry.clientMutationId,
+            entityType: entry.entityType,
+            entityId: entry.entityId,
+            code: "ValidationError",
+            message: "invalid note"
+          })),
+          cursor: 0
+        })
+      })
+    )
+
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    await engine.sync(first)
+    warn.mockRestore()
+    first.close()
+
+    const second = await openLocalStore(userId)
+    expect((await second.get("note", id))!.syncError).toMatchObject({
+      code: "ValidationError"
+    })
+    second.close()
+  })
+
   it("pages a pull until hasMore is false", async () => {
     const store = await open()
     const first = uuidV7()

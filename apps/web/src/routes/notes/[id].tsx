@@ -17,6 +17,7 @@ import {
 import { noteTextFromData } from "../../lib/notes/body"
 import { noteToServerRow, toNoteRow } from "../../lib/notes/mirror"
 import { createNoteSaver, type NoteSaver } from "../../lib/notes/saver"
+import { syncFailureMessage } from "../../lib/sync-copy"
 
 export default function NoteEditorRoute() {
   return (
@@ -64,6 +65,8 @@ function NoteEditor() {
   const [isTrashed, setIsTrashed] = createSignal(false)
   const [tags, setTags] = createSignal<ReadonlyArray<MirrorRecord>>([])
   const [busy, setBusy] = createSignal(false)
+  const [retrying, setRetrying] = createSignal(false)
+  const [syncError, setSyncError] = createSignal<MirrorRecord["syncError"]>()
 
   let saver: NoteSaver | undefined
   let unsubscribe: (() => void) | undefined
@@ -208,6 +211,41 @@ function NoteEditor() {
     }
   }
 
+  /** Mirror the row's durable rejection marker into the banner signal. */
+  const refreshSyncError = async () => {
+    const store = local.store()
+    if (store === undefined || loadState() !== "ready") return
+    const record = await store.get("note", noteId())
+    if (record !== undefined) setSyncError(record.syncError)
+  }
+
+  /**
+   * Requeue this note after a rejection without replaying the acked entry.
+   * The store writes a fresh upsert from the mirror's current data and version
+   * anchor, so the normal sync path can try again; if the server refuses it
+   * again the marker comes back from `ack`.
+   */
+  const retrySync = async () => {
+    const store = local.store()
+    if (store === undefined || retrying()) return
+    setRetrying(true)
+    setActionError(undefined)
+    try {
+      const retried = await store.retryFailed("note", noteId())
+      if (retried === undefined) {
+        setActionError("این یادداشت دیگر روی این دستگاه نیست.")
+        return
+      }
+      setSyncError(undefined)
+      setBaseVersion(retried.version)
+      void local.syncNow()
+    } catch {
+      setActionError("تلاش دوباره انجام نشد. اتصال را بررسی کنید.")
+    } finally {
+      setRetrying(false)
+    }
+  }
+
   const hydrateFromServer = async (id: string): Promise<boolean> => {
     const store = local.store()
     if (store === undefined || !local.online()) return false
@@ -268,6 +306,7 @@ function NoteEditor() {
       setLoadState("loading")
       setLoadHint(undefined)
       setActionError(undefined)
+      setSyncError(undefined)
 
       void (async () => {
         let record = await store.get("note", id)
@@ -305,6 +344,7 @@ function NoteEditor() {
         setIsPinned(row.isPinned)
         setIsArchived(row.isArchived)
         setIsTrashed(record.deletedAt !== null)
+        setSyncError(record.syncError)
         loadedId = id
         setLoadState("ready")
         // Open-to-type: the caret is already in the body, no extra tap.
@@ -316,6 +356,7 @@ function NoteEditor() {
           // oxlint-disable-next-line solid/reactivity
           () => {
             void refreshAnchor().catch(() => undefined)
+            void refreshSyncError().catch(() => undefined)
           }
         )
 
@@ -484,6 +525,7 @@ function NoteEditor() {
   const statusText = () => {
     if (saveState() === "error") return "ذخیره نشد؛ دوباره تلاش می‌شود."
     if (saveState() === "saving") return "در حال ذخیره…"
+    if (syncError() !== undefined) return "ذخیره نشد؛ روی سرور اعمال نشد"
     if (local.pending() > 0) return "ذخیره شد؛ در انتظار همگام‌سازی"
     return "ذخیره شد"
   }
@@ -558,6 +600,31 @@ function NoteEditor() {
                 </Button>
               </div>
             </section>
+          </Show>
+
+          <Show when={syncError()}>
+            {(failure) => (
+              <section
+                role="alert"
+                style={{
+                  ...cardStyle,
+                  background: "#fdecef",
+                  border: "1px solid #fecdd3"
+                }}
+              >
+                <p style={{ margin: 0, color: "#9f1239", "line-height": "1.9" }}>
+                  {syncFailureMessage(failure().code)}
+                </p>
+                <p style={{ margin: 0, color: "#9f1239", "font-size": "0.82rem" }}>
+                  این یادداشت فعلاً فقط روی این دستگاه ذخیره شده است.
+                </p>
+                <div>
+                  <Button type="button" disabled={retrying()} onClick={() => void retrySync()}>
+                    {retrying() ? "در حال تلاش…" : "تلاش دوباره"}
+                  </Button>
+                </div>
+              </section>
+            )}
           </Show>
 
           <Show when={actionError()}>

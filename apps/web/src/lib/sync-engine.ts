@@ -13,7 +13,7 @@ import {
   type SyncPushResult
 } from "@tali/domain"
 import { API_URL } from "./config"
-import type { LocalStore } from "./local-store/types"
+import type { EntityRef, LocalStore, SyncFailure } from "./local-store/types"
 import { api } from "./rpc"
 
 /**
@@ -313,6 +313,8 @@ export const createSyncEngine = (
       }
       const repairedRows: Array<SyncEntityRow> = []
       const repairedOriginalIds = new Set<string>()
+      const failures: Array<SyncFailure & EntityRef> = []
+      const resolved: Array<EntityRef> = []
       let restoreRefusal: HabitRestoreRefused | undefined
 
       for (const result of response.results) {
@@ -412,15 +414,28 @@ export const createSyncEngine = (
           }
         }
         // A rejected entry can never apply as written (invalid patch, duplicate
-        // live tag name, missing FK parent). Acking it below drops it from the
-        // outbox so it cannot wedge every later entry; the mirror row stays
-        // because the user's local intent is still what they see.
+        // live tag name, missing FK parent, attribution budget). Acking it below
+        // drops it from the outbox so it cannot wedge every later entry, but the
+        // mirror keeps the local row **and** a durable marker: the server never
+        // moved this row's feed seq, so no later pull will re-deliver it. The
+        // marker is what stops the UI claiming "saved" and lets the user retry.
         if (result._tag === "rejected") {
           console.warn(
             `[sync] rejected ${result.entityType}/${result.entityId} (${result.code}): ${result.message}`
           )
+          failures.push({
+            entityType: result.entityType,
+            entityId: result.entityId,
+            code: result.code,
+            message: result.message,
+            at: new Date().toISOString(),
+            clientMutationId: result.clientMutationId
+          })
           continue
         }
+        // Any non-rejected result resolved this entity on the server, even when
+        // the response omits the authoritative row (tests, already-applied).
+        resolved.push({ entityType: result.entityType, entityId: result.entityId })
         versionByEntity.set(
           `${result.entityType}\u0000${result.entityId}`,
           result.version
@@ -432,7 +447,9 @@ export const createSyncEngine = (
       // our pull and our push would be skipped forever if we jumped to it.
       await store.ack(
         response.results.map((result) => result.clientMutationId),
-        rows
+        rows,
+        failures,
+        resolved
       )
       // The revive resolved the day to a different server row: drop the local
       // placeholder so the mirror holds exactly one row for the day.

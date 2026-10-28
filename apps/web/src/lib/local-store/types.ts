@@ -9,6 +9,18 @@ import type { SyncEntityType, SyncOp, SyncPushEntry } from "@tali/domain"
  * §4 and §7 for the wire shapes and the hydration order.
  */
 
+/**
+ * A push the server refused as written. The mirror keeps the user's local row
+ * (their intent is still what they see), but records why it never reached the
+ * server so the UI can stop claiming "saved" and offer a retry.
+ */
+export interface SyncFailure {
+  readonly code: string
+  readonly message: string
+  readonly at: string
+  readonly clientMutationId: string
+}
+
 /** One entity row as this client currently knows it. */
 export interface MirrorRecord {
   readonly entityType: SyncEntityType
@@ -21,6 +33,20 @@ export interface MirrorRecord {
   readonly deletedAt: string | null
   /** The entity's own fields — no sync metadata duplicated in here. */
   readonly data: Readonly<Record<string, unknown>>
+  /**
+   * The last rejected push for this row, absent once it lands or is retried.
+   *
+   * IndexedDB stores each record as a plain value, so rows written before this
+   * field existed simply read as `undefined`. No DB version bump is needed;
+   * the field is added and removed per record.
+   */
+  readonly syncError?: SyncFailure
+}
+
+/** An entity addressed without its payload, for clearing a stale marker. */
+export interface EntityRef {
+  readonly entityType: SyncEntityType
+  readonly entityId: string
 }
 
 /** A queued mutation plus the local FIFO key. */
@@ -87,6 +113,14 @@ export interface LocalStore {
   /** Live rows for an entity type, newest `updatedAt` last. */
   list: (entityType: SyncEntityType) => Promise<ReadonlyArray<MirrorRecord>>
   /**
+   * Rows whose last push was rejected, in no particular order. Failures are
+   * rare, so a mirror scan is cheaper than a schema/index bump — but it is a
+   * scan, so the provider does it only on open and after a sync pass, never on
+   * every local write.
+   */
+  listFailed: () => Promise<ReadonlyArray<MirrorRecord>>
+  failedCount: () => Promise<number>
+  /**
    * Soft-deleted rows for the trash view. Trash is a tombstone in the mirror,
    * not a separate store: the same row can be restored in place.
    */
@@ -129,6 +163,11 @@ export interface LocalStore {
    * Drop acked outbox entries and adopt the server's rows. One transaction, so
    * the queue and the mirror cannot disagree afterwards.
    *
+   * `failures` records the rejected results in that same transaction: the
+   * entry leaves the outbox (a permanent refusal must not wedge it), while the
+   * mirror row keeps a durable marker. `resolved` clears a marker when a later
+   * result for the entity landed without carrying an authoritative row.
+   *
    * It deliberately does **not** touch the pull cursor: a push's highest `seq`
    * is not contiguous with what this device has pulled, so moving the cursor to
    * it would skip a remote change committed between the pull and the push. The
@@ -136,8 +175,22 @@ export interface LocalStore {
    */
   ack: (
     clientMutationIds: ReadonlyArray<string>,
-    rows?: ReadonlyArray<ServerRow>
+    rows?: ReadonlyArray<ServerRow>,
+    failures?: ReadonlyArray<SyncFailure & EntityRef>,
+    resolved?: ReadonlyArray<EntityRef>
   ) => Promise<void>
+
+  /**
+   * Retry a row whose last push was rejected. Clears the marker and queues the
+   * mirror's current data as a **fresh** upsert: new `clientMutationId`,
+   * `baseVersion` = the version the mirror currently holds, `clientUpdatedAt`
+   * = now. It never folds into a queued entry — a retry is a new attempt, not
+   * another keystroke. If the server refuses it again, `ack` re-marks the row.
+   */
+  retryFailed: (
+    entityType: SyncEntityType,
+    entityId: string
+  ) => Promise<MirrorRecord | undefined>
 
   /**
    * Drop a mirrored row without queueing a mutation. The server uses this when

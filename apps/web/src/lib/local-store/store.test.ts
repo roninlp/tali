@@ -271,6 +271,128 @@ describe("local store", () => {
     store.close()
   })
 
+  it("marks a rejected push and clears the marker on a later result", async () => {
+    const store = await open(freshUser())
+    const id = uuidV7()
+    await writeTitle(store, id, "پیش‌نویس")
+    const [entry] = await store.pending()
+    const at = "2026-10-20T09:00:00.000Z"
+
+    await store.ack([entry!.clientMutationId], [], [
+      {
+        entityType: "listItem",
+        entityId: id,
+        code: "InvalidPatch",
+        message: "The patch value for \"title\" is not valid",
+        at,
+        clientMutationId: entry!.clientMutationId
+      }
+    ])
+
+    expect(await store.pending()).toHaveLength(0)
+    expect(await store.failedCount()).toBe(1)
+    expect((await store.listFailed()).map((row) => row.entityId)).toEqual([id])
+    expect((await store.get("listItem", id))!.syncError).toEqual({
+      code: "InvalidPatch",
+      message: "The patch value for \"title\" is not valid",
+      at,
+      clientMutationId: entry!.clientMutationId
+    })
+
+    // A newer local edit is not proof that the rejected fields reached the
+    // server, so it keeps the marker.
+    await store.writeLocal({
+      entityType: "listItem",
+      entityId: id,
+      op: "upsert",
+      patch: { checked: true }
+    })
+    expect((await store.get("listItem", id))!.syncError).not.toBeUndefined()
+
+    // A later applied result resolves the entity and clears the marker even
+    // when it carries no authoritative row to put.
+    await store.ack([], [], [], [{ entityType: "listItem", entityId: id }])
+    expect((await store.get("listItem", id))!.syncError).toBeUndefined()
+    expect(await store.failedCount()).toBe(0)
+    store.close()
+  })
+
+  it("clears a stale marker when a pull replaces the row", async () => {
+    const store = await open(freshUser())
+    const id = uuidV7()
+    await writeTitle(store, id, "محلی")
+    const [entry] = await store.pending()
+    await store.ack([entry!.clientMutationId], [], [
+      {
+        entityType: "listItem",
+        entityId: id,
+        code: "UniqueViolation",
+        message: "UNIQUE constraint failed",
+        at: "2026-10-20T09:00:00.000Z",
+        clientMutationId: entry!.clientMutationId
+      }
+    ])
+    expect((await store.get("listItem", id))!.syncError).not.toBeUndefined()
+
+    await store.mergeServer([
+      {
+        entityType: "listItem",
+        entityId: id,
+        version: 5,
+        updatedAt: "2026-10-20T09:01:00.000Z",
+        deletedAt: null,
+        data: { title: "از سرور", checked: false, sortOrder: 0 }
+      }
+    ])
+
+    const replaced = await store.get("listItem", id)
+    expect(replaced).toMatchObject({ version: 5, data: { title: "از سرور" } })
+    expect(replaced!.syncError).toBeUndefined()
+    store.close()
+  })
+
+  it("requeues a failed row from current data with a fresh identity and anchor", async () => {
+    const store = await open(freshUser())
+    const id = uuidV7()
+    await store.mergeServer([
+      {
+        entityType: "listItem",
+        entityId: id,
+        version: 4,
+        updatedAt: "2026-10-20T09:00:00.000Z",
+        deletedAt: null,
+        data: { title: "مانده", checked: true, sortOrder: 2 }
+      }
+    ])
+    await store.ack([], [], [
+      {
+        entityType: "listItem",
+        entityId: id,
+        code: "AttributionLimit",
+        message: "attribution budget exhausted",
+        at: "2026-10-20T09:00:01.000Z",
+        clientMutationId: uuidV7()
+      }
+    ])
+
+    const retried = await store.retryFailed("listItem", id)
+
+    expect(retried!.syncError).toBeUndefined()
+    expect((await store.get("listItem", id))!.syncError).toBeUndefined()
+    const pending = await store.pending()
+    expect(pending).toHaveLength(1)
+    expect(pending[0]).toMatchObject({
+      entityType: "listItem",
+      entityId: id,
+      op: "upsert",
+      baseVersion: 4,
+      patch: { title: "مانده", checked: true, sortOrder: 2 },
+      sent: false
+    })
+    expect(pending[0]!.clientMutationId).toMatch(/^[0-9a-f-]{36}$/)
+    store.close()
+  })
+
   it("removes a mirror row the server no longer shows, without queueing a mutation", async () => {
     const store = await open(freshUser())
     const id = uuidV7()
