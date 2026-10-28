@@ -40,6 +40,27 @@ const pushTask = (id: string, title: string, mutationId: string) => ({
   clientUpdatedAt: new Date().toISOString()
 })
 
+const pushProject = (id: string, title: string, mutationId: string) => ({
+  clientMutationId: mutationId,
+  entityType: "project",
+  entityId: id,
+  baseVersion: 0,
+  op: "upsert",
+  patch: { title },
+  clientUpdatedAt: new Date().toISOString()
+})
+
+/** A note write is the widest group: row + feed + ledger + two FTS statements. */
+const pushNote = (id: string, title: string, mutationId: string) => ({
+  clientMutationId: mutationId,
+  entityType: "note",
+  entityId: id,
+  baseVersion: 0,
+  op: "upsert",
+  patch: { title, body: { type: "doc" }, plainText: title },
+  clientUpdatedAt: new Date().toISOString()
+})
+
 const push = async (cookie: string, entries: ReadonlyArray<unknown>) => {
   const response = await workerFetch(
     "/sync/push",
@@ -145,6 +166,64 @@ describe("POST /sync/push", () => {
     expect(await response.json()).toMatchObject({
       error: { code: "BadRequest" }
     })
+  })
+
+  it("applies a large mixed catch-up across statement-budgeted batches", async () => {
+    const { session, household } = await sessionWithHousehold()
+
+    // 20 projects (rank 0) + 60 notes and 100 tasks (rank 1) is 660 statements
+    // — one batch before this change. Parents must land in earlier chunks than
+    // the tasks that reference them, and a note's FTS statements must stay in
+    // the same chunk as its row write.
+    const projects = Array.from({ length: 20 }, () => uuidV7())
+    const notes = Array.from({ length: 60 }, () => uuidV7())
+    const tasks = Array.from({ length: 100 }, () => uuidV7())
+    const entries = [
+      ...projects.map((id, index) => pushProject(id, `پروژه ${index}`, `boundary-large-project-${index}`)),
+      ...notes.map((id, index) => pushNote(id, `یادداشت ${index}`, `boundary-large-note-${index}`)),
+      ...tasks.map((id, index) =>
+        ({
+          ...pushTask(id, `کار ${index}`, `boundary-large-task-${index}`),
+          patch: { title: `کار ${index}`, projectId: projects[index % projects.length] }
+        })
+      )
+    ]
+    expect(entries).toHaveLength(180)
+
+    const pushed = await push(session.cookie, entries)
+    expect(pushed.response.status).toBe(200)
+    // One result per entry, in input order, every write applied.
+    expect(pushed.body.results.map((result) => result.entityId))
+      .toEqual(entries.map((entry) => entry.entityId))
+    expect(pushed.body.results.every((result) => result._tag === "applied")).toBe(true)
+
+    // The feed carries exactly one row per entry, with no duplicates from a
+    // chunk that had to be retried.
+    const feed = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM change_feed WHERE household_id = ?"
+    ).bind(household.id).first<{ readonly n: number }>()
+    expect(feed?.n).toBe(180)
+    const duplicated = await env.DB.prepare(
+      `SELECT entity_id FROM change_feed WHERE household_id = ?
+       GROUP BY entity_id HAVING COUNT(*) > 1`
+    ).bind(household.id).all<{ readonly entity_id: string }>()
+    expect(duplicated.results).toEqual([])
+
+    // Every note write also maintained its search index inside the chunk.
+    const indexed = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM notes_fts f
+       JOIN notes n ON n.id = f.note_id
+       WHERE n.household_id = ?`
+    ).bind(household.id).first<{ readonly n: number }>()
+    expect(indexed?.n).toBe(60)
+
+    const pulled = await workerFetch("/sync/pull?cursor=0&limit=1000", {
+      headers: { cookie: session.cookie }
+    })
+    expect(pulled.status).toBe(200)
+    const body = await pulled.json() as SyncBody
+    expect(body.items.map((item) => item.entityId).sort())
+      .toEqual([...projects, ...notes, ...tasks].sort())
   })
 })
 

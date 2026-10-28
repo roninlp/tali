@@ -27,7 +27,10 @@ import {
  *
  * Pull reads the household-scoped `change_feed` and hydrates the latest row
  * state; push dedupes, resolves conflicts field-by-field (tombstone →
- * delete-wins → done-wins → LWW), and commits every write in one D1 batch.
+ * delete-wins → done-wins → LWW), and commits its write groups as a sequence
+ * of statement-budgeted D1 batches, parents before children. One batch is
+ * atomic; the whole push is not, so a failure after an earlier batch landed is
+ * retryable and converges: `applied_mutations` dedupes the committed prefix.
  * A constraint failure is attributed to entry groups by bounded recursive
  * bisection (`MAX_ISOLATION_BATCHES`), never a linear per-entry sweep.
  * The server is the single resolver: clients adopt the returned row.
@@ -43,11 +46,30 @@ const MAX_PULL_LIMIT = 1000
 const MAX_PUSH_ENTRIES = 200
 
 /**
- * Hard ceiling on the D1 batches one push may issue, including its first
- * (happy-path) attempt, while attributing a constraint failure to entry
- * groups. Recursive bisection needs ~18 batches to find one bad entry among
- * `MAX_PUSH_ENTRIES` and ~31 for two; a linear per-entry sweep would need up
- * to 201 and turn into a retryable 500 under Workers/D1 limits. At the cap the
+ * Statements one `d1.batch()` may carry, counting the derived-index and
+ * recurrence-spawn statements too.
+ *
+ * The repo budgets its D1 work against the Free plan's 50 queries per
+ * invocation (ADR-0009, `PURGE_MAX_STATEMENTS_PER_TICK`,
+ * `occasion-service.ts`). A 200-entry note-heavy push is ~1,000 statements
+ * (row + feed + ledger + two FTS statements per note,
+ * `packages/sql/src/sync-registry.ts`), so committing it as one batch makes the
+ * whole catch-up an indivisible unit: it can only fail as a whole and is then
+ * resent as a whole. 40 keeps each commit to a handful of write groups — small
+ * enough that a failure costs one chunk and a retry resumes, large enough to
+ * keep the round-trip overhead amortised.
+ */
+export const MAX_BATCH_STATEMENTS = 40
+
+/**
+ * Hard ceiling on the *attribution* batches one push may issue on top of its
+ * happy-path chunks, while attributing a constraint failure to entry groups.
+ *
+ * The two are counted separately: the chunk count is data-driven
+ * (`ceil(statements / MAX_BATCH_STATEMENTS)`), so charging chunks against this
+ * allowance would let a large but healthy push exhaust it before a single bad
+ * entry was attributed. Every batch the push actually issues is still bounded
+ * by `chunks + MAX_ISOLATION_BATCHES`, and once the allowance is spent the
  * unattempted groups are returned as `rejected` with `AttributionLimit` so the
  * client acks them instead of resending the chunk forever.
  */
@@ -183,10 +205,11 @@ const constraintFailureOf = (error: unknown): ConstraintFailure | undefined => {
 }
 
 /**
- * Parents before children inside one batch, so the common offline "create a
- * project/tag/list (or a habit) and its dependent row together" push succeeds
- * without a retry. `Array.prototype.sort` is stable, so entries for the same
- * entity keep their FIFO order.
+ * Parents before children across the whole push, so the common offline "create
+ * a project/tag/list (or a habit) and its dependent row together" push succeeds
+ * without a retry — even when the two end up in different statement-budgeted
+ * chunks. `Array.prototype.sort` is stable, so entries for the same entity keep
+ * their FIFO order.
  */
 const dependencyRank = (entityType: SyncEntityType): number => {
   switch (entityType) {
@@ -206,6 +229,54 @@ const dependencyRank = (entityType: SyncEntityType): number => {
     default:
       return 1
   }
+}
+
+/** The part of a write group ordering and chunking need to see. */
+interface PlannedGroup {
+  readonly state: { readonly entityType: SyncEntityType }
+  readonly statements: ReadonlyArray<Statement.Statement<unknown>>
+}
+
+/**
+ * Order the whole push, not each chunk: `Array.prototype.sort` is stable, so
+ * entries for the same entity keep their FIFO order, and every rank-0 group
+ * (project/tag/list/habit) precedes every rank-1 group (task/note/listItem/
+ * habitEntry). Chunking this sequence therefore preserves parent-before-child
+ * across chunk boundaries as well as inside a chunk.
+ */
+export const orderWriteGroups = <G extends PlannedGroup>(
+  groups: ReadonlyArray<G>
+): ReadonlyArray<G> =>
+  [...groups].sort(
+    (a, b) => dependencyRank(a.state.entityType) - dependencyRank(b.state.entityType)
+  )
+
+/**
+ * Split an already-ordered group sequence into the batches one push commits,
+ * greedily under `budget` statements. A group is the atomic unit — the entity
+ * write, its feed append, its ledger row and its index/spawn statements must
+ * never be split — so a group that alone exceeds the budget becomes a batch of
+ * its own rather than being broken up.
+ */
+export const chunkWriteGroups = <G extends PlannedGroup>(
+  groups: ReadonlyArray<G>,
+  budget: number = MAX_BATCH_STATEMENTS
+): ReadonlyArray<ReadonlyArray<G>> => {
+  const batches: Array<Array<G>> = []
+  let current: Array<G> = []
+  let statements = 0
+  for (const group of groups) {
+    const size = group.statements.length
+    if (current.length > 0 && statements + size > budget) {
+      batches.push(current)
+      current = []
+      statements = 0
+    }
+    current.push(group)
+    statements += size
+  }
+  if (current.length > 0) batches.push(current)
+  return batches
 }
 
 const asVisibility = (value: unknown): Visibility =>
@@ -749,18 +820,29 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           write(entry, state, current.version, "upsert", "conflict", current)
         }
 
-        // Parents before children (stable within a type), so a project/tag/list
-        // created in the same push exists before the task/note/listItem that
-        // references it. The happy path is still exactly one D1 batch.
-        const orderedGroups = [...groups].sort(
-          (a, b) => dependencyRank(a.state.entityType) - dependencyRank(b.state.entityType)
-        )
+        // Parents before children across the whole push (stable within a type),
+        // then split into statement-budgeted chunks. Ordering the complete
+        // sequence *before* chunking is what keeps a project/tag/list/habit in
+        // an earlier chunk ahead of the task/note/listItem/habitEntry that
+        // references it — sorting each chunk alone would not.
+        const orderedGroups = orderWriteGroups(groups)
+        const chunks = chunkWriteGroups(orderedGroups)
         const rejectedGroups = new Map<number, ConstraintFailure>()
+        /**
+         * Every `d1.batch()` this push issues — chunks and attribution alike —
+         * is charged to `batchesUsed`. The attribution share is counted
+         * separately so the total is exactly `chunks.length +
+         * MAX_ISOLATION_BATCHES` at most: a healthy push can never eat the
+         * allowance reserved for attributing a bad entry, and isolation can
+         * never starve the chunks that still have to commit.
+         */
         let batchesUsed = 0
+        let attributionBatches = 0
 
-        const commit = (subset: ReadonlyArray<WriteGroup>) =>
+        const commit = (subset: ReadonlyArray<WriteGroup>, attribution = false) =>
           Effect.suspend(() => {
             batchesUsed += 1
+            if (attribution) attributionBatches += 1
             return commitOrConstraint(subset.flatMap((group) => group.statements))
           })
 
@@ -775,23 +857,25 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
          * propagates as the request's retryable failure.
          *
          * The budget is a hard cap, not a hint: once `MAX_ISOLATION_BATCHES`
-         * batches have run, the unattempted remainder is marked rejected with
-         * `AttributionLimit` so an unlucky chunk can never wedge the outbox.
+         * attribution batches have run, the unattempted remainder is marked
+         * rejected with `AttributionLimit` so an unlucky chunk can never wedge
+         * the outbox.
          */
         const attribute = (subset: ReadonlyArray<WriteGroup>): Effect.Effect<void> =>
           Effect.suspend(() => {
-            if (batchesUsed >= MAX_ISOLATION_BATCHES) {
+            if (attributionBatches >= MAX_ISOLATION_BATCHES) {
               const limit: ConstraintFailure = {
                 code: "AttributionLimit",
                 message:
-                  `Isolation stopped after ${MAX_ISOLATION_BATCHES} batches; this entry could not be attributed`
+                  `Isolation stopped after ${MAX_ISOLATION_BATCHES} attribution batches ` +
+                  `(${batchesUsed} issued including chunks); this entry could not be attributed`
               }
               for (const group of subset) rejectedGroups.set(group.index, limit)
               return Effect.void
             }
             if (subset.length === 1) {
               const group = subset[0]!
-              return commit(subset).pipe(
+              return commit(subset, true).pipe(
                 Effect.map((failure) => {
                   if (failure !== undefined) rejectedGroups.set(group.index, failure)
                 })
@@ -803,8 +887,8 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
               halves,
               (half) =>
                 Effect.suspend(() => {
-                  if (batchesUsed >= MAX_ISOLATION_BATCHES) return attribute(half)
-                  return commit(half).pipe(
+                  if (attributionBatches >= MAX_ISOLATION_BATCHES) return attribute(half)
+                  return commit(half, true).pipe(
                     Effect.flatMap((failure) =>
                       failure === undefined ? Effect.void : attribute(half)
                     )
@@ -814,12 +898,18 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
             )
           })
 
-        if (orderedGroups.length > 0) {
-          const failure = yield* commit(orderedGroups)
-          if (failure !== undefined) {
-            // The batch rolled back atomically, so no group was applied twice.
-            yield* attribute(orderedGroups)
-          }
+        /**
+         * One chunk is atomic; the push as a whole is not. A failure after an
+         * earlier chunk committed surfaces as retryable (a non-constraint
+         * error still dies, exactly as before), and the retry converges:
+         * `applied_mutations` dedupes the committed prefix, so the next attempt
+         * writes only the remainder (§4.2). No group is ever committed twice.
+         */
+        for (const chunk of chunks) {
+          const failure = yield* commit(chunk)
+          // A constraint rolls back this chunk only, so only its groups need
+          // attribution; earlier chunks stay committed and are not replayed.
+          if (failure !== undefined) yield* attribute(chunk)
         }
 
         const writes = plans.filter(

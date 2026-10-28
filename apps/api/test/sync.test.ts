@@ -157,6 +157,15 @@ const isolationChunk = (count: number, poisonAt: ReadonlyArray<number>) => {
 const itemOf = (page: SyncPullResponse, entityId: string) =>
   page.items.find((item) => item.entityId === entityId)
 
+/**
+ * 200 listItem/task groups at three statements each (row + feed + ledger):
+ * 13 groups fill a 39-statement chunk, so 15 full chunks plus a 5-group tail.
+ */
+const CHUNKS_200_LIST_ITEMS = 16
+
+/** The hard total for a 200-entry push: its chunks plus the attribution allowance. */
+const MAX_PUSH_BATCHES_200 = CHUNKS_200_LIST_ITEMS + MAX_ISOLATION_BATCHES
+
 const feedCount = (db: DatabaseSync): number =>
   (db.prepare("SELECT COUNT(*) AS n FROM change_feed").get() as { readonly n: number }).n
 
@@ -932,7 +941,7 @@ describe("sync engine", () => {
       )
     })
     expect(result.results.every((entry) => entry._tag === "applied")).toBe(true)
-    // Every entry of the push lands in ONE D1 batch (§4.2).
+    // One small multi-aggregate push still fits one statement-budgeted chunk.
     expect(h.fake.batchCalls).toBe(1)
 
     const page = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
@@ -1193,7 +1202,7 @@ describe("sync engine", () => {
     })
 
     expect(result.results.map((row) => row._tag)).toEqual(["applied", "applied"])
-    // Ordering inside the one batch is what makes the FK satisfiable.
+    // Ordering inside the one chunk is what makes the FK satisfiable.
     expect(h.fake.batchCalls).toBe(1)
     const task = h.db
       .prepare("SELECT project_id FROM tasks WHERE id = ?")
@@ -1238,12 +1247,44 @@ describe("sync engine", () => {
     ).toBe(0)
   })
 
+  // ── Statement-budgeted push chunks (finding 4) ────────────────────────────
+
+  it("applies a full 200-note catch-up as 25 statement-budgeted batches", async () => {
+    const h = makeHarness()
+    const ids = Array.from({ length: 200 }, () => uuidV7())
+
+    const result = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: ids.map((entityId) =>
+        entry({
+          entityType: "note",
+          entityId,
+          baseVersion: 0,
+          patch: { title: entityId, plainText: entityId, body: { type: "doc" } }
+        })
+      )
+    })
+
+    expect(result.results).toHaveLength(ids.length)
+    expect(result.results.every((row) => row._tag === "applied")).toBe(true)
+    // 200 notes × 5 statements (row + feed + ledger + FTS delete + insert) =
+    // 1,000 statements; eight note groups fill a 40-statement chunk. A healthy
+    // push never spends the attribution allowance, so all 25 chunks commit.
+    expect(h.fake.batchCalls).toBe(25)
+    expect(feedCount(h.db)).toBe(200)
+    expect(
+      (h.db.prepare("SELECT COUNT(*) AS n FROM notes_fts").get() as { readonly n: number }).n
+    ).toBe(200)
+  })
+
   // ── M4 follow-up: bounded bisection, not an O(entries) isolation sweep ─────
 
   it("isolates one poison entry among 200 within MAX_ISOLATION_BATCHES", async () => {
     const h = makeHarness()
 
-    // The happy path is unchanged: a full chunk still commits in one batch.
+    // 200 listItems at three statements each: 16 chunks under the 40-statement
+    // budget, all committed sequentially on the happy path.
     const healthy = Array.from({ length: 200 }, () => uuidV7())
     const happy = await push(h, {
       userId: USER_A,
@@ -1253,7 +1294,7 @@ describe("sync engine", () => {
       )
     })
     expect(happy.results.every((result) => result._tag === "applied")).toBe(true)
-    expect(h.fake.batchCalls).toBe(1)
+    expect(h.fake.batchCalls).toBe(16)
 
     h.fake.batchCalls = 0
     const beforeFeed = feedCount(h.db)
@@ -1269,9 +1310,11 @@ describe("sync engine", () => {
       entityId: ids[100]
     })
     expect(result.results.filter((row) => row._tag === "applied")).toHaveLength(199)
-    // Bisection needs 16 batches for one bad entry in 200 — not 201.
-    expect(h.fake.batchCalls).toBe(16)
-    expect(h.fake.batchCalls).toBeLessThanOrEqual(MAX_ISOLATION_BATCHES)
+    // Eight chunk attempts reach the poison's chunk, nine attribution batches
+    // isolate it, and the remaining chunks commit: 25 total, not a 201-batch
+    // per-entry sweep.
+    expect(h.fake.batchCalls).toBe(25)
+    expect(h.fake.batchCalls).toBeLessThanOrEqual(MAX_PUSH_BATCHES_200)
     expect(feedCount(h.db)).toBe(beforeFeed + 199)
     expect(appliedCount(h.db)).toBe(beforeApplied + 199)
   })
@@ -1290,7 +1333,7 @@ describe("sync engine", () => {
         entityId: ids[position]
       })
       expect(result.results.filter((row) => row._tag === "applied")).toHaveLength(199)
-      expect(h.fake.batchCalls).toBeLessThanOrEqual(MAX_ISOLATION_BATCHES)
+      expect(h.fake.batchCalls).toBeLessThanOrEqual(MAX_PUSH_BATCHES_200)
     }
   })
 
@@ -1313,22 +1356,26 @@ describe("sync engine", () => {
       entityId: ids[199]
     })
     expect(result.results.filter((row) => row._tag === "applied")).toHaveLength(198)
-    // Two bad entries at opposite ends of the chunk: 31 batches, still bounded.
-    expect(h.fake.batchCalls).toBe(31)
-    expect(h.fake.batchCalls).toBeLessThanOrEqual(MAX_ISOLATION_BATCHES)
+    // Two bad entries in two different chunks: both chunks fail, each is
+    // bisected, and the chunks between them commit. 30 batches, still bounded.
+    expect(h.fake.batchCalls).toBe(30)
+    expect(h.fake.batchCalls).toBeLessThanOrEqual(MAX_PUSH_BATCHES_200)
     expect(feedCount(h.db)).toBe(beforeFeed + 198)
     expect(appliedCount(h.db)).toBe(beforeApplied + 198)
   })
 
   it("returns AttributionLimit instead of wedging when the batch budget is exhausted", async () => {
     const h = makeHarness()
-    const { entries } = isolationChunk(200, [0, 100, 199])
+    // One poison per chunk: every chunk fails, so attribution exhausts its
+    // allowance long before the 200 entries are attributed.
+    const poisonAt = Array.from({ length: CHUNKS_200_LIST_ITEMS }, (_, index) => index * 13)
+    const { entries } = isolationChunk(200, poisonAt)
 
     const result = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
 
     // The push still completes: no retryable failure, no unbounded fan-out.
     expect(result.results).toHaveLength(200)
-    expect(h.fake.batchCalls).toBe(MAX_ISOLATION_BATCHES)
+    expect(h.fake.batchCalls).toBeLessThanOrEqual(MAX_PUSH_BATCHES_200)
     expect(result.results.every((row) => row._tag === "applied" || row._tag === "rejected")).toBe(true)
     const limited = result.results.filter(
       (row) => row._tag === "rejected" && row.code === "AttributionLimit"
@@ -1344,9 +1391,9 @@ describe("sync engine", () => {
     const h = makeHarness()
     const { entries } = isolationChunk(200, [100])
 
-    // The full batch fails on the poison's constraint; the very next
-    // attribution batch hits a transient network failure. That must escape as
-    // retryable, never as a per-entry rejection the client would ack.
+    // The first chunk commits, then the next batch hits a transient network
+    // failure. That must escape as retryable, never as a per-entry rejection
+    // the client would ack — and the committed chunk stays committed.
     let seen = 0
     h.fake.beforeBatch = () => {
       seen += 1
@@ -1356,15 +1403,20 @@ describe("sync engine", () => {
     await expect(
       push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
     ).rejects.toMatchObject({ _tag: "SqlError" })
-    expect(feedCount(h.db)).toBe(0)
-    expect(appliedCount(h.db)).toBe(0)
+    expect(feedCount(h.db)).toBe(13)
+    expect(appliedCount(h.db)).toBe(13)
 
     h.fake.beforeBatch = undefined
     h.fake.batchCalls = 0
     const retry = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
-    expect(retry.results.filter((row) => row._tag === "applied")).toHaveLength(199)
+    // The retry dedupes the 13 committed entries and applies the rest; the
+    // poison is still isolated on its own.
+    expect(retry.results.filter((row) => row._tag === "alreadyApplied")).toHaveLength(13)
+    expect(retry.results.filter((row) => row._tag === "applied")).toHaveLength(186)
     expect(retry.results[100]?._tag).toBe("rejected")
-    expect(h.fake.batchCalls).toBeLessThanOrEqual(MAX_ISOLATION_BATCHES)
+    expect(feedCount(h.db)).toBe(199)
+    expect(appliedCount(h.db)).toBe(199)
+    expect(h.fake.batchCalls).toBeLessThanOrEqual(MAX_PUSH_BATCHES_200)
   })
 
   it("replays a partially isolated push exactly once", async () => {
@@ -1387,6 +1439,51 @@ describe("sync engine", () => {
     expect(appliedCount(h.db)).toBe(appliedAfterFirst)
     // Only the rejected entry was re-attempted.
     expect(h.fake.batchCalls).toBe(2)
+  })
+
+  it("converges on retry after a mid-sequence chunk failure", async () => {
+    const h = makeHarness()
+    const ids = Array.from({ length: 60 }, () => uuidV7())
+    const entries = ids.map((entityId) =>
+      entry({ entityId, baseVersion: 0, patch: { title: entityId } })
+    )
+
+    // 60 listItems at three statements each split into five chunks
+    // (13, 13, 13, 13, 8). Fail the second batch: the first chunk is already
+    // committed when the request dies, which is the non-atomic case the
+    // statement budget introduces.
+    let seen = 0
+    h.fake.beforeBatch = () => {
+      seen += 1
+      if (seen === 2) throw new Error("D1_ERROR: network connection lost: NETWORK")
+    }
+
+    await expect(
+      push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
+    ).rejects.toMatchObject({ _tag: "SqlError" })
+    expect(feedCount(h.db)).toBe(13)
+    expect(appliedCount(h.db)).toBe(13)
+
+    // The client retries the same entries byte-for-byte. `applied_mutations`
+    // dedupes the committed prefix, so the retry only writes the remainder —
+    // and only the remainder counts against the statement budget.
+    h.fake.beforeBatch = undefined
+    h.fake.batchCalls = 0
+    const retry = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
+
+    expect(retry.results).toHaveLength(60)
+    expect(retry.results.filter((row) => row._tag === "alreadyApplied")).toHaveLength(13)
+    expect(retry.results.filter((row) => row._tag === "applied")).toHaveLength(47)
+    expect(h.fake.batchCalls).toBe(4)
+    expect(feedCount(h.db)).toBe(60)
+    expect(appliedCount(h.db)).toBe(60)
+    // Nothing doubled: one feed row and one ledger row per entry.
+    const duplicates = h.db
+      .prepare("SELECT entity_id, COUNT(*) AS n FROM change_feed GROUP BY entity_id HAVING n > 1")
+      .all()
+    expect(duplicates).toEqual([])
+    // One result per input entry, in input order, on the retry too.
+    expect(retry.results.map((row) => row.entityId)).toEqual(ids)
   })
 
   it("keeps a delete tombstone retryable when the row appears after the pre-read", async () => {
