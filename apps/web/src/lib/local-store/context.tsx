@@ -64,18 +64,35 @@ export function LocalStoreProvider(props: ParentProps) {
   let generation = 0
   let unsubscribe: (() => void) | undefined
 
-  const refreshCountsOf = async (current: LocalStore) => {
+  /**
+   * The pending count is cheap (`count()` on the outbox) and it can change on
+   * every local write, so the subscribe callback refreshes only this one.
+   */
+  const refreshPendingOf = async (current: LocalStore) => {
     if (current.closed) return
     try {
-      const [pendingCount, failedCount] = await Promise.all([
-        current.pendingCount(),
-        current.failedCount()
-      ])
-      setPending(pendingCount)
-      setFailed(failedCount)
+      setPending(await current.pendingCount())
     } catch {
-      // The store closed mid-read (sign-out); the next open resets the counts.
+      // The store closed mid-read (sign-out); the next open resets the count.
     }
+  }
+
+  /**
+   * Failure markers only move inside a push result, a pull replacement or a
+   * retry. Counting them is a mirror scan, so do it on open and after a pass,
+   * never on every keystroke's store notification.
+   */
+  const refreshFailedOf = async (current: LocalStore) => {
+    if (current.closed) return
+    try {
+      setFailed(await current.failedCount())
+    } catch {
+      // The store closed mid-read (sign-out); the next open resets the count.
+    }
+  }
+
+  const refreshCountsOf = async (current: LocalStore) => {
+    await Promise.all([refreshPendingOf(current), refreshFailedOf(current)])
   }
 
   const closeStore = () => {
@@ -154,7 +171,7 @@ export function LocalStoreProvider(props: ParentProps) {
             return
           }
           setStore(opened)
-          unsubscribe = opened.subscribe(() => void refreshCountsOf(opened))
+          unsubscribe = opened.subscribe(() => void refreshPendingOf(opened))
           setStatus("ready")
           await refreshCountsOf(opened)
         } catch (cause) {

@@ -114,8 +114,9 @@ export interface LocalStore {
   list: (entityType: SyncEntityType) => Promise<ReadonlyArray<MirrorRecord>>
   /**
    * Rows whose last push was rejected, in no particular order. Failures are
-   * rare, so a mirror scan is cheaper than a schema/index bump; the badge reads
-   * only the count on the hot path.
+   * rare, so a mirror scan is cheaper than a schema/index bump — but it is a
+   * scan, so the provider does it only on open and after a sync pass, never on
+   * every local write.
    */
   listFailed: () => Promise<ReadonlyArray<MirrorRecord>>
   failedCount: () => Promise<number>
