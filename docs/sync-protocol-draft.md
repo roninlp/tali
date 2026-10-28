@@ -88,7 +88,9 @@ Returns, paged:
 
 ### 4.1 The outbox entry (what the client queues offline)
 
-Every local mutation appends **one** outbox entry, written to IndexedDB in the **same transaction** as the mirror write (`writeLocal()` — the map's CC-02 "outbox queue via `writeLocal()` in one transaction").
+Every local mutation updates the outbox in the **same transaction** as the mirror write (`writeLocal()` — the map's CC-02 "outbox queue via `writeLocal()` in one transaction"). An `upsert` **folds into** the newest queued `upsert` for the same entity when that entry has not been sent yet — later value wins per field, and the entry keeps its `clientMutationId`/`baseVersion`/`seq` — so one editing session (a note's title keystrokes and body autosaves) is one mutation, not one per write. `delete` and the empty-patch habit-restore upsert always append, because they carry distinct intent.
+
+The store keeps a local `sent` flag that is set immediately before a push leaves the device. Entries may only be folded into while `sent` is false: an entry that may already have been applied must be retried byte-for-byte, because `applied_mutations` would dedupe a merged patch resent under the same `clientMutationId` and silently drop the newer fields.
 
 ```ts
 // one queued mutation
