@@ -5,5 +5,11 @@
     "jsxImportSource": "@solidjs/web",
     "types": ["vite/client"]
   },
-  "include": ["src", "vite.config.ts", "vitest-setup.ts", "file-routes.d.ts"]
+  "include": [
+    "src",
+    "worker.ts",
+    "vite.config.ts",
+    "vitest-setup.ts",
+    "file-routes.d.ts"
+  ]
 }

@@ -16,7 +16,7 @@
 // root with `--config infra/alchemy.run.ts`.
 import * as Alchemy from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { CRON_EXPRESSIONS } from "@tali/config"
+import { CRON, CRON_EXPRESSIONS } from "@tali/config"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
 import { createECDH } from "node:crypto"
@@ -52,18 +52,29 @@ export const Database = Cloudflare.D1.Database("TaliDatabase", {
  *
  * The bucket has no public access and no extra API token: the Worker reaches it
  * through an `r2_bucket` binding, the same way it reaches D1.
+ *
+ * R2 must be enabled on the account before the bucket can exist (a dashboard
+ * agreement, not an API call). `TALI_BACKUPS=off` deploys an environment
+ * without backup storage — no bucket, no `BACKUP_BUCKET` binding, no nightly
+ * backup trigger — which is what a throwaway testing stage on an account
+ * without R2 needs. The default stays on, so a normal deploy keeps #85's
+ * guarantee.
  */
-export const Backups = Cloudflare.R2.Bucket("TaliBackups", {
-  lifecycleRules: [
-    {
-      id: "expire-stale-backups",
-      prefix: "backups/",
-      deleteObjectsTransition: {
-        condition: { type: "Age", maxAge: 30 * 24 * 60 * 60 }
-      }
-    }
-  ]
-})
+const backupsEnabled = process.env.TALI_BACKUPS !== "off"
+
+export const Backups = backupsEnabled
+  ? Cloudflare.R2.Bucket("TaliBackups", {
+      lifecycleRules: [
+        {
+          id: "expire-stale-backups",
+          prefix: "backups/",
+          deleteObjectsTransition: {
+            condition: { type: "Age", maxAge: 30 * 24 * 60 * 60 }
+          }
+        }
+      ]
+    })
+  : undefined
 
 /**
  * VAPID identity (ticket #61; RFC 8292).
@@ -156,14 +167,20 @@ export const Api = Cloudflare.Worker("TaliApi", {
   // newer workerd builds reject it outright instead of warning.
   compatibility: { date: "2026-10-09" },
   dev: { port: 8787, strictPort: true },
-  crons: [...CRON_EXPRESSIONS],
+  crons: backupsEnabled
+    ? [...CRON_EXPRESSIONS]
+    : [CRON.reminder, CRON.purge],
   env: {
     DB: Database,
     // Nightly backup target and its window (ticket #85). The bucket is private;
     // the Worker writes through the binding, so no API token is involved.
-    BACKUP_BUCKET: Backups,
-    BACKUP_DATABASE_NAME: "tali",
-    BACKUP_RETENTION_DAYS: "14",
+    ...(backupsEnabled
+      ? {
+          BACKUP_BUCKET: Backups,
+          BACKUP_DATABASE_NAME: "tali",
+          BACKUP_RETENTION_DAYS: "14"
+        }
+      : {}),
     // Plain config (public by design); the private key binds as a secret.
     VAPID_PUBLIC_KEY: vapid.publicKey,
     VAPID_SUBJECT: vapid.subject,
@@ -177,7 +194,7 @@ export default Alchemy.Stack(
   { providers: Cloudflare.providers(), state },
   Effect.gen(function* () {
     const database = yield* Database
-    const backups = yield* Backups
+    const backups = Backups === undefined ? undefined : yield* Backups
     const api = yield* Api
 
     /**
@@ -185,19 +202,32 @@ export default Alchemy.Stack(
      * `dist/client` as static assets with SPA fallback. In dev the build is
      * skipped and Vite serves the app itself on the port the app's config
      * pins (:3000), which is what the api Worker's `DEV_ORIGIN` expects.
+     *
+     * Deployed, the SPA and the api share one origin: `/api/*` is routed
+     * worker-first into `apps/web/worker.ts`, which strips the prefix and
+     * forwards over the `API` service binding. That is what makes the session
+     * cookie same-origin and lets the client carry a relative `VITE_API_URL`,
+     * so the build does not bake in the deployment's hostname.
      */
     const web = yield* Cloudflare.Website.StaticSite("TaliWeb", {
       cwd: join(repoRoot, "apps/web"),
+      main: join(repoRoot, "apps/web/worker.ts"),
       command: "pnpm run build",
       outdir: "dist/client",
       dev: { command: "pnpm exec vite", url: "http://localhost:3000" },
-      assets: { notFoundHandling: "single-page-application" },
-      env: { VITE_API_URL: api.url.as<string>() }
+      assets: {
+        notFoundHandling: "single-page-application",
+        runWorkerFirst: ["/api/*"]
+      },
+      env: {
+        ...(isDev ? {} : { VITE_API_URL: "/api" }),
+        API: api
+      }
     })
 
     return {
       database: database.databaseName,
-      backupBucket: backups.bucketName,
+      backupBucket: backups?.bucketName,
       apiUrl: api.url,
       webUrl: web.url
     }

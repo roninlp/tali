@@ -8,7 +8,7 @@ is the single owner of how the app runs:
 | `TaliDatabase` | `Cloudflare.D1.Database` | local simulator; `packages/sql/migrations` applied on every reconcile | real D1; migrations applied on deploy |
 | `TaliBackups` | `Cloudflare.R2.Bucket` | local R2 simulator | private R2 bucket; nightly D1 dumps, 30-day lifecycle safety net |
 | `TaliApi` | `Cloudflare.Worker` | `apps/api/src/index.ts` in workerd on :8787 | uploaded Worker with the `DB` + `BACKUP_BUCKET` bindings |
-| `TaliWeb` | `Cloudflare.Website.StaticSite` | `pnpm run dev` (Vite) on :3000 | `pnpm run build` → `apps/web/dist/client` as static assets |
+| `TaliWeb` | `Cloudflare.Website.StaticSite` | `pnpm run dev` (Vite) on :3000 | `pnpm run build` → `apps/web/dist/client` as static assets, with `apps/web/worker.ts` in front of them |
 
 The api Worker declares **three** cron triggers:
 
@@ -59,6 +59,16 @@ pnpm stack:destroy    # alchemy destroy
 
 Stages isolate environments (`alchemy deploy --stage prod`), and every stage is
 an instance of the same program.
+
+The deploy puts the SPA and the api Worker on **one origin**: `/api/*` is
+routed worker-first into `apps/web/worker.ts`, which strips the prefix and
+forwards over the `API` service binding. The session cookie stays same-origin,
+and the client is built with `VITE_API_URL=/api`, resolved against the page
+origin at runtime — the same build works on any stage URL or custom domain.
+
+An environment without R2 (R2 has to be enabled in the dashboard first) deploys
+with `TALI_BACKUPS=off`: no bucket, no `BACKUP_BUCKET` binding and no nightly
+backup trigger. The purge and reminder triggers are unaffected.
 
 A deploy also needs the Web Push identity: `VAPID_PRIVATE_KEY` (a Workers
 **secret**) and `VAPID_SUBJECT` (a real `mailto:`/`https:` URI). Generate a pair
