@@ -6,6 +6,7 @@ import {
   makeSyncRegistry,
   type SyncEntityDefinition,
   type SyncEntityState,
+  type SyncIndexInput,
   type SyncRegistry
 } from "./sync-registry.js"
 
@@ -353,12 +354,17 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
      * after it: every one of them is gated on the row reaching the version
      * this write stamped, so a lost compare-and-set leaves the index
      * describing the row that is actually stored.
+     *
+     * `change` is the optional context a caller has (the push path has both
+     * the previous row and the patch); without it the hook behaves as before
+     * and always indexes.
      */
     const indexStatements = (
-      state: SyncEntityState
+      state: SyncEntityState,
+      change?: Omit<SyncIndexInput, "state">
     ): ReadonlyArray<Statement.Statement<unknown>> => {
       const def = registry.get(state.entityType)
-      return def?.index?.(state) ?? []
+      return def?.index?.({ state, ...change }) ?? []
     }
 
     /**

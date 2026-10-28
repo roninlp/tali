@@ -12,6 +12,7 @@ import {
   type SyncPullResponse,
   type SyncPushEntry
 } from "@tali/domain"
+import { NoteSearchService, NoteSearchServiceLive } from "../src/note-search-service.js"
 import {
   MAX_ISOLATION_BATCHES,
   SyncService,
@@ -66,10 +67,13 @@ const makeHarness = () => {
     transformQueryNames: Str.camelToSnake,
     transformResultNames: Str.snakeToCamel
   })
-  const layer = SyncServiceLive.pipe(Layer.provide(d1))
+  const layer = Layer.mergeAll(NoteSearchServiceLive, SyncServiceLive).pipe(
+    Layer.provide(d1)
+  )
 
-  const run = <A>(effect: Effect.Effect<A, unknown, SyncService>): Promise<A> =>
-    Effect.runPromise(Effect.provide(effect, layer))
+  const run = <A>(
+    effect: Effect.Effect<A, unknown, SyncService | NoteSearchService>
+  ): Promise<A> => Effect.runPromise(Effect.provide(effect, layer))
 
   return { db, fake, run }
 }
@@ -162,6 +166,58 @@ const feedCount = (db: DatabaseSync): number =>
 
 const appliedCount = (db: DatabaseSync): number =>
   (db.prepare("SELECT COUNT(*) AS n FROM applied_mutations").get() as { readonly n: number }).n
+
+/** The stored search row, exactly as FTS5 holds it (folded values). */
+const noteIndex = (
+  db: DatabaseSync,
+  noteId: string
+): { readonly searchTitle: string; readonly searchBody: string } | undefined =>
+  db
+    .prepare(
+      "SELECT search_title AS searchTitle, search_body AS searchBody FROM notes_fts WHERE note_id = ?"
+    )
+    .get(noteId) as
+    | { readonly searchTitle: string; readonly searchBody: string }
+    | undefined
+
+/** Note ids the search service returns, scoped like the UI's viewer. */
+const searchNotes = (
+  harness: Harness,
+  query: string
+): Promise<ReadonlyArray<string>> =>
+  harness.run(
+    Effect.gen(function*() {
+      const search = yield* NoteSearchService
+      const result = yield* search.search(
+        { userId: USER_A, householdId: HOUSEHOLD },
+        query
+      )
+      return result.hits.map((hit) => hit.id)
+    })
+  )
+
+/** Insert a note through the push path (the way the web app writes). */
+const insertNote = (
+  harness: Harness,
+  id: string,
+  input?: { readonly title?: string; readonly plainText?: string }
+) =>
+  push(harness, {
+    userId: USER_A,
+    householdId: HOUSEHOLD,
+    entries: [
+      entry({
+        entityType: "note",
+        entityId: id,
+        baseVersion: 0,
+        patch: {
+          title: input?.title ?? "خرید",
+          plainText: input?.plainText ?? "نان و پنیر",
+          body: { type: "doc" }
+        }
+      })
+    ]
+  })
 
 /** A device as the client engine models it: a cursor plus a mirror. */
 interface Device {
@@ -1442,6 +1498,129 @@ describe("sync engine", () => {
 
     const retry = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] })
     expect(retry.results[0]?._tag).toBe("applied")
+  })
+
+  // ── Note search index: no rewrite when the text cannot change ────────────
+
+  it("indexes an inserted note in the write's own batch", async () => {
+    const h = makeHarness()
+    const id = uuidV7()
+    await insertNote(h, id)
+
+    expect(h.fake.batchStatementCounts).toEqual([5])
+    expect(noteIndex(h.db, id)).toEqual({
+      searchTitle: "خرید",
+      searchBody: "نان و پنیر"
+    })
+    expect(await searchNotes(h, "پنیر")).toEqual([id])
+  })
+
+  it("keeps the search row untouched for pin, tag and archive changes", async () => {
+    const h = makeHarness()
+    const id = uuidV7()
+    await insertNote(h, id)
+    const indexed = noteIndex(h.db, id)
+    expect(indexed).toBeDefined()
+
+    const tagIds = [uuidV7(), uuidV7()]
+    const metadataChanges = [
+      { patch: { isPinned: true }, column: "is_pinned", expected: 1 },
+      {
+        patch: { tagIds },
+        column: "tag_ids",
+        expected: JSON.stringify(tagIds)
+      },
+      { patch: { isArchived: true }, column: "is_archived", expected: 1 }
+    ] as const
+
+    let baseVersion = 1
+    for (const change of metadataChanges) {
+      const beforeFeed = feedCount(h.db)
+      h.fake.batchStatementCounts.length = 0
+
+      const result = await push(h, {
+        userId: USER_A,
+        householdId: HOUSEHOLD,
+        entries: [
+          entry({
+            entityType: "note",
+            entityId: id,
+            baseVersion,
+            patch: change.patch
+          })
+        ]
+      })
+
+      expect(result.results[0]?._tag).toBe("applied")
+      // Row + feed + ledger. The FTS delete/insert pair is skipped because
+      // title and plainText are unchanged (5 statements → 3).
+      expect(h.fake.batchStatementCounts).toEqual([3])
+      // The note row still lands and the feed still tells other devices.
+      const row = h.db
+        .prepare(`SELECT ${change.column} AS value FROM notes WHERE id = ?`)
+        .get(id) as { readonly value: unknown }
+      expect(row.value).toEqual(change.expected)
+      expect(feedCount(h.db)).toBe(beforeFeed + 1)
+      expect(noteIndex(h.db, id)).toEqual(indexed)
+
+      baseVersion += 1
+    }
+  })
+
+  it("re-indexes a title-only change and finds the note by the new title", async () => {
+    const h = makeHarness()
+    const id = uuidV7()
+    await insertNote(h, id)
+    h.fake.batchStatementCounts.length = 0
+
+    const result = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "note",
+          entityId: id,
+          baseVersion: 1,
+          patch: { title: "سفر" }
+        })
+      ]
+    })
+
+    expect(result.results[0]?._tag).toBe("applied")
+    expect(h.fake.batchStatementCounts).toEqual([5])
+    expect((await searchNotes(h, "سفر"))).toEqual([id])
+    expect((await searchNotes(h, "خرید"))).toEqual([])
+    expect(noteIndex(h.db, id)?.searchTitle).toBe("سفر")
+    // The body was merged, not dropped, so its text is still searchable.
+    expect((await searchNotes(h, "پنیر"))).toEqual([id])
+  })
+
+  it("re-indexes a body-only change and finds the note by the new text", async () => {
+    const h = makeHarness()
+    const id = uuidV7()
+    await insertNote(h, id)
+    h.fake.batchStatementCounts.length = 0
+
+    const result = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "note",
+          entityId: id,
+          baseVersion: 1,
+          patch: { plainText: "بلیط هواپیما", body: { type: "doc" } }
+        })
+      ]
+    })
+
+    expect(result.results[0]?._tag).toBe("applied")
+    expect(h.fake.batchStatementCounts).toEqual([5])
+    expect((await searchNotes(h, "بلیط"))).toEqual([id])
+    expect((await searchNotes(h, "پنیر"))).toEqual([])
+    expect(noteIndex(h.db, id)?.searchBody).toBe("بلیط هواپیما")
+    // The title was merged, not dropped, so its text is still searchable.
+    expect((await searchNotes(h, "خرید"))).toEqual([id])
   })
 
   it("requires a reset for a non-zero cursor against an empty feed", async () => {

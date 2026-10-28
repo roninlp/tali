@@ -177,8 +177,13 @@ export interface SyncEntityDefinition {
    * them is gated on the row reaching the version this write stamped: if the
    * compare-and-set lost, the index keeps the text it already has instead of
    * describing a row that never landed.
+   *
+   * The hook receives the merged row plus what the caller knows about the
+   * change, so it can skip work that cannot affect the index. Skipping only
+   * removes statements; it never weakens the version/timestamp gate on the
+   * statements that still run.
    */
-  readonly index?: (state: SyncEntityState) => ReadonlyArray<Statement.Statement<unknown>>
+  readonly index?: (input: SyncIndexInput) => ReadonlyArray<Statement.Statement<unknown>>
   /**
    * Optional statements for a hard delete (the 30-day trash purge, #85).
    *
@@ -206,6 +211,16 @@ export interface SyncEntityDefinition {
    * completion whose CAS lost can never leave an orphan successor.
    */
   readonly spawn?: (input: SyncSpawnInput) => SyncSpawn | undefined
+}
+
+/** Input to an aggregate's `index` hook (ticket #41). */
+export interface SyncIndexInput {
+  /** The row after this write, already merged and validated. */
+  readonly state: SyncEntityState
+  /** The row before this write; absent when the entry inserted the row. */
+  readonly previous?: SyncEntityState
+  /** The sanitized client patch, when the caller has one. */
+  readonly patch?: Record<string, unknown>
 }
 
 /** A parent reference resolved by the sync engine (see `parent` above). */
@@ -1315,8 +1330,22 @@ const noteDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
    * The first statement drops the note's previous index row, the second
    * writes the new one — both inside the same batch as the row write, so the
    * index never lags behind a committed note.
+   *
+   * A write that leaves the indexed text alone (pin, archive, tag, colour or
+   * visibility changes) has nothing to rewrite, so the pair is skipped. The
+   * comparison is on the **merged** values rather than a list of patch fields:
+   * title and plainText are the only inputs to the index, so any other field
+   * changing is covered without this hook knowing which fields those are.
+   * An insert has no previous row and always indexes.
    */
-  index: (state) => {
+  index: ({ state, previous }) => {
+    if (
+      previous !== undefined &&
+      previous.data.title === state.data.title &&
+      previous.data.plainText === state.data.plainText
+    ) {
+      return []
+    }
     const noteId = state.entityId
     const title = normalizePersian(encodeText(state.data.title))
     const body = normalizePersian(encodeText(state.data.plainText))
@@ -2003,7 +2032,7 @@ const reminderDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => (
    * statement is gated on this write actually landing, so a lost CAS leaves
    * the ledger untouched.
    */
-  index: (state) => {
+  index: ({ state }) => {
     const silenced = typeof state.data.silencedUntil === "string"
     if (state.deletedAt === null && !silenced) return []
     return [
