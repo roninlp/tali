@@ -1,5 +1,6 @@
 import "fake-indexeddb/auto"
 import { render, fireEvent, waitFor } from "@solidjs/testing-library"
+import { createEffect } from "solid-js"
 import { createRouter } from "@solidjs/router"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { uuidV7, type SessionContext } from "@tali/domain"
@@ -7,7 +8,6 @@ import { AuthProvider } from "../../lib/auth"
 import {
   LocalStoreProvider,
   useLocalStore,
-  type LocalStore,
   type LocalStoreContextValue
 } from "../../lib/local-store"
 import { openLocalStore } from "../../lib/local-store/store"
@@ -15,31 +15,10 @@ import NoteEditorRoute from "./[id]"
 
 /**
  * The store subscription is the only handle on "a notification arrived", and
- * the editor owns its callback. Record every listener an opened store gets so
- * a test can deliver a burst in one tick, the way several commits would.
+ * the editor owns its callback. Record the listener the editor registers so a
+ * test can deliver a burst in one tick, the way several commits would.
  */
 const storeListeners = new Set<() => void>()
-
-vi.mock("../../lib/local-store/store", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../lib/local-store/store")>()
-  return {
-    ...actual,
-    openLocalStore: async (
-      userId: string,
-      options?: Parameters<typeof actual.openLocalStore>[1]
-    ): Promise<LocalStore> => {
-      const store = await actual.openLocalStore(userId, options)
-      return Object.create(store, {
-        subscribe: {
-          value: (listener: () => void) => {
-            storeListeners.add(listener)
-            return store.subscribe(listener)
-          }
-        }
-      }) as LocalStore
-    }
-  }
-})
 
 const session: SessionContext = {
   user: {
@@ -65,6 +44,23 @@ let local: LocalStoreContextValue | undefined
 
 function StoreProbe() {
   local = useLocalStore()
+  createEffect(
+    () => local!.store(),
+    (store) => {
+      if (store === undefined) return
+      // Installed before the editor's async load reaches `subscribe()`. The
+      // provider subscribes synchronously at open, before this effect runs, so
+      // only the editor's listener is recorded.
+      const original = store.subscribe
+      Object.defineProperty(store, "subscribe", {
+        configurable: true,
+        value: (listener: () => void) => {
+          storeListeners.add(listener)
+          return original(listener)
+        }
+      })
+    }
+  )
   return null
 }
 
@@ -241,8 +237,9 @@ describe("note editor sync failure", () => {
     const view = mount(id)
     await waitFor(() => expect(local!.status()).toBe("ready"))
     await view.findByLabelText("متن یادداشت")
-    // The provider and the editor each subscribe once the store is open.
-    await waitFor(() => expect(storeListeners.size).toBeGreaterThanOrEqual(2))
+    // The provider subscribes at open; the editor subscribes once its load
+    // finishes, which is the listener this test delivers a burst to.
+    await waitFor(() => expect(storeListeners.size).toBeGreaterThanOrEqual(1))
 
     const store = local!.store()!
     const originalGet = store.get.bind(store)
