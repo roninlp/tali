@@ -254,9 +254,10 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
     const repo = yield* SyncRepo
 
     /**
-     * One entry's write, always exactly three statements: entity write, gated
-     * feed append, gated ledger row. Grouping them lets the failure path retry
-     * one entry at a time without ever splitting the exactly-once triple.
+     * One entry's write: the entity row, gated feed append and gated ledger
+     * row, plus any derived-index statements. Grouping them lets the failure
+     * path retry one entry at a time without ever splitting the exactly-once
+     * triple at its core.
      */
     type WriteStatement = ReturnType<typeof repo.writeEntity>
     interface WriteGroup {
@@ -417,7 +418,8 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           expectedVersion: number | null,
           op: "upsert" | "delete",
           tag: WriteTag,
-          previous?: SyncEntityState
+          previous?: SyncEntityState,
+          patch?: Record<string, unknown>
         ) => {
           // Server-stamped attribution for the list "updated by" label (#39).
           // Only the list aggregates carry the column; other entities ignore
@@ -451,8 +453,10 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
             }),
             // Derived indexes ride the same batch (#41): the note search
             // index is written by the same statements that write the row, so
-            // a committed note is findable straight away.
-            ...repo.indexStatements(state)
+            // a committed note is findable straight away. The hook sees the
+            // previous row and patch, so an edit that cannot change the
+            // indexed text skips its statements instead of rewriting them.
+            ...repo.indexStatements(state, { previous, patch })
           ]
 
           // A server-generated successor (task recurrence, #38) joins this
@@ -628,7 +632,7 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
                 deletedAt: now,
                 data: { ...raw, ownerId: input.userId, visibility }
               }
-              write(entry, state, null, "delete", "applied")
+              write(entry, state, null, "delete", "applied", undefined, patch)
               continue
             }
             if (current.deletedAt !== null) {
@@ -644,7 +648,7 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
               updatedAt: now,
               deletedAt: now
             }
-            write(entry, state, current.version, "delete", "applied", current)
+            write(entry, state, current.version, "delete", "applied", current, patch)
             continue
           }
 
@@ -667,7 +671,7 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
               deletedAt: null,
               data: { ...data, ownerId: input.userId, visibility }
             }
-            write(entry, state, null, "upsert", "applied")
+            write(entry, state, null, "upsert", "applied", undefined, patch)
             continue
           }
 
@@ -706,7 +710,7 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
               version: current.version + 1,
               updatedAt: now
             }
-            write(entry, state, current.version, "upsert", "applied", current)
+            write(entry, state, current.version, "upsert", "applied", current, updatePatch)
             continue
           }
 
@@ -746,7 +750,7 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
             version: current.version + 1,
             updatedAt: now
           }
-          write(entry, state, current.version, "upsert", "conflict", current)
+          write(entry, state, current.version, "upsert", "conflict", current, updatePatch)
         }
 
         // Parents before children (stable within a type), so a project/tag/list

@@ -92,6 +92,9 @@ export class FakeD1 {
   /** How many `batch()` calls ran — the sync commit must be exactly one. */
   batchCalls = 0
 
+  /** Statement count of each `batch()` call, in order. */
+  readonly batchStatementCounts: Array<number> = []
+
   /**
    * Statements executed, `batch()` members included. D1 counts each statement
    * against its per-invocation query ceiling, so a test can budget a whole tick
@@ -111,6 +114,7 @@ export class FakeD1 {
     statements: ReadonlyArray<BoundStatement>
   ): Promise<ReadonlyArray<D1ResultLike>> {
     this.batchCalls += 1
+    this.batchStatementCounts.push(statements.length)
     this.beforeBatch?.()
     this.db.exec("BEGIN")
     try {
