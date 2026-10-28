@@ -5,6 +5,7 @@ import { Button, tokens } from "@tali/ui"
 import { uuidV7 } from "@tali/domain"
 import { AppHeader } from "../../components/app-header"
 import { TextInput } from "../../components/form"
+import { coalesceMicrotask } from "../../lib/coalesce"
 import { api } from "../../lib/rpc"
 import { useLocalStore } from "../../lib/local-store"
 import type { MirrorRecord } from "../../lib/local-store"
@@ -175,20 +176,33 @@ function NoteEditor() {
   }
 
   /**
-   * Keep the draft's version anchor honest. A sync ack moves the mirror's
-   * server version forward without changing the text; the draft typed over
-   * that text must move with it, or a reopen would wrongly judge it stale. A
-   * remote text change (mirror text differs from what we last saved) must NOT
-   * move the anchor — that is exactly the newer-server-text case we protect.
+   * The row state this editor last refreshed from. Unrelated commits (another
+   * note, a tag, a pull page) still notify; without this they would also
+   * re-read the draft and reschedule it.
    */
-  const refreshAnchor = async () => {
+  let refreshedVersion: number | undefined
+  let refreshedText: string | undefined
+
+  /**
+   * Both facts the editor needs from the mirror — the draft's version anchor
+   * and the rejection marker — live on the same row, and every keystroke's
+   * commit notifies. Read once per notification burst instead of twice per
+   * notification.
+   */
+  const refreshFromStore = async () => {
     const store = local.store()
-    if (store === undefined || saver === undefined || loadState() !== "ready") return
+    if (store === undefined || loadState() !== "ready") return
+    const ticket = generation
     const id = noteId()
     const record = await store.get("note", id)
-    if (record === undefined) return
+    if (ticket !== generation || record === undefined) return
+    setSyncError(record.syncError)
+    if (saver === undefined) return
     const rowText = noteTextFromData(record.data)
     if (rowText !== saver.lastSaved().text) return
+    if (record.version === refreshedVersion && rowText === refreshedText) return
+    refreshedVersion = record.version
+    refreshedText = rowText
     setBaseVersion(record.version)
     const draft = parseNoteDraft(await store.readDraft(noteDraftKey(id)))
     if (draft === undefined) return
@@ -201,6 +215,13 @@ function NoteEditor() {
     }
   }
 
+  // The coalescer runs this outside Solid's tracking; it reads the latest
+  // signals once per notification burst.
+  // oxlint-disable-next-line solid/reactivity
+  const scheduleRefresh = coalesceMicrotask(() => {
+    void refreshFromStore().catch(() => undefined)
+  })
+
   const loadTags = async () => {
     const store = local.store()
     if (store === undefined) return
@@ -209,14 +230,6 @@ function NoteEditor() {
     } catch {
       // Tags are a filter convenience; a read failure must not block editing.
     }
-  }
-
-  /** Mirror the row's durable rejection marker into the banner signal. */
-  const refreshSyncError = async () => {
-    const store = local.store()
-    if (store === undefined || loadState() !== "ready") return
-    const record = await store.get("note", noteId())
-    if (record !== undefined) setSyncError(record.syncError)
   }
 
   /**
@@ -302,6 +315,8 @@ function NoteEditor() {
       saver = undefined
       lastSaveRequest = undefined
       suppressSave = false
+      refreshedVersion = undefined
+      refreshedText = undefined
       const ticket = ++generation
       setLoadState("loading")
       setLoadHint(undefined)
@@ -345,20 +360,17 @@ function NoteEditor() {
         setIsArchived(row.isArchived)
         setIsTrashed(record.deletedAt !== null)
         setSyncError(record.syncError)
+        refreshedVersion = record.version
+        refreshedText = serverText
         loadedId = id
         setLoadState("ready")
         // Open-to-type: the caret is already in the body, no extra tap.
         queueMicrotask(() => bodyRef?.focus())
         void loadTags()
         unsubscribe?.()
-        unsubscribe = store.subscribe(
-          // An external store event, not a tracked reactive scope.
-          // oxlint-disable-next-line solid/reactivity
-          () => {
-            void refreshAnchor().catch(() => undefined)
-            void refreshSyncError().catch(() => undefined)
-          }
-        )
+        // An external store event, not a tracked reactive scope; the coalescer
+        // keeps a keystroke burst to one refresh.
+        unsubscribe = store.subscribe(scheduleRefresh)
 
         if (decision.apply) {
           // Keep the rescued draft on the same autosave path immediately; it

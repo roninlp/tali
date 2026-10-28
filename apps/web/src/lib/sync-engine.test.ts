@@ -249,8 +249,8 @@ describe("client sync engine", () => {
     let raced = false
     const racing: LocalStore = {
       ...store,
-      pending: async () => {
-        const rows = await store.pending()
+      pendingBatch: async (limit) => {
+        const rows = await store.pendingBatch(limit)
         if (!raced) {
           raced = true
           await store.writeLocal({
@@ -345,6 +345,51 @@ describe("client sync engine", () => {
     expect(requests[0]).toHaveLength(1)
     // Later value wins per field, so the server gets the final text only.
     expect(requests[0]![0]!.patch).toEqual({ title: "عنوان 29", plainText: "متن 7" })
+    expect(await store.pendingCount()).toBe(0)
+    store.close()
+  })
+
+  it("drains a 500-entry outbox in bounded batches and covers every entity", async () => {
+    const store = await open()
+    const ids = Array.from({ length: 500 }, () => uuidV7())
+    for (const id of ids) {
+      await store.writeLocal({
+        entityType: "listItem",
+        entityId: id,
+        op: "upsert",
+        patch: { title: `آیتم ${id.slice(0, 8)}` },
+        now: "2026-10-19T08:00:00.000Z"
+      })
+    }
+
+    const requestSizes: Array<number> = []
+    const pushed = new Set<string>()
+    const engine = createSyncEngine(
+      transport({
+        push: async (entries) => {
+          requestSizes.push(entries.length)
+          for (const entry of entries) pushed.add(entry.entityId)
+          return {
+            results: entries.map((entry) => ({
+              _tag: "applied" as const,
+              clientMutationId: entry.clientMutationId,
+              entityType: entry.entityType,
+              entityId: entry.entityId,
+              version: 1,
+              seq: 1
+            })),
+            cursor: 1
+          }
+        }
+      })
+    )
+
+    await engine.sync(store)
+
+    // Each round trip reads (and sends) one push chunk; the rest of the queue
+    // waits for the next iteration instead of being re-materialized each time.
+    expect(requestSizes).toEqual([200, 200, 100])
+    expect(pushed.size).toBe(500)
     expect(await store.pendingCount()).toBe(0)
     store.close()
   })

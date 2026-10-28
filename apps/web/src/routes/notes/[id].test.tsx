@@ -1,5 +1,6 @@
 import "fake-indexeddb/auto"
 import { render, fireEvent, waitFor } from "@solidjs/testing-library"
+import { createEffect } from "solid-js"
 import { createRouter } from "@solidjs/router"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { uuidV7, type SessionContext } from "@tali/domain"
@@ -11,6 +12,13 @@ import {
 } from "../../lib/local-store"
 import { openLocalStore } from "../../lib/local-store/store"
 import NoteEditorRoute from "./[id]"
+
+/**
+ * The store subscription is the only handle on "a notification arrived", and
+ * the editor owns its callback. Record the listener the editor registers so a
+ * test can deliver a burst in one tick, the way several commits would.
+ */
+const storeListeners = new Set<() => void>()
 
 const session: SessionContext = {
   user: {
@@ -36,6 +44,23 @@ let local: LocalStoreContextValue | undefined
 
 function StoreProbe() {
   local = useLocalStore()
+  createEffect(
+    () => local!.store(),
+    (store) => {
+      if (store === undefined) return
+      // Installed before the editor's async load reaches `subscribe()`. The
+      // provider subscribes synchronously at open, before this effect runs, so
+      // only the editor's listener is recorded.
+      const original = store.subscribe
+      Object.defineProperty(store, "subscribe", {
+        configurable: true,
+        value: (listener: () => void) => {
+          storeListeners.add(listener)
+          return original(listener)
+        }
+      })
+    }
+  )
   return null
 }
 
@@ -103,9 +128,45 @@ const seedFailedNote = async (): Promise<{
   return { id, clientMutationId }
 }
 
+/** A server-known note with no queued mutation. */
+const seedNote = async (): Promise<string> => {
+  const store = await openLocalStore(session.user.id)
+  const id = uuidV7()
+  try {
+    await store.mergeServer([
+      {
+        entityType: "note",
+        entityId: id,
+        version: 1,
+        updatedAt: "2026-10-20T09:30:00.000Z",
+        deletedAt: null,
+        data: {
+          id,
+          type: "note",
+          title: "یادداشت",
+          body: {
+            type: "doc",
+            content: [{ type: "paragraph", content: [{ type: "text", text: "متن" }] }]
+          },
+          plainText: "متن",
+          isPinned: false,
+          isArchived: false,
+          tagIds: [],
+          visibility: "shared",
+          createdAt: "2026-10-20T09:30:00.000Z"
+        }
+      }
+    ])
+  } finally {
+    store.close()
+  }
+  return id
+}
+
 describe("note editor sync failure", () => {
   beforeEach(() => {
     localStorage.clear()
+    storeListeners.clear()
     Object.defineProperty(navigator, "onLine", { configurable: true, value: true })
     stubServer()
   })
@@ -136,6 +197,69 @@ describe("note editor sync failure", () => {
     })
     expect((await store.get("note", id))!.syncError).toBeUndefined()
     await waitFor(() => expect(view.queryByRole("alert")).toBeNull())
+    view.unmount()
+  })
+
+  it("reads the note once per store notification", async () => {
+    const id = await seedNote()
+    const view = mount(id)
+    await waitFor(() => expect(local!.status()).toBe("ready"))
+    await view.findByLabelText("متن یادداشت")
+
+    const store = local!.store()!
+    const originalGet = store.get.bind(store)
+    let noteReads = 0
+    const get = vi.spyOn(store, "get").mockImplementation((entityType, entityId) => {
+      if (entityType === "note" && entityId === id) noteReads += 1
+      return originalGet(entityType, entityId)
+    })
+
+    // An unrelated write still notifies this editor; both facts it needs (the
+    // draft anchor and the rejection marker) must come from one row read.
+    await store.writeLocal({
+      entityType: "listItem",
+      entityId: uuidV7(),
+      op: "upsert",
+      patch: { title: "نامرتبط" }
+    })
+
+    await waitFor(() => expect(noteReads).toBe(1))
+    // Nothing else should have scheduled a second read in the same window.
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(noteReads).toBe(1)
+
+    get.mockRestore()
+    view.unmount()
+  })
+
+  it("collapses several notifications in one tick into one read", async () => {
+    const id = await seedNote()
+    const view = mount(id)
+    await waitFor(() => expect(local!.status()).toBe("ready"))
+    await view.findByLabelText("متن یادداشت")
+    // The provider subscribes at open; the editor subscribes once its load
+    // finishes, which is the listener this test delivers a burst to.
+    await waitFor(() => expect(storeListeners.size).toBeGreaterThanOrEqual(1))
+
+    const store = local!.store()!
+    const originalGet = store.get.bind(store)
+    let noteReads = 0
+    const get = vi.spyOn(store, "get").mockImplementation((entityType, entityId) => {
+      if (entityType === "note" && entityId === id) noteReads += 1
+      return originalGet(entityType, entityId)
+    })
+
+    // Five notifications before the coalescer's microtask runs (what a burst
+    // of commits in one tick looks like at the subscriber boundary).
+    for (let index = 0; index < 5; index += 1) {
+      for (const listener of storeListeners) listener()
+    }
+
+    await waitFor(() => expect(noteReads).toBe(1))
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(noteReads).toBe(1)
+
+    get.mockRestore()
     view.unmount()
   })
 })

@@ -133,8 +133,22 @@ export interface LocalStore {
    */
   writeLocal: (write: LocalWrite) => Promise<MirrorRecord>
 
-  /** Queue contents in local FIFO order. */
+  /**
+   * Queue contents in local FIFO order. A whole-outbox read: tests and the
+   * rare caller that needs every entry. The drain uses `pendingBatch`.
+   */
   pending: () => Promise<ReadonlyArray<OutboxRecord>>
+  /**
+   * The head of the queue: at most `limit` entries in `seq` order, one per
+   * entity.
+   *
+   * The push engine only ever sends the first un-acked entry per entity, so a
+   * drain that re-reads the whole outbox every round trip is O(n²) in record
+   * reads for a long offline session. The cursor stops as soon as it has
+   * `limit` distinct entities, leaving each entity's older chain links for the
+   * next iteration.
+   */
+  pendingBatch: (limit: number) => Promise<ReadonlyArray<OutboxRecord>>
   pendingCount: () => Promise<number>
   hasPending: (entityType: SyncEntityType, entityId: string) => Promise<boolean>
   /**

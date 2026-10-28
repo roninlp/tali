@@ -247,28 +247,16 @@ export const createSyncEngine = (
   }
 
   /**
-   * One entry per entity, up to `limit`. Coalescing in `writeLocal` keeps an
-   * idle session to one entry per row; this still matters for the entry that
-   * was sent (marked `sent`) while a newer one queued behind it: sending both
-   * in one request would need a server version the client does not have yet
-   * (§4.3), so the newer link waits for the next round trip.
+   * Drain the outbox: one entry per entity, up to a push chunk, in `seq`
+   * order. Coalescing in `writeLocal` keeps an idle session to one entry per
+   * row; this still matters for the entry that was sent (marked `sent`) while
+   * a newer one queued behind it: sending both in one request would need a
+   * server version the client does not have yet (§4.3), so the newer link
+   * waits for the next round trip.
+   *
+   * The read is bounded rather than a full `pending()`: a drain over a long
+   * offline session must not re-read the whole queue every round trip.
    */
-  const takeFirstPerEntity = (
-    entries: ReadonlyArray<SyncPushEntry & { readonly seq: number }>,
-    limit: number
-  ): ReadonlyArray<SyncPushEntry & { readonly seq: number }> => {
-    const seen = new Set<string>()
-    const batch: Array<SyncPushEntry & { readonly seq: number }> = []
-    for (const entry of entries) {
-      const key = `${entry.entityType}\u0000${entry.entityId}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      batch.push(entry)
-      if (batch.length === limit) break
-    }
-    return batch
-  }
-
   const pushAll = async (store: LocalStore): Promise<void> => {
     // The stored anchor is authoritative only for the first un-acked entry per
     // entity; later entries chain off the version returned by the previous
@@ -276,16 +264,14 @@ export const createSyncEngine = (
     const versionByEntity = new Map<string, number>()
 
     for (;;) {
-      const pending = await store.pending()
-      if (pending.length === 0) return
-      const batch = takeFirstPerEntity(pending, PUSH_CHUNK)
+      const batch = await store.pendingBatch(PUSH_CHUNK)
       if (batch.length === 0) return
-      // A write can fold into one of these entries between the `pending` read
-      // and the mark, so the push must carry what `markSent` returns rather
-      // than the copy read above; otherwise acking the marked entry would drop
-      // that field. Mark before sending, never after: if this request times
-      // out the entries stay `sent` and are retried unchanged, so a merged
-      // patch can never hide behind an `applied_mutations` dedupe hit.
+      // A write can fold into one of these entries between the `pendingBatch`
+      // read and the mark, so the push must carry what `markSent` returns
+      // rather than the copy read above; otherwise acking the marked entry
+      // would drop that field. Mark before sending, never after: if this
+      // request times out the entries stay `sent` and are retried unchanged, so
+      // a merged patch can never hide behind an `applied_mutations` dedupe hit.
       const marked = await store.markSent(batch.map((entry) => entry.clientMutationId))
       if (marked.length === 0) return
       const entries = marked.map((entry) => {
@@ -303,7 +289,9 @@ export const createSyncEngine = (
         if (!(cause instanceof SyncRejected) || cause.code !== "Forbidden") throw cause
         const entityId = cause.details.entityId
         if (typeof entityId !== "string") throw cause
-        const poisoned = pending.filter((entry) => entry.entityId === entityId)
+        // A permanent refusal is rare enough to afford the whole-queue read;
+        // the batch above only holds this entity's first link.
+        const poisoned = (await store.pending()).filter((entry) => entry.entityId === entityId)
         if (poisoned.length === 0) throw cause
         await store.ack(poisoned.map((entry) => entry.clientMutationId))
         for (const entityType of new Set(poisoned.map((entry) => entry.entityType))) {
