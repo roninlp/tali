@@ -38,6 +38,15 @@ export interface LocalStoreContextValue {
   syncing: () => boolean
   /** True once a sync handler is registered (the engine lands in #18). */
   canSync: () => boolean
+  /** Consecutive passes that threw; zero after a pass that completed. */
+  failures: () => number
+  /** Epoch ms of the last local write or applied server change. */
+  lastActivity: () => number
+  /**
+   * True after the server reported the session gone (401). The poll loop stays
+   * stopped until a new session opens, because retrying cannot fix it.
+   */
+  halted: () => boolean
   error: () => string | undefined
   /** Run the registered sync handler now; no-op when offline or unregistered. */
   syncNow: () => Promise<void>
@@ -58,6 +67,9 @@ export function LocalStoreProvider(props: ParentProps) {
   const [pending, setPending] = createSignal(0)
   const [failed, setFailed] = createSignal(0)
   const [syncing, setSyncing] = createSignal(false)
+  const [failures, setFailures] = createSignal(0)
+  const [lastActivity, setLastActivity] = createSignal(Date.now())
+  const [halted, setHalted] = createSignal(false)
   const [error, setError] = createSignal<string>()
   const [syncHandler, setSyncHandler] = createSignal<SyncHandler>()
 
@@ -104,16 +116,28 @@ export function LocalStoreProvider(props: ParentProps) {
     setStore(undefined)
     setPending(0)
     setFailed(0)
+    setFailures(0)
+    setHalted(false)
     setStatus("idle")
     setError(undefined)
   }
 
   /**
+   * A 401 is a session-gone signal, not a transient network failure. The
+   * engine surfaces it as `SyncRejected("Unauthorized")`; retrying can only
+   * burn polls until auth restores a store, which resets `halted`.
+   */
+  const isSessionGone = (cause: unknown): boolean =>
+    typeof cause === "object" &&
+    cause !== null &&
+    (cause as { readonly code?: unknown }).code === "Unauthorized"
+
+  /**
    * A trigger that lands while a pass is running is queued, not dropped: the
    * pass in flight may have read the outbox before that write landed, so
-   * returning early would leave it waiting for the next poll (up to 3.5 s).
-   * Exactly one trailing pass is run, and the same guards as the entry check
-   * apply to it.
+   * returning early would leave it waiting for the next poll (up to the
+   * cadence delay in `sync-cadence.ts`). Exactly one trailing pass is run, and
+   * the same guards as the entry check apply to it.
    */
   let trailingRun = false
 
@@ -122,6 +146,8 @@ export function LocalStoreProvider(props: ParentProps) {
     const current = store()
     if (handler === undefined || current === undefined || current.closed) return
     if (!online()) return
+    // A session-gone store stays quiet until auth opens a new one.
+    if (halted()) return
     if (syncing()) {
       trailingRun = true
       return
@@ -144,8 +170,11 @@ export function LocalStoreProvider(props: ParentProps) {
           break
         }
       }
+      setFailures(0)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Sync failed")
+      setFailures((count) => count + 1)
+      if (isSessionGone(cause)) setHalted(true)
     } finally {
       trailingRun = false
       setSyncing(false)
@@ -171,7 +200,17 @@ export function LocalStoreProvider(props: ParentProps) {
             return
           }
           setStore(opened)
-          unsubscribe = opened.subscribe(() => void refreshPendingOf(opened))
+          // A new store means a live session: any previous 401 is gone.
+          setFailures(0)
+          setHalted(false)
+          setLastActivity(Date.now())
+          unsubscribe = opened.subscribe(() => {
+            // Every committed change is a sign of life: a local write, a pull
+            // that applied rows, or an ack. The cadence treats all three as
+            // activity and lets a quiet mirror idle.
+            setLastActivity(Date.now())
+            void refreshPendingOf(opened)
+          })
           setStatus("ready")
           await refreshCountsOf(opened)
         } catch (cause) {
@@ -212,6 +251,9 @@ export function LocalStoreProvider(props: ParentProps) {
     pending,
     failed,
     syncing,
+    failures,
+    lastActivity,
+    halted,
     canSync: () => syncHandler() !== undefined,
     error,
     syncNow,

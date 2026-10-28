@@ -189,4 +189,53 @@ describe("LocalStoreProvider", () => {
     expect(local!.syncing()).toBe(false)
     view.unmount()
   })
+
+  it("counts consecutive failures, resets after a clean pass, and halts on a 401", async () => {
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true })
+
+    let local: LocalStoreContextValue | undefined
+    const view = render(() => (
+      <AuthProvider>
+        <LocalStoreProvider>
+          <SyncProbe
+            onValue={(value) => {
+              local = value
+            }}
+          />
+        </LocalStoreProvider>
+      </AuthProvider>
+    ))
+    await waitFor(() => expect(view.getByTestId("sync-status").textContent).toBe("ready"))
+
+    let calls = 0
+    let mode: "fail" | "ok" | "unauthorized" = "fail"
+    local!.registerSync(async () => {
+      calls += 1
+      if (mode === "fail") throw new Error("boom")
+      if (mode === "unauthorized") {
+        throw Object.assign(new Error("Unauthorized"), { code: "Unauthorized" })
+      }
+    })
+    await waitFor(() => expect(local!.canSync()).toBe(true))
+
+    await local!.syncNow()
+    expect(local!.failures()).toBe(1)
+    await local!.syncNow()
+    expect(local!.failures()).toBe(2)
+
+    // A pass that did not throw is the reset.
+    mode = "ok"
+    await local!.syncNow()
+    expect(local!.failures()).toBe(0)
+
+    // The session is gone: keep the error visible but stop burning polls.
+    mode = "unauthorized"
+    await local!.syncNow()
+    expect(local!.halted()).toBe(true)
+    const afterHalt = calls
+    await local!.syncNow()
+    expect(calls).toBe(afterHalt)
+
+    view.unmount()
+  })
 })
