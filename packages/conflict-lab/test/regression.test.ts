@@ -525,7 +525,16 @@ describe("conflict regression table", () => {
     try {
       const habitId = uuidV7()
       const entryId = uuidV7()
-      const localDate = "2026-10-20"
+      // `LogHabitEntry` refuses a day older than its 7-day backdating window, so
+      // this has to be today in the logging zone rather than a fixed date: a
+      // hardcoded one silently ages out of the window and the revive becomes a
+      // permanent refusal (the test then asserts on a row that never revived).
+      const localDate = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Tehran",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      }).format(new Date())
 
       await queueWrite(
         a,
