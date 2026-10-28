@@ -152,6 +152,7 @@ function InvitePanel(props: { summary: HouseholdSummary; onContinue: () => void 
         کد دعوت «{props.summary.name}» را برای نفر دوم بفرستید. او با این کد به خانه می‌پیوندد.
       </p>
       <code
+        data-testid="household-invite-code"
         dir="ltr"
         style={{
           display: "block",

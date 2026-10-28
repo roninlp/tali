@@ -3,7 +3,8 @@ import { fileURLToPath } from "node:url"
 import { DatabaseSync } from "node:sqlite"
 import { describe, expect, it } from "vitest"
 import { TRASH_RETENTION_MS } from "@tali/domain"
-import worker, { BACKUP_CRON, PURGE_CRON, REMINDER_CRON } from "../src/index.js"
+import { CRON } from "@tali/config"
+import worker from "../src/index.js"
 import { FakeD1 } from "./fake-d1.js"
 import { FakeR2 } from "./fake-r2.js"
 
@@ -103,11 +104,11 @@ describe("nightly maintenance cron", () => {
     const fake = new FakeD1(db)
     const r2 = new FakeR2()
 
-    await runScheduled(PURGE_CRON, "2026-10-23T03:17:00.000Z", scheduledEnv(fake, r2))
+    await runScheduled(CRON.purge, "2026-10-23T03:17:00.000Z", scheduledEnv(fake, r2))
 
     // A maintenance tick deliberately opts out of Cloudflare's retry.
     const noRetry = await runScheduled(
-      PURGE_CRON,
+      CRON.purge,
       "2026-10-23T03:17:00.000Z",
       scheduledEnv(fake, r2)
     )
@@ -128,7 +129,7 @@ describe("nightly maintenance cron", () => {
     const fake = new FakeD1(db)
     const r2 = new FakeR2()
 
-    await runScheduled(BACKUP_CRON, "2026-10-23T03:47:00.000Z", scheduledEnv(fake, r2))
+    await runScheduled(CRON.backup, "2026-10-23T03:47:00.000Z", scheduledEnv(fake, r2))
 
     expect(r2.objects.has("backups/2026-10-23/tali.sql")).toBe(true)
     expect(r2.objects.has("backups/2026-10-23/manifest.json")).toBe(true)
@@ -143,7 +144,7 @@ describe("nightly maintenance cron", () => {
     const r2 = new FakeR2()
 
     const noRetry = await runScheduled(
-      REMINDER_CRON,
+      CRON.reminder,
       "2026-10-23T03:47:00.000Z",
       scheduledEnv(fake, r2)
     )

@@ -1,8 +1,8 @@
 name: Nightly
 
 # The bounded suites run on every PR. This is the longer run that explores
-# many more two-device interleavings (ticket #83; the nightly E2E gate flows
-# from ticket #84 join this workflow).
+# many more two-device interleavings (ticket #83) and the five gate flows
+# against a real local stack (ticket #84).
 on:
   schedule:
     - cron: "17 2 * * *"
@@ -37,3 +37,38 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm --filter @tali/conflict-lab test:nightly
+
+  gate-flows:
+    name: Gate flows (Playwright on a local stack)
+    runs-on: ubuntu-latest
+    # The suite's own budget is ~10 minutes; the rest is boot and teardown.
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12.6.0
+          run_install: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter @tali/e2e exec playwright install --with-deps chromium
+
+      - run: pnpm test:e2e
+
+      # A red gate must leave the trace, video, screenshot and seeded ids.
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: gate-flows-artifacts
+          path: |
+            packages/e2e/test-results
+            packages/e2e/playwright-report
+          retention-days: 14
