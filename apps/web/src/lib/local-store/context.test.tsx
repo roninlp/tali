@@ -133,6 +133,11 @@ describe("LocalStoreProvider", () => {
   })
 
   it("runs exactly one trailing pass for triggers that land mid-pass", async () => {
+    // Test files share one jsdom environment (`isolate: false`) and the
+    // offline screen tests flip `navigator.onLine` without restoring it. This
+    // test needs the online path, so state it rather than inherit it.
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true })
+
     let local: LocalStoreContextValue | undefined
     const view = render(() => (
       <AuthProvider>
