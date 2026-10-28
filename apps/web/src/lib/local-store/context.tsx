@@ -82,18 +82,46 @@ export function LocalStoreProvider(props: ParentProps) {
     setError(undefined)
   }
 
+  /**
+   * A trigger that lands while a pass is running is queued, not dropped: the
+   * pass in flight may have read the outbox before that write landed, so
+   * returning early would leave it waiting for the next poll (up to 3.5 s).
+   * Exactly one trailing pass is run, and the same guards as the entry check
+   * apply to it.
+   */
+  let trailingRun = false
+
   const syncNow = async (): Promise<void> => {
     const handler = syncHandler()
     const current = store()
     if (handler === undefined || current === undefined || current.closed) return
-    if (!online() || syncing()) return
+    if (!online()) return
+    if (syncing()) {
+      trailingRun = true
+      return
+    }
+    const ticket = generation
     setSyncing(true)
     setError(undefined)
     try {
-      await handler(current)
+      for (;;) {
+        // Cleared before the pass, so any trigger during it queues one more.
+        trailingRun = false
+        await handler(current)
+        if (
+          !trailingRun ||
+          generation !== ticket ||
+          current.closed ||
+          !online() ||
+          syncHandler() === undefined
+        ) {
+          break
+        }
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Sync failed")
     } finally {
+      trailingRun = false
       setSyncing(false)
       await refreshPendingOf(current)
     }
