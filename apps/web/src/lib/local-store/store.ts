@@ -275,6 +275,38 @@ export const openLocalStore = async (
       return await requestResult(tx.objectStore(OUTBOX).getAll()) as ReadonlyArray<OutboxRecord>
     },
 
+    async pendingBatch(limit) {
+      ensureOpen()
+      if (limit <= 0) return []
+      const tx = db.transaction(OUTBOX, "readonly")
+      const cursor = tx.objectStore(OUTBOX).openCursor()
+      const batch: Array<OutboxRecord> = []
+      const seen = new Set<string>()
+      return await new Promise<ReadonlyArray<OutboxRecord>>((resolve, reject) => {
+        cursor.onsuccess = () => {
+          const position = cursor.result
+          if (position === null) {
+            resolve(batch)
+            return
+          }
+          const entry = position.value as OutboxRecord
+          const key = entityKey(entry.entityType, entry.entityId)
+          if (!seen.has(key)) {
+            seen.add(key)
+            batch.push(entry)
+            // Enough distinct entities for one push: stop reading. This
+            // entity's own chain (and the rest of the queue) waits its turn.
+            if (batch.length === limit) {
+              resolve(batch)
+              return
+            }
+          }
+          position.continue()
+        }
+        cursor.onerror = () => reject(cursor.error ?? new Error("IndexedDB request failed"))
+      })
+    },
+
     async pendingCount() {
       ensureOpen()
       const tx = db.transaction(OUTBOX, "readonly")
@@ -294,25 +326,23 @@ export const openLocalStore = async (
       if (clientMutationIds.length === 0) return []
       const tx = db.transaction(OUTBOX, "readwrite")
       const outbox = tx.objectStore(OUTBOX)
-      const ids = new Set(clientMutationIds)
+      const byMutation = outbox.index("byClientMutationId")
       const marked: Array<OutboxRecord> = []
-      // One sequential pass instead of a lookup chain per id: the batch is a
-      // push chunk, and this keeps every request inside one transaction.
-      const cursor = outbox.openCursor()
-      cursor.onsuccess = () => {
-        const position = cursor.result
-        if (position === null) return
-        const entry = position.value as OutboxRecord
-        if (ids.has(entry.clientMutationId)) {
+      // `byClientMutationId` is unique, so a batch is one indexed lookup per
+      // id. The full cursor this replaces made marking a push chunk O(outbox).
+      for (const id of new Set(clientMutationIds)) {
+        const read = byMutation.get(id) as IDBRequest<OutboxRecord | undefined>
+        read.onsuccess = () => {
+          const entry = read.result
+          if (entry === undefined) return
           if (entry.sent === true) {
             marked.push(entry)
-          } else {
-            const next: OutboxRecord = { ...entry, sent: true }
-            position.update(next)
-            marked.push(next)
+            return
           }
+          const next: OutboxRecord = { ...entry, sent: true }
+          outbox.put(next)
+          marked.push(next)
         }
-        position.continue()
       }
 
       await txDone(tx)
@@ -325,22 +355,16 @@ export const openLocalStore = async (
       ensureOpen()
       const tx = db.transaction([MIRROR, OUTBOX], "readwrite")
       const mirror = tx.objectStore(MIRROR)
-      const outbox = tx.objectStore(OUTBOX)
+      const byEntity = tx.objectStore(OUTBOX).index("byEntity")
 
-      const queued = new Set<string>()
       let applied = 0
-      const cursor = outbox.openCursor()
-      cursor.onsuccess = () => {
-        const position = cursor.result
-        if (position !== null) {
-          const entry = position.value as OutboxRecord
-          queued.add(entityKey(entry.entityType, entry.entityId))
-          position.continue()
-          return
-        }
-        // No await between here and commit: every request stays in this tx.
-        for (const row of rows) {
-          if (queued.has(entityKey(row.entityType, row.entityId))) continue
+      // One indexed lookup per incoming row, not a full outbox scan per pull
+      // page: the only question is whether *this* row has a pending mutation,
+      // and the answer has to come from the same transaction as the put.
+      for (const row of rows) {
+        const queued = byEntity.getKey([row.entityType, row.entityId])
+        queued.onsuccess = () => {
+          if (queued.result !== undefined) return
           mirror.put(row)
           applied += 1
         }

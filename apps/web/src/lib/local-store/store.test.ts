@@ -1,5 +1,5 @@
 import "fake-indexeddb/auto"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { uuidV7 } from "@tali/domain"
 import { openLocalStore } from "./store"
 import type { LocalStore, ServerRow } from "./types"
@@ -135,6 +135,85 @@ describe("local store", () => {
     store.close()
   })
 
+  it("reads only the head of the outbox: one entry per entity, up to the limit", async () => {
+    const store = await open(freshUser())
+    const first = uuidV7()
+    const second = uuidV7()
+    const third = uuidV7()
+
+    await writeTitle(store, first, "اول")
+    const [sent] = await store.pending()
+    await store.markSent([sent!.clientMutationId])
+    // A second link for the first entity must not consume one of the slots.
+    await writeTitle(store, first, "بعدی")
+    await writeTitle(store, second, "دوم")
+    await writeTitle(store, third, "سوم")
+
+    const head = await store.pendingBatch(2)
+    expect(head.map((entry) => entry.entityId)).toEqual([first, second])
+    expect(head[0]!.clientMutationId).toBe(sent!.clientMutationId)
+    // The rest of the queue waits for the next iteration.
+    expect(await store.pendingCount()).toBe(4)
+    store.close()
+  })
+
+  it("stops cursor reads at the limit instead of scanning the whole queue", async () => {
+    const store = await open(freshUser())
+    for (let index = 0; index < 500; index += 1) {
+      await writeTitle(store, uuidV7(), `آیتم ${index}`)
+    }
+
+    const continued = vi.spyOn(IDBCursor.prototype, "continue")
+    try {
+      const head = await store.pendingBatch(200)
+      expect(head).toHaveLength(200)
+      // 199 continues read the 200 selected records; a full scan is 499.
+      expect(continued.mock.calls.length).toBe(199)
+    } finally {
+      continued.mockRestore()
+    }
+    store.close()
+  })
+
+  it("marks only the given ids, returns them as stored, and is idempotent", async () => {
+    const store = await open(freshUser())
+    const first = uuidV7()
+    const second = uuidV7()
+    const third = uuidV7()
+    await writeTitle(store, first, "اول")
+    await writeTitle(store, second, "دوم")
+    await writeTitle(store, third, "سوم")
+    const [a, b, c] = (await store.pending()).map((entry) => entry.clientMutationId)
+
+    const marked = await store.markSent([a!, c!])
+    expect(marked.map((entry) => entry.clientMutationId)).toEqual([a, c])
+    // The return value is the authoritative entry, not just its id: the engine
+    // pushes what this returns because a write may have folded in since the read.
+    expect(marked[0]).toMatchObject({
+      entityId: first,
+      op: "upsert",
+      patch: { title: "اول" },
+      sent: true
+    })
+
+    const after = await store.pending()
+    expect(after.map((entry) => [entry.clientMutationId, entry.sent])).toEqual([
+      [a, true],
+      [b, false],
+      [c, true]
+    ])
+
+    // Idempotent: an already-sent id comes back unchanged, never dropped.
+    const again = await store.markSent([a!])
+    expect(again).toHaveLength(1)
+    expect(again[0]).toMatchObject({ clientMutationId: a, sent: true })
+    expect(await store.pendingCount()).toBe(3)
+
+    // An unknown id is ignored rather than winning an entry.
+    expect(await store.markSent([uuidV7()])).toHaveLength(0)
+    store.close()
+  })
+
   it("does not fold a write into another entity's entry", async () => {
     const store = await open(freshUser())
     const first = uuidV7()
@@ -233,6 +312,35 @@ describe("local store", () => {
     expect(applied).toBe(1)
     expect((await store.get("listItem", queued))!.data).toEqual({ title: "ویرایش محلی" })
     expect((await store.get("listItem", clean))!.data).toEqual({ title: "از سرور" })
+    store.close()
+  })
+
+  it("applies incoming rows whose entities have no queued entry", async () => {
+    const store = await open(freshUser())
+    const queuedNote = uuidV7()
+    await store.writeLocal({
+      entityType: "note",
+      entityId: queuedNote,
+      op: "upsert",
+      patch: { title: "محلی" }
+    })
+
+    const incoming = uuidV7()
+    const applied = await store.mergeServer([
+      {
+        entityType: "note",
+        entityId: incoming,
+        version: 2,
+        updatedAt: "2026-10-20T09:00:00.000Z",
+        deletedAt: null,
+        data: { title: "از سرور" }
+      }
+    ])
+
+    expect(applied).toBe(1)
+    expect((await store.get("note", incoming))!.data).toEqual({ title: "از سرور" })
+    // The pending entry belongs to another entity, so it protects only that row.
+    expect((await store.get("note", queuedNote))!.data).toEqual({ title: "محلی" })
     store.close()
   })
 
