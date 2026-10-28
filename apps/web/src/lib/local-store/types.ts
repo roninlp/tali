@@ -26,6 +26,16 @@ export interface MirrorRecord {
 /** A queued mutation plus the local FIFO key. */
 export interface OutboxRecord extends SyncPushEntry {
   readonly seq: number
+  /**
+   * True once a push carrying this entry has started.
+   *
+   * It is the coalescing safety flag: an entry that may already have reached
+   * the server is never merged into, because `applied_mutations` dedupe would
+   * swallow a merged patch resent under the same `clientMutationId` after a
+   * lost response. Rows written before this flag existed read as `undefined`
+   * and are treated as unsent.
+   */
+  readonly sent: boolean
 }
 
 /** What a local mutation supplies; the store fills in ids/timestamps. */
@@ -93,6 +103,21 @@ export interface LocalStore {
   pending: () => Promise<ReadonlyArray<OutboxRecord>>
   pendingCount: () => Promise<number>
   hasPending: (entityType: SyncEntityType, entityId: string) => Promise<boolean>
+  /**
+   * Flag entries as possibly delivered, returning them as they stand now.
+   * One transaction, called immediately before the push that carries them,
+   * never after: a failed push leaves them `sent` on purpose, so the retry
+   * resends them unchanged instead of folding a newer patch into an entry the
+   * server may already have applied.
+   *
+   * The return value matters: a write can fold into an entry between the
+   * engine's `pending` read and this mark. Sending the previously read copy
+   * would drop that field when the ack removes the marked entry, so the engine
+   * pushes what this returns. Readwrite transactions on the outbox serialize,
+   * so a fold either lands before the mark (and travels here) or sees
+   * `sent === true` and queues its own entry.
+   */
+  markSent: (clientMutationIds: ReadonlyArray<string>) => Promise<ReadonlyArray<OutboxRecord>>
 
   /**
    * Apply server-authoritative rows. Rows with a pending local mutation are

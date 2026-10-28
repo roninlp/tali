@@ -59,6 +59,38 @@ const advanceCursor = (meta: IDBObjectStore, seq: number): void => {
   }
 }
 
+const isEmptyPatch = (patch: Readonly<Record<string, unknown>>): boolean =>
+  Object.keys(patch).length === 0
+
+/** Compare edit instants, not the text: the strings may carry an offset. */
+const laterInstant = (a: string, b: string): string =>
+  Date.parse(b) > Date.parse(a) ? b : a
+
+/**
+ * Whether an incoming write folds into the newest queued entry for the same
+ * entity instead of queueing another link in the chain.
+ *
+ * Only upsert↔upsert folds. `delete` stays serial because it is a different
+ * intent against the same row; the empty-patch upsert stays serial because it
+ * is the habit-restore signal the engine recognises by its empty patch (§63),
+ * and a patch folded into (or out of) it would erase that signal.
+ *
+ * `sent` is the idempotency guard: an entry that may already have reached the
+ * server must be resent byte-for-byte, because `applied_mutations` would
+ * dedupe a merged patch under the same `clientMutationId` and silently drop
+ * the newer fields.
+ */
+const coalescible = (
+  queued: OutboxRecord | undefined,
+  write: LocalWrite
+): queued is OutboxRecord =>
+  queued !== undefined &&
+  queued.sent !== true &&
+  queued.op === "upsert" &&
+  write.op === "upsert" &&
+  !isEmptyPatch(queued.patch) &&
+  !isEmptyPatch(write.patch)
+
 export interface OpenLocalStoreOptions {
   /** Override the IndexedDB factory (tests). Defaults to the global. */
   readonly factory?: IDBFactory
@@ -172,6 +204,7 @@ export const openLocalStore = async (
           data: { ...current?.data, ...write.patch }
         }
         mirror.put(record)
+        committed = record
 
         const entry: Omit<OutboxRecord, "seq"> = {
           clientMutationId: write.clientMutationId ?? uuidV7(),
@@ -180,10 +213,31 @@ export const openLocalStore = async (
           baseVersion: current?.version ?? 0,
           op: write.op,
           patch: write.patch,
-          clientUpdatedAt: now
+          clientUpdatedAt: now,
+          sent: false
         }
-        outbox.add(entry)
-        committed = record
+
+        // Fold an unsent upsert into the newest queued upsert for the row, in
+        // the same transaction as the mirror write, so one editing session is
+        // one outbox entry instead of one per keystroke. `byEntity` is
+        // non-unique, so `getAll` returns the chain in ascending `seq` order.
+        const queued = outbox
+          .index("byEntity")
+          .getAll([write.entityType, write.entityId]) as IDBRequest<Array<OutboxRecord>>
+        queued.onsuccess = () => {
+          const latest = queued.result[queued.result.length - 1]
+          if (coalescible(latest, write)) {
+            // Same seq, identity and anchor: the server sees one mutation.
+            outbox.put({
+              ...latest,
+              patch: { ...latest.patch, ...write.patch },
+              clientUpdatedAt: laterInstant(latest.clientUpdatedAt, now),
+              sent: false
+            })
+            return
+          }
+          outbox.add(entry)
+        }
       }
 
       await txDone(tx)
@@ -210,6 +264,38 @@ export const openLocalStore = async (
       const index = tx.objectStore(OUTBOX).index("byEntity")
       const count = await requestResult(index.count([entityType, entityId]))
       return count > 0
+    },
+
+    async markSent(clientMutationIds) {
+      ensureOpen()
+      if (clientMutationIds.length === 0) return []
+      const tx = db.transaction(OUTBOX, "readwrite")
+      const outbox = tx.objectStore(OUTBOX)
+      const ids = new Set(clientMutationIds)
+      const marked: Array<OutboxRecord> = []
+      // One sequential pass instead of a lookup chain per id: the batch is a
+      // push chunk, and this keeps every request inside one transaction.
+      const cursor = outbox.openCursor()
+      cursor.onsuccess = () => {
+        const position = cursor.result
+        if (position === null) return
+        const entry = position.value as OutboxRecord
+        if (ids.has(entry.clientMutationId)) {
+          if (entry.sent === true) {
+            marked.push(entry)
+          } else {
+            const next: OutboxRecord = { ...entry, sent: true }
+            position.update(next)
+            marked.push(next)
+          }
+        }
+        position.continue()
+      }
+
+      await txDone(tx)
+      // No notify: the pending badge counts entries, and marking does not
+      // change the count (only `ack` removes them).
+      return marked
     },
 
     async mergeServer(rows: ReadonlyArray<ServerRow>) {

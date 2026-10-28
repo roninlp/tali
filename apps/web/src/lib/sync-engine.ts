@@ -247,9 +247,11 @@ export const createSyncEngine = (
   }
 
   /**
-   * One entry per entity, up to `limit`. Sending the second edit of a row in
-   * the same request would need a server-assigned version the client does not
-   * have yet; one round trip per chain keeps the CAS anchor honest (§4.3).
+   * One entry per entity, up to `limit`. Coalescing in `writeLocal` keeps an
+   * idle session to one entry per row; this still matters for the entry that
+   * was sent (marked `sent`) while a newer one queued behind it: sending both
+   * in one request would need a server version the client does not have yet
+   * (§4.3), so the newer link waits for the next round trip.
    */
   const takeFirstPerEntity = (
     entries: ReadonlyArray<SyncPushEntry & { readonly seq: number }>,
@@ -278,7 +280,15 @@ export const createSyncEngine = (
       if (pending.length === 0) return
       const batch = takeFirstPerEntity(pending, PUSH_CHUNK)
       if (batch.length === 0) return
-      const entries = batch.map((entry) => {
+      // A write can fold into one of these entries between the `pending` read
+      // and the mark, so the push must carry what `markSent` returns rather
+      // than the copy read above; otherwise acking the marked entry would drop
+      // that field. Mark before sending, never after: if this request times
+      // out the entries stay `sent` and are retried unchanged, so a merged
+      // patch can never hide behind an `applied_mutations` dedupe hit.
+      const marked = await store.markSent(batch.map((entry) => entry.clientMutationId))
+      if (marked.length === 0) return
+      const entries = marked.map((entry) => {
         const key = `${entry.entityType}\u0000${entry.entityId}`
         const chained = versionByEntity.get(key)
         return chained === undefined ? entry : { ...entry, baseVersion: chained }

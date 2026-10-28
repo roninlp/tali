@@ -787,12 +787,19 @@ export const queueWrite = async (
     throw new Error(`clientMutationId reused within a test file: ${clientMutationId}`)
   }
   queuedMutationIds.add(clientMutationId)
-  device.mutationIds.add(clientMutationId)
   const { now, ...rest } = write
   await device.store.writeLocal({
     ...rest,
     clientMutationId,
     ...(now === undefined ? {} : { now })
   })
+  // An unsent upsert folds into the newest unsent upsert for the same entity
+  // and keeps *that* entry's `clientMutationId`, so only ids that reached the
+  // queue can be acknowledged; the folded write's intent travels under the
+  // surviving id.
+  const queued = await device.store.pending()
+  if (queued.some((entry) => entry.clientMutationId === clientMutationId)) {
+    device.mutationIds.add(clientMutationId)
+  }
   return clientMutationId
 }

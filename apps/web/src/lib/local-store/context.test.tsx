@@ -1,10 +1,10 @@
 import "fake-indexeddb/auto"
-import { createEffect, createSignal, For, Show } from "solid-js"
+import { createEffect, createSignal, For, onSettled, Show } from "solid-js"
 import { fireEvent, render, waitFor } from "@solidjs/testing-library"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { uuidV7, type SessionContext } from "@tali/domain"
 import { AuthProvider } from "../auth"
-import { LocalStoreProvider, useLocalStore } from "./context"
+import { LocalStoreProvider, useLocalStore, type LocalStoreContextValue } from "./context"
 import type { MirrorRecord } from "./types"
 
 /**
@@ -84,6 +84,16 @@ const mount = () =>
     </AuthProvider>
   ))
 
+/**
+ * Hands the test the live context value, so a pass can be started and observed
+ * without rendering `SyncRunner`'s 3.5 s poll.
+ */
+function SyncProbe(props: { readonly onValue: (value: LocalStoreContextValue) => void }) {
+  const local = useLocalStore()
+  onSettled(() => props.onValue(local))
+  return <span data-testid="sync-status">{local.status()}</span>
+}
+
 describe("LocalStoreProvider", () => {
   beforeEach(() => {
     localStorage.clear()
@@ -119,6 +129,64 @@ describe("LocalStoreProvider", () => {
     const view = mount()
     await waitFor(() => expect(view.getByTestId("status").textContent).toBe("ready"))
     expect(view.getByTestId("user").textContent).toBe(session.user.id)
+    view.unmount()
+  })
+
+  it("runs exactly one trailing pass for triggers that land mid-pass", async () => {
+    // Test files share one jsdom environment (`isolate: false`) and the
+    // offline screen tests flip `navigator.onLine` without restoring it. This
+    // test needs the online path, so state it rather than inherit it.
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true })
+
+    let local: LocalStoreContextValue | undefined
+    const view = render(() => (
+      <AuthProvider>
+        <LocalStoreProvider>
+          <SyncProbe
+            onValue={(value) => {
+              local = value
+            }}
+          />
+        </LocalStoreProvider>
+      </AuthProvider>
+    ))
+    await waitFor(() => expect(view.getByTestId("sync-status").textContent).toBe("ready"))
+
+    let calls = 0
+    let release = (): void => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    local!.registerSync(async () => {
+      calls += 1
+      if (calls === 1) await gate
+    })
+    // Solid 2 commits signal writes on the next microtask.
+    await waitFor(() => expect(local!.canSync()).toBe(true))
+
+    const first = local!.syncNow()
+    await waitFor(() => expect(calls).toBe(1))
+    expect(local!.syncing()).toBe(true)
+
+    // A write during the pass wakes `syncNow` through SyncRunner's pending
+    // effect; the pass in flight may already have read the outbox, so it must
+    // not wait for the next poll.
+    await local!.store()!.writeLocal({
+      entityType: "listItem",
+      entityId: uuidV7(),
+      op: "upsert",
+      patch: { title: "در حین" }
+    })
+    const second = local!.syncNow()
+    // A second trigger while the rerun is already queued adds nothing.
+    const third = local!.syncNow()
+    expect(local!.syncing()).toBe(true)
+
+    release()
+    await Promise.all([first, second, third])
+
+    expect(calls).toBe(2)
+    expect(local!.syncing()).toBe(false)
     view.unmount()
   })
 })

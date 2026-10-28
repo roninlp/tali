@@ -100,10 +100,15 @@ describe("habit tap", () => {
 
     const live = await store.list("habitEntry")
     expect(live).toHaveLength(1)
-    // The queue keeps one patch per tap, all against the same day/entity.
+    // Nothing has been sent, so the day's taps are one mutation: the last
+    // status wins and the queue holds one patch, not one per tap.
     const pending = await store.pending()
-    expect(pending).toHaveLength(3)
-    expect(new Set(pending.map((entry) => entry.entityId))).toEqual(new Set([first.entityId]))
+    expect(pending).toHaveLength(1)
+    expect(pending[0]).toMatchObject({
+      entityId: first.entityId,
+      op: "upsert",
+      patch: { habitId: habit, localDate: "2026-10-20", status: "missed" }
+    })
 
     store.close()
   })

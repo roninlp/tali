@@ -17,28 +17,35 @@ import { createNoteSaver } from "./saver"
 const open = () => openLocalStore(`user-${uuidV7()}`)
 
 describe("note autosave", () => {
-  it("commits text to the mirror and queues exactly one mutation per edit", async () => {
+  it("commits text to the mirror and folds an unsent edit into one mutation", async () => {
     const store = await open()
     const id = await createNoteInMirror(store)
     const saver = createNoteSaver(store, id, { title: "", text: "" })
 
     expect(await saver.save({ title: "", text: "" })).toBe("unchanged")
     expect(await store.pending()).toHaveLength(1) // the quick-create insert only
+    const [created] = await store.pending()
 
     expect(await saver.save({ title: "", text: "نان سنگک" })).toBe("saved")
     expect(await saver.save({ title: "", text: "نان سنگک" })).toBe("unchanged")
-    expect(await store.pending()).toHaveLength(2)
+    // The insert is still unsent, so the body save is the same mutation: one
+    // entry, later value wins per field.
+    const afterFirstBody = await store.pending()
+    expect(afterFirstBody).toHaveLength(1)
+    expect(afterFirstBody[0]!.clientMutationId).toBe(created!.clientMutationId)
+    expect(afterFirstBody[0]!.patch).toMatchObject({ plainText: "نان سنگک" })
 
     const record = await store.get("note", id)
     expect(noteTextFromData(record!.data)).toBe("نان سنگک")
     expect(record!.data.body).toEqual(textToNoteBody("نان سنگک"))
 
-    // A second real edit is a second mutation, still anchored to the last
+    // A second real edit folds into the same entry, still anchored to the last
     // server version (the ack has not landed yet).
     expect(await saver.save({ title: "", text: "نان سنگک و پنیر" })).toBe("saved")
     const pending = await store.pending()
-    expect(pending).toHaveLength(3)
-    expect(pending[2]).toMatchObject({ entityType: "note", entityId: id, baseVersion: 0 })
+    expect(pending).toHaveLength(1)
+    expect(pending[0]).toMatchObject({ entityType: "note", entityId: id, baseVersion: 0 })
+    expect(pending[0]!.patch).toMatchObject({ plainText: "نان سنگک و پنیر" })
     store.close()
   })
 
