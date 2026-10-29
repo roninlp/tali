@@ -1,8 +1,8 @@
 # Deploy latency & re-platforming analysis (Tali)
 
-Date: 2026-10-29  
-Repo: `/home/ronin/Projects/tali` (pnpm + Turborepo monorepo)  
-Author: iceman (independent architecture research)  
+Date: 2026-10-29
+Repo: `/home/ronin/Projects/tali` (pnpm + Turborepo monorepo)
+Author: iceman (independent architecture research)
 Scope: Diagnose "very laggy" navigation / "super low cold starts" on Cloudflare (D1 + Workers + StaticSite), evaluate removing Cloudflare as target, evaluate Convex / ElectricSQL+TanStack DB / alternatives, recommend smallest fixes first, then re-platform path if justified.
 
 > Constraints followed: read-only analysis; only this file created.
@@ -23,10 +23,10 @@ Scope: Diagnose "very laggy" navigation / "super low cold starts" on Cloudflare 
 ## 1) Current architecture (as built)
 
 From repo inspection:
-- **apps/web**: Solid v2 client-only SPA (Vite). Uses `@solidjs/router` with filesystem routes via `virtual:file-routes` + `@solidjs/router/fs` (`apps/web/src/router.ts:1-7`). App shell mounts providers in order: `AuthProvider`, `PreferencesProvider`, `PushProvider`, `LocalStoreProvider`, renders `SyncRunner`, then `<Router>` with `<Loading fallback={<Splash/>}>` (`apps/web/src/App.tsx:1-34`). Built with Vite 8, `@solidjs/vite-plugin` start mode, target `esnext` (`apps/web/vite.config.ts:1-39`). Deployed as static assets via Alchemy `Cloudflare.Website.StaticSite` with SPA fallback and `runWorkerFirst: ["/api/*"]` (`infra/alchemy.run.ts:212-226`). 
-- **apps/api**: Effect HTTP/RPC server on Cloudflare Workers. Entrypoint `apps/api/src/index.ts:1-236` is a plain `async fetch` (module worker) building D1 layer per request via `D1Client.layer({ db: env.DB, transformQueryNames: Str.camelToSnake, transformResultNames: Str.snakeToCamel })` and serving via `HttpRouter.toWebHandler(app, { disableLogger: true })`. Cron schedules: reminder every minute, trash purge 03:17 UTC, backup 03:47 UTC (split invocations) from `CRON_EXPRESSIONS` shared via `@tali/config` (`infra/alchemy.run.ts:164-190`, `apps/api/src/index.ts:58-235`). Dev routes only when `DEV_ROUTES=1` (`alchemy dev`). 
+- **apps/web**: Solid v2 client-only SPA (Vite). Uses `@solidjs/router` with filesystem routes via `virtual:file-routes` + `@solidjs/router/fs` (`apps/web/src/router.ts:1-7`). App shell mounts providers in order: `AuthProvider`, `PreferencesProvider`, `PushProvider`, `LocalStoreProvider`, renders `SyncRunner`, then `<Router>` with `<Loading fallback={<Splash/>}>` (`apps/web/src/App.tsx:1-34`). Built with Vite 8, `@solidjs/vite-plugin` start mode, target `esnext` (`apps/web/vite.config.ts:1-39`). Deployed as static assets via Alchemy `Cloudflare.Website.StaticSite` with SPA fallback and `runWorkerFirst: ["/api/*"]` (`infra/alchemy.run.ts:212-226`).
+- **apps/api**: Effect HTTP/RPC server on Cloudflare Workers. Entrypoint `apps/api/src/index.ts:1-236` is a plain `async fetch` (module worker) building D1 layer per request via `D1Client.layer({ db: env.DB, transformQueryNames: Str.camelToSnake, transformResultNames: Str.snakeToCamel })` and serving via `HttpRouter.toWebHandler(app, { disableLogger: true })`. Cron schedules: reminder every minute, trash purge 03:17 UTC, backup 03:47 UTC (split invocations) from `CRON_EXPRESSIONS` shared via `@tali/config` (`infra/alchemy.run.ts:164-190`, `apps/api/src/index.ts:58-235`). Dev routes only when `DEV_ROUTES=1` (`alchemy dev`).
 - **packages**: `@tali/domain` (Effect/Schema entities+errors), `@tali/sql` (D1 repos + migrations under `packages/sql/migrations`, applied by Alchemy on deploy/dev), `@tali/rpc` (shared Effect RPC contract), `@tali/config`, `@tali/ui`.
-- **Infra**: `infra/alchemy.run.ts` provisions D1, optional R2 backup bucket (lifecycle 30d), api Worker, web StaticSite, cron triggers. VAPID keys required for prod deploy (derived from private key at deploy time). 
+- **Infra**: `infra/alchemy.run.ts` provisions D1, optional R2 backup bucket (lifecycle 30d), api Worker, web StaticSite, cron triggers. VAPID keys required for prod deploy (derived from private key at deploy time).
 - **Storage/Sync**: D1 (SQLite), no interactive transactions (only `batch()`), FTS5 for notes. Client uses Effect RPC over fetch to `/rpc` (`apps/web/src/lib/rpc.ts:1-266`) and plain-HTTP sync endpoints `/sync/pull`, `/sync/bootstrap`, `/sync/push` (`apps/api/src/sync.ts:1-207`, client in `apps/web/src/lib/sync-engine.ts:1-465`). Local-first: IndexedDB mirror + outbox, sync loop with backoff/wake logic (`apps/web/src/lib/local-store/*`, `apps/web/src/components/sync-runner.tsx:1-76`, `apps/web/src/lib/sync-cadence.ts` implied by usage). Service worker for push/actions (`apps/web/dist/client/sw.js:1-338`, source implied).
 - **Routing in prod**: web Worker (`apps/web/worker.ts:1-120`) strips `/api` prefix and forwards to api via service binding so same-origin cookies work; client sets `VITE_API_URL=/api` in prod build env (`infra/alchemy.run.ts:200-226`, `apps/web/src/lib/config.ts:1-22`).
 
@@ -35,7 +35,7 @@ From repo inspection:
 ### Client boot/navigation
 1. `App.tsx` mounts providers; `AuthProvider` calls `authApi.me()` on mount (`onSettled` -> `refresh()`), uses cached session if offline/network fails (`apps/web/src/lib/auth.tsx:55-192`). `LocalStoreProvider` opens IndexedDB mirror/outbox per user (`apps/web/src/lib/local-store/store.ts` referenced). `SyncRunner` registers sync handler and starts loop when `status==='ready' && online && !halted` (`apps/web/src/components/sync-runner.tsx:44-76`).
 2. Router is filesystem-based (`apps/web/src/router.ts:1-7`). Routes are lazy-loaded via Vite dynamic imports in built bundle (e.g. `./today-WtHSzhmp.js`, `./reminders-BGlTnW-p.js` shown in built assets). Navigation is client-side SPA.
-3. Per-route data: many routes read from local mirror via `useLocalStore()` and also call APIs. Example `apps/web/src/routes/today.tsx:1-912` fetches server read model via `fetchToday()` (calls `/today`?), overlays pending writes from mirror/outbox, falls back to mirror aggregation on offline/error. It also tracks `now()` minute tick for date rollover. 
+3. Per-route data: many routes read from local mirror via `useLocalStore()` and also call APIs. Example `apps/web/src/routes/today.tsx:1-912` fetches server read model via `fetchToday()` (calls `/today`?), overlays pending writes from mirror/outbox, falls back to mirror aggregation on offline/error. It also tracks `now()` minute tick for date rollover.
 4. RPC calls go through `api.*` wrappers in `apps/web/src/lib/rpc.ts` using `RpcClient.make(ApiRpcs)` over `FetchHttpClient` to `${API_URL}/rpc` with `credentials: 'include'` and `Effect.scoped` per call (`apps/web/src/lib/rpc.ts:61-76`). Each call creates a new client/scope - not pooled.
 5. Sync: client polls `/sync/pull` (cursor-based) via `sync-engine.ts` `pullAll`, pushes outbox via `/sync/push`, handles repairs (habit entries, habit restores) (`apps/web/src/lib/sync-engine.ts:150-465`). Cadence backs off on failures, slows when hidden/idle, wakes on writes/reconnect/visibility (`apps/web/src/lib/sync-cadence.ts` implied).
 
@@ -54,7 +54,7 @@ From repo inspection:
 - Route change: mostly client-side (SPA) after initial load; no obvious per-route server loader that blocks navigation before paint in the router setup shown.
 - Data on Today: may call `GET /today` (read model) + read from IndexedDB mirror; overlay pending. RPC used elsewhere for mutations/reads.
 - Auth boot: 1 round trip to `/auth/me` on app load (`apps/web/src/lib/auth.tsx:80-107`).
-- Sync: periodic pulls/pushes to `/sync/pull`, `/sync/bootstrap`, `/sync/push` (cursor-based). 
+- Sync: periodic pulls/pushes to `/sync/pull`, `/sync/bootstrap`, `/sync/push` (cursor-based).
 - RPC: each `api.*` call is a separate HTTP request to `/rpc` with ndjson serialization, new Effect scope/client per call.
 
 ## 3) Likely cold-start & per-navigation cost drivers
@@ -73,7 +73,7 @@ From repo inspection:
 - **Migrations applied by Alchemy on deploy/dev** (`infra/alchemy.run.ts:39-41`) - not per request, good.
 - **FTS5 present** (notes search) - can be expensive if not indexed well; need to check queries.
 - **Sync feed design**: change feed with denormed fields, hydration per pull page (`docs/sync-protocol-draft.md:92-170`) - reasonable if indexed, but could be chatty.
-- **Backup uses custom dump** because D1 can't export DB with FTS5 (`infra/alchemy.run.ts:44-77`, `apps/api/src/d1-*.ts` exist). 
+- **Backup uses custom dump** because D1 can't export DB with FTS5 (`infra/alchemy.run.ts:44-77`, `apps/api/src/d1-*.ts` exist).
 - **Potential N+1**: need to inspect repos/services, but not fully read here. Sync protocol says "hydrates the current entity row" per feed entry - could be N+1 if not batched.
 - **Query patterns**: column name transforms add overhead.
 
@@ -116,7 +116,7 @@ From repo inspection:
 | **Render** | Free tier sleeps (cold starts), paid keeps warm. | Free sleeps; paid $7+/mo. | Medium. | Migrate DB. | Easy. | Easy. | Varies. | Easy. | Easy. | Good. | **High**. | Convenient. |
 | **AWS (Lightsail/EC2/App Runner)** | Varies; EC2 always on, App Runner can have cold starts. | Lightsail $3.50+ but careful; can be cheap. | High (AWS complexity). | Migrate DB. | Easy. | Easy. | DIY/managed. | Easy. | Easy. | CloudFront easy. | **Very high**. | Overkill usually. |
 | **Vercel/Netlify + managed Postgres** | Serverless functions can cold start; static assets cached well. | Vercel/Netlify free tiers generous, Postgres (Neon/Supabase) can be free/$0-10. | Low for frontend, medium for backend. | Migrate to Postgres (schema translation). | Easy. | Need cron (Vercel Cron, Netlify scheduled functions, or external). | Managed. | Easy. | Need to adapt Effect HTTP server to serverless functions (or run separate server). Effect RPC over HTTP still works if deployed as Node server. | Excellent CDN caching. | **High**: split deployment, adapt to serverless constraints. | Good for web, API needs care. |
-| **Cloudflare-with-fixes** | Still cold starts but can mitigate; edge caching great. | Very cheap at near-zero (Workers free tier generous, D1 free tier exists, R2 cheap). | Low if already set up. | Stay on D1 (SQLite) - avoid migration. | Supported via Web Push (already implemented). | Cron triggers built-in. | R2 backups already implemented. | Cookie auth works. | Already deployed. | Excellent (StaticSite + edge). | **Low** if only fix code. | Keep what works, fix performance. | 
+| **Cloudflare-with-fixes** | Still cold starts but can mitigate; edge caching great. | Very cheap at near-zero (Workers free tier generous, D1 free tier exists, R2 cheap). | Low if already set up. | Stay on D1 (SQLite) - avoid migration. | Supported via Web Push (already implemented). | Cron triggers built-in. | R2 backups already implemented. | Cookie auth works. | Already deployed. | Excellent (StaticSite + edge). | **Low** if only fix code. | Keep what works, fix performance. |
 
 **Key takeaways:**
 - **Cost**: Cloudflare is likely cheapest/simplest for near-zero traffic. Moving to VPS/managed Postgres will cost more and add ops burden.
@@ -195,7 +195,7 @@ These are ordered by impact vs effort, based on code inspection:
    - **Evidence**: `apps/web/src/lib/auth.tsx:103-107` calls refresh on settled.
    - **Effort**: Low. **Impact**: Medium-High (perceived load time).
 
-4. **Add route prefetching** 
+4. **Add route prefetching**
    - **Issue**: No prefetching visible. Navigation waits for chunk download.
    - **Fix**: Use Solid Router's prefetching or add `rel="prefetch"` / manual prefetch on link hover/focus.
    - **Evidence**: Router setup in `apps/web/src/router.ts:1-7` uses default Solid Router.
@@ -369,7 +369,7 @@ This keeps SQL, has Solid support, true local-first, and Postgres is portable.
 
 **Do NOT re-platform yet.** The complaint about laggy navigation and low cold starts is likely caused by:
 1. Per-request Effect layer construction in the Worker
-2. RPC client creating new scopes/clients per call  
+2. RPC client creating new scopes/clients per call
 3. Auth boot waterfall
 4. Potential D1 query inefficiencies
 
@@ -377,7 +377,7 @@ These are all fixable without leaving Cloudflare. For a single/few-household app
 
 **Action plan:**
 1. **Measure first** - Add instrumentation to confirm bottlenecks
-2. **Apply P0 fixes** (layer caching, RPC client reuse, auth optimization) 
+2. **Apply P0 fixes** (layer caching, RPC client reuse, auth optimization)
 3. **Re-evaluate** - If still slow after fixes, then consider migration
 
 The migration to ElectricSQL+TanStack DB would be the most promising if re-platforming becomes necessary, as it preserves local-first benefits and has Solid support while using standard Postgres.

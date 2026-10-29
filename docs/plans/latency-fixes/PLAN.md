@@ -317,8 +317,19 @@ Verification on the merged branch:
 - `pnpm typecheck` — 10/10 packages green.
 - `pnpm build` — green.
 
+Measured again after the branch (healthy 30-day session): `/auth/me` **3**
+statements (no write), `/today` **10**, `/week` **10**, `/month` **10**,
+`/sync/pull` **5** (no write). The counts drop by one because the auth preamble
+lost its session write; the concurrency work collapses *waves*, not statements.
+A calendar tap is still 20 statements but now runs in two waves.
+
+The final sweep also added a **daily feed-prune fallback** to the per-minute
+reminder sweep (04:17 UTC): the 03:17 purge remains the owner, but if that
+`no-retry` cron misses, retention no longer depends on it alone.
+
 Still deferred (unchanged): IndexedDB read-model cache, collapsing the `/api`
-proxy hop, D1 read replication, DO-SQLite per household.
+proxy hop, D1 read replication, DO-SQLite per household, a `trash.purge.failed`
+alert.
 
 The remaining proof is a deploy measurement: `curl` `/health`, `/auth/me`,
 `/today` and `/week` cold and warm from the target city, and the `cf-placement`

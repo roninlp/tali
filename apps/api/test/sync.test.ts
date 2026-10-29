@@ -734,7 +734,7 @@ describe("sync engine", () => {
     const longAgo = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000).toISOString()
 
     // A feed row outside the 90-day window, exactly the shape the poll used to
-    // delete on every request (two DELETEs every 3.5 s).
+    // delete on every request (two DELETEs per poll).
     h.db.exec(`
       INSERT INTO list_items
         (id, title, checked, sort_order, version, created_at, updated_at, deleted_at,

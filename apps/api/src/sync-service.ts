@@ -942,8 +942,9 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
       Effect.gen(function*() {
         const limit = Math.min(Math.max(input.limit ?? DEFAULT_PULL_LIMIT, 1), MAX_PULL_LIMIT)
 
-        // A pull is read-only: feed pruning runs in the nightly purge, never on
-        // the 3.5 s poll. Staleness is still detected from `minSeq` below.
+        // A pull is read-only: feed pruning runs in the nightly purge (with a
+        // once-a-day fallback in the reminder sweep), never on the poll itself.
+        // Staleness is still detected from `minSeq` below.
 
         // The feed can't serve entries between the cursor and the oldest
         // retained seq. Cursor 0 on an aged feed is stale too: fresh mirrors

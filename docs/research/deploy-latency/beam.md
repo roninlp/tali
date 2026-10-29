@@ -199,7 +199,7 @@ The user's two candidates (Convex, ElectricSQL+TanStack DB) plus others. Solid 2
 
 ### 6.3 Rocicorp Zero
 
-- **Solid support:** First-party (`zero.rocicorp.dev/docs/solidjs`, `ZeroProvider`). 
+- **Solid support:** First-party (`zero.rocicorp.dev/docs/solidjs`, `ZeroProvider`).
 - **Offline/local-first:** **No offline writes.** Zero explicitly does not support offline writes; reads continue while disconnected. Source: zero.rocicorp.dev/docs/connection. This conflicts with this app's offline-first task/habit capture.
 - **Maturity:** Reached 1.0 (June 2026) after 2 years. Source: InfoQ.
 - **Pricing:** Pro $30/mo (100 GB), or self-host (open source). Source: zero.rocicorp.dev.

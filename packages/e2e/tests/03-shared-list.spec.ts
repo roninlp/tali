@@ -3,8 +3,8 @@ import { expect, pullAll, test, uniqueTag } from "./support"
 /**
  * Gate flow 3 (#81/#84): an item checked on device A appears live on device B.
  *
- * The live update is the 3.5 s cursor-wake pull (`sync-runner.tsx`), not a
- * reload: B stays on `/lists/:id` for the whole assertion, and the row's
+ * The live update is the cursor-wake pull (`sync-runner.tsx`, 10 s while active),
+ * not a reload: B stays on `/lists/:id` for the whole assertion, and the row's
  * `data-done` flip plus the "توسط همخانه به‌روزرسانی شد" attribution prove the
  * change arrived from the household feed rather than from B's own tap.
  */

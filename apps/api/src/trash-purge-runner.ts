@@ -11,8 +11,8 @@ import { FEED_RETENTION_MS } from "./sync-service.js"
  * the same D1 binding the fetch handler uses.
  *
  * The same tick now owns the `change_feed` retention window: it used to run on
- * every `GET /sync/pull` (two DELETEs every 3.5 s), which made a read-only poll
- * write to D1. Pruning here keeps the 90-day window without touching the poll.
+ * every `GET /sync/pull` (two DELETEs on each poll), which made a read-only
+ * poll write to D1. Pruning here keeps the 90-day window without touching it.
  */
 
 export interface PurgeEnv {

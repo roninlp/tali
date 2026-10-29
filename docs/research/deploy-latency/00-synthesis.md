@@ -103,7 +103,7 @@ cold-start and client work. That matches the perceived lag exactly.
 | --- | --- | --- | --- | --- |
 | 1 | Put the API Worker next to D1 (`placement: { mode: "smart" }`), and pin D1's primary location near users/household | `infra/alchemy.run.ts` | 10 min | 20–80 ms → 1–3 ms per D1 hop; 5–10× on every read |
 | 2 | Stop renewing the session on every request; renew at most hourly, and cache the principal (signed cookie or KV) | `auth-service.ts:205-227` | 0.5 day | −1 write/−3 reads per request |
-| 3 | Batch the `/today`, `/week`, `/month` reads with `db.batch()` / `Effect.all(concurrency)` | today/calendar/task services | 1 day | 11 → ~4 statements; 22 → ~6 per nav |
+| 3 | Batch the `/today`, `/week`, `/month` reads with `db.batch()` / `Effect.all(concurrency)` | today/calendar/task services | 1 day | 5 serial waves → 1–2; 22 statements per calendar tap → 2 waves |
 | 4 | Move `prune()` to the nightly cron | `sync-service.ts:944` | 1 h | removes 2 writes/poll |
 | 5 | Boot from the cached session optimistically; reconcile in the background | `auth.tsx`, `guard.tsx` | 0.5 day | removes the blocking RTT before first paint |
 | 6 | Replace `Splash` with a route skeleton and prefetch chunks on hover/focus/idle (`<A>`/`router.preload`) | `App.tsx`, `app-header.tsx`, router | 0.5 day | navigation feels instant |
