@@ -40,11 +40,13 @@ const deferredResponse = () => {
 }
 
 let meCalls = 0
+let currentAuth: ReturnType<typeof useAuth> | undefined
 const originalFetch = globalThis.fetch
 
 const stubMe = (respond: () => Promise<Response>): void => {
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
+    if (url.endsWith("/auth/logout")) return json(200, { ok: true })
     if (!url.endsWith("/auth/me")) throw new Error(`unexpected fetch: ${url}`)
     meCalls += 1
     return respond()
@@ -58,6 +60,7 @@ const stubMe = (respond: () => Promise<Response>): void => {
  */
 function Probe() {
   const auth = useAuth()
+  currentAuth = auth
 
   return (
     <div>
@@ -138,6 +141,30 @@ describe("AuthProvider boot", () => {
     expect(screen.getByTestId("guarded")).toBeTruthy()
     // The cache survives a transient failure so the next boot stays instant.
     expect(readCachedSession()).toMatchObject({ user: { email: session.user.email } })
+    screen.unmount()
+  })
+
+  it("ignores a boot /auth/me that lands after sign-out", async () => {
+    const me = deferredResponse()
+    stubMe(() => me.promise)
+    cacheSession(session)
+
+    const screen = mount()
+    await waitFor(() => expect(meCalls).toBe(1))
+
+    // The optimistic boot makes the header's sign-out reachable while the
+    // reconcile is still in flight.
+    await currentAuth!.signOut()
+    expect(screen.getByTestId("status").textContent).toBe("signedOut")
+
+    // A late 200 must not re-apply the session against the revoked cookie.
+    me.resolve(json(200, session))
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(screen.getByTestId("status").textContent).toBe("signedOut")
+    expect(screen.queryByTestId("guarded")).toBeNull()
+    expect(readCachedSession()).toBeUndefined()
     screen.unmount()
   })
 

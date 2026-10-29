@@ -62,8 +62,15 @@ export function AuthProvider(props: ParentProps) {
   )
   const [session, setSession] = createSignal<SessionContext | undefined>(cachedAtBoot)
   const [bootFailure, setBootFailure] = createSignal<AuthFailure>()
+  /**
+   * Invalidates an in-flight boot/refresh response whenever the session
+   * changes. Without it, a `/auth/me` that resolves after sign-out would
+   * re-apply the old session and reopen the app against a revoked cookie.
+   */
+  let sessionEpoch = 0
 
   const applySession = (next: SessionContext) => {
+    sessionEpoch += 1
     cacheSession(next)
     setSession(next)
     setBootFailure(undefined)
@@ -71,6 +78,7 @@ export function AuthProvider(props: ParentProps) {
   }
 
   const clearSession = () => {
+    sessionEpoch += 1
     clearCachedSession()
     setSession(undefined)
     setBootFailure(undefined)
@@ -91,7 +99,11 @@ export function AuthProvider(props: ParentProps) {
     const cached = session()
     if (cached === undefined) setStatus("checking")
     setBootFailure(undefined)
+    const epoch = ++sessionEpoch
     const result = await authApi.me()
+    // A sign-in, sign-out or another refresh may have settled while this was
+    // in flight; its answer no longer describes the session on screen.
+    if (epoch !== sessionEpoch) return
     if (result.ok) {
       applySession(result.value)
       return
