@@ -98,23 +98,32 @@ Problem: `me()` runs `sessions.extend(...)` on **every** authenticated request
 (`auth-service.ts:218-220`), i.e. a D1 write on every read model, every poll,
 and every RPC call. D1 writes are the expensive, serialized path.
 
-Steps:
+Important: the browser cookie is set with `maxAge: "30 days"` only at
+login/register/household (`auth-routes.ts:74-85`), while the DB row is slid on
+every request. A DB-only extension therefore **cannot** keep the browser signed
+in past the cookie's 30 days — the write buys nothing today.
 
-1. Renew the expiry only when the remaining lifetime crosses a threshold
-   (e.g. renew when less than 7 days remain on a 30-day TTL). Put the threshold
-   in one named constant next to `SESSION_TTL_MS`.
-2. Keep the guarantee: an active session never expires. Do not change the TTL,
-   cookie attributes, token hashing, or the `SessionContext` shape.
-3. Add a test proving that two consecutive `/auth/me` calls on a fresh session
-   perform **one** session write in total, and that a session close to expiry
-   is extended. Prefer a statement-count assertion through the existing
-   `FakeD1` harness, plus a service-level test if cheaper.
-4. Update any test that asserted an extension on every call.
+Steps (pick one, prefer A):
+
+- **A. Read-only session (preferred for P0).** Remove the `extend` write from
+  `me()`; the session lifetime becomes fixed at login and matches the cookie.
+  Update the doc comment ("renewing… so an active household never has to
+  re-login") because it is not true while the cookie is fixed. Keep expired /
+  unknown-token behavior (delete + `Unauthorized`) unchanged.
+- **B. True sliding.** Extend only when the remaining lifetime is below a named
+  threshold (e.g. 7 days), **and** re-set the session cookie in the `/auth/me`
+  response in the same request. Extending the DB row without re-setting the
+  cookie is rejected.
+
+Whichever option: do not change the TTL, cookie attributes, token hashing, or
+the `SessionContext` shape. Add a test proving two consecutive `/auth/me` calls
+on a fresh session leave `expires_at` unchanged / perform no session write. If
+B, add a near-expiry test that asserts both the DB row and the `Set-Cookie`
+header move.
 
 Acceptance:
 
-- Fresh session: first `me()` may renew; second does not write.
-- Near-expiry session: renews.
+- Two consecutive `/auth/me` calls: no session write, same `expires_at`.
 - Expired/unknown token behavior unchanged (delete + `Unauthorized`).
 - `pnpm --filter @tali/api test`, `pnpm typecheck`.
 
