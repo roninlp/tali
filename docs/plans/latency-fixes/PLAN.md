@@ -335,3 +335,20 @@ The remaining proof is a deploy measurement: `curl` `/health`, `/auth/me`,
 `/today` and `/week` cold and warm from the target city, and the `cf-placement`
 header (`remote-*` confirms placement). Targets: `/today` p50 < 150 ms warm,
 boot-to-interactive < 800 ms, no writes on a read-only poll.
+
+### Final sweep
+
+`reviews/06-final-sweep.md` reviewed the branch as a system: **ship with
+follow-ups**, no blockers. Both `should-fix` items were closed before pushing:
+
+- The feed window no longer depends on a single `no-retry` cron. The per-minute
+  reminder sweep now prunes the feed once a day at 04:17 UTC as an independent
+  fallback (covered by `maintenance-cron.test.ts`).
+- The Playwright e2e suite was run on the branch: **6 passed** (register →
+  household, offline task convergence, live shared-list update on the 10 s poll,
+  reminder action, recurring-event split).
+
+Nits fixed: statement counts corrected (auth 3, `/today` 10, `/week` 10,
+`/month` 10, `/sync/pull` 5), stale "3.5 s" copy swept, push test fetch/cache
+isolation, stale-badge bound comment, research-doc whitespace. Remaining
+follow-up: an alert on `trash.purge.failed` in production.
