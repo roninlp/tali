@@ -12,8 +12,10 @@ import {
   type SyncPullResponse,
   type SyncPushEntry
 } from "@tali/domain"
+import { SyncRepo, SyncRepoLive } from "@tali/sql"
 import { NoteSearchService, NoteSearchServiceLive } from "../src/note-search-service.js"
 import {
+  FEED_RETENTION_MS,
   MAX_ISOLATION_BATCHES,
   SyncService,
   SyncServiceLive
@@ -67,12 +69,14 @@ const makeHarness = () => {
     transformQueryNames: Str.camelToSnake,
     transformResultNames: Str.snakeToCamel
   })
-  const layer = Layer.mergeAll(NoteSearchServiceLive, SyncServiceLive).pipe(
-    Layer.provide(d1)
-  )
+  const layer = Layer.mergeAll(
+    NoteSearchServiceLive,
+    SyncServiceLive,
+    SyncRepoLive
+  ).pipe(Layer.provide(d1))
 
   const run = <A>(
-    effect: Effect.Effect<A, unknown, SyncService | NoteSearchService>
+    effect: Effect.Effect<A, unknown, SyncService | NoteSearchService | SyncRepo>
   ): Promise<A> => Effect.runPromise(Effect.provide(effect, layer))
 
   return { db, fake, run }
@@ -135,6 +139,21 @@ const entry = (input: {
   patch: input.patch ?? {},
   clientUpdatedAt: input.at ?? NOW()
 })
+
+/**
+ * Run the nightly feed prune at `now` — the write `GET /sync/pull` used to do
+ * on every poll. The aged-feed tests drive it explicitly so the pull stays
+ * read-only.
+ */
+const pruneFeed = (harness: Harness, now = new Date()): Promise<void> =>
+  harness.run(
+    Effect.gen(function*() {
+      const sync = yield* SyncRepo
+      yield* sync.prune(
+        new Date(now.getTime() - FEED_RETENTION_MS).toISOString()
+      )
+    })
+  )
 
 /**
  * A full-size push chunk of listItems, with the listed positions replaced by
@@ -557,12 +576,14 @@ describe("sync engine", () => {
         ('${HOUSEHOLD}', 'listItem', '${old}', 'upsert', 1, '${longAgo}', '${USER_A}', 'shared')
     `)
 
-    // A recent push lands at seq 2; pruning leaves seq 2 as the oldest row.
+    // A recent push lands at seq 2; the nightly prune leaves seq 2 as the
+    // oldest row (a pull no longer prunes).
     await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [entry({ entityId: recent, baseVersion: 0, patch: { title: "تازه" } })]
     })
+    await pruneFeed(h)
 
     const stale = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
     expect(stale.resetRequired).toBe(true)
@@ -678,6 +699,7 @@ describe("sync engine", () => {
         ('${HOUSEHOLD}', 'listItem', '${second}', 'upsert', 1, '${longAgo}', '${USER_A}', 'shared')
     `)
 
+    await pruneFeed(h)
     const stale = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
     expect(stale.resetRequired).toBe(true)
 
@@ -703,6 +725,71 @@ describe("sync engine", () => {
     })
     expect(next.resetRequired).toBe(false)
     expect(next.entries).toHaveLength(0)
+  })
+
+  it("does not prune the feed on a pull: an aged row survives the poll", async () => {
+    const h = makeHarness()
+    const old = uuidV7()
+    const recent = uuidV7()
+    const longAgo = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000).toISOString()
+
+    // A feed row outside the 90-day window, exactly the shape the poll used to
+    // delete on every request (two DELETEs every 3.5 s).
+    h.db.exec(`
+      INSERT INTO list_items
+        (id, title, checked, sort_order, version, created_at, updated_at, deleted_at,
+         owner_id, visibility, household_id)
+      VALUES
+        ('${old}', 'کهنه', 0, 0, 1, '${longAgo}', '${longAgo}', NULL,
+         '${USER_A}', 'shared', '${HOUSEHOLD}')
+    `)
+    h.db.exec(`
+      INSERT INTO change_feed
+        (household_id, entity_type, entity_id, op, version, updated_at, owner_id, visibility)
+      VALUES
+        ('${HOUSEHOLD}', 'listItem', '${old}', 'upsert', 1, '${longAgo}', '${USER_A}', 'shared')
+    `)
+    // The old poll also pruned `applied_mutations`; this aged row must survive
+    // too, or a replay guard would silently lose its window.
+    h.db.exec(`
+      INSERT INTO applied_mutations
+        (client_mutation_id, household_id, entity_type, entity_id,
+         server_version, seq, created_at)
+      VALUES
+        ('aged-mutation', '${HOUSEHOLD}', 'listItem', '${old}', 1, 1, '${longAgo}')
+    `)
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [entry({ entityId: recent, baseVersion: 0, patch: { title: "تازه" } })]
+    })
+
+    const feedRowsBefore = feedCount(h.db)
+    expect(feedRowsBefore).toBe(2)
+
+    const page = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
+    expect(page.resetRequired).toBe(false)
+    expect(page.entries.map((item) => item.entityId)).toEqual([old, recent])
+
+    // The 100-day-old row is still there after the pull: a poll only reads.
+    expect(
+      (
+        h.db
+          .prepare("SELECT COUNT(*) AS n FROM change_feed WHERE entity_id = ?")
+          .get(old) as { readonly n: number }
+      ).n
+    ).toBe(1)
+    expect(feedCount(h.db)).toBe(feedRowsBefore)
+    expect(
+      (
+        h.db
+          .prepare(
+            "SELECT COUNT(*) AS n FROM applied_mutations WHERE client_mutation_id = 'aged-mutation'"
+          )
+          .get() as { readonly n: number }
+      ).n
+    ).toBe(1)
+    expect(appliedCount(h.db)).toBe(2)
   })
 
   // ── #34: the registry, exercised through Task alongside the legacy listItem ──

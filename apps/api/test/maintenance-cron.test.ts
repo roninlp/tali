@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest"
 import { TRASH_RETENTION_MS } from "@tali/domain"
 import { CRON } from "@tali/config"
 import worker from "../src/index.js"
+import { FEED_RETENTION_MS } from "../src/sync-service.js"
 import { FakeD1 } from "./fake-d1.js"
 import { FakeR2 } from "./fake-r2.js"
 
@@ -121,6 +122,36 @@ describe("nightly maintenance cron", () => {
     ).toBe(0)
     // The purge night does not also write a backup.
     expect(r2.objects.size).toBe(0)
+  })
+
+  it("prunes the aged feed once a night and keeps the newest row", async () => {
+    const db = makeDatabase()
+    const now = "2026-10-23T03:17:00.000Z"
+    const aged = new Date(
+      Date.parse(now) - FEED_RETENTION_MS - 24 * 60 * 60 * 1000
+    ).toISOString()
+    // Two feed rows, no aggregate rows: only the retention prune acts here.
+    db.prepare(
+      `INSERT INTO change_feed
+        (household_id, entity_type, entity_id, op, version, updated_at, owner_id, visibility)
+       VALUES ('household-a', 'note', 'aged-note', 'upsert', 1, ?, 'user-a', 'shared')`
+    ).run(aged)
+    db.prepare(
+      `INSERT INTO change_feed
+        (household_id, entity_type, entity_id, op, version, updated_at, owner_id, visibility)
+       VALUES ('household-a', 'note', 'newest-note', 'upsert', 1, ?, 'user-a', 'shared')`
+    ).run("2026-10-22T03:17:00.000Z")
+    const fake = new FakeD1(db)
+    const r2 = new FakeR2()
+
+    await runScheduled(CRON.purge, now, scheduledEnv(fake, r2))
+
+    // The row outside the 90-day window is gone...
+    expect(count(db, "SELECT COUNT(*) AS n FROM change_feed WHERE entity_id = 'aged-note'"))
+      .toBe(0)
+    // ...while the newest row stays as the high-water marker stale cursors need.
+    expect(count(db, "SELECT COUNT(*) AS n FROM change_feed WHERE entity_id = 'newest-note'"))
+      .toBe(1)
   })
 
   it("routes the backup expression to the nightly dump", async () => {

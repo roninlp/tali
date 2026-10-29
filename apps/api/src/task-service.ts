@@ -1167,27 +1167,35 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
         const bounds = taskBucketBounds(viewer.timeZone, now)
         const scope = { householdId: viewer.householdId, userId: viewer.userId }
 
-        const overdueDates = yield* tasks
-          .listDueDateRange({ ...scope, before: bounds.today })
-          .pipe(Effect.orDie)
-        const overdueInstants = yield* tasks
-          .listDueInstantRange({ ...scope, before: bounds.todayStart })
-          .pipe(Effect.orDie)
-        const upcomingDates = yield* tasks
-          .listDueDateRange({
-            ...scope,
-            from: bounds.today,
-            before: bounds.weekAfter
-          })
-          .pipe(Effect.orDie)
-        const upcomingInstants = yield* tasks
-          .listDueInstantRange({
-            ...scope,
-            from: bounds.todayStart,
-            before: bounds.weekEndExclusive
-          })
-          .pipe(Effect.orDie)
-        const noDate = yield* tasks.listNoDue(scope).pipe(Effect.orDie)
+        // The five range reads are independent: none feeds another's bounds.
+        // Fan them out at concurrency 4 (Workers allows ~6 simultaneous
+        // outgoing connections per request, so 4 leaves headroom) instead of
+        // paying five sequential D1 round trips. Result order stays the same
+        // and the de-dup/sort below is unchanged.
+        const [
+          overdueDates,
+          overdueInstants,
+          upcomingDates,
+          upcomingInstants,
+          noDate
+        ] = yield* Effect.all(
+          [
+            tasks.listDueDateRange({ ...scope, before: bounds.today }),
+            tasks.listDueInstantRange({ ...scope, before: bounds.todayStart }),
+            tasks.listDueDateRange({
+              ...scope,
+              from: bounds.today,
+              before: bounds.weekAfter
+            }),
+            tasks.listDueInstantRange({
+              ...scope,
+              from: bounds.todayStart,
+              before: bounds.weekEndExclusive
+            }),
+            tasks.listNoDue(scope)
+          ],
+          { concurrency: 4 }
+        ).pipe(Effect.orDie)
 
         const grouped: Record<TaskBucket, Array<Task>> = {
           overdue: [],

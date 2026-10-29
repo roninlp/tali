@@ -180,9 +180,18 @@ export class CalendarService extends Context.Service<CalendarService>()(
         Effect.gen(function*() {
           const date = anchor ?? taskBucketBounds(viewer.timeZone, now).today
           const range = weekRange(date, viewer.weekStart)
-          const rows = yield* loadRangeTasks(viewer, range)
-          const eventRows = yield* loadRangeEvents(viewer, range)
-          const occasionRows = yield* loadOccasions(viewer)
+          // Tasks, events and occasions are independent lanes. Fan them out at
+          // concurrency 4 (Workers allows ~6 simultaneous outgoing connections
+          // per request, so 4 leaves headroom) instead of paying three
+          // sequential D1 round trips.
+          const [rows, eventRows, occasionRows] = yield* Effect.all(
+            [
+              loadRangeTasks(viewer, range),
+              loadRangeEvents(viewer, range),
+              loadOccasions(viewer)
+            ],
+            { concurrency: 4 }
+          )
           return buildWeekReadModel({
             tasks: rows,
             events: eventRows,
@@ -203,20 +212,35 @@ export class CalendarService extends Context.Service<CalendarService>()(
           const { year, month: monthOfYear } = jalaliMonthOf(anchor)
           const range = monthRange(year, monthOfYear, viewer.weekStart)
           const day = options.day ?? null
-          const rows = yield* loadRangeTasks(viewer, range)
-          const eventRows = yield* loadRangeEvents(viewer, range)
           // The drill-down accepts any date, and a client may ask for one
           // outside the month grid (a stale selection, an adjacent-month day).
           // The grid query never covered it, so read that day too instead of
-          // answering an empty day for a day that has tasks.
-          let drillRows: ReadonlyArray<CalendarTaskSource> = []
-          let drillEvents: ReadonlyArray<CalendarEventSource> = []
-          if (day !== null && (day < range.start || day > range.end)) {
-            const drillRange = singleDayRange(day)
-            drillRows = yield* loadRangeTasks(viewer, drillRange)
-            drillEvents = yield* loadRangeEvents(viewer, drillRange)
-          }
-          const occasionRows = yield* loadOccasions(viewer)
+          // answering an empty day for a day that has tasks. Build the two
+          // drill effects conditionally: outside the grid they are real reads,
+          // inside it they are no-ops that skip D1 entirely.
+          const drillRange =
+            day !== null && (day < range.start || day > range.end)
+              ? singleDayRange(day)
+              : null
+          // Every lane is independent. Fan the grid reads and any drill reads
+          // out at concurrency 4 (Workers allows ~6 simultaneous outgoing
+          // connections per request, so 4 leaves headroom) instead of paying
+          // ten sequential D1 round trips.
+          const [rows, eventRows, occasionRows, drillRows, drillEvents] =
+            yield* Effect.all(
+              [
+                loadRangeTasks(viewer, range),
+                loadRangeEvents(viewer, range),
+                loadOccasions(viewer),
+                drillRange === null
+                  ? Effect.succeed([] as ReadonlyArray<CalendarTaskSource>)
+                  : loadRangeTasks(viewer, drillRange),
+                drillRange === null
+                  ? Effect.succeed([] as ReadonlyArray<CalendarEventSource>)
+                  : loadRangeEvents(viewer, drillRange)
+              ],
+              { concurrency: 4 }
+            )
           return buildMonthReadModel({
             tasks: [...rows, ...drillRows],
             events: [...eventRows, ...drillEvents],
