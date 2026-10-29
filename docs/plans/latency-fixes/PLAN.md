@@ -1,6 +1,6 @@
 # Latency P0 — plan, implementation and review protocol
 
-Status: active
+Status: implemented 5/5, reviewed; awaiting a deploy measurement
 Base: `6bda4f209` (main, 2026-10-29)
 Branch: `perf/latency-p0`
 Scope: in-place fixes to the current Cloudflare + D1 + Solid stack. **No**
@@ -286,3 +286,41 @@ Verify: `pnpm --filter @tali/web test && pnpm typecheck`.
   old code.
 - Types/lint/build: real command output, not claims.
 - Rollback: the change can be reverted alone.
+
+---
+
+## Results
+
+All five items are implemented on `perf/latency-p0` and independently reviewed.
+Each implementation and review ran in its own top-level thread; review reports
+live in `docs/plans/latency-fixes/reviews/`.
+
+| Item | Implementation | Review commit | Verdict |
+| --- | --- | --- | --- |
+| 01 edge placement + asset caching | `9e4067763` (+ nit `86a42c2c7`) | `0c1d1e091` | approve with nits |
+| 02 read-only auth session | `051acc14c` (+ fix `3070c7807`) | `f7abadd12` | approve with nits (1 should-fix fixed) |
+| 03 parallel reads + nightly prune | `b8e8c15a1` (+ nit `8c887fdb1`) | `5bc9080ea` | approve with nits |
+| 04 optimistic boot + route skeleton | `431046b25` (+ fix `d95304263`) | `369906dbf` | changes requested → fixed |
+| 05 background scans + poll + push | `b33f06d25` (+ nit `e6676b377`) | `ac82ac584` | approve with nits |
+
+Review-driven fixes that landed:
+
+- **02**: the session-mutation routes re-stamped the cookie without extending the
+  row (cookie could outlive the session). They now renew both together, and a
+  malformed `expires_at` fails closed instead of becoming immortal.
+- **04**: a late `/auth/me` `200` could re-apply a session after sign-out. A
+  session epoch now discards stale responses.
+
+Verification on the merged branch:
+
+- `pnpm test` — 11 turbo tasks green (api, web, conflict-lab, e2e typecheck, …).
+- `pnpm typecheck` — 10/10 packages green.
+- `pnpm build` — green.
+
+Still deferred (unchanged): IndexedDB read-model cache, collapsing the `/api`
+proxy hop, D1 read replication, DO-SQLite per household.
+
+The remaining proof is a deploy measurement: `curl` `/health`, `/auth/me`,
+`/today` and `/week` cold and warm from the target city, and the `cf-placement`
+header (`remote-*` confirms placement). Targets: `/today` p50 < 150 ms warm,
+boot-to-interactive < 800 ms, no writes on a read-only poll.
