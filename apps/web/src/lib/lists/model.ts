@@ -121,7 +121,8 @@ export const sameItemRow = (a: ListItemRow, b: ListItemRow): boolean =>
 /**
  * Reuse the previous row object when nothing changed.
  *
- * The mirror reloads after every local write *and* every sync ack (3.5s), and
+ * The mirror reloads after every local write *and* every sync ack (each poll),
+ * and
  * `<For>` keys rows by reference: handing it fresh objects would remount every
  * row, drop keyboard focus and restart the strike-through animation. Keeping
  * the identity of unchanged rows is what makes an ack invisible (#37's

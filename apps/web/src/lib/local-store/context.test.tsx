@@ -86,7 +86,7 @@ const mount = () =>
 
 /**
  * Hands the test the live context value, so a pass can be started and observed
- * without rendering `SyncRunner`'s 3.5 s poll.
+ * without rendering `SyncRunner`'s poll loop.
  */
 function SyncProbe(props: { readonly onValue: (value: LocalStoreContextValue) => void }) {
   const local = useLocalStore()
@@ -235,6 +235,75 @@ describe("LocalStoreProvider", () => {
     const afterHalt = calls
     await local!.syncNow()
     expect(calls).toBe(afterHalt)
+
+    view.unmount()
+  })
+
+  it("refreshes the failure count on open, a drained pass and a one-minute gate", async () => {
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true })
+
+    let local: LocalStoreContextValue | undefined
+    const view = render(() => (
+      <AuthProvider>
+        <LocalStoreProvider>
+          <SyncProbe
+            onValue={(value) => {
+              local = value
+            }}
+          />
+        </LocalStoreProvider>
+      </AuthProvider>
+    ))
+    await waitFor(() => expect(view.getByTestId("sync-status").textContent).toBe("ready"))
+
+    const store = local!.store()!
+    local!.registerSync(async () => {})
+    await waitFor(() => expect(local!.canSync()).toBe(true))
+
+    // The open-time seed is the last scan. A pass over an empty outbox must not
+    // start another: `failedCount()` is `getAll()` over the whole mirror.
+    const failedCount = vi.spyOn(store, "failedCount")
+    await local!.syncNow()
+    await local!.syncNow()
+    expect(failedCount).not.toHaveBeenCalled()
+
+    // The gate is a minute from the last scan: the first pass past it refreshes
+    // the count, and the next minute of passes trusts that result…
+    const openedAt = Date.now()
+    const clock = vi.spyOn(Date, "now")
+    clock.mockReturnValue(openedAt + 60_000)
+    await local!.syncNow()
+    expect(failedCount).toHaveBeenCalledTimes(1)
+
+    clock.mockReturnValue(openedAt + 60_000 + 59_999)
+    await local!.syncNow()
+    expect(failedCount).toHaveBeenCalledTimes(1)
+
+    // …until another minute has passed.
+    clock.mockReturnValue(openedAt + 60_000 + 60_000)
+    await local!.syncNow()
+    expect(failedCount).toHaveBeenCalledTimes(2)
+    clock.mockRestore()
+
+    // A pass that drains the outbox is the one moment a push result can have
+    // marked rows, so it refreshes even inside the minute.
+    local!.registerSync(async (current) => {
+      const [entry] = await current.pending()
+      if (entry !== undefined) await current.ack([entry.clientMutationId])
+    })
+    await waitFor(() => expect(local!.canSync()).toBe(true))
+    const queued = local!.pending()
+    await store.writeLocal({
+      entityType: "listItem",
+      entityId: uuidV7(),
+      op: "upsert",
+      patch: { title: "صف" }
+    })
+    await waitFor(() => expect(local!.pending()).toBe(queued + 1))
+    failedCount.mockClear()
+    await local!.syncNow()
+    expect(failedCount).toHaveBeenCalledTimes(1)
+    failedCount.mockRestore()
 
     view.unmount()
   })

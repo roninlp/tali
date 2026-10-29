@@ -58,6 +58,12 @@ const LocalStoreContext = createContext<LocalStoreContextValue>()
 const readOnline = (): boolean =>
   typeof navigator === "undefined" ? true : navigator.onLine
 
+/**
+ * How often a sync pass may re-scan the mirror for rejected rows. Failure
+ * counts are advisory; the poll is not allowed to read every row for them.
+ */
+const FAILED_REFRESH_INTERVAL_MS = 60_000
+
 export function LocalStoreProvider(props: ParentProps) {
   const auth = useAuth()
 
@@ -79,23 +85,37 @@ export function LocalStoreProvider(props: ParentProps) {
   /**
    * The pending count is cheap (`count()` on the outbox) and it can change on
    * every local write, so the subscribe callback refreshes only this one.
+   * Returns the count it read, so a pass can tell whether the outbox shrank.
    */
-  const refreshPendingOf = async (current: LocalStore) => {
-    if (current.closed) return
+  const refreshPendingOf = async (current: LocalStore): Promise<number | undefined> => {
+    if (current.closed) return undefined
     try {
-      setPending(await current.pendingCount())
+      const count = await current.pendingCount()
+      setPending(count)
+      return count
     } catch {
       // The store closed mid-read (sign-out); the next open resets the count.
+      return undefined
     }
   }
 
   /**
-   * Failure markers only move inside a push result, a pull replacement or a
-   * retry. Counting them is a mirror scan, so do it on open and after a pass,
-   * never on every keystroke's store notification.
+   * Failure markers only move inside a push result, a pull replacement, a
+   * retry or an ack that resolves a rejected row. Counting them is a full
+   * mirror scan (`failedCount()` = `getAll()`), so unlike the outbox count it
+   * must not ride along with every poll — that read the whole mirror every few
+   * seconds. It is refreshed on store open, when a pass drains the outbox (the
+   * one moment a push result can have marked rows), and otherwise at most once
+   * per `FAILED_REFRESH_INTERVAL_MS`. Trade-off: a marker resolved by a pull
+   * while the outbox is empty can leave `failed()` stale for up to a minute.
+   * The badge is advisory and a rejected write still appears as soon as its
+   * push result lands, which is the case the status UI has to get right.
    */
+  let failedRefreshedAt = 0
+
   const refreshFailedOf = async (current: LocalStore) => {
     if (current.closed) return
+    failedRefreshedAt = Date.now()
     try {
       setFailed(await current.failedCount())
     } catch {
@@ -103,14 +123,21 @@ export function LocalStoreProvider(props: ParentProps) {
     }
   }
 
-  const refreshCountsOf = async (current: LocalStore) => {
-    await Promise.all([refreshPendingOf(current), refreshFailedOf(current)])
+  /** The outbox count is an index `count()`, cheap enough for every pass. */
+  const refreshCountsOf = async (current: LocalStore, refreshFailed: boolean) => {
+    const reads: Array<Promise<unknown>> = [refreshPendingOf(current)]
+    if (refreshFailed) reads.push(refreshFailedOf(current))
+    await Promise.all(reads)
   }
+
+  const failedRefreshDue = (): boolean =>
+    Date.now() - failedRefreshedAt >= FAILED_REFRESH_INTERVAL_MS
 
   const closeStore = () => {
     generation += 1
     unsubscribe?.()
     unsubscribe = undefined
+    failedRefreshedAt = 0
     const current = store()
     if (current !== undefined) current.close()
     setStore(undefined)
@@ -155,6 +182,10 @@ export function LocalStoreProvider(props: ParentProps) {
     const ticket = generation
     setSyncing(true)
     setError(undefined)
+    // One cheap outbox `count()` before the pass: if the queue shrinks while
+    // the handler runs, a push result may have marked a row, which is the only
+    // per-pass reason to read the mirror for failures.
+    const queuedBefore = await current.pendingCount().catch(() => pending())
     try {
       for (;;) {
         // Cleared before the pass, so any trigger during it queues one more.
@@ -178,7 +209,16 @@ export function LocalStoreProvider(props: ParentProps) {
     } finally {
       trailingRun = false
       setSyncing(false)
-      await refreshCountsOf(current)
+      // Pending is cheap and stays per-pass. The mirror scan behind `failed()`
+      // does not: run it only when a push result may have marked a row (the
+      // outbox shrank during the pass) or when the minute has elapsed.
+      const queuedAfter = await refreshPendingOf(current)
+      if (
+        (queuedAfter !== undefined && queuedAfter < queuedBefore) ||
+        failedRefreshDue()
+      ) {
+        await refreshFailedOf(current)
+      }
     }
   }
 
@@ -212,7 +252,9 @@ export function LocalStoreProvider(props: ParentProps) {
             void refreshPendingOf(opened)
           })
           setStatus("ready")
-          await refreshCountsOf(opened)
+          // A fresh store is the one time the failure count is guaranteed
+          // stale, so seed both badges here.
+          await refreshCountsOf(opened, true)
         } catch (cause) {
           if (ticket !== generation) return
           setError(cause instanceof Error ? cause.message : "IndexedDB unavailable")

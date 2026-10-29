@@ -23,6 +23,15 @@ const cadence = (overrides: Partial<SyncCadenceState> = {}): SyncCadenceState =>
 const noJitter = () => 0.5
 
 describe("syncDelayMs", () => {
+  it("pins the cadence table", () => {
+    expect(ACTIVE_INTERVAL_MS).toBe(10_000)
+    expect(IDLE_INTERVAL_MS).toBe(30_000)
+    expect(HIDDEN_INTERVAL_MS).toBe(30_000)
+    // The acceptance bar: an idle open tab polls no faster than every 10 s.
+    expect(IDLE_INTERVAL_MS).toBeGreaterThanOrEqual(10_000)
+    expect(ACTIVE_INTERVAL_MS).toBeGreaterThanOrEqual(10_000)
+  })
+
   it("uses the healthy cadence while visible and recently active", () => {
     expect(syncDelayMs(cadence({ lastActivity: 8_000 }), noJitter)).toBe(
       ACTIVE_INTERVAL_MS
@@ -145,7 +154,7 @@ describe("createSyncLoop", () => {
     await vi.advanceTimersByTimeAsync(1)
     expect(starts.length).toBe(3)
 
-    // A pass that completes resets the streak and returns to 3.5 s.
+    // A pass that completes resets the streak and returns to the fast cadence.
     failNext = false
     await vi.advanceTimersByTimeAsync(3_999)
     expect(starts.length).toBe(3)
@@ -216,7 +225,7 @@ describe("createSyncLoop", () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(starts.length).toBe(1)
 
-    // Idle waits 15 s, not the healthy 3.5 s.
+    // Idle waits 30 s, not the healthy 10 s.
     await vi.advanceTimersByTimeAsync(IDLE_INTERVAL_MS - 1)
     expect(starts.length).toBe(1)
     await vi.advanceTimersByTimeAsync(1)

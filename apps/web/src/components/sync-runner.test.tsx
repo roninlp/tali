@@ -91,7 +91,7 @@ describe("SyncRunner", () => {
     await settle()
     expect(calls).toBeGreaterThanOrEqual(1)
 
-    // The healthy cadence is 3.5 s.
+    // The healthy cadence is 10 s.
     const afterStart = calls
     await vi.advanceTimersByTimeAsync(ACTIVE_INTERVAL_MS)
     await settle()
