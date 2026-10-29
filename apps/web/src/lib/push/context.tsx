@@ -124,6 +124,19 @@ export function PushProvider(props: ParentProps) {
     }
   }
 
+  /**
+   * One registration per provider instance. Boot registers for installability;
+   * `refresh()` reuses that promise instead of registering again. A failed
+   * attempt is forgotten so a user gesture can retry it.
+   */
+  let registrationTask: Promise<ServiceWorkerRegistration | undefined> | undefined
+  const ensureRegistration = async (): Promise<ServiceWorkerRegistration | undefined> => {
+    const pending = (registrationTask ??= registerServiceWorker())
+    const registration = await pending
+    if (registration === undefined) registrationTask = undefined
+    return registration
+  }
+
   const syncRegistration = async (current: PushSubscription): Promise<boolean> => {
     if (auth.status() !== "signedIn") return false
     const result = await registerPushSubscription(toRegistrationInput(current))
@@ -135,18 +148,24 @@ export function PushProvider(props: ParentProps) {
     return false
   }
 
+  /**
+   * Re-read browser state and, when signed in, load the VAPID key and keep the
+   * server's copy of this device's subscription in step.
+   *
+   * The key has exactly one consumer (`POST /push/register`), so a signed-out
+   * refresh stops after registering and re-reading the local subscription: the
+   * worker registration is what makes the app installable, and there is nothing
+   * to register server-side without a session. That keeps a cold signed-out
+   * boot free of a `/push/vapid` request, and a signed-in boot pays for it once.
+   */
   const refresh = async (): Promise<void> => {
     setPermission(permissionOf())
 
-    const registration = await registerServiceWorker()
+    const registration = await ensureRegistration()
     if (registration === undefined) {
       setSubscription(undefined)
       return
     }
-    // The API owns the key (ticket #61); a build-time value still wins.
-    const key = await loadVapidPublicKey()
-    setPublicKey(key)
-    await shareConfigWithWorker(key)
 
     let current: PushSubscription | null = null
     try {
@@ -156,9 +175,16 @@ export function PushProvider(props: ParentProps) {
     }
     setSubscription(current ?? undefined)
 
+    if (auth.status() !== "signedIn") return
+
+    // The API owns the key (ticket #61); a build-time value still wins.
+    const key = await loadVapidPublicKey()
+    setPublicKey(key)
+    await shareConfigWithWorker(key)
+
     // Keep the server in step with the browser: a reload or a rotated
     // subscription re-registers the same capability URL idempotently.
-    if (current !== null && auth.status() === "signedIn") {
+    if (current !== null) {
       await syncRegistration(current)
     }
   }
@@ -192,7 +218,7 @@ export function PushProvider(props: ParentProps) {
         return
       }
 
-      const registration = await registerServiceWorker()
+      const registration = await ensureRegistration()
       if (registration === undefined) {
         setError("ثبت service worker ناموفق بود.")
         return
@@ -239,8 +265,10 @@ export function PushProvider(props: ParentProps) {
     () => null,
     () => {
       // Register the worker once per boot; this is also what makes the app
-      // installable as a PWA. The panel surfaces failures.
-      void refresh()
+      // installable as a PWA. It deliberately does not load the VAPID key or
+      // reconcile the subscription — a signed-out boot must stay free of
+      // `/push/vapid`, and the auth effect below does that work on sign-in.
+      void ensureRegistration()
       void refreshLastAction()
 
       if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return
@@ -257,8 +285,10 @@ export function PushProvider(props: ParentProps) {
     }
   )
 
-  // The API registration needs a session; retry when boot finishes signing in
-  // (or after a login, which usually follows the permission grant).
+  // The API registration needs a session: this is the *only* boot-time refresh,
+  // and it runs when boot finishes signing in (cached or fresh) or after a
+  // login. A signed-out boot therefore makes no `/push/vapid` request and a
+  // signed-in one makes exactly one.
   createEffect(
     () => auth.status(),
     (status) => {

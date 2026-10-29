@@ -51,18 +51,27 @@ export class TodayService extends Context.Service<TodayService>()("TodayService"
     ): Effect.Effect<TodayReadModel, never> =>
       Effect.gen(function*() {
         const bounds = taskBucketBounds(viewer.timeZone, now)
-        const buckets = yield* taskService.buckets(
-          {
-            userId: viewer.userId,
-            householdId: viewer.householdId,
-            timeZone: viewer.timeZone
-          },
-          now
+        // Buckets and pinned notes are independent reads. Fan them out
+        // instead of stacking their D1 round trips. Peak concurrency is 5:
+        // buckets caps itself at 4, and the pinned-notes query adds one, which
+        // stays inside Workers' ~6 simultaneous outgoing connections.
+        const [buckets, notes] = yield* Effect.all(
+          [
+            taskService.buckets(
+              {
+                userId: viewer.userId,
+                householdId: viewer.householdId,
+                timeZone: viewer.timeZone
+              },
+              now
+            ),
+            noteService.listPinned({
+              userId: viewer.userId,
+              householdId: viewer.householdId
+            })
+          ],
+          { concurrency: 4 }
         )
-        const notes = yield* noteService.listPinned({
-          userId: viewer.userId,
-          householdId: viewer.householdId
-        })
 
         const tasks: ReadonlyArray<Task> = [...buckets.overdue, ...buckets.todayTasks]
         return {

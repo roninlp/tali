@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import { SqlError } from "effect/sql"
 import {
   DELIVERY_HORIZON_MINUTES,
   DEFAULT_NOTIFICATION_SNOOZE_MINUTES,
@@ -115,6 +116,12 @@ export interface ReminderSweepApi {
    * window, so a duplicate is a no-op rather than a second dispatch.
    */
   readonly sweep: (now: string) => Effect.Effect<SweepResult>
+  /**
+   * Enforce the `change_feed` retention window from a maintenance tick. The
+   * sweep already owns a `SyncRepo`, so the fallback does not need a second D1
+   * layer; the caller decides whether a failure fails the tick.
+   */
+  readonly pruneFeed: (cutoff: string) => Effect.Effect<void, SqlError.SqlError>
 }
 
 interface OutcomeWrite {
@@ -418,7 +425,10 @@ export class ReminderSweep extends Context.Service<ReminderSweep>()("ReminderSwe
         return result
       })
 
-    return { sweep } as const
+    const pruneFeed = (cutoff: string): Effect.Effect<void, SqlError.SqlError> =>
+      sync.prune(cutoff)
+
+    return { sweep, pruneFeed } as const
   })
 }) {}
 

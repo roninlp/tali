@@ -95,6 +95,21 @@ export const AuthRoutes = HttpRouter.use((router) =>
         return { token, context }
       })
 
+    /**
+     * Like `authenticate`, but also slides the session when it is close to
+     * expiry. The mutation routes re-stamp the cookie; taking the renewal flag
+     * from the service is what keeps the cookie and the row expiring together.
+     */
+    const authenticateWithRenewal = (request: HttpServerRequest.HttpServerRequest) =>
+      Effect.gen(function*() {
+        const token = request.cookies[SESSION_COOKIE]
+        if (token === undefined) {
+          return yield* Effect.fail(new Unauthorized())
+        }
+        const { context, renewed } = yield* auth.meWithRenewal(token)
+        return { token, context, renewed }
+      })
+
     yield* router.add(
       "POST",
       "/auth/register",
@@ -150,10 +165,11 @@ export const AuthRoutes = HttpRouter.use((router) =>
       "/auth/change-password",
       Effect.gen(function*() {
         const request = yield* HttpServerRequest.HttpServerRequest
-        const { token, context } = yield* authenticate(request)
+        const { token, context, renewed } = yield* authenticateWithRenewal(request)
         const input = yield* HttpServerRequest.schemaBodyJson(ChangePasswordInput)
         yield* auth.changePassword(context.user.id, input, clientIp(request))
-        return setSession(yield* json(200, { ok: true }), token, request)
+        const response = yield* json(200, { ok: true })
+        return renewed ? setSession(response, token, request) : response
       }).pipe(
         Effect.catchTags(
           {
@@ -193,9 +209,15 @@ export const AuthRoutes = HttpRouter.use((router) =>
       "/auth/me",
       Effect.gen(function*() {
         const request = yield* HttpServerRequest.HttpServerRequest
-        const { token, context } = yield* authenticate(request)
-        // Re-stamp the cookie so the sliding server-side expiry is mirrored client-side.
-        return setSession(yield* json(200, context), token, request)
+        const token = request.cookies[SESSION_COOKIE]
+        if (token === undefined) {
+          return yield* Effect.fail(new Unauthorized())
+        }
+        const { context, renewed } = yield* auth.meWithRenewal(token)
+        const response = yield* json(200, context)
+        // Sliding: re-stamp the cookie only when the row also moved, so the
+        // browser and `expires_at` stay in step. A plain read touches neither.
+        return renewed ? setSession(response, token, request) : response
       }).pipe(
         Effect.catchTags(
           {
@@ -211,10 +233,11 @@ export const AuthRoutes = HttpRouter.use((router) =>
       "/household",
       Effect.gen(function*() {
         const request = yield* HttpServerRequest.HttpServerRequest
-        const { token, context } = yield* authenticate(request)
+        const { token, context, renewed } = yield* authenticateWithRenewal(request)
         const input = yield* HttpServerRequest.schemaBodyJson(CreateHouseholdInput)
         const household = yield* auth.createHousehold(context.user.id, input)
-        return setSession(yield* json(201, { household }), token, request)
+        const response = yield* json(201, { household })
+        return renewed ? setSession(response, token, request) : response
       }).pipe(
         Effect.catchTags(
           {
@@ -232,10 +255,11 @@ export const AuthRoutes = HttpRouter.use((router) =>
       "/household/join",
       Effect.gen(function*() {
         const request = yield* HttpServerRequest.HttpServerRequest
-        const { token, context } = yield* authenticate(request)
+        const { token, context, renewed } = yield* authenticateWithRenewal(request)
         const input = yield* HttpServerRequest.schemaBodyJson(JoinHouseholdInput)
         const household = yield* auth.joinHousehold(context.user.id, input)
-        return setSession(yield* json(200, { household }), token, request)
+        const response = yield* json(200, { household })
+        return renewed ? setSession(response, token, request) : response
       }).pipe(
         Effect.catchTags(
           {

@@ -19,9 +19,11 @@ import { cacheSession, clearCachedSession, readCachedSession } from "./session-c
  * call the `signIn`/`register`/… methods, which both hit the API and update the
  * store; route guards read `status()` so a reload keeps the user signed in.
  *
- * When the server is unreachable but a session was cached, the store boots
- * `signedIn` with that cache (and records `bootFailure`) so the local-first
- * mirror and outbox remain usable offline.
+ * When a session was cached, the store starts `signedIn` with it on the very
+ * first synchronous read and reconciles `/auth/me` in the background, so a
+ * cold boot paints the shell without waiting on the network. The cache is not
+ * a credential: `Unauthorized` still clears it and drops to `signedOut`, and a
+ * transient failure keeps the cache while recording `bootFailure`.
  */
 
 export type AuthStatus = "checking" | "signedOut" | "signedIn" | "error"
@@ -52,11 +54,23 @@ export interface AuthStore {
 const AuthContext = createContext<AuthStore>()
 
 export function AuthProvider(props: ParentProps) {
-  const [status, setStatus] = createSignal<AuthStatus>("checking")
-  const [session, setSession] = createSignal<SessionContext>()
+  // Seed synchronously so a cached reload never shows the boot splash: the
+  // first guarded render already has a session, and `/auth/me` reconciles it.
+  const cachedAtBoot = readCachedSession()
+  const [status, setStatus] = createSignal<AuthStatus>(
+    cachedAtBoot === undefined ? "checking" : "signedIn"
+  )
+  const [session, setSession] = createSignal<SessionContext | undefined>(cachedAtBoot)
   const [bootFailure, setBootFailure] = createSignal<AuthFailure>()
+  /**
+   * Invalidates an in-flight boot/refresh response whenever the session
+   * changes. Without it, a `/auth/me` that resolves after sign-out would
+   * re-apply the old session and reopen the app against a revoked cookie.
+   */
+  let sessionEpoch = 0
 
   const applySession = (next: SessionContext) => {
+    sessionEpoch += 1
     cacheSession(next)
     setSession(next)
     setBootFailure(undefined)
@@ -64,6 +78,7 @@ export function AuthProvider(props: ParentProps) {
   }
 
   const clearSession = () => {
+    sessionEpoch += 1
     clearCachedSession()
     setSession(undefined)
     setBootFailure(undefined)
@@ -76,11 +91,19 @@ export function AuthProvider(props: ParentProps) {
    * session was cached, the shell boots from that instead so the local mirror
    * and unsent outbox stay usable offline. The cookie is still the only thing
    * the server accepts, so nothing is trusted beyond rendering local data.
+   *
+   * A cached session is already on screen while this runs, so the status stays
+   * `signedIn`; only a boot with nothing to show falls back to `checking`.
    */
   const refresh = async () => {
-    setStatus("checking")
+    const cached = session()
+    if (cached === undefined) setStatus("checking")
     setBootFailure(undefined)
+    const epoch = ++sessionEpoch
     const result = await authApi.me()
+    // A sign-in, sign-out or another refresh may have settled while this was
+    // in flight; its answer no longer describes the session on screen.
+    if (epoch !== sessionEpoch) return
     if (result.ok) {
       applySession(result.value)
       return
@@ -89,7 +112,6 @@ export function AuthProvider(props: ParentProps) {
       clearSession()
       return
     }
-    const cached = readCachedSession()
     if (cached !== undefined) {
       setSession(cached)
       setBootFailure(result.error)
@@ -100,7 +122,8 @@ export function AuthProvider(props: ParentProps) {
     setStatus("error")
   }
 
-  // One session restore per app boot; guards show a splash until it settles.
+  // One session restore per app boot; a cached session renders in the
+  // meantime, and the splash is reserved for the first boot with no cache.
   onSettled(() => {
     void refresh()
   })

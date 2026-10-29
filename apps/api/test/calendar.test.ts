@@ -70,6 +70,7 @@ const daily: RecurrenceRule = {
 
 interface Harness {
   readonly db: DatabaseSync
+  readonly fake: FakeD1
   readonly handler: (request: Request) => Promise<Response>
   readonly dispose: () => Promise<void>
 }
@@ -194,8 +195,9 @@ const makeHarness = async (): Promise<Harness> => {
     db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), "utf8"))
   }
 
+  const fake = new FakeD1(db)
   const d1 = D1Client.layer({
-    db: new FakeD1(db).asD1Database(),
+    db: fake.asD1Database(),
     transformQueryNames: Str.camelToSnake,
     transformResultNames: Str.snakeToCamel
   })
@@ -258,7 +260,7 @@ const makeHarness = async (): Promise<Harness> => {
   seedSession(USER_MONDAY, TOKEN_MONDAY)
   seedSession(USER_NO_HOUSEHOLD, TOKEN_NO_HOUSEHOLD)
 
-  return { db, handler, dispose }
+  return { db, fake, handler, dispose }
 }
 
 interface CallOptions {
@@ -1024,5 +1026,33 @@ describe("GET /month", () => {
       anchor: "2026-03-21"
     })
     expect(noHousehold.status).toBe(403)
+  })
+})
+
+describe("calendar D1 budget", () => {
+  it("serves week and month without growing the statement count", async () => {
+    const h = await setup()
+    seedWeek(h)
+
+    h.fake.statementCalls = 0
+    expect((await week(h, { token: TOKEN_A, anchor: "2026-03-22" })).status).toBe(200)
+    // The read fan-out changes wall time, not the SQL: three lanes stay at the
+    // pre-fan-out baseline (auth + 2 task ranges + recurring + 2 event ranges +
+    // occasions). A new statement here is a regression.
+    expect(h.fake.statementCalls).toBeLessThanOrEqual(10)
+
+    h.fake.statementCalls = 0
+    expect((await month(h, { token: TOKEN_A, anchor: "2026-03-21" })).status).toBe(200)
+    expect(h.fake.statementCalls).toBeLessThanOrEqual(10)
+
+    // An out-of-grid drill-down adds its two ranges, not a second grid read.
+    h.fake.statementCalls = 0
+    const drill = await month(h, {
+      token: TOKEN_A,
+      anchor: "2026-03-21",
+      day: "2026-05-01"
+    })
+    expect(drill.status).toBe(200)
+    expect(h.fake.statementCalls).toBeLessThanOrEqual(15)
   })
 })

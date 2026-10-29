@@ -60,6 +60,7 @@ const REORDERED = ["notes", "tasks", "events", "reminders", "habits"] as const
 
 interface Harness {
   readonly db: DatabaseSync
+  readonly fake: FakeD1
   readonly handler: (request: Request) => Promise<Response>
   readonly dispose: () => Promise<void>
 }
@@ -70,8 +71,9 @@ const makeHarness = async (): Promise<Harness> => {
     db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), "utf8"))
   }
 
+  const fake = new FakeD1(db)
   const d1 = D1Client.layer({
-    db: new FakeD1(db).asD1Database(),
+    db: fake.asD1Database(),
     transformQueryNames: Str.camelToSnake,
     transformResultNames: Str.snakeToCamel
   })
@@ -332,7 +334,7 @@ const makeHarness = async (): Promise<Harness> => {
     updatedAt: "2025-12-30T00:00:00.000Z"
   })
 
-  return { db, handler, dispose }
+  return { db, fake, handler, dispose }
 }
 
 const getToday = async (
@@ -564,5 +566,18 @@ describe("GET /today", () => {
     })
     expect(revalidated.status).toBe(304)
     expect(revalidated.text).toBe("")
+  })
+})
+
+describe("GET /today D1 budget", () => {
+  it("serves the dashboard without growing the statement count", async () => {
+    const h = await setup()
+    h.fake.statementCalls = 0
+    const response = await getToday(h, TOKEN_A)
+    expect(response.status).toBe(200)
+    // The read fan-out changes wall time, not the SQL: the route stays at the
+    // pre-fan-out baseline (auth + five bucket ranges + pinned notes). A new
+    // statement here is a regression the plan's latency budget cannot absorb.
+    expect(h.fake.statementCalls).toBeLessThanOrEqual(10)
   })
 })

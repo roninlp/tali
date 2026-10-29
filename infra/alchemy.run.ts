@@ -166,6 +166,9 @@ export const Api = Cloudflare.Worker("TaliApi", {
   // `nodejs_compat` is the default from 2026-08-04, so the flag is redundant;
   // newer workerd builds reject it outright instead of warning.
   compatibility: { date: "2026-10-09" },
+  // Smart Placement runs this isolate near the D1 primary. A screen issues
+  // ~11 sequential statements, so a cross-region hop is paid eleven times.
+  placement: { mode: "smart" },
   dev: { port: 8787, strictPort: true },
   crons: backupsEnabled
     ? [...CRON_EXPRESSIONS]
@@ -217,7 +220,13 @@ export default Alchemy.Stack(
       dev: { command: "pnpm exec vite", url: "http://localhost:3000" },
       assets: {
         notFoundHandling: "single-page-application",
-        runWorkerFirst: ["/api/*"]
+        runWorkerFirst: ["/api/*"],
+        // Vite hashes /assets/* filenames, so a copy is immutable for a year.
+        // Only that prefix is cached: index.html (and the SPA fallback) must revalidate.
+        // This prop owns the site's `_headers` rules (it wins over a `_headers`
+        // file), so add future rules here rather than in public/.
+        headers:
+          "/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n"
       },
       env: {
         ...(isDev ? {} : { VITE_API_URL: "/api" }),

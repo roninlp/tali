@@ -39,6 +39,12 @@ import { randomToken, sha256Hex } from "./bytes.js"
 
 /** 30 days — long enough for a two-person household, short enough to re-auth. */
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
+/**
+ * Slide the session only when less than this remains. Renewing on every request
+ * was a D1 write on every read; renewing this late still leaves a week of slack
+ * for an active household before it has to log in again.
+ */
+const SESSION_RENEW_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000
 /** Invite codes are short-lived secrets handed over out-of-band. */
 const INVITE_CODE_BYTES = 8
 
@@ -199,32 +205,61 @@ export class AuthService extends Context.Service<AuthService>()("AuthService", {
       })
 
     /**
-     * Resolve the authenticated principal plus its household (if any), renewing
-     * the session's expiry so an active household never has to re-login.
+     * Resolve the cookie's session and principal. Reads are free; a renewal is
+     * a write, so only the cookie-bearing `/auth/me` route asks for one, and
+     * only once the remaining lifetime is below `SESSION_RENEW_THRESHOLD_MS`.
+     */
+    const resolveSession = (renew: boolean) =>
+      (token: string): Effect.Effect<
+        { readonly context: SessionContext; readonly renewed: boolean },
+        Unauthorized
+      > =>
+        Effect.gen(function*() {
+          const tokenHash = yield* sha256Hex(token)
+          const found = yield* sessions.findByTokenHash(tokenHash).pipe(Effect.orDie)
+          if (Option.isNone(found)) {
+            return yield* Effect.fail(new Unauthorized())
+          }
+          const session = found.value
+          const now = Date.now()
+          const expiresAt = Date.parse(session.expiresAt)
+          // A corrupted timestamp must fail closed, not become an immortal session.
+          if (!Number.isFinite(expiresAt) || expiresAt <= now) {
+            yield* sessions.deleteByTokenHash(tokenHash).pipe(Effect.orDie)
+            return yield* Effect.fail(new Unauthorized())
+          }
+          const renewed = renew && expiresAt - now < SESSION_RENEW_THRESHOLD_MS
+          if (renewed) {
+            yield* sessions
+              .extend({ tokenHash, expiresAt: new Date(now + SESSION_TTL_MS).toISOString() })
+              .pipe(Effect.orDie)
+          }
+          const user = yield* users.findById(session.userId).pipe(Effect.orDie)
+          const membership = yield* memberships.findByUserId(user.id).pipe(Effect.orDie)
+          return {
+            context: {
+              user: toUserProfile(user),
+              householdId: Option.isSome(membership) ? membership.value.householdId : null
+            },
+            renewed
+          }
+        })
+
+    /**
+     * Read-only principal resolution: the hot path for every authenticated
+     * request. The session lifetime is fixed at login and matches the cookie
+     * unless `meWithRenewal` slides both.
      */
     const me = (token: string): Effect.Effect<SessionContext, Unauthorized> =>
-      Effect.gen(function*() {
-        const tokenHash = yield* sha256Hex(token)
-        const found = yield* sessions.findByTokenHash(tokenHash).pipe(Effect.orDie)
-        if (Option.isNone(found)) {
-          return yield* Effect.fail(new Unauthorized())
-        }
-        const session = found.value
-        const now = Date.now()
-        if (Date.parse(session.expiresAt) <= now) {
-          yield* sessions.deleteByTokenHash(tokenHash).pipe(Effect.orDie)
-          return yield* Effect.fail(new Unauthorized())
-        }
-        yield* sessions
-          .extend({ tokenHash, expiresAt: new Date(now + SESSION_TTL_MS).toISOString() })
-          .pipe(Effect.orDie)
-        const user = yield* users.findById(session.userId).pipe(Effect.orDie)
-        const membership = yield* memberships.findByUserId(user.id).pipe(Effect.orDie)
-        return {
-          user: toUserProfile(user),
-          householdId: Option.isSome(membership) ? membership.value.householdId : null
-        }
-      })
+      resolveSession(false)(token).pipe(Effect.map((resolved) => resolved.context))
+
+    /**
+     * Resolve the principal and slide the session when it is close to expiry.
+     * Only `GET /auth/me` uses this: it can re-stamp the cookie in the same
+     * response, so the browser and the row keep expiring together. Extending
+     * the row without the cookie would strand the browser on a dead session.
+     */
+    const meWithRenewal = resolveSession(true)
 
     const createHousehold = (userId: UserId, input: CreateHouseholdInput) =>
       Effect.gen(function*() {
@@ -292,7 +327,16 @@ export class AuthService extends Context.Service<AuthService>()("AuthService", {
         return household
       })
 
-    return { register, login, changePassword, logout, me, createHousehold, joinHousehold } as const
+    return {
+      register,
+      login,
+      changePassword,
+      logout,
+      me,
+      meWithRenewal,
+      createHousehold,
+      joinHousehold
+    } as const
   })
 }) {}
 

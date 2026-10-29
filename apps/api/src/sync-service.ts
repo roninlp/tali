@@ -37,7 +37,8 @@ import {
  * service only drives the protocol and stays aggregate-agnostic.
  */
 
-const FEED_RETENTION_MS = 90 * 24 * 60 * 60 * 1000
+/** The retained `change_feed` window; the nightly purge enforces it. */
+export const FEED_RETENTION_MS = 90 * 24 * 60 * 60 * 1000
 const DEFAULT_PULL_LIMIT = 500
 const MAX_PULL_LIMIT = 1000
 const MAX_PUSH_ENTRIES = 200
@@ -940,8 +941,10 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
     }): Effect.Effect<SyncPullResponse> =>
       Effect.gen(function*() {
         const limit = Math.min(Math.max(input.limit ?? DEFAULT_PULL_LIMIT, 1), MAX_PULL_LIMIT)
-        const cutoff = new Date(Date.now() - FEED_RETENTION_MS).toISOString()
-        yield* repo.prune(cutoff).pipe(Effect.orDie)
+
+        // A pull is read-only: feed pruning runs in the nightly purge (with a
+        // once-a-day fallback in the reminder sweep), never on the poll itself.
+        // Staleness is still detected from `minSeq` below.
 
         // The feed can't serve entries between the cursor and the oldest
         // retained seq. Cursor 0 on an aged feed is stale too: fresh mirrors

@@ -5,9 +5,10 @@
  * poll is the *only* way a remote edit reaches an open tab. Every interval is
  * therefore a latency/volume trade:
  *
- * - visible + recently active: the healthy 3.5s poll. This is the cadence a
- *   person typing expects, and it is also what a second device sees.
- * - visible but idle: 15s. Nobody is watching, but the tab is still a target
+ * - visible + recently active: the healthy 10s poll. A local write wakes an
+ *   immediate pass, so the user's own edits never wait for it; 10s is the
+ *   ceiling for *another* device's edit while the tab is in use.
+ * - visible but idle: 30s. Nobody is watching, but the tab is still a target
  *   for a remote edit, so it must not stop entirely.
  * - hidden: 30s. A background tab's polls are pure cost; returning to the tab
  *   wakes an immediate pass, so the extra latency is only paid while unseen.
@@ -21,8 +22,8 @@
 
 export type SyncVisibility = "visible" | "hidden"
 
-export const ACTIVE_INTERVAL_MS = 3_500
-export const IDLE_INTERVAL_MS = 15_000
+export const ACTIVE_INTERVAL_MS = 10_000
+export const IDLE_INTERVAL_MS = 30_000
 export const HIDDEN_INTERVAL_MS = 30_000
 export const FAILURE_RETRY_MS = 1_000
 export const MAX_RETRY_MS = 30_000

@@ -1,10 +1,15 @@
 import { Effect, Layer, String as Str } from "effect"
 import { D1Client } from "@effect/sql-d1"
-import { PushSubscriptionRepoLive, ReminderDispatchRepoLive, SyncRepoLive } from "@tali/sql"
+import {
+  PushSubscriptionRepoLive,
+  ReminderDispatchRepoLive,
+  SyncRepoLive
+} from "@tali/sql"
 import { type VapidConfig, PushConfig, PushGatewayLive, vapidConfigOf } from "./push-gateway.js"
 import { OccasionServiceLive } from "./occasion-service.js"
 import { ReminderServiceLive } from "./reminder-service.js"
 import { ReminderSweep, ReminderSweepLive } from "./reminder-sweep.js"
+import { FEED_RETENTION_MS } from "./sync-service.js"
 
 /**
  * The `scheduled()` entry point's layer (ticket #61; ADR-0005 §11).
@@ -51,6 +56,17 @@ export const sweepLayer = (db: D1Database, vapid: VapidConfig | null) => {
 }
 
 /**
+ * A second, independent chance to enforce the feed window. The purge cron at
+ * 03:17 owns retention, but it opts out of retries and only logs a failure; if
+ * it misses, `change_feed` must not grow without bound. The per-minute reminder
+ * sweep already builds `SyncRepo`, so one matching minute an hour later is
+ * effectively free. The prune is idempotent, so a healthy night pays two
+ * statements for a no-op.
+ */
+const FEED_PRUNE_FALLBACK_UTC_HOUR = 4
+const FEED_PRUNE_FALLBACK_UTC_MINUTE = 17
+
+/**
  * Run one tick. `now` is the nominal clock (`controller.scheduledTime`).
  *
  * Cloudflare retries a throwing `scheduled()` handler; the caller decides
@@ -62,7 +78,29 @@ export const runReminderSweep = (env: SweepEnv, now: string) =>
     Effect.provide(
       Effect.gen(function*() {
         const sweep = yield* ReminderSweep
-        return yield* sweep.sweep(now)
+        const result = yield* sweep.sweep(now)
+        const at = new Date(now)
+        if (
+          at.getUTCHours() === FEED_PRUNE_FALLBACK_UTC_HOUR &&
+          at.getUTCMinutes() === FEED_PRUNE_FALLBACK_UTC_MINUTE
+        ) {
+          const cutoff = new Date(at.getTime() - FEED_RETENTION_MS).toISOString()
+          yield* sweep.pruneFeed(cutoff).pipe(
+            Effect.catch((error) =>
+              // A failed fallback must not fail the reminder tick.
+              Effect.sync(() => {
+                console.error(
+                  JSON.stringify({
+                    event: "feed.prune.failed",
+                    at: now,
+                    message: String(error)
+                  })
+                )
+              })
+            )
+          )
+        }
+        return result
       }),
       sweepLayer(env.DB, vapidConfigOf(env))
     )
