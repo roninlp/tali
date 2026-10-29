@@ -33,7 +33,9 @@ export const runTrashPurge = (env: PurgeEnv, now: string) =>
         const result = yield* purge.purge(now)
         // Same cutoff the poll used to apply, now once a night. The repo keeps
         // the newest feed row as the high-water marker stale cursors need, so
-        // `minSeq` detection is unchanged.
+        // `minSeq` detection is unchanged. These two statements are constant
+        // and deliberately outside `PURGE_MAX_STATEMENTS_PER_TICK`, so they are
+        // not counted in `result.statements`.
         const sync = yield* SyncRepo
         yield* sync.prune(
           new Date(Date.parse(now) - FEED_RETENTION_MS).toISOString()
