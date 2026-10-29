@@ -1,5 +1,4 @@
 import { Title } from "@solidjs/meta"
-import { tokens } from "@tali/ui"
 import { AppHeader } from "../components/app-header"
 import { Guard } from "../components/guard"
 import { PushHealthPanel } from "../components/push-health"
@@ -26,20 +25,16 @@ export default function RemindersRoute() {
 
 function RemindersPage() {
   return (
-    <div
-      dir="rtl"
-      lang="fa"
-      style={{
-        "min-height": "100dvh",
-        "font-family": tokens.font.sans,
-        color: tokens.color.ink,
-        background: tokens.color.canvas
-      }}
-    >
+    <div class="min-h-dvh overflow-x-clip bg-base-200 text-base-content" dir="rtl" lang="fa">
       <AppHeader active="reminders" />
 
-      <main style={{ padding: "clamp(16px, 3vw, 28px) 16px 32px", display: "grid", gap: tokens.space.md, "max-width": "752px", width: "100%", "box-sizing": "border-box", margin: "0 auto" }}>
-        <h1 style={{ margin: 0, "font-size": "1.35rem", "letter-spacing": "-0.02em" }}>یادآورها</h1>
+      <main class="page-wrap mx-auto grid max-w-3xl gap-4">
+        <header>
+          <h1 class="m-0 text-2xl font-bold tracking-tight sm:text-3xl">یادآورها</h1>
+          <p class="mt-1 mb-0 text-sm text-base-content/55">
+            اعلان‌های این دستگاه و یادآورهایی که مرورگر آن‌ها را ندیده است.
+          </p>
+        </header>
 
         <PushHealthPanel />
 

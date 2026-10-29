@@ -1,4 +1,4 @@
-import { Button, tokens } from "@tali/ui"
+import { Button } from "@tali/ui"
 import {
   DEFAULT_NOTIFICATION_SNOOZE_MINUTES,
   REMINDER_KIND_LABELS,
@@ -148,17 +148,10 @@ export function ReminderInbox() {
   return (
     <section
       aria-labelledby="reminder-inbox-heading"
-      style={{
-        background: tokens.color.surface,
-        border: `1px solid ${tokens.color.line}`,
-        "border-radius": tokens.radius.lg,
-        padding: tokens.space.lg,
-        display: "grid",
-        gap: tokens.space.md
-      }}
+      class="panel grid gap-4 p-4 sm:p-5"
     >
-      <div style={{ display: "flex", "align-items": "center", "justify-content": "space-between", gap: "8px", "flex-wrap": "wrap" }}>
-        <h2 id="reminder-inbox-heading" style={{ margin: 0, "font-size": "1.05rem" }}>
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="reminder-inbox-heading" class="m-0 text-lg font-bold">
           {history() ? "تاریخچه‌ی یادآوری‌ها" : "یادآورهای ازدست‌رفته"}
         </h2>
         <Button
@@ -175,91 +168,59 @@ export function ReminderInbox() {
       </div>
 
       <Show when={error()}>
-        <p
-          role="alert"
-          style={{
-            margin: 0,
-            padding: "8px 10px",
-            "border-radius": tokens.radius.md,
-            background: "#fdf2f2",
-            border: "1px solid #f3c6c6",
-            color: "#8f1d1d",
-            "font-size": "0.85rem",
-            "line-height": "1.8"
-          }}
-        >
+        <p role="alert" class="alert alert-error m-0 py-2 text-sm leading-7">
           {error()}
         </p>
       </Show>
 
       <Show when={loading() && items().length === 0}>
-        <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.88rem" }}>
+        <p class="m-0 flex items-center gap-2 text-sm text-base-content/55">
+          <span class="loading loading-spinner loading-sm" />
           در حال خواندن دفتر ارسال…
         </p>
       </Show>
 
       <Show when={!loading() && items().length === 0}>
-        <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.88rem", "line-height": "1.9" }}>
+        <p class="m-0 text-sm leading-8 text-base-content/55">
           {history()
             ? "هنوز یادآوری پاسخ‌داده‌شده‌ای ثبت نشده است."
             : "یادآوری بی‌پاسخی نیست. هر یادآوری که مرورگر آن را ندیده باشد اینجا می‌آید، نه اینکه ناپدید شود."}
         </p>
       </Show>
 
-      <ul style={{ "list-style": "none", margin: 0, padding: 0, display: "grid", gap: tokens.space.sm }}>
+      <ul class="m-0 grid list-none gap-2 p-0">
         <For each={items()}>
           {(item) => (
             <li
-              style={{
-                display: "grid",
-                gap: "6px",
-                padding: "10px 12px",
-                "border-radius": tokens.radius.md,
-                border: `1px solid ${item.tier === "critical" ? "#f0c9c9" : tokens.color.line}`,
-                background: item.tier === "critical" ? "#fff7f7" : "#fbfcff"
-              }}
+              class={
+                item.tier === "critical"
+                  ? "grid gap-1.5 rounded-box border border-error/30 bg-error/5 p-3"
+                  : "grid gap-1.5 rounded-box border border-base-300 bg-base-200/40 p-3"
+              }
             >
-              <div style={{ display: "flex", "align-items": "baseline", "justify-content": "space-between", gap: "8px" }}>
-                <strong style={{ "font-size": "0.95rem" }}>{item.title}</strong>
-                <span style={{ color: tokens.color.inkSoft, "font-size": "0.78rem" }}>
+              <div class="flex flex-wrap items-baseline justify-between gap-2">
+                <strong class="text-[0.95rem]">{item.title}</strong>
+                <span class="text-[0.78rem] text-base-content/50">
                   {formatInstant(item.dispatch.scheduledFor)}
                 </span>
               </div>
 
-              <div style={{ display: "flex", gap: "6px", "flex-wrap": "wrap", "align-items": "center" }}>
-                <span
-                  style={{
-                    "font-size": "0.75rem",
-                    color: tokens.color.inkSoft,
-                    border: `1px solid ${tokens.color.line}`,
-                    "border-radius": "999px",
-                    padding: "1px 8px"
-                  }}
-                >
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="badge badge-ghost badge-sm">
                   {REMINDER_KIND_LABELS[item.kind]}
                 </span>
                 <Show when={tierBadge(item.tier) !== ""}>
-                  <span
-                    style={{
-                      "font-size": "0.75rem",
-                      color: "#8f1d1d",
-                      border: "1px solid #f0c9c9",
-                      "border-radius": "999px",
-                      padding: "1px 8px"
-                    }}
-                  >
-                    {tierBadge(item.tier)}
-                  </span>
+                  <span class="badge badge-error badge-sm">{tierBadge(item.tier)}</span>
                 </Show>
                 <Show when={item.note !== null && item.note !== ""}>
-                  <span style={{ color: tokens.color.inkSoft, "font-size": "0.8rem" }}>{item.note}</span>
+                  <span class="text-[0.8rem] text-base-content/55">{item.note}</span>
                 </Show>
               </div>
 
               <Show
                 when={item.state === "inbox"}
                 fallback={
-                  <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.78rem" }}>
+                  <p class="m-0 text-[0.78rem] text-base-content/50">
                     {item.dispatch.response === "done"
                       ? "انجام شد"
                       : item.dispatch.response === "snooze"
@@ -270,9 +231,10 @@ export function ReminderInbox() {
                   </p>
                 }
               >
-                <div style={{ display: "flex", gap: "6px", "flex-wrap": "wrap", "align-items": "center" }}>
+                <div class="flex flex-wrap items-center gap-1.5">
                   <Button
                     type="button"
+                    size="sm"
                     disabled={busy() !== undefined}
                     onClick={() => void respond(item, "done")}
                   >
@@ -282,14 +244,7 @@ export function ReminderInbox() {
                     aria-label="مدت به تعویق انداختن"
                     value={String(snoozeMinutes())}
                     onChange={(event) => setSnoozeMinutes(Number(event.currentTarget.value))}
-                    style={{
-                      "font-family": tokens.font.sans,
-                      "border-radius": tokens.radius.md,
-                      border: `1px solid ${tokens.color.line}`,
-                      padding: "8px 10px",
-                      background: tokens.color.surface,
-                      color: tokens.color.ink
-                    }}
+                    class="select select-bordered select-sm w-auto"
                   >
                     <For each={SNOOZE_CHOICES}>
                       {(minutes) => <option value={String(minutes)}>{`${minutes} دقیقه`}</option>}
@@ -297,6 +252,7 @@ export function ReminderInbox() {
                   </select>
                   <Button
                     variant="ghost"
+                    size="sm"
                     type="button"
                     disabled={busy() !== undefined}
                     onClick={() => void respond(item, "snooze")}
@@ -305,6 +261,7 @@ export function ReminderInbox() {
                   </Button>
                   <Button
                     variant="ghost"
+                    size="sm"
                     type="button"
                     disabled={busy() !== undefined}
                     onClick={() => void respond(item, "dismiss")}
@@ -318,7 +275,7 @@ export function ReminderInbox() {
         </For>
       </ul>
 
-      <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.78rem", "line-height": "1.8" }}>
+      <p class="m-0 text-[0.78rem] leading-7 text-base-content/45">
         این فهرست از دفتر ارسال سرور خوانده می‌شود؛ اگر مرورگر بسته باشد یا اعلان نرسد،
         یادآوری پس از ۲۴ ساعت به تاریخچه می‌رود و هرگز حذف نمی‌شود.
       </p>

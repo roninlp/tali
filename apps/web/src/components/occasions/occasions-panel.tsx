@@ -16,7 +16,6 @@ import {
   OCCASIONS_CARD,
   OCCASIONS_DANGER_BUTTON,
   OCCASIONS_FIELD,
-  OCCASIONS_FORM,
   OCCASIONS_HEAD,
   OCCASIONS_INPUT,
   OCCASIONS_LABEL,
@@ -202,7 +201,7 @@ export function OccasionsPanel(props: OccasionsPanelProps) {
         نمایش داده می‌شود.
       </p>
 
-      <form style={OCCASIONS_FORM} onSubmit={(event) => void submit(event)}>
+      <form class="grid items-end gap-2 sm:grid-cols-2 lg:grid-cols-3" onSubmit={(event) => void submit(event)}>
         <div style={OCCASIONS_FIELD}>
           <label style={OCCASIONS_LABEL} for="occasion-title">
             عنوان
@@ -248,7 +247,7 @@ export function OccasionsPanel(props: OccasionsPanelProps) {
             </For>
           </select>
         </div>
-        <label style={{ ...OCCASIONS_LABEL, display: "flex", gap: "6px", "align-items": "center" }}>
+        <label class="sm:col-span-2 lg:col-span-3" style={{ ...OCCASIONS_LABEL, display: "flex", gap: "6px", "align-items": "center" }}>
           <input
             type="checkbox"
             checked={yearly()}
@@ -257,7 +256,7 @@ export function OccasionsPanel(props: OccasionsPanelProps) {
           />
           هر سال تکرار شود
         </label>
-        <div style={OCCASIONS_ROW_ACTIONS}>
+        <div class="sm:col-span-2 lg:col-span-3" style={OCCASIONS_ROW_ACTIONS}>
           <button
             type="submit"
             style={OCCASIONS_PRIMARY_BUTTON}
@@ -325,7 +324,7 @@ export function OccasionsPanel(props: OccasionsPanelProps) {
                     </>
                   )}
                 </Show>
-                <div style={OCCASIONS_ROW_ACTIONS}>
+                <div class="sm:col-span-2 lg:col-span-3" style={OCCASIONS_ROW_ACTIONS}>
                   <button
                     type="button"
                     style={OCCASIONS_SMALL_BUTTON(entry.occasion.preparationTaskId !== null)}

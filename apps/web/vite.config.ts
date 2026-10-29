@@ -1,12 +1,14 @@
 import { fileRoutes } from "filesystem-routing/vite"
 import { defineConfig } from "vitest/config"
 import solid from "@solidjs/vite-plugin"
+import tailwindcss from "@tailwindcss/vite"
 
 export default defineConfig({
   // Turnkey client mode: no index.html and no mount file — the plugin
   // generates the entries around src/App.tsx (wrapped in src/Document.tsx) and
   // `vite build` prerenders the shell into a purely static dist/client.
   plugins: [
+    tailwindcss(),
     // `extensions` makes @solidjs/vite-plugin also compile the `?pick=` route
     // modules the fileRoutes plugin emits (their ids end in a query string).
     solid({ start: true, extensions: [".jsx", ".tsx"], diagnostics: true }),

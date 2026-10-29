@@ -1,0 +1,194 @@
+/*
+ * Tali design system entry.
+ *
+ * Tailwind CSS v4 + daisyUI v5. The app is RTL and Persian; all layout uses
+ * logical properties (`ms`/`me`, `ps`/`pe`, `start`/`end`) so the RTL document
+ * needs no physical left/right overrides.
+ *
+ * Themes: `tali` (light) and `talidark` (dark) are the house themes, wired to
+ * the brand palette. A handful of daisyUI themes are shipped for the picker in
+ * /settings, and the chosen theme is applied as `data-theme` on <html> by
+ * lib/theme.tsx.
+ */
+
+@import "tailwindcss";
+@plugin "daisyui" {
+  themes:
+    light,
+    dark,
+    cupcake,
+    emerald,
+    corporate,
+    nord,
+    sunset,
+    dracula,
+    night,
+    lofi,
+    pastel,
+    caramellatte,
+    winter,
+    dim;
+  logs: false;
+}
+
+/* ── House light theme ─────────────────────────────────────────────────── */
+@plugin "daisyui/theme" {
+  name: "tali";
+  default: true;
+  prefersdark: false;
+  color-scheme: light;
+  --color-base-100: #ffffff;
+  --color-base-200: #f6f7fb;
+  --color-base-300: #e6e9f1;
+  --color-base-content: #1f2637;
+  --color-primary: #3558b5;
+  --color-primary-content: #ffffff;
+  --color-secondary: #258777;
+  --color-secondary-content: #ffffff;
+  --color-accent: #258777;
+  --color-accent-content: #ffffff;
+  --color-neutral: #1f2637;
+  --color-neutral-content: #f6f7fb;
+  --color-info: #2563eb;
+  --color-info-content: #ffffff;
+  --color-success: #15803d;
+  --color-success-content: #ffffff;
+  --color-warning: #b45309;
+  --color-warning-content: #ffffff;
+  --color-error: #be123c;
+  --color-error-content: #ffffff;
+  --radius-selector: 0.5rem;
+  --radius-field: 0.625rem;
+  --radius-box: 0.875rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+/* ── House dark theme ──────────────────────────────────────────────────── */
+@plugin "daisyui/theme" {
+  name: "talidark";
+  default: false;
+  prefersdark: true;
+  color-scheme: dark;
+  --color-base-100: #171c27;
+  --color-base-200: #10141d;
+  --color-base-300: #2b3344;
+  --color-base-content: #e6e9f2;
+  --color-primary: #8ba5ff;
+  --color-primary-content: #0e1424;
+  --color-secondary: #4fd0b4;
+  --color-secondary-content: #06211b;
+  --color-accent: #4fd0b4;
+  --color-accent-content: #06211b;
+  --color-neutral: #2b3344;
+  --color-neutral-content: #e6e9f2;
+  --color-info: #7cb2ff;
+  --color-info-content: #08182e;
+  --color-success: #6ee7a8;
+  --color-success-content: #052416;
+  --color-warning: #fbbf24;
+  --color-warning-content: #2a1c02;
+  --color-error: #ff8ba3;
+  --color-error-content: #2c0710;
+  --radius-selector: 0.5rem;
+  --radius-field: 0.625rem;
+  --radius-box: 0.875rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@theme {
+  --font-sans:
+    "Vazirmatn", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* ── App-level patterns ────────────────────────────────────────────────── */
+
+/* Page container used by every signed-in screen. */
+@utility page-wrap {
+  margin-inline: auto;
+  inline-size: 100%;
+  padding-inline: 1rem;
+  padding-block-start: 1.25rem;
+  padding-block-end: 6.5rem;
+
+  @media (width >= 40rem) {
+    padding-inline: 1.5rem;
+    padding-block-end: 2.5rem;
+  }
+}
+
+/* A card surface that follows the theme. */
+@utility panel {
+  border: var(--border) solid var(--color-base-300);
+  border-radius: var(--radius-box);
+  background: var(--color-base-100);
+  box-shadow: 0 1px 2px oklch(0% 0 0 / 0.04);
+}
+
+/* Soft inline notice (offline hints, quiet copy). */
+@utility soft-note {
+  border: var(--border) solid var(--color-base-300);
+  border-radius: var(--radius-field);
+  background: var(--color-base-200);
+  color: color-mix(in oklch, var(--color-base-content) 65%, transparent);
+  font-size: 0.85rem;
+  line-height: 1.9;
+  padding: 0.6rem 0.85rem;
+}
+
+/* Section heading with an optional inline action. */
+@utility section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+html {
+  background-color: var(--color-base-200);
+}
+
+body {
+  margin: 0;
+  min-block-size: 100dvh;
+  background-color: var(--color-base-200);
+  color: var(--color-base-content);
+  font-family: var(--font-sans);
+  line-height: 1.75;
+  overflow-wrap: break-word;
+  -webkit-font-smoothing: antialiased;
+}
+
+:where(a) {
+  color: inherit;
+}
+
+:where(input, select, textarea, button) {
+  font-family: inherit;
+}
+
+input[type="search"]::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+::selection {
+  background: color-mix(in oklch, var(--color-primary) 25%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

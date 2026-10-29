@@ -1,25 +1,23 @@
-import { tokens } from "@tali/ui"
+import { Icon } from "../components/icons"
 
 export default function NotFound() {
   return (
     <main
       dir="rtl"
       lang="fa"
-      style={{
-        "min-height": "100dvh",
-        display: "grid",
-        "place-items": "center",
-        padding: tokens.space.md,
-        "font-family": tokens.font.sans,
-        color: tokens.color.ink
-      }}
+      class="grid min-h-dvh place-items-center bg-base-200 px-4 text-base-content"
     >
-      <section style={{ display: "grid", gap: tokens.space.sm, "justify-items": "center", "text-align": "center" }}>
-        <h1 style={{ margin: 0, "font-size": "1.4rem" }}>صفحه پیدا نشد</h1>
-        <p style={{ margin: 0, color: tokens.color.inkSoft }}>نشانی‌ای که باز کردید وجود ندارد.</p>
-        <a href="/" style={{ color: tokens.color.brand, "text-decoration": "none" }}>
-          بازگشت به تالی
-        </a>
+      <section class="card w-full max-w-sm border border-base-300 bg-base-100 shadow-xl">
+        <div class="card-body items-center gap-3 text-center">
+          <span class="grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary">
+            <Icon name="search" class="size-6" />
+          </span>
+          <h1 class="m-0 text-2xl font-bold">صفحه پیدا نشد</h1>
+          <p class="m-0 text-sm text-base-content/55">نشانی‌ای که باز کردید وجود ندارد.</p>
+          <a href="/" class="btn btn-primary btn-sm mt-1">
+            بازگشت به تالی
+          </a>
+        </div>
       </section>
     </main>
   )

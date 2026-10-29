@@ -2,7 +2,6 @@ import { Title } from "@solidjs/meta"
 import { AppHeader } from "../components/app-header"
 import { Guard } from "../components/guard"
 import { TasksScreen } from "../components/tasks/tasks-screen"
-import { screenStyle, TASKS_ROOT } from "../components/tasks/ui"
 
 /**
  * `/tasks` (ticket #37; FR-TASK-01/02/05/06): quick add, the today/upcoming/
@@ -13,9 +12,9 @@ export default function TasksRoute() {
     <>
       <Title>کارها — تالی</Title>
       <Guard access="household">
-        <div class="tasks-root" dir="rtl" lang="fa" style={TASKS_ROOT}>
+        <div class="min-h-dvh overflow-x-clip bg-base-200 text-base-content" dir="rtl" lang="fa">
           <AppHeader active="tasks" />
-          <main style={screenStyle}>
+          <main class="page-wrap mx-auto max-w-7xl">
             <TasksScreen />
           </main>
         </div>

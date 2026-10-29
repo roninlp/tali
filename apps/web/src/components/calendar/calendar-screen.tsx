@@ -88,7 +88,7 @@ import {
   hasTimedEvents,
   type EventDraftFields
 } from "./events"
-import { CALENDAR_MAIN } from "./ui"
+import { CALENDAR_MAIN_CLASS } from "./ui"
 
 /**
  * The week/month screen (ticket #43; FR-VIEW-02/03).
@@ -1366,7 +1366,7 @@ export function CalendarScreen() {
   )
 
   return (
-    <main style={CALENDAR_MAIN} data-source={source()}>
+    <main class={CALENDAR_MAIN_CLASS} data-source={source()}>
       <header class="calendar-head">
           <div>
             <h1>تقویم</h1>

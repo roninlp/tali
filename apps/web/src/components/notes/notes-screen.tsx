@@ -1,11 +1,12 @@
 import { createEffect, createSignal, For, Show } from "solid-js"
 import { useNavigate } from "@solidjs/router"
-import { Button, tokens } from "@tali/ui"
+import { Button } from "@tali/ui"
 import {
   buildVariantInsensitivePattern,
   type NoteSearchSegment
 } from "@tali/domain"
 import { AppHeader } from "../app-header"
+import { Icon } from "../icons"
 import { useLocalStore } from "../../lib/local-store"
 import type { MirrorRecord } from "../../lib/local-store"
 import {
@@ -29,13 +30,7 @@ interface SearchHit {
   readonly updatedAt: string
 }
 
-const rowStyle = {
-  display: "grid",
-  gap: "6px",
-  padding: `${tokens.space.md} 0`,
-  "border-bottom": `1px solid ${tokens.color.line}`,
-  "min-width": 0
-} as const
+const rowStyle = "grid min-w-0 gap-1.5 py-4"
 
 /**
  * Note list (FR-NOTE-01/03): reads straight from the IndexedDB mirror, so it
@@ -251,72 +246,70 @@ export function NotesScreen() {
   }
 
   const NoteActions = (props: { note: NoteRow }) => (
-    <div style={{ display: "flex", gap: "4px", "flex-wrap": "wrap" }}>
-      <button
+    <div class="flex flex-wrap gap-1">
+      <Button
         type="button"
+        size="xs"
+        variant={props.note.isPinned ? "primary" : "ghost"}
+        class="gap-1 rounded-full font-normal"
         aria-pressed={props.note.isPinned ? "true" : "false"}
         aria-label={props.note.isPinned ? "برداشتن پین" : "پین کردن"}
         onClick={() => void patch(props.note, { isPinned: !props.note.isPinned })}
-        style={actionStyle(props.note.isPinned)}
       >
-        {props.note.isPinned ? "★ پین" : "☆ پین"}
-      </button>
-      <button
+        <Icon name="pin" class="size-3.5" />
+        {props.note.isPinned ? "پین‌شده" : "پین"}
+      </Button>
+      <Button
         type="button"
+        size="xs"
+        variant="ghost"
+        class="gap-1 rounded-full font-normal"
         aria-label={props.note.isArchived ? "بازگردانی از آرشیو" : "آرشیو کردن"}
         onClick={() => void patch(props.note, { isArchived: !props.note.isArchived })}
-        style={actionStyle(false)}
       >
+        <Icon name="archive" class="size-3.5" />
         {props.note.isArchived ? "بازگردانی" : "آرشیو"}
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
+        size="xs"
+        variant="ghost"
+        class="gap-1 rounded-full font-normal text-error"
         aria-label="انتقال به سطل زباله"
         onClick={() => void trash(props.note)}
-        style={actionStyle(false)}
       >
+        <Icon name="trash" class="size-3.5" />
         حذف
-      </button>
+      </Button>
     </div>
   )
 
   const NoteItem = (props: { note: NoteRow }) => (
-    <li style={rowStyle}>
-      <div style={{ display: "flex", gap: tokens.space.sm, "align-items": "baseline", "flex-wrap": "wrap" }}>
+    <li class={rowStyle}>
+      <div class="flex flex-wrap items-baseline gap-2">
         <button
           type="button"
+          class="min-w-0 cursor-pointer text-start text-[0.95rem] leading-7 font-semibold break-words hover:text-primary hover:underline"
           onClick={() => navigate(`/notes/${props.note.id}`)}
-          style={{
-            all: "unset",
-            cursor: "pointer",
-            "font-weight": props.note.isPinned ? 700 : 500,
-            color: tokens.color.ink,
-            "overflow-wrap": "anywhere",
-            "min-width": 0
-          }}
         >
           {props.note.title}
         </button>
         <Show when={props.note.tagIds.length > 0}>
-          <span style={{ display: "flex", gap: "4px", "flex-wrap": "wrap" }}>
+          <span class="flex flex-wrap gap-1">
             <For each={props.note.tagIds}>
-              {(tagId) => (
-                <span style={chipStyle(false, true)}>{tagLabel(tagId)}</span>
-              )}
+              {(tagId) => <span class="badge badge-ghost badge-sm">{tagLabel(tagId)}</span>}
             </For>
+          </span>
+        </Show>
+        <Show when={props.note.isPinned}>
+          <span class="badge badge-primary badge-sm gap-1">
+            <Icon name="pin" class="size-3" />
+            پین
           </span>
         </Show>
       </div>
       <Show when={props.note.excerpt !== ""}>
-        <p
-          style={{
-            margin: 0,
-            color: tokens.color.inkSoft,
-            "font-size": "0.88rem",
-            "line-height": "1.8",
-            "overflow-wrap": "anywhere"
-          }}
-        >
+        <p class="m-0 break-words text-sm leading-7 text-base-content/55">
           {props.note.excerpt}
         </p>
       </Show>
@@ -330,7 +323,7 @@ export function NotesScreen() {
       <For each={props.segments}>
         {(segment) => (
           <Show when={segment.match} fallback={<span>{segment.text}</span>}>
-            <mark style={markStyle}>{segment.text}</mark>
+            <mark class="rounded bg-warning/30 px-0.5 text-base-content">{segment.text}</mark>
           </Show>
         )}
       </For>
@@ -338,31 +331,16 @@ export function NotesScreen() {
   )
 
   const SearchResult = (props: { hit: SearchHit }) => (
-    <li style={rowStyle}>
+    <li class={rowStyle}>
       <button
         type="button"
+        class="min-w-0 cursor-pointer text-start text-[0.95rem] leading-7 font-semibold break-words hover:text-primary hover:underline"
         onClick={() => navigate(`/notes/${props.hit.id}`)}
-        style={{
-          all: "unset",
-          cursor: "pointer",
-          "font-weight": 500,
-          color: tokens.color.ink,
-          "overflow-wrap": "anywhere",
-          "min-width": 0
-        }}
       >
         <Marked segments={titleSegments(props.hit)} />
       </button>
       <Show when={props.hit.segments.length > 0}>
-        <p
-          style={{
-            margin: 0,
-            color: tokens.color.inkSoft,
-            "font-size": "0.88rem",
-            "line-height": "1.8",
-            "overflow-wrap": "anywhere"
-          }}
-        >
+        <p class="m-0 break-words text-sm leading-7 text-base-content/55">
           <Marked segments={snippetSegments(props.hit)} />
         </p>
       </Show>
@@ -370,118 +348,95 @@ export function NotesScreen() {
   )
 
   return (
-    <div
-      dir="rtl"
-      lang="fa"
-      style={{
-        "min-height": "100dvh",
-        "font-family": tokens.font.sans,
-        color: tokens.color.ink,
-        background: tokens.color.canvas,
-        "overflow-x": "clip"
-      }}
-    >
+    <div class="min-h-dvh overflow-x-clip bg-base-200 text-base-content" dir="rtl" lang="fa">
       <AppHeader active="notes" />
 
-      <main
-        style={{
-          display: "grid",
-          gap: tokens.space.md,
-          "max-width": "720px",
-          "box-sizing": "border-box",
-          width: "100%",
-          margin: "0 auto",
-          padding: "clamp(16px, 3vw, 28px) 16px 32px"
-        }}
-      >
-        <header style={{ display: "flex", "align-items": "center", "justify-content": "space-between", gap: tokens.space.sm, "flex-wrap": "wrap" }}>
-          <h1 style={{ margin: 0, "font-size": "1.35rem", "letter-spacing": "-0.02em" }}>یادداشت‌ها</h1>
-          <div style={{ display: "flex", gap: tokens.space.sm, "flex-wrap": "wrap" }}>
-            <Button type="button" onClick={() => void newNote()} disabled={busy() || local.store() === undefined}>
+      <main class="page-wrap mx-auto grid max-w-3xl gap-4">
+        <header class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 class="m-0 text-2xl font-bold tracking-tight sm:text-3xl">یادداشت‌ها</h1>
+            <p class="mt-1 mb-0 text-sm text-base-content/55">
+              جست‌وجو، پین، آرشیو و برچسب — همه روی همین دستگاه اول ذخیره می‌شوند.
+            </p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              class="gap-1.5"
+              onClick={() => void newNote()}
+              disabled={busy() || local.store() === undefined}
+            >
+              <Icon name="plus" class="size-4" />
               یادداشت تازه
             </Button>
-            <Button variant="ghost" type="button" onClick={() => navigate("/notes/trash")}>
+            <Button variant="ghost" type="button" class="gap-1.5" onClick={() => navigate("/notes/trash")}>
+              <Icon name="trash" class="size-4" />
               سطل زباله
             </Button>
           </div>
         </header>
 
         <Show when={!local.online()}>
-          <p role="status" style={hintStyle}>
+          <p role="status" class="soft-note m-0">
             آفلاین هستید؛ همه‌ی تغییرها روی همین دستگاه ذخیره می‌شوند و بعد همگام می‌شوند.
           </p>
         </Show>
 
-        <section aria-label="جست‌وجو" style={cardStyle}>
+        <section aria-label="جست‌وجو" class="panel grid gap-2 p-4">
           {/* The label wraps the input, so the field's accessible name is the
               hint text — and the query stays reachable by its label. */}
-          <label
-            style={{
-              display: "grid",
-              gap: "6px",
-              "font-size": "0.85rem",
-              color: tokens.color.inkSoft
-            }}
-          >
-            <span>جست‌وجو در یادداشت‌ها (Ctrl+K)</span>
-            <div style={{ display: "flex", gap: tokens.space.sm, "align-items": "center" }}>
-              <input
-                id="note-search"
-                ref={searchInput}
-                type="search"
-                value={query()}
-                onInput={(event) => setQuery(event.currentTarget.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") {
-                    event.preventDefault()
-                    clearSearch()
-                  }
-                }}
-                placeholder="مثلاً: دارو"
-                autocomplete="off"
-                style={{
-                  flex: 1,
-                  "min-width": 0,
-                  "font-family": tokens.font.sans,
-                  "font-size": "0.95rem",
-                  padding: "8px 10px",
-                  "border-radius": tokens.radius.md,
-                  border: `1px solid ${tokens.color.line}`,
-                  background: tokens.color.surface,
-                  color: tokens.color.ink
-                }}
-              />
+          <label class="grid gap-1.5">
+            <span class="text-sm text-base-content/60">جست‌وجو در یادداشت‌ها (Ctrl+K)</span>
+            <span class="flex items-center gap-2">
+              <span class="input input-bordered flex flex-1 items-center gap-2">
+                <Icon name="search" class="size-4 opacity-50" />
+                <input
+                  id="note-search"
+                  ref={(element) => (searchInput = element)}
+                  type="search"
+                  class="grow bg-transparent text-[0.95rem] outline-none"
+                  value={query()}
+                  onInput={(event) => setQuery(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault()
+                      clearSearch()
+                    }
+                  }}
+                  placeholder="مثلاً: دارو"
+                  autocomplete="off"
+                />
+              </span>
               <Show when={trimmed() !== ""}>
-                <Button variant="ghost" type="button" onClick={clearSearch}>
+                <Button variant="ghost" size="sm" type="button" onClick={clearSearch}>
                   پاک کردن
                 </Button>
               </Show>
-            </div>
+            </span>
           </label>
           <Show when={searching()}>
-            <p role="status" style={{ ...hintStyle, "margin-top": "8px" }}>
+            <p role="status" class="m-0 flex items-center gap-2 text-sm text-base-content/50">
+              <span class="loading loading-spinner loading-xs" />
               در حال جست‌وجو…
             </p>
           </Show>
           <Show when={offlineSearch()}>
-            <p role="status" style={{ ...hintStyle, "margin-top": "8px" }}>
+            <p role="status" class="soft-note m-0">
               جست‌وجو روی همین دستگاه انجام شد؛ نتیجه‌های سرور بعد از همگام‌سازی کامل می‌شود.
             </p>
           </Show>
         </section>
 
         <Show when={trimmed() !== ""}>
-          <section aria-label="نتیجه‌های جست‌وجو" style={cardStyle}>
-            <h2 style={{ margin: 0, "font-size": "1.05rem" }}>نتیجه‌ها</h2>
+          <section aria-label="نتیجه‌های جست‌وجو" class="panel grid gap-1 p-4">
+            <h2 class="m-0 text-lg font-bold">نتیجه‌ها</h2>
             <Show
               when={hits().length > 0}
               fallback={
-                <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.9rem" }}>
-                  چیزی پیدا نشد.
-                </p>
+                <p class="m-0 text-sm text-base-content/55">چیزی پیدا نشد.</p>
               }
             >
-              <ul style={{ "list-style": "none", margin: 0, padding: 0 }}>
+              <ul class="m-0 list-none divide-y divide-base-300 p-0">
                 <For each={hits()}>{(hit) => <SearchResult hit={hit} />}</For>
               </ul>
             </Show>
@@ -489,14 +444,18 @@ export function NotesScreen() {
         </Show>
 
         <Show when={tags().length > 0}>
-          <section aria-label="فیلتر برچسب" style={{ display: "flex", gap: "6px", "flex-wrap": "wrap" }}>
+          <section aria-label="فیلتر برچسب" class="flex flex-wrap gap-1.5">
             <For each={tags()}>
               {(tag) => (
                 <button
                   type="button"
                   aria-pressed={selectedTags().includes(tag.entityId) ? "true" : "false"}
                   onClick={() => toggleTag(tag.entityId)}
-                  style={chipStyle(selectedTags().includes(tag.entityId), false)}
+                  class={
+                    selectedTags().includes(tag.entityId)
+                      ? "badge badge-primary badge-lg cursor-pointer"
+                      : "badge badge-ghost badge-lg cursor-pointer"
+                  }
                 >
                   {tagName(tag)}
                 </button>
@@ -509,9 +468,9 @@ export function NotesScreen() {
           when={trimmed() === "" && notes().length > 0}
           fallback={
             <Show when={trimmed() === ""}>
-              <section style={cardStyle}>
-                <p style={{ margin: 0, "line-height": "2" }}>هنوز یادداشتی ندارید.</p>
-                <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.9rem" }}>
+              <section class="panel grid gap-1 p-5">
+                <p class="m-0 leading-8">هنوز یادداشتی ندارید.</p>
+                <p class="m-0 text-sm text-base-content/55">
                   از هر صفحه با دکمه‌ی «یادداشت تازه» یا Alt+N شروع کنید؛ همان لحظه باز می‌شود.
                 </p>
               </section>
@@ -519,49 +478,49 @@ export function NotesScreen() {
           }
         >
           <Show when={pinned().length > 0}>
-            <section aria-label="یادداشت‌های پین‌شده" style={cardStyle}>
-              <h2 style={{ margin: 0, "font-size": "1.05rem" }}>پین‌شده</h2>
-              <ul style={{ "list-style": "none", margin: 0, padding: 0 }}>
+            <section aria-label="یادداشت‌های پین‌شده" class="panel grid gap-1 p-4 sm:p-5">
+              <h2 class="m-0 flex items-center gap-1.5 text-lg font-bold">
+                <Icon name="pin" class="size-4 text-primary" />
+                پین‌شده
+              </h2>
+              <ul class="m-0 list-none divide-y divide-base-300 p-0">
                 <For each={pinned()}>{(note) => <NoteItem note={note} />}</For>
               </ul>
             </section>
           </Show>
 
-          <section aria-label="همه‌ی یادداشت‌ها" style={cardStyle}>
-            <h2 style={{ margin: 0, "font-size": "1.05rem" }}>یادداشت‌ها</h2>
+          <section aria-label="همه‌ی یادداشت‌ها" class="panel grid gap-1 p-4 sm:p-5">
+            <h2 class="m-0 text-lg font-bold">یادداشت‌ها</h2>
             <Show
               when={unpinned().length > 0}
               fallback={
-                <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.9rem" }}>
-                  یادداشت دیگری نیست.
-                </p>
+                <p class="m-0 text-sm text-base-content/55">یادداشت دیگری نیست.</p>
               }
             >
-              <ul style={{ "list-style": "none", margin: 0, padding: 0 }}>
+              <ul class="m-0 list-none divide-y divide-base-300 p-0">
                 <For each={unpinned()}>{(note) => <NoteItem note={note} />}</For>
               </ul>
             </Show>
           </section>
 
-          <section aria-label="آرشیو" style={cardStyle}>
+          <section aria-label="آرشیو" class="panel grid gap-2 p-4 sm:p-5">
             <button
               type="button"
+              class="btn btn-ghost btn-sm w-fit gap-1.5 rounded-full font-normal"
               aria-expanded={showArchived() ? "true" : "false"}
               onClick={() => setShowArchived(!showArchived())}
-              style={actionStyle(showArchived())}
             >
+              <Icon name="archive" class="size-4" />
               آرشیو ({archived().length})
             </button>
             <Show when={showArchived()}>
               <Show
                 when={archived().length > 0}
                 fallback={
-                  <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.9rem" }}>
-                    آرشیو خالی است.
-                  </p>
+                  <p class="m-0 text-sm text-base-content/55">آرشیو خالی است.</p>
                 }
               >
-                <ul style={{ "list-style": "none", margin: 0, padding: 0 }}>
+                <ul class="m-0 list-none divide-y divide-base-300 p-0">
                   <For each={archived()}>{(note) => <NoteItem note={note} />}</For>
                 </ul>
               </Show>
@@ -572,53 +531,3 @@ export function NotesScreen() {
     </div>
   )
 }
-
-const cardStyle = {
-  background: tokens.color.surface,
-  border: `1px solid ${tokens.color.line}`,
-  "border-radius": tokens.radius.lg,
-  padding: tokens.space.lg,
-  display: "grid",
-  gap: tokens.space.sm,
-  "min-width": 0
-} as const
-
-const hintStyle = {
-  margin: 0,
-  padding: "10px 12px",
-  "border-radius": tokens.radius.md,
-  background: "#eef4ff",
-  color: tokens.color.inkSoft,
-  "font-size": "0.85rem",
-  "line-height": "1.8"
-} as const
-
-/** The matched run of a search result. */
-const markStyle = {
-  background: "#fff3bf",
-  color: tokens.color.ink,
-  "border-radius": "3px",
-  padding: "0 2px"
-} as const
-
-const actionStyle = (active: boolean) => ({
-  "font-family": tokens.font.sans,
-  "font-size": "0.8rem",
-  padding: "4px 10px",
-  "border-radius": "999px",
-  border: `1px solid ${active ? tokens.color.brand : tokens.color.line}`,
-  background: active ? "#eaf0ff" : tokens.color.surface,
-  color: active ? tokens.color.brand : tokens.color.inkSoft,
-  cursor: "pointer"
-})
-
-const chipStyle = (active: boolean, small: boolean) => ({
-  "font-family": tokens.font.sans,
-  "font-size": small ? "0.72rem" : "0.82rem",
-  padding: small ? "1px 6px" : "3px 10px",
-  "border-radius": "999px",
-  border: `1px solid ${active ? tokens.color.brand : tokens.color.line}`,
-  background: active ? tokens.color.brand : tokens.color.surface,
-  color: active ? "#fff" : tokens.color.inkSoft,
-  cursor: small ? "default" : "pointer"
-})

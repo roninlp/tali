@@ -8,7 +8,6 @@ import {
   type HabitFrequency,
   type LocalDate
 } from "@tali/domain"
-import { tokens } from "@tali/ui"
 import { useLocalStore } from "../../lib/local-store"
 import { usePreferences } from "../../lib/preferences"
 import { useAuth } from "../../lib/auth"
@@ -81,7 +80,7 @@ export function HabitsScreen() {
   const [days, setDays] = createSignal<ReadonlyArray<number>>([6, 1, 3])
   const [times, setTimes] = createSignal(3)
   const [icon, setIcon] = createSignal<string>("🌱")
-  const [color, setColor] = createSignal<string>(tokens.color.brand)
+  const [color, setColor] = createSignal<string>(HABIT_COLORS[0]!.value)
   const [formBusy, setFormBusy] = createSignal(false)
   const [formError, setFormError] = createSignal<string>()
 
@@ -183,7 +182,7 @@ export function HabitsScreen() {
     setDays([6, 1, 3])
     setTimes(3)
     setIcon("🌱")
-    setColor(tokens.color.brand)
+    setColor(HABIT_COLORS[0]!.value)
     setFormError(undefined)
   }
 
@@ -196,7 +195,7 @@ export function HabitsScreen() {
     if (habit.frequency._tag === "weekdays") setDays([...habit.frequency.days])
     if (habit.frequency._tag === "weekly") setTimes(habit.frequency.times)
     setIcon(habit.icon ?? "🌱")
-    setColor(habit.color ?? tokens.color.brand)
+    setColor(habit.color ?? HABIT_COLORS[0]!.value)
     setFormError(undefined)
     titleRef?.focus()
   }
@@ -316,7 +315,7 @@ export function HabitsScreen() {
   const pending = (id: string): boolean => pendingIds().has(id)
 
   return (
-    <div class="habits-root" dir="rtl" lang="fa" style={{ display: "grid", gap: "10px" }}>
+    <div class="habits-root grid gap-2.5" dir="rtl" lang="fa">
       <HabitStyles />
 
       <header class="habits-head">
@@ -526,7 +525,7 @@ export function HabitsScreen() {
 
       <div class="habits-head">
         <div>
-          <h2 style={{ margin: 0, "font-size": "1rem" }}>فهرست عادت‌ها</h2>
+          <h2 class="m-0 text-base font-bold">فهرست عادت‌ها</h2>
           <p>با هر ضربه وضعیت امروز می‌چرخد: انجام شد → نیمه → از دست رفت.</p>
         </div>
         <div class="habit-lane-windows" role="group" aria-label="بازهٔ نرخ موفقیت">
@@ -567,7 +566,7 @@ export function HabitsScreen() {
               return (
                 <li
                   class="habit-card"
-                  style={{ "border-inline-start-color": habit.color ?? tokens.color.brand }}
+                  style={{ "border-inline-start-color": habit.color ?? HABIT_COLORS[0]!.value }}
                 >
                   <div class="habit-card-head">
                     <span class="habit-mark" aria-hidden="true">

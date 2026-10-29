@@ -1,6 +1,6 @@
 import { createEffect, createSignal, For, Show } from "solid-js"
 import { Title } from "@solidjs/meta"
-import { Button, tokens } from "@tali/ui"
+import { Button } from "@tali/ui"
 import {
   DEFAULT_TIME_ZONE,
   formatJalaliDate,
@@ -10,9 +10,10 @@ import {
   type WeekStart
 } from "@tali/domain"
 import { AppHeader } from "../components/app-header"
-import { Field, FormError, Select, TextInput } from "../components/form"
+import { Field, FormError, FormSuccess, Select, TextInput } from "../components/form"
 import { Guard } from "../components/guard"
 import { PushHealthPanel } from "../components/push-health"
+import { ThemePicker } from "../components/theme-picker"
 import { useAuth } from "../lib/auth"
 import { authErrorMessage } from "../lib/auth-copy"
 import { deriveLoginKey, passwordProblem } from "../lib/login-key"
@@ -199,152 +200,150 @@ function SettingsPage() {
   }
 
   return (
-    <div
-      class="settings-root"
-      dir="rtl"
-      lang="fa"
-      style={{ "min-height": "100dvh", background: tokens.color.canvas, color: tokens.color.ink }}
-    >
+    <div class="min-h-dvh overflow-x-clip bg-base-200 text-base-content" dir="rtl" lang="fa">
       <AppHeader active="settings" />
-      <main class="settings-main">
-        <header class="settings-heading">
-          <h1>تنظیمات</h1>
-          <p>گذرواژه فقط در همین مرورگر به کلید ورود تبدیل می‌شود و به سرور نمی‌رسد.</p>
-        </header>
-      <section
-        class="settings-card"
-        aria-labelledby="settings-display-title"
-        style={{ display: "grid", gap: "14px" }}
-      >
-        <header style={{ display: "grid", gap: "4px" }}>
-          <h2 id="settings-display-title" style={{ margin: 0, "font-size": "1.05rem" }}>
-            نمایش
-          </h2>
-          <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.85rem", "line-height": "1.8" }}>
-            تقویم شمسی، شروع هفته و شکل اعداد را اینجا تغییر دهید.
+      <main class="page-wrap mx-auto grid max-w-2xl gap-4">
+        <header class="grid gap-1">
+          <h1 class="m-0 text-2xl font-bold tracking-tight sm:text-3xl">تنظیمات</h1>
+          <p class="m-0 text-sm leading-7 text-base-content/55">
+            ظاهر برنامه، تقویم و منطقه‌ی زمانی، و امنیت حساب.
           </p>
         </header>
 
-        <form onSubmit={(event) => void saveDisplay(event)} style={{ display: "grid", gap: "14px" }}>
-          <Field label="منطقه‌ی زمانی (IANA)" for="settings-timezone" hint="مثل Asia/Tehran">
-            <TextInput
-              id="settings-timezone"
-              name="timeZone"
-              list="settings-timezone-options"
-              dir="ltr"
-              autocomplete="off"
-              spellcheck={false}
-              value={timeZone()}
-              disabled={preferences.saving()}
-              onInput={(event) => setTimeZone(event.currentTarget.value)}
-            />
-            <datalist id="settings-timezone-options">
-              <For each={TIME_ZONE_SUGGESTIONS}>{(zone) => <option value={zone} />}</For>
-            </datalist>
-          </Field>
+        <ThemePicker />
 
-          <Field label="شروع هفته" for="settings-week-start">
-            <Select
-              id="settings-week-start"
-              name="weekStart"
-              value={weekStart()}
-              disabled={preferences.saving()}
-              onChange={(event) =>
-                setWeekStart(event.currentTarget.value as WeekStart)
-              }
-            >
-              <For each={WEEK_START_OPTIONS}>
-                {(option) => <option value={option.value}>{option.label}</option>}
-              </For>
-            </Select>
-          </Field>
-
-          <Field label="شکل اعداد" for="settings-digits">
-            <Select
-              id="settings-digits"
-              name="digits"
-              value={digits()}
-              disabled={preferences.saving()}
-              onChange={(event) => setDigits(event.currentTarget.value as Digits)}
-            >
-              <For each={DIGITS_OPTIONS}>
-                {(option) => <option value={option.value}>{option.label}</option>}
-              </For>
-            </Select>
-          </Field>
-
-          <p
-            aria-live="polite"
-            style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.88rem" }}
-          >
-            امروز: {preview()}
-          </p>
-
-          <FormError message={displayError()} />
-          <Show when={displayDone()}>
-            <p role="status" style={{ margin: 0, "font-size": "0.88rem", color: "#166534" }}>
-              تنظیمات نمایش ذخیره شد.
+        <section
+          class="panel grid gap-4 p-4 sm:p-5"
+          aria-labelledby="settings-display-title"
+        >
+          <header class="grid gap-1">
+            <h2 id="settings-display-title" class="m-0 text-lg font-bold">
+              نمایش
+            </h2>
+            <p class="m-0 text-sm leading-7 text-base-content/55">
+              تقویم شمسی، شروع هفته و شکل اعداد را اینجا تغییر دهید.
             </p>
+          </header>
+
+          <form onSubmit={(event) => void saveDisplay(event)} class="grid gap-3.5">
+            <Field label="منطقه‌ی زمانی (IANA)" for="settings-timezone" hint="مثل Asia/Tehran">
+              <TextInput
+                id="settings-timezone"
+                name="timeZone"
+                list="settings-timezone-options"
+                dir="ltr"
+                autocomplete="off"
+                spellcheck={false}
+                value={timeZone()}
+                disabled={preferences.saving()}
+                onInput={(event) => setTimeZone(event.currentTarget.value)}
+              />
+              <datalist id="settings-timezone-options">
+                <For each={TIME_ZONE_SUGGESTIONS}>{(zone) => <option value={zone} />}</For>
+              </datalist>
+            </Field>
+
+            <Field label="شروع هفته" for="settings-week-start">
+              <Select
+                id="settings-week-start"
+                name="weekStart"
+                value={weekStart()}
+                disabled={preferences.saving()}
+                onChange={(event) =>
+                  setWeekStart(event.currentTarget.value as WeekStart)
+                }
+              >
+                <For each={WEEK_START_OPTIONS}>
+                  {(option) => <option value={option.value}>{option.label}</option>}
+                </For>
+              </Select>
+            </Field>
+
+            <Field label="شکل اعداد" for="settings-digits">
+              <Select
+                id="settings-digits"
+                name="digits"
+                value={digits()}
+                disabled={preferences.saving()}
+                onChange={(event) => setDigits(event.currentTarget.value as Digits)}
+              >
+                <For each={DIGITS_OPTIONS}>
+                  {(option) => <option value={option.value}>{option.label}</option>}
+                </For>
+              </Select>
+            </Field>
+
+            <p aria-live="polite" class="m-0 inline-flex items-center gap-2 text-sm text-base-content/55">
+              <span class="badge badge-ghost badge-sm">امروز</span>
+              {preview()}
+            </p>
+
+            <FormError message={displayError()} />
+            <Show when={displayDone()}>
+              <FormSuccess message="تنظیمات نمایش ذخیره شد." />
+            </Show>
+
+            <Button type="submit" class="w-full" disabled={preferences.saving()} loading={preferences.saving()}>
+              ذخیره‌ی تنظیمات نمایش
+            </Button>
+          </form>
+        </section>
+
+        <form class="panel grid gap-4 p-4 sm:p-5" onSubmit={submit}>
+          <header class="grid gap-1">
+            <h2 class="m-0 text-lg font-bold">گذرواژه</h2>
+            <p class="m-0 text-sm leading-7 text-base-content/55">
+              گذرواژه فقط در همین مرورگر به کلید ورود تبدیل می‌شود و به سرور نمی‌رسد.
+            </p>
+          </header>
+
+          <Field label="گذرواژه‌ی فعلی" for="settings-current">
+            <TextInput
+              id="settings-current"
+              type="password"
+              name="currentPassword"
+              autocomplete="current-password"
+              value={current()}
+              disabled={busy()}
+              onInput={(event) => setCurrent(event.currentTarget.value)}
+            />
+          </Field>
+
+          <Field label="گذرواژه‌ی تازه" for="settings-new" hint="حداقل ۱۲ نویسه">
+            <TextInput
+              id="settings-new"
+              type="password"
+              name="newPassword"
+              autocomplete="new-password"
+              value={next()}
+              disabled={busy()}
+              onInput={(event) => setNext(event.currentTarget.value)}
+            />
+          </Field>
+
+          <Field label="تکرار گذرواژه‌ی تازه" for="settings-confirm">
+            <TextInput
+              id="settings-confirm"
+              type="password"
+              name="confirmPassword"
+              autocomplete="new-password"
+              value={confirm()}
+              disabled={busy()}
+              onInput={(event) => setConfirm(event.currentTarget.value)}
+            />
+          </Field>
+
+          <FormError message={error()} />
+          <Show when={done()}>
+            <FormSuccess message="گذرواژه تغییر کرد." />
           </Show>
 
-          <Button type="submit" disabled={preferences.saving()} style={{ width: "100%" }}>
-            {preferences.saving() ? "در حال ذخیره…" : "ذخیره‌ی تنظیمات نمایش"}
+          <Button type="submit" class="w-full" disabled={busy()} loading={busy()}>
+            تغییر گذرواژه
           </Button>
         </form>
-      </section>
 
-      <form class="settings-card" onSubmit={submit} style={{ display: "grid", gap: "14px" }}>
-        <h2 style={{ margin: 0, "font-size": "1.05rem" }}>گذرواژه</h2>
-
-        <Field label="گذرواژه‌ی فعلی" for="settings-current">
-          <TextInput
-            id="settings-current"
-            type="password"
-            name="currentPassword"
-            autocomplete="current-password"
-            value={current()}
-            disabled={busy()}
-            onInput={(event) => setCurrent(event.currentTarget.value)}
-          />
-        </Field>
-
-        <Field label="گذرواژه‌ی تازه" for="settings-new" hint="حداقل ۱۲ نویسه">
-          <TextInput
-            id="settings-new"
-            type="password"
-            name="newPassword"
-            autocomplete="new-password"
-            value={next()}
-            disabled={busy()}
-            onInput={(event) => setNext(event.currentTarget.value)}
-          />
-        </Field>
-
-        <Field label="تکرار گذرواژه‌ی تازه" for="settings-confirm">
-          <TextInput
-            id="settings-confirm"
-            type="password"
-            name="confirmPassword"
-            autocomplete="new-password"
-            value={confirm()}
-            disabled={busy()}
-            onInput={(event) => setConfirm(event.currentTarget.value)}
-          />
-        </Field>
-
-        <FormError message={error()} />
-        {done() ? (
-          <p role="status" style={{ margin: 0, "font-size": "0.88rem", color: "#166534" }}>
-            گذرواژه تغییر کرد.
-          </p>
-        ) : null}
-
-        <Button type="submit" disabled={busy()} style={{ width: "100%" }}>
-          {busy() ? "در حال ذخیره…" : "تغییر گذرواژه"}
-        </Button>
-      </form>
-
-      <PushHealthPanel />
+        <PushHealthPanel />
       </main>
     </div>
   )

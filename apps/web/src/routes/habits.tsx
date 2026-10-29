@@ -2,7 +2,7 @@ import { Title } from "@solidjs/meta"
 import { AppHeader } from "../components/app-header"
 import { Guard } from "../components/guard"
 import { HabitsScreen } from "../components/habits/habits-screen"
-import { HABITS_MAIN, HABITS_ROOT } from "../components/habits/ui"
+import { HABITS_MAIN_CLASS, HABITS_ROOT_CLASS } from "../components/habits/ui"
 
 /**
  * `/habits` (ticket #66; FR-HAB-01/02/03): one create/edit form, the frequency
@@ -15,9 +15,9 @@ export default function HabitsRoute() {
     <>
       <Title>عادت‌ها — تالی</Title>
       <Guard access="household">
-        <div class="habits-root" dir="rtl" lang="fa" style={HABITS_ROOT}>
+        <div class={HABITS_ROOT_CLASS} dir="rtl" lang="fa">
           <AppHeader active="habits" />
-          <main style={HABITS_MAIN}>
+          <main class={HABITS_MAIN_CLASS}>
             <HabitsScreen />
           </main>
         </div>

@@ -1,6 +1,5 @@
 import { For, Show } from "solid-js"
-import type { JSX } from "@solidjs/web"
-import { Button, tokens } from "@tali/ui"
+import { Button } from "@tali/ui"
 import { useAuth } from "../lib/auth"
 import { Splash } from "./form"
 
@@ -31,15 +30,6 @@ export function BootScreen() {
   )
 }
 
-/** One placeholder block: a surface-coloured bar, no motion and no content. */
-const block = (height: string, width = "100%"): JSX.CSSProperties => ({
-  "block-size": height,
-  "inline-size": width,
-  border: `1px solid ${tokens.color.line}`,
-  "border-radius": tokens.radius.md,
-  background: tokens.color.surface
-})
-
 /** Widths of the placeholder nav pills; one per main section. */
 const NAV_BLOCK_WIDTHS = [64, 56, 52, 58, 62, 68, 62, 60] as const
 
@@ -58,68 +48,30 @@ export function RouteSkeleton() {
       role="status"
       aria-busy="true"
       aria-label="در حال بارگذاری"
-      style={{
-        "min-block-size": "100dvh",
-        display: "grid",
-        "grid-template-rows": "auto 1fr",
-        background: tokens.color.canvas,
-        color: tokens.color.ink,
-        "font-family": tokens.font.sans,
-        "overflow-x": "clip"
-      }}
+      class="grid min-h-dvh grid-rows-[auto_1fr] overflow-x-clip bg-base-200"
     >
-      <div
-        style={{
-          "border-block-end": `1px solid ${tokens.color.line}`,
-          background: "rgba(255, 255, 255, 0.96)",
-          padding: "10px clamp(14px, 3vw, 24px)"
-        }}
-      >
-        <div
-          style={{
-            display: "grid",
-            gap: "8px",
-            "inline-size": "min(100%, 1200px)",
-            "margin-inline": "auto"
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              "align-items": "center",
-              "justify-content": "space-between",
-              gap: "12px",
-              "min-block-size": "44px"
-            }}
-          >
-            <div style={block("32px", "84px")} />
-            <div style={{ display: "flex", gap: "6px" }}>
-              <div style={block("44px", "120px")} />
-              <div style={block("44px", "72px")} />
+      <div class="border-b border-base-300 bg-base-100/90">
+        <div class="mx-auto grid w-full max-w-7xl gap-2 px-4 py-2.5">
+          <div class="flex min-h-11 items-center justify-between gap-3">
+            <div class="skeleton h-8 w-24 rounded-xl" />
+            <div class="flex gap-1.5">
+              <div class="skeleton h-8 w-24 rounded-full" />
+              <div class="skeleton size-8 rounded-full" />
             </div>
           </div>
-          <div style={{ display: "flex", gap: "5px", "min-block-size": "38px" }}>
+          <div class="hidden min-h-9 gap-1.5 md:flex">
             <For each={NAV_BLOCK_WIDTHS}>
-              {(width) => <div style={block("38px", `${width}px`)} />}
+              {(width) => <div class="skeleton h-8 rounded-lg" style={{ width: `${width}px` }} />}
             </For>
           </div>
         </div>
       </div>
 
-      <div
-        style={{
-          "inline-size": "min(1180px, calc(100% - 32px))",
-          "margin-inline": "auto",
-          padding: "18px 0 64px",
-          display: "grid",
-          gap: "14px",
-          "align-content": "start"
-        }}
-      >
-        <div style={block("32px", "180px")} />
-        <div style={block("132px")} />
-        <div style={block("96px")} />
-        <div style={block("96px")} />
+      <div class="mx-auto grid w-full max-w-6xl content-start gap-3.5 px-4 py-5">
+        <div class="skeleton h-8 w-44 rounded-lg" />
+        <div class="skeleton h-32 rounded-box" />
+        <div class="skeleton h-24 rounded-box" />
+        <div class="skeleton h-24 rounded-box" />
       </div>
     </div>
   )

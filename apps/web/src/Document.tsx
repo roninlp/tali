@@ -10,10 +10,14 @@ export default function Document(props: ParentProps) {
     <html lang="fa" dir="rtl">
       <head>
         <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <title>Tali</title>
         <meta name="description" content="تالی — برنامه‌ریز شخصی و خانوادگی" />
-        <meta name="theme-color" content="#3558b5" />
+        <meta name="theme-color" content="#f6f7fb" />
+        {/* Apply the saved daisyUI theme before first paint: the app is
+            client-rendered, so without this the shell would flash the default
+            light palette even when a dark theme is saved. */}
+        <script src="/theme-boot.js" />
         {/* Installable PWA shell: the manifest + service worker are what let a
             Web Push subscription survive the page (ticket #20). */}
         <link rel="manifest" href="/manifest.webmanifest" />

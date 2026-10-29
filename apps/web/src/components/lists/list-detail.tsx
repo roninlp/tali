@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import { useNavigate, useParams } from "@solidjs/router"
-import { Button, tokens } from "@tali/ui"
+import { Button } from "@tali/ui"
 import { localizeDigits, type ListItemSort } from "@tali/domain"
 import { useAuth } from "../../lib/auth"
 import { useLocalStore } from "../../lib/local-store"
@@ -30,12 +30,9 @@ import {
 } from "../../lib/lists/model"
 import {
   ListsStyles,
-  LISTS_ROOT,
-  listsCardStyle,
+  LISTS_ROOT_CLASS,
   listsDangerButtonStyle,
-  listsInputStyle,
-  listsScreenStyle,
-  listsSelectStyle,
+  listsScreenClass,
   listsSmallButtonStyle
 } from "./ui"
 
@@ -318,9 +315,9 @@ export function ListDetailScreen() {
   }
 
   return (
-    <div class="lists-root" dir="rtl" lang="fa" style={LISTS_ROOT}>
+    <div class={LISTS_ROOT_CLASS} dir="rtl" lang="fa">
       <ListsStyles />
-      <main style={listsScreenStyle}>
+      <main class={listsScreenClass}>
         <div style={{ display: "flex", gap: "6px", "flex-wrap": "wrap" }}>
           <button
             type="button"
@@ -348,14 +345,14 @@ export function ListDetailScreen() {
             }
           >
             <div class="lists-detail">
-              <header style={listsCardStyle}>
+              <header class="panel grid gap-2 p-4 sm:p-5">
                 <div class="lists-header">
                   <form
                     onSubmit={(event) => void renameList(event)}
                     class="lists-header-row"
                   >
-                    <label style={{ display: "grid", gap: "2px", flex: 1, "min-width": 0 }}>
-                      <span style={{ "font-size": "0.76rem", color: tokens.color.inkSoft }}>
+                    <label class="grid min-w-0 flex-1 gap-0.5">
+                      <span class="text-[0.76rem] text-base-content/55">
                         عنوان فهرست
                       </span>
                       <input
@@ -369,10 +366,10 @@ export function ListDetailScreen() {
                             setTitleDraft(list()?.title ?? "")
                           }
                         }}
-                        style={{ ...listsInputStyle, "font-size": "1.1rem", "font-weight": 600 }}
+                        class="input input-bordered w-full text-lg font-semibold"
                       />
                     </label>
-                    <div class="lists-header-actions" style={{ "align-self": "end" }}>
+                    <div class="lists-header-actions self-end">
                       <Button type="submit" variant="ghost">
                         ذخیره‌ی نام
                       </Button>
@@ -395,7 +392,7 @@ export function ListDetailScreen() {
                       <span>خصوصی</span>
                     </Show>
                     <Show when={isPending()}>
-                      <span style={{ color: "#92600e" }}>در انتظار ارسال</span>
+                      <span class="text-warning">در انتظار ارسال</span>
                     </Show>
                     <Show
                       when={writtenByOther(
@@ -416,7 +413,7 @@ export function ListDetailScreen() {
                         onChange={(event) =>
                           void patchList({ sort: event.currentTarget.value as ListItemSort })
                         }
-                        style={listsSelectStyle}
+                        class="select select-bordered select-sm w-full"
                       >
                         <option value="manual">دستی</option>
                         <option value="alpha">الفبا</option>
@@ -433,7 +430,7 @@ export function ListDetailScreen() {
                               event.currentTarget.value === "inPlace" ? "inPlace" : "bottom"
                           })
                         }
-                        style={listsSelectStyle}
+                        class="select select-bordered select-sm w-full"
                       >
                         <option value="bottom">انتهای فهرست</option>
                         <option value="inPlace">همان‌جا</option>
@@ -450,7 +447,7 @@ export function ListDetailScreen() {
                               event.currentTarget.value === "private" ? "private" : "shared"
                           })
                         }
-                        style={listsSelectStyle}
+                        class="select select-bordered select-sm w-full"
                       >
                         <option value="shared">مشترک با خانه</option>
                         <option value="private">فقط خودم</option>
@@ -460,8 +457,8 @@ export function ListDetailScreen() {
                 </div>
               </header>
 
-              <section style={listsCardStyle} aria-labelledby="lists-entry-title">
-                <h2 id="lists-entry-title" style={{ margin: 0, "font-size": "1.02rem" }}>
+              <section class="panel grid gap-2 p-4 sm:p-5" aria-labelledby="lists-entry-title">
+                <h2 id="lists-entry-title" class="m-0 text-lg font-bold">
                   افزودن مورد
                 </h2>
                 <form
@@ -478,7 +475,7 @@ export function ListDetailScreen() {
                     maxlength={200}
                     value={draft()}
                     onInput={(event) => setDraft(event.currentTarget.value)}
-                    style={listsInputStyle}
+                    class="input input-bordered w-full"
                   />
                   <Button type="submit" disabled={busy() || draft().trim() === ""}>
                     افزودن
@@ -490,7 +487,7 @@ export function ListDetailScreen() {
               </section>
 
               <Show when={pageError()}>
-                <p role="alert" style={{ margin: 0, color: "#9f1239", "font-size": "0.85rem", "line-height": "1.8" }}>
+                <p role="alert" class="alert alert-error m-0 py-2 text-sm leading-7">
                   {pageError()}
                 </p>
               </Show>
@@ -548,7 +545,7 @@ export function ListDetailScreen() {
                             <span class="lists-item-name">{item.name}</span>
                             <div class="lists-item-meta">
                               <Show when={pendingItems().has(item.id)}>
-                                <span style={{ color: "#92600e" }}>در انتظار ارسال</span>
+                                <span class="text-warning">در انتظار ارسال</span>
                               </Show>
                               <Show when={item.done}>
                                 <span>انجام‌شده</span>

@@ -1,5 +1,4 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
-import { tokens } from "@tali/ui"
 import {
   DEFAULT_TIME_ZONE,
   localizeDigits,
@@ -338,7 +337,7 @@ export function TasksScreen() {
   })
 
   return (
-    <div style={{ display: "grid", gap: tokens.space.md, "min-width": 0 }}>
+    <div class="grid min-w-0 gap-4">
       <TasksStyles />
 
       <div class="tasks-layout">
@@ -384,27 +383,18 @@ export function TasksScreen() {
         </aside>
 
         <div class="tasks-main">
-          <header
-            style={{
-              display: "grid",
-              gap: "4px",
-              background: tokens.color.surface,
-              border: `1px solid ${tokens.color.line}`,
-              "border-radius": tokens.radius.lg,
-              padding: tokens.space.md
-            }}
-          >
-            <h1 style={{ margin: 0, "font-size": "1.4rem" }}>کارها</h1>
-            <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.84rem", "line-height": "1.8" }}>
+          <header class="panel grid gap-1 p-4 sm:p-5">
+            <h1 class="m-0 text-2xl font-bold tracking-tight sm:text-3xl">کارها</h1>
+            <p class="m-0 text-sm leading-7 text-base-content/60">
               هر تغییر اول روی همین دستگاه ذخیره می‌شود؛ بعد در پس‌زمینه همگام می‌شود.
             </p>
             <Show when={!local.online()}>
-              <p role="status" style={{ margin: 0, color: "#8a5a12", "font-size": "0.8rem", "line-height": "1.8" }}>
+              <p role="status" class="mt-1 mb-0 rounded-field bg-warning/10 px-3 py-1.5 text-[0.8rem] leading-7 text-warning">
                 آفلاین هستید: ساخت، جابه‌جایی و انجام‌دادن کار می‌کند و بعداً ارسال می‌شود.
               </p>
             </Show>
             <Show when={local.pending() > 0}>
-              <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.78rem" }} role="status" aria-live="polite">
+              <p class="m-0 text-[0.78rem] text-base-content/50" role="status" aria-live="polite">
                 {localizeDigits(local.pending(), digits())} تغییر در صف همگام‌سازی است.
               </p>
             </Show>
@@ -423,18 +413,7 @@ export function TasksScreen() {
           />
 
           <Show when={pageError()}>
-            <p
-              role="alert"
-              style={{
-                margin: 0,
-                padding: "10px 12px",
-                "border-radius": tokens.radius.md,
-                background: "#fdecef",
-                color: "#9f1239",
-                "font-size": "0.85rem",
-                "line-height": "1.8"
-              }}
-            >
+            <p role="alert" class="alert alert-error m-0 py-2 text-sm leading-7">
               {pageError()}
             </p>
           </Show>
@@ -442,7 +421,8 @@ export function TasksScreen() {
           <Show
             when={local.status() !== "opening"}
             fallback={
-              <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.9rem" }}>
+              <p class="m-0 flex items-center gap-2 text-sm text-base-content/55">
+                <span class="loading loading-spinner loading-sm" />
                 در حال آماده‌سازی حافظه‌ی محلی…
               </p>
             }
@@ -560,7 +540,7 @@ function BoardSection(props: BoardSectionProps) {
       <Show
         when={props.view.board.count > 0 || hasGhosts()}
         fallback={
-          <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.82rem", "line-height": "1.8" }}>
+          <p class="m-0 text-[0.82rem] leading-7 text-base-content/50">
             {copy().empty}
           </p>
         }
@@ -571,7 +551,7 @@ function BoardSection(props: BoardSectionProps) {
             return (
               <Show when={group().tasks.length > 0 || ghosts().length > 0}>
                 <Show when={group().key !== "today" && group().key !== "noDate"}>
-                  <h3 style={{ margin: "4px 0 0", "font-size": "0.78rem", color: tokens.color.inkSoft }}>
+                  <h3 class="m-0 mt-1 text-[0.78rem] font-medium text-base-content/50">
                     {groupTitles[group().key]}
                   </h3>
                 </Show>
@@ -598,7 +578,7 @@ function BoardSection(props: BoardSectionProps) {
                     {(ghost) => (
                       <li class="tasks-ghost" aria-hidden="true">
                         <span>✓</span>
-                        <span style={{ "overflow-wrap": "anywhere" }}>{ghost.title}</span>
+                        <span class="break-words">{ghost.title}</span>
                       </li>
                     )}
                   </For>

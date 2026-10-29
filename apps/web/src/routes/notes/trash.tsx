@@ -1,7 +1,7 @@
 import { createEffect, createSignal, For, Show } from "solid-js"
 import { Title } from "@solidjs/meta"
 import { useNavigate } from "@solidjs/router"
-import { Button, tokens } from "@tali/ui"
+import { Button } from "@tali/ui"
 import { uuidV7 } from "@tali/domain"
 import { AppHeader } from "../../components/app-header"
 import { api } from "../../lib/rpc"
@@ -86,54 +86,24 @@ function TrashPage() {
   }
 
   return (
-    <div
-      dir="rtl"
-      lang="fa"
-      style={{
-        "min-height": "100dvh",
-        "font-family": tokens.font.sans,
-        color: tokens.color.ink,
-        background: tokens.color.canvas,
-        "overflow-x": "clip"
-      }}
-    >
+    <div class="min-h-dvh overflow-x-clip bg-base-200 text-base-content" dir="rtl" lang="fa">
       <AppHeader active="notes" />
 
-      <main
-        style={{
-          display: "grid",
-          gap: tokens.space.md,
-          "max-width": "720px",
-          "box-sizing": "border-box",
-          width: "100%",
-          margin: "0 auto",
-          padding: "clamp(16px, 3vw, 28px) 16px 32px"
-        }}
-      >
-        <header style={{ display: "flex", "align-items": "center", "justify-content": "space-between", gap: tokens.space.sm, "flex-wrap": "wrap" }}>
-          <h1 style={{ margin: 0, "font-size": "1.35rem", "letter-spacing": "-0.02em" }}>سطل زباله</h1>
+      <main class="page-wrap mx-auto grid max-w-3xl gap-4">
+        <header class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 class="m-0 text-2xl font-bold tracking-tight sm:text-3xl">سطل زباله</h1>
+            <p class="mt-1 mb-0 text-sm text-base-content/55">
+              یادداشت‌های حذف‌شده تا ۳۰ روز اینجا می‌مانند و بعد از آن پاک می‌شوند.
+            </p>
+          </div>
           <Button variant="ghost" type="button" onClick={() => navigate("/notes")}>
             بازگشت به یادداشت‌ها
           </Button>
         </header>
 
-        <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.88rem", "line-height": "1.9" }}>
-          یادداشت‌های حذف‌شده تا ۳۰ روز اینجا می‌مانند و بعد از آن پاک می‌شوند.
-        </p>
-
         <Show when={error()}>
-          <p
-            role="alert"
-            style={{
-              margin: 0,
-              padding: "10px 12px",
-              "border-radius": tokens.radius.md,
-              background: "#fdecef",
-              color: "#9f1239",
-              "font-size": "0.88rem",
-              "line-height": "1.9"
-            }}
-          >
+          <p role="alert" class="alert alert-error m-0 py-2.5 text-sm leading-8">
             {error()}
           </p>
         </Show>
@@ -141,40 +111,26 @@ function TrashPage() {
         <Show
           when={rows().length > 0}
           fallback={
-            <section style={cardStyle}>
-              <p style={{ margin: 0 }}>سطل زباله خالی است.</p>
+            <section class="panel p-6">
+              <p class="m-0 text-base-content/55">سطل زباله خالی است.</p>
             </section>
           }
         >
-          <section style={cardStyle}>
-            <ul style={{ "list-style": "none", margin: 0, padding: 0 }}>
+          <section class="panel p-4 sm:p-5">
+            <ul class="m-0 list-none divide-y divide-base-300 p-0">
               <For each={rows()}>
                 {(row) => (
-                  <li
-                    style={{
-                      display: "grid",
-                      gap: "6px",
-                      padding: `${tokens.space.md} 0`,
-                      "border-bottom": `1px solid ${tokens.color.line}`,
-                      "min-width": 0
-                    }}
-                  >
-                    <strong style={{ "overflow-wrap": "anywhere" }}>{row.title}</strong>
+                  <li class="grid min-w-0 gap-1.5 py-4">
+                    <strong class="break-words">{row.title}</strong>
                     <Show when={row.excerpt !== ""}>
-                      <span
-                        style={{
-                          color: tokens.color.inkSoft,
-                          "font-size": "0.88rem",
-                          "line-height": "1.8",
-                          "overflow-wrap": "anywhere"
-                        }}
-                      >
+                      <span class="break-words text-sm leading-7 text-base-content/55">
                         {row.excerpt}
                       </span>
                     </Show>
                     <div>
                       <Button
                         type="button"
+                        size="sm"
                         disabled={busyId() !== undefined}
                         onClick={() => void restore(row)}
                       >
@@ -191,13 +147,3 @@ function TrashPage() {
     </div>
   )
 }
-
-const cardStyle = {
-  background: tokens.color.surface,
-  border: `1px solid ${tokens.color.line}`,
-  "border-radius": tokens.radius.lg,
-  padding: tokens.space.lg,
-  display: "grid",
-  gap: tokens.space.sm,
-  "min-width": 0
-} as const

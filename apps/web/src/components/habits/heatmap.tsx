@@ -115,15 +115,24 @@ export function HabitHeatmap(props: {
 
       <div class="habits-heat-legend" aria-label="راهنمای نقشه">
         <span class="habits-heat-key">
-          <span class="habits-heat-dot" style={{ background: "#2e9d57", "border-color": "#2e9d57" }} />
+          <span
+            class="habits-heat-dot"
+            style={{ background: "var(--color-success)", "border-color": "var(--color-success)" }}
+          />
           انجام شد
         </span>
         <span class="habits-heat-key">
-          <span class="habits-heat-dot" style={{ background: "#e8b25c", "border-color": "#e8b25c" }} />
+          <span
+            class="habits-heat-dot"
+            style={{ background: "var(--color-warning)", "border-color": "var(--color-warning)" }}
+          />
           نیمه
         </span>
         <span class="habits-heat-key">
-          <span class="habits-heat-dot" style={{ background: "#f3cbd4", "border-color": "#f3cbd4" }} />
+          <span
+            class="habits-heat-dot"
+            style={{ background: "var(--color-error)", "border-color": "var(--color-error)" }}
+          />
           از دست رفت
         </span>
         <span class="habits-heat-key">

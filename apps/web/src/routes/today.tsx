@@ -26,7 +26,7 @@ import {
 import { AppHeader } from "../components/app-header"
 import { Guard } from "../components/guard"
 import { TextInput } from "../components/form"
-import { TodayStyles, TODAY_MAIN, TODAY_ROOT } from "../components/today/ui"
+import { TodayStyles } from "../components/today/ui"
 import { TodayHabits } from "../components/habits/today-habits"
 import { usePreferences } from "../lib/preferences"
 import { authErrorMessage } from "../lib/auth-copy"
@@ -722,11 +722,11 @@ function TodayPage() {
     offline() ? SOURCE_HINT[local.online() ? fetchState() : "offline"] : "برخط"
 
   return (
-    <div class="today-root" dir="rtl" lang="fa" style={TODAY_ROOT}>
+    <div class="today-root" dir="rtl" lang="fa">
       <TodayStyles />
       <AppHeader active="today" />
 
-      <main class="today-shell" style={TODAY_MAIN}>
+      <main class="today-shell page-wrap grid max-w-6xl gap-3.5">
         <header class="today-bar">
           <div class="today-bar-title">
             <h1>امروز</h1>

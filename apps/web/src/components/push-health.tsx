@@ -1,5 +1,5 @@
 import { createSignal, Show } from "solid-js"
-import { Button, tokens } from "@tali/ui"
+import { Button } from "@tali/ui"
 import { usePush, type PushPermission } from "../lib/push"
 
 /**
@@ -15,11 +15,11 @@ import { usePush, type PushPermission } from "../lib/push"
 
 type Tone = "ok" | "warn" | "bad" | "muted"
 
-const TONE_COLOR: Record<Tone, string> = {
-  ok: tokens.color.accent,
-  warn: "#b45309",
-  bad: "#b91c1c",
-  muted: tokens.color.inkSoft
+const TONE_CLASS: Record<Tone, { text: string; dot: string }> = {
+  ok: { text: "text-success", dot: "bg-success" },
+  warn: { text: "text-warning", dot: "bg-warning" },
+  bad: { text: "text-error", dot: "bg-error" },
+  muted: { text: "text-base-content/55", dot: "bg-base-content/35" }
 }
 
 const permissionCopy = (permission: PushPermission): {
@@ -47,38 +47,18 @@ const formatTime = (iso: string): string => {
 }
 
 function StatusRow(props: { label: string; value: string; tone: Tone; hint?: string }) {
+  const tone = () => TONE_CLASS[props.tone]
   return (
-    <div
-      style={{
-        display: "grid",
-        gap: "2px",
-        padding: `${tokens.space.sm} 0`,
-        "border-bottom": `1px solid ${tokens.color.line}`
-      }}
-    >
-      <div style={{ display: "flex", "align-items": "center", "justify-content": "space-between", gap: "8px" }}>
-        <span style={{ "font-size": "0.9rem", color: tokens.color.ink }}>{props.label}</span>
-        <span
-          style={{
-            display: "inline-flex",
-            "align-items": "center",
-            gap: "6px",
-            "font-size": "0.85rem",
-            color: TONE_COLOR[props.tone],
-            "white-space": "nowrap"
-          }}
-        >
-          <span
-            aria-hidden="true"
-            style={{ width: "7px", height: "7px", "border-radius": "50%", background: TONE_COLOR[props.tone] }}
-          />
+    <div class="grid gap-0.5 border-b border-base-300 py-2 last:border-b-0">
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-[0.9rem]">{props.label}</span>
+        <span class={`inline-flex items-center gap-1.5 whitespace-nowrap text-[0.85rem] ${tone().text}`}>
+          <span aria-hidden="true" class={`size-1.5 rounded-full ${tone().dot}`} />
           {props.value}
         </span>
       </div>
       <Show when={props.hint}>
-        <span style={{ "font-size": "0.78rem", color: tokens.color.inkSoft, "line-height": "1.7" }}>
-          {props.hint}
-        </span>
+        <span class="text-[0.78rem] leading-7 text-base-content/50">{props.hint}</span>
       </Show>
     </div>
   )
@@ -102,22 +82,12 @@ export function PushHealthPanel() {
   }
 
   return (
-    <section
-      aria-labelledby="push-health-title"
-      style={{
-        background: tokens.color.surface,
-        border: `1px solid ${tokens.color.line}`,
-        "border-radius": tokens.radius.lg,
-        padding: tokens.space.lg,
-        display: "grid",
-        gap: tokens.space.md
-      }}
-    >
-      <header style={{ display: "grid", gap: "4px" }}>
-        <h2 id="push-health-title" style={{ margin: 0, "font-size": "1.05rem" }}>
+    <section aria-labelledby="push-health-title" class="panel grid gap-4 p-4 sm:p-5">
+      <header class="grid gap-1">
+        <h2 id="push-health-title" class="m-0 text-lg font-bold">
           وضعیت اعلان‌ها
         </h2>
-        <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.85rem", "line-height": "1.8" }}>
+        <p class="m-0 text-sm leading-7 text-base-content/55">
           یادآورها از طریق Web Push به همین دستگاه می‌رسند. این بخش آمادگی دستگاه را نشان می‌دهد؛
           زمان‌بندی و ارسال یادآورها در گام بعدی ساخته می‌شود.
         </p>
@@ -182,24 +152,12 @@ export function PushHealthPanel() {
       </div>
 
       <Show when={push.error()}>
-        <p
-          role="alert"
-          style={{
-            margin: 0,
-            padding: "8px 10px",
-            "border-radius": tokens.radius.md,
-            background: "#fdf2f2",
-            border: "1px solid #f3c6c6",
-            color: "#8f1d1d",
-            "font-size": "0.85rem",
-            "line-height": "1.8"
-          }}
-        >
+        <p role="alert" class="alert alert-error m-0 py-2 text-sm leading-7">
           {push.error()}
         </p>
       </Show>
 
-      <div style={{ display: "flex", gap: tokens.space.sm, "flex-wrap": "wrap" }}>
+      <div class="flex flex-wrap gap-2">
         <Button
           type="button"
           disabled={push.busy() || !push.supported() || !push.configured() || !push.secure()}
@@ -226,7 +184,7 @@ export function PushHealthPanel() {
         </Show>
       </div>
 
-      <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.78rem", "line-height": "1.8" }}>
+      <p class="m-0 text-[0.78rem] leading-7 text-base-content/45">
         راهنمای ارسال یک اعلان آزمایشی روی همین دستگاه: <code dir="ltr">docs/web-push-local.md</code>
       </p>
     </section>

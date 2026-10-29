@@ -2,7 +2,7 @@ import { Title } from "@solidjs/meta"
 import { AppHeader } from "../components/app-header"
 import { Guard } from "../components/guard"
 import { CalendarScreen } from "../components/calendar/calendar-screen"
-import { CALENDAR_ROOT, CalendarStyles } from "../components/calendar/ui"
+import { CALENDAR_ROOT_CLASS, CalendarStyles } from "../components/calendar/ui"
 
 /**
  * `/calendar` (ticket #43; FR-VIEW-02/03): the seven-day review/planning grid
@@ -14,7 +14,7 @@ export default function CalendarRoute() {
     <>
       <Title>تقویم — تالی</Title>
       <Guard access="household">
-        <div class="calendar-root" dir="rtl" lang="fa" style={CALENDAR_ROOT}>
+        <div class={CALENDAR_ROOT_CLASS} dir="rtl" lang="fa">
           <CalendarStyles />
           <AppHeader active="calendar" />
           <CalendarScreen />

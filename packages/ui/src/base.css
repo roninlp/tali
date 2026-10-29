@@ -1,10 +1,7 @@
 /**
- * Tali base layout (CC-04).
- *
- * The document is Persian and RTL; this sheet supplies the self-hosted font,
- * a small reset, and the logical-property spacing variables. Never add
- * physical `left`/`right` rules here — use inline-start/inline-end (`ms`, `me`,
- * `ps`, `pe`) so the layout mirrors correctly under `dir="rtl"`.
+ * Tali base layer: the self-hosted Persian font and the few document-level
+ * rules that must survive Tailwind's preflight. Theme colours and component
+ * styles live in `apps/web/src/app.css` (Tailwind + daisyUI).
  */
 
 @font-face {
@@ -15,306 +12,30 @@
   font-display: swap;
 }
 
+/* Vazirmatn has Persian digits; keep numerals aligned in tables/cards. */
 :root {
-  --tali-space-none: 0;
-  --tali-space-sm: 8px;
-  --tali-space-md: 16px;
-  --tali-space-lg: 24px;
-
-  /* Logical spacing aliases: margin/padding inline start/end. */
-  --tali-ms-none: var(--tali-space-none);
-  --tali-ms-sm: var(--tali-space-sm);
-  --tali-ms-md: var(--tali-space-md);
-  --tali-ms-lg: var(--tali-space-lg);
-  --tali-me-none: var(--tali-space-none);
-  --tali-me-sm: var(--tali-space-sm);
-  --tali-me-md: var(--tali-space-md);
-  --tali-me-lg: var(--tali-space-lg);
-  --tali-ps-none: var(--tali-space-none);
-  --tali-ps-sm: var(--tali-space-sm);
-  --tali-ps-md: var(--tali-space-md);
-  --tali-ps-lg: var(--tali-space-lg);
-  --tali-pe-none: var(--tali-space-none);
-  --tali-pe-sm: var(--tali-space-sm);
-  --tali-pe-md: var(--tali-space-md);
-  --tali-pe-lg: var(--tali-space-lg);
-
-  --tali-color-brand: #3558b5;
-  --tali-color-brand-dark: #25438f;
-  --tali-color-accent: #258777;
-  --tali-color-ink: #202938;
-  --tali-color-ink-soft: #626d7d;
-  --tali-color-surface: #ffffff;
-  --tali-color-surface-muted: #f9fafc;
-  --tali-color-canvas: #f5f7fb;
-  --tali-color-line: #e4e8ef;
-  --tali-radius-md: 10px;
-  --tali-radius-lg: 16px;
-  --tali-shadow-card: 0 1px 3px rgba(30, 42, 65, 0.045);
-  --tali-shadow-header: 0 4px 14px rgba(30, 42, 65, 0.045);
-  --tali-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-
-  color-scheme: light;
-}
-
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
-html,
-body {
-  margin: 0;
-  padding: 0;
-  max-inline-size: 100%;
+  font-variant-numeric: proportional-nums;
 }
 
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  scrollbar-gutter: stable;
 }
 
-body {
-  min-block-size: 100dvh;
-  background: var(--tali-color-canvas);
-  color: var(--tali-color-ink);
-  font-family: "Vazirmatn", system-ui, -apple-system, "Segoe UI", sans-serif;
-  line-height: 1.7;
-  overflow-wrap: break-word;
-}
-
-img,
-svg,
-video,
-canvas {
-  display: block;
-  max-inline-size: 100%;
-  block-size: auto;
-}
-
-button,
-input,
-select,
-textarea {
-  font: inherit;
-  max-inline-size: 100%;
-}
-
-input,
-select,
-textarea {
-  min-inline-size: 0;
-}
-
-button {
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background-color 140ms ease-out,
-    border-color 140ms ease-out,
-    color 140ms ease-out,
-    box-shadow 140ms ease-out,
-    transform 120ms var(--tali-ease-out);
-}
-
-button:active:not(:disabled) {
-  transform: scale(0.98);
-}
-
-button:disabled {
+/* Disabled controls should not look interactive. */
+:where(button, [role="button"]):disabled {
   cursor: not-allowed;
 }
 
-input:not([type="checkbox"]):not([type="radio"]):not([type="color"]),
-select,
-textarea {
-  border-color: var(--tali-color-line);
-  border-radius: var(--tali-radius-md);
-  color: var(--tali-color-ink);
-  background-color: var(--tali-color-surface);
-}
-
-input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):focus-visible,
-select:focus-visible,
-textarea:focus-visible {
-  border-color: var(--tali-color-brand);
-  box-shadow: 0 0 0 3px rgba(53, 88, 181, 0.12);
-}
-
-:where(
-  .today-week,
-  .today-order,
-  .today-section,
-  .tasks-card,
-  .tasks-history,
-  .lists-index-card,
-  .lists-item,
-  .calendar-day-card,
-  .calendar-planning,
-  .calendar-detail,
-  .habits-form,
-  .habit-card
-) {
-  box-shadow: var(--tali-shadow-card);
-}
-
-a {
-  color: inherit;
-}
-
-.tali-app-header {
-  position: sticky;
-  inset-block-start: 0;
-  z-index: 30;
-  border-block-end: 1px solid var(--tali-color-line);
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: var(--tali-shadow-header);
-  backdrop-filter: blur(12px);
-}
-
-.tali-app-header-inner {
-  display: grid;
-  gap: 8px;
-  inline-size: min(100%, 1200px);
-  margin-inline: auto;
-}
-
-.tali-app-header-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.tali-app-brand {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  min-inline-size: 0;
-}
-
-.tali-app-user {
-  overflow: hidden;
-  color: var(--tali-color-ink-soft);
-  font-size: 0.8rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tali-app-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.tali-app-nav {
-  display: flex;
-  gap: 5px;
-  overflow-x: auto;
-  overscroll-behavior-inline: contain;
-  scrollbar-width: none;
-}
-
-.tali-app-nav::-webkit-scrollbar {
-  display: none;
-}
-
-.tali-app-nav a {
-  flex: none;
-  min-block-size: 38px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition:
-    background-color 140ms ease-out,
-    border-color 140ms ease-out,
-    color 140ms ease-out;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .tali-app-nav a:not([aria-current="page"]):hover {
-    background: var(--tali-color-surface-muted) !important;
-    color: var(--tali-color-ink) !important;
-  }
-}
-
-.settings-main {
-  display: grid;
-  gap: 16px;
-  inline-size: min(100%, 820px);
-  margin-inline: auto;
-  padding: clamp(16px, 3vw, 28px) 16px 32px;
-}
-
-.settings-heading {
-  display: grid;
-  gap: 4px;
-}
-
-.settings-heading h1 {
-  margin: 0;
-  font-size: 1.35rem;
-  line-height: 1.4;
-  letter-spacing: -0.02em;
-}
-
-.settings-heading p {
-  margin: 0;
-  color: var(--tali-color-ink-soft);
-  font-size: 0.88rem;
-  line-height: 1.8;
-}
-
-.settings-card {
-  padding: 20px;
-  border: 1px solid var(--tali-color-line);
-  border-radius: var(--tali-radius-lg);
-  background: var(--tali-color-surface);
-  box-shadow: var(--tali-shadow-card);
-}
-
-pre,
-code {
-  overflow-wrap: anywhere;
-}
-
+/* One visible focus ring for every interactive element. daisyUI paints its
+ * own for inputs; this covers links, custom buttons and cards. */
 :focus-visible {
-  outline: 2px solid var(--tali-color-brand);
+  outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-  }
-}
-
-@media (max-width: 540px) {
-  .tali-app-header {
-    padding-inline: 12px !important;
-  }
-
-  .tali-app-header-top {
-    gap: 6px;
-  }
-
-  .tali-app-header-actions {
-    gap: 4px;
-  }
-
-  .tali-app-nav {
-    margin-inline: -2px;
-    padding-block-end: 2px;
-  }
-
-  .settings-card {
-    padding: 16px;
-  }
+/* Keyboard shortcut chips inside hints. */
+kbd {
+  font-family: var(--font-sans);
 }

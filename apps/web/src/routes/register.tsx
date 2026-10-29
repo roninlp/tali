@@ -132,8 +132,8 @@ function RegisterPage() {
 
         <FormError message={error()} />
 
-        <Button type="submit" disabled={busy()} style={{ width: "100%" }}>
-          {busy() ? "در حال ساخت…" : "ساخت حساب"}
+        <Button type="submit" class="w-full" disabled={busy()} loading={busy()}>
+          ساخت حساب
         </Button>
       </form>
     </AuthCard>

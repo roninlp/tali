@@ -1,7 +1,7 @@
 import { createSignal, onSettled, Show, untrack } from "solid-js"
 import { Title } from "@solidjs/meta"
 import { useNavigate } from "@solidjs/router"
-import { Button, tokens } from "@tali/ui"
+import { Button } from "@tali/ui"
 import type { CreateHouseholdInput, InviteCode, JoinHouseholdInput } from "@tali/domain"
 import { AuthCard, Field, FormError, TextInput } from "../components/form"
 import { Guard } from "../components/guard"
@@ -49,7 +49,7 @@ function HouseholdPage() {
           <>
             <Show when={auth.session()?.user.displayName}>
               {(name) => (
-                <p style={{ margin: 0, "font-size": "0.9rem", color: tokens.color.inkSoft }}>
+                <p class="m-0 text-sm text-base-content/55">
                   خوش آمدید، {name()}.
                 </p>
               )}
@@ -68,13 +68,10 @@ function HouseholdPage() {
 
 function Divider() {
   return (
-    <div
-      role="separator"
-      style={{ display: "flex", "align-items": "center", gap: "10px", color: tokens.color.inkSoft }}
-    >
-      <span style={{ flex: 1, height: "1px", background: tokens.color.line }} />
-      <span style={{ "font-size": "0.8rem", opacity: 0.8 }}>یا</span>
-      <span style={{ flex: 1, height: "1px", background: tokens.color.line }} />
+    <div role="separator" class="flex items-center gap-2.5 text-base-content/50">
+      <span class="h-px flex-1 bg-base-300" />
+      <span class="text-[0.8rem] opacity-80">یا</span>
+      <span class="h-px flex-1 bg-base-300" />
     </div>
   )
 }
@@ -114,8 +111,8 @@ function CreateHousehold(props: { onCreated: (summary: HouseholdSummary) => void
   }
 
   return (
-    <form onSubmit={submit} style={{ display: "grid", gap: "12px" }}>
-      <h2 style={{ margin: 0, "font-size": "1.05rem" }}>ساختن خانه</h2>
+    <form onSubmit={submit} class="grid gap-3">
+      <h2 class="m-0 text-lg font-bold">ساختن خانه</h2>
       <Field label="نام خانه" for="household-name">
         <TextInput
           id="household-name"
@@ -126,8 +123,8 @@ function CreateHousehold(props: { onCreated: (summary: HouseholdSummary) => void
         />
       </Field>
       <FormError message={error()} />
-      <Button type="submit" disabled={busy()} style={{ width: "100%" }}>
-        {busy() ? "در حال ساختن…" : "ساختن خانه"}
+      <Button type="submit" class="w-full" disabled={busy()} loading={busy()}>
+        ساختن خانه
       </Button>
     </form>
   )
@@ -146,33 +143,23 @@ function InvitePanel(props: { summary: HouseholdSummary; onContinue: () => void 
   }
 
   return (
-    <div style={{ display: "grid", gap: "12px" }}>
-      <h2 style={{ margin: 0, "font-size": "1.05rem" }}>خانه ساخته شد</h2>
-      <p style={{ margin: 0, "font-size": "0.9rem", color: tokens.color.inkSoft, "line-height": "1.9" }}>
+    <div class="grid gap-3">
+      <h2 class="m-0 text-lg font-bold">خانه ساخته شد</h2>
+      <p class="m-0 text-sm leading-8 text-base-content/55">
         کد دعوت «{props.summary.name}» را برای نفر دوم بفرستید. او با این کد به خانه می‌پیوندد.
       </p>
       <code
         data-testid="household-invite-code"
         dir="ltr"
-        style={{
-          display: "block",
-          padding: "12px",
-          "border-radius": tokens.radius.md,
-          background: "#f5f7fc",
-          border: `1px dashed ${tokens.color.line}`,
-          "text-align": "center",
-          "font-size": "1rem",
-          "letter-spacing": "0.08em",
-          "word-break": "break-all"
-        }}
+        class="block rounded-field border border-dashed border-base-300 bg-base-200 p-3 text-center text-base tracking-[0.08em] break-all"
       >
         {props.summary.inviteCode}
       </code>
-      <div style={{ display: "flex", gap: tokens.space.sm }}>
+      <div class="flex gap-2">
         <Button variant="ghost" type="button" onClick={() => void copy()}>
           {copied() ? "کپی شد" : "کپی کد"}
         </Button>
-        <Button type="button" onClick={props.onContinue} style={{ flex: 1 }}>
+        <Button type="button" class="flex-1" onClick={props.onContinue}>
           ادامه به امروز
         </Button>
       </div>
@@ -214,8 +201,8 @@ function JoinHousehold() {
   }
 
   return (
-    <form onSubmit={submit} style={{ display: "grid", gap: "12px" }}>
-      <h2 style={{ margin: 0, "font-size": "1.05rem" }}>پیوستن به خانه</h2>
+    <form onSubmit={submit} class="grid gap-3">
+      <h2 class="m-0 text-lg font-bold">پیوستن به خانه</h2>
       <Field label="کد دعوت" for="household-invite">
         <TextInput
           id="household-invite"
@@ -228,8 +215,8 @@ function JoinHousehold() {
         />
       </Field>
       <FormError message={error()} />
-      <Button type="submit" variant="ghost" disabled={busy()} style={{ width: "100%" }}>
-        {busy() ? "در حال پیوستن…" : "پیوستن"}
+      <Button type="submit" variant="ghost" class="w-full" disabled={busy()} loading={busy()}>
+        پیوستن
       </Button>
     </form>
   )

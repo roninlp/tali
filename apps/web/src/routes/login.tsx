@@ -95,8 +95,8 @@ function LoginPage() {
 
         <FormError message={error()} />
 
-        <Button type="submit" disabled={busy()} style={{ width: "100%" }}>
-          {busy() ? "در حال ورود…" : "ورود"}
+        <Button type="submit" class="w-full" disabled={busy()} loading={busy()}>
+          ورود
         </Button>
       </form>
     </AuthCard>

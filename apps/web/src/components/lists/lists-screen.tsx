@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
-import { Button, tokens } from "@tali/ui"
+import { Button } from "@tali/ui"
 import { localizeDigits } from "@tali/domain"
 import { useLocalStore } from "../../lib/local-store"
 import { usePreferences } from "../../lib/preferences"
@@ -22,19 +22,12 @@ import {
 import {
   COLOR_CHOICES,
   ICON_CHOICES,
-  LISTS_ROOT,
+  LISTS_ROOT_CLASS,
   ListsStyles,
-  listsCardStyle,
   listsDangerButtonStyle,
-  listsInputStyle,
-  listsScreenStyle,
+  listsScreenClass,
   listsSmallButtonStyle
 } from "./ui"
-
-const listsIndexCardAction = {
-  "font-size": "0.74rem",
-  "align-self": "center"
-} as const
 
 /**
  * `/lists` index (FR-LIST-01/02/03): create a list with a title, colour and
@@ -152,12 +145,12 @@ export function ListsScreen() {
   }
 
   return (
-    <div class="lists-root" dir="rtl" lang="fa" style={LISTS_ROOT}>
+    <div class={LISTS_ROOT_CLASS} dir="rtl" lang="fa">
       <ListsStyles />
-      <main style={listsScreenStyle}>
-        <header style={listsCardStyle}>
-          <h1 style={{ margin: 0, "font-size": "1.4rem" }}>فهرست‌ها</h1>
-          <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.86rem", "line-height": "1.8" }}>
+      <main class={listsScreenClass}>
+        <header class="panel grid gap-1.5 p-5">
+          <h1 class="m-0 text-2xl font-bold tracking-tight sm:text-3xl">فهرست‌ها</h1>
+          <p class="m-0 text-sm leading-7 text-base-content/55">
             فهرست خرید، کارهای خانه یا هر چک‌لیست مشترک. هر تغییر اول روی همین دستگاه ذخیره می‌شود.
           </p>
           <Show when={!local.online()}>
@@ -169,20 +162,20 @@ export function ListsScreen() {
             <p
               role="status"
               aria-live="polite"
-              style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.78rem" }}
+              class="m-0 text-[0.78rem] text-base-content/50"
             >
               {localizeDigits(local.pending(), digits())} تغییر در صف همگام‌سازی است.
             </p>
           </Show>
         </header>
 
-        <section style={listsCardStyle} aria-labelledby="lists-create-title">
-          <h2 id="lists-create-title" style={{ margin: 0, "font-size": "1.05rem" }}>
+        <section class="panel grid gap-3 p-5" aria-labelledby="lists-create-title">
+          <h2 id="lists-create-title" class="m-0 text-lg font-bold">
             فهرست تازه
           </h2>
-          <form onSubmit={(event) => void create(event)} style={{ display: "grid", gap: "10px" }}>
-            <label style={{ display: "grid", gap: "4px" }}>
-              <span style={{ "font-size": "0.8rem", color: tokens.color.inkSoft }}>عنوان</span>
+          <form onSubmit={(event) => void create(event)} class="grid gap-3">
+            <label class="grid gap-1">
+              <span class="text-[0.8rem] text-base-content/55">عنوان</span>
               <input
                 name="title"
                 required
@@ -192,13 +185,14 @@ export function ListsScreen() {
                 value={title()}
                 disabled={busy()}
                 onInput={(event) => setTitle(event.currentTarget.value)}
-                style={listsInputStyle}
+                class="input input-bordered w-full"
               />
             </label>
 
-            <fieldset style={{ border: 0, margin: 0, padding: 0, display: "grid", gap: "6px" }}>
-              <legend style={{ "font-size": "0.8rem", color: tokens.color.inkSoft }}>رنگ</legend>
-              <div style={{ display: "flex", gap: "6px", "flex-wrap": "wrap" }}>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <fieldset class="m-0 grid gap-1.5 border-0 p-0">
+                <legend class="text-[0.8rem] text-base-content/55">رنگ</legend>
+                <div class="flex flex-wrap gap-2">
                 <For each={COLOR_CHOICES}>
                   {(choice) => (
                     <button
@@ -206,12 +200,15 @@ export function ListsScreen() {
                       aria-label={`رنگ ${choice}`}
                       aria-pressed={color() === choice ? "true" : "false"}
                       onClick={() => setColor(choice)}
+                      class="size-9 rounded-full"
                       style={{
-                        width: "36px",
-                        height: "36px",
-                        "border-radius": "50%",
-                        border: color() === choice ? "3px solid #10251f" : "1px solid #d7ddea",
                         background: choice,
+                        border:
+                          color() === choice
+                            ? "3px solid var(--color-base-content)"
+                            : "1px solid var(--color-base-300)",
+                        "box-shadow":
+                          color() === choice ? "0 0 0 2px var(--color-base-100) inset" : undefined,
                         cursor: "pointer"
                       }}
                     />
@@ -220,9 +217,9 @@ export function ListsScreen() {
               </div>
             </fieldset>
 
-            <fieldset style={{ border: 0, margin: 0, padding: 0, display: "grid", gap: "6px" }}>
-              <legend style={{ "font-size": "0.8rem", color: tokens.color.inkSoft }}>نماد</legend>
-              <div style={{ display: "flex", gap: "6px", "flex-wrap": "wrap" }}>
+            <fieldset class="m-0 grid gap-1.5 border-0 p-0">
+              <legend class="text-[0.8rem] text-base-content/55">نماد</legend>
+              <div class="flex flex-wrap gap-1.5">
                 <For each={ICON_CHOICES}>
                   {(choice) => (
                     <button
@@ -234,6 +231,7 @@ export function ListsScreen() {
                         ...listsSmallButtonStyle(icon() === choice),
                         "font-size": "1.05rem",
                         width: "40px",
+                        height: "40px",
                         "justify-content": "center"
                       }}
                     >
@@ -243,10 +241,12 @@ export function ListsScreen() {
                 </For>
               </div>
             </fieldset>
+            </div>
 
-            <label style={{ display: "flex", "align-items": "center", gap: "8px", "font-size": "0.86rem" }}>
+            <label class="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
+                class="checkbox checkbox-primary checkbox-sm"
                 checked={visibility() === "private"}
                 onChange={(event) => setVisibility(event.currentTarget.checked ? "private" : "shared")}
               />
@@ -254,32 +254,32 @@ export function ListsScreen() {
             </label>
 
             <Show when={pageError()}>
-              <p role="alert" style={{ margin: 0, color: "#9f1239", "font-size": "0.84rem", "line-height": "1.8" }}>
+              <p role="alert" class="alert alert-error m-0 py-2 text-sm leading-7">
                 {pageError()}
               </p>
             </Show>
 
-            <div style={{ display: "flex", "justify-content": "flex-end" }}>
-              <Button type="submit" disabled={busy() || title().trim() === ""}>
-                {busy() ? "…" : "ساختن فهرست"}
+            <div class="flex justify-end">
+              <Button type="submit" disabled={busy() || title().trim() === ""} loading={busy()}>
+                ساختن فهرست
               </Button>
             </div>
           </form>
         </section>
 
-        <section aria-labelledby="lists-all-title" style={{ display: "grid", gap: "8px" }}>
-          <div style={{ display: "flex", "align-items": "baseline", "justify-content": "space-between", gap: "8px" }}>
-            <h2 id="lists-all-title" style={{ margin: 0, "font-size": "1.1rem" }}>
+        <section aria-labelledby="lists-all-title" class="grid gap-2">
+          <div class="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 id="lists-all-title" class="m-0 text-xl font-bold">
               همه‌ی فهرست‌ها
             </h2>
-            <span style={{ color: tokens.color.inkSoft, "font-size": "0.8rem" }}>
+            <span class="text-[0.8rem] text-base-content/50">
               {localizeDigits(summaries().length, digits())} فهرست
             </span>
           </div>
           <Show
             when={summaries().length > 0}
             fallback={
-              <p class="lists-empty">
+              <p class="lists-empty panel p-5">
                 هنوز فهرستی نساخته‌اید. یک عنوان بگذارید و «ساختن فهرست» را بزنید.
               </p>
             }
@@ -324,7 +324,7 @@ export function ListsScreen() {
                       </a>
                       <div class="lists-index-actions">
                         <Show when={isPending() || itemPending()}>
-                          <span style={{ ...listsIndexCardAction, color: "#92600e" }}>در انتظار ارسال</span>
+                          <span class="badge badge-warning badge-sm">در انتظار ارسال</span>
                         </Show>
                         <button
                           type="button"

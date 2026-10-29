@@ -1,10 +1,11 @@
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js"
 import { Title } from "@solidjs/meta"
 import { useNavigate, useParams } from "@solidjs/router"
-import { Button, tokens } from "@tali/ui"
+import { Button } from "@tali/ui"
 import { uuidV7 } from "@tali/domain"
 import { AppHeader } from "../../components/app-header"
 import { TextInput } from "../../components/form"
+import { Icon } from "../../components/icons"
 import { coalesceMicrotask } from "../../lib/coalesce"
 import { api } from "../../lib/rpc"
 import { useLocalStore } from "../../lib/local-store"
@@ -543,50 +544,39 @@ function NoteEditor() {
   }
 
   return (
-    <div
-      dir="rtl"
-      lang="fa"
-      style={{
-        "min-height": "100dvh",
-        "font-family": tokens.font.sans,
-        color: tokens.color.ink,
-        background: tokens.color.canvas,
-        "overflow-x": "clip"
-      }}
-    >
+    <div class="min-h-dvh overflow-x-clip bg-base-200 text-base-content" dir="rtl" lang="fa">
       <AppHeader active="notes" />
 
-      <main
-        style={{
-          padding: "clamp(16px, 3vw, 28px) 16px 32px",
-          display: "grid",
-          gap: tokens.space.md,
-          "max-width": "720px",
-          "box-sizing": "border-box",
-          width: "100%",
-          margin: "0 auto"
-        }}
-      >
-        <header
-          style={{
-            display: "flex",
-            "align-items": "center",
-            "justify-content": "space-between",
-            gap: tokens.space.sm,
-            "flex-wrap": "wrap"
-          }}
-        >
-          <Button variant="ghost" type="button" onClick={() => navigate("/notes")}>
+      <main class="page-wrap mx-auto grid max-w-3xl gap-4">
+        <header class="flex flex-wrap items-center justify-between gap-3">
+          <Button variant="ghost" type="button" class="gap-1.5" onClick={() => navigate("/notes")}>
+            <span aria-hidden="true">→</span>
             یادداشت‌ها
           </Button>
-          <span role="status" aria-live="polite" style={{ color: tokens.color.inkSoft, "font-size": "0.82rem" }}>
+          <span
+            role="status"
+            aria-live="polite"
+            class={
+              saveState() === "error" || syncError() !== undefined
+                ? "badge badge-error badge-sm h-7 gap-1.5"
+                : "badge badge-ghost badge-sm h-7 gap-1.5"
+            }
+          >
+            <span
+              aria-hidden="true"
+              class={
+                saveState() === "saving"
+                  ? "loading loading-spinner loading-xs"
+                  : "size-1.5 rounded-full bg-current opacity-60"
+              }
+            />
             {loadState() === "ready" ? statusText() : ""}
           </span>
         </header>
 
         <Show when={loadState() === "missing"}>
-          <section style={cardStyle}>
-            <p style={{ margin: 0 }}>{loadHint()}</p>
+          <section class="panel grid gap-3 p-5">
+            <p class="m-0">{loadHint()}</p>
             <div>
               <Button variant="ghost" type="button" onClick={() => navigate("/notes")}>
                 بازگشت
@@ -596,61 +586,60 @@ function NoteEditor() {
         </Show>
 
         <Show when={loadState() === "loading"}>
-          <p style={{ margin: 0, color: tokens.color.inkSoft }}>در حال باز کردن یادداشت…</p>
+          <p class="m-0 flex items-center gap-2 text-base-content/55">
+            <span class="loading loading-spinner loading-sm" />
+            در حال باز کردن یادداشت…
+          </p>
         </Show>
 
         <Show when={loadState() === "ready"}>
           <Show when={isTrashed()}>
-            <section style={{ ...cardStyle, background: "#fff7ed", border: "1px solid #fed7aa" }}>
-              <p style={{ margin: 0 }}>این یادداشت در سطل زباله است.</p>
-              <div style={{ display: "flex", gap: tokens.space.sm, "flex-wrap": "wrap" }}>
-                <Button type="button" disabled={busy()} onClick={() => void restore()}>
-                  {busy() ? "در حال بازگردانی…" : "بازگردانی"}
-                </Button>
-                <Button variant="ghost" type="button" onClick={() => navigate("/notes/trash")}>
-                  سطل زباله
-                </Button>
+            <section class="alert alert-warning items-start">
+              <div class="grid gap-2">
+                <p class="m-0 font-medium">این یادداشت در سطل زباله است.</p>
+                <div class="flex flex-wrap gap-2">
+                  <Button type="button" disabled={busy()} onClick={() => void restore()}>
+                    {busy() ? "در حال بازگردانی…" : "بازگردانی"}
+                  </Button>
+                  <Button variant="ghost" type="button" onClick={() => navigate("/notes/trash")}>
+                    سطل زباله
+                  </Button>
+                </div>
               </div>
             </section>
           </Show>
 
           <Show when={syncError()}>
             {(failure) => (
-              <section
-                role="alert"
-                style={{
-                  ...cardStyle,
-                  background: "#fdecef",
-                  border: "1px solid #fecdd3"
-                }}
-              >
-                <p style={{ margin: 0, color: "#9f1239", "line-height": "1.9" }}>
-                  {syncFailureMessage(failure().code)}
-                </p>
-                <p style={{ margin: 0, color: "#9f1239", "font-size": "0.82rem" }}>
-                  این یادداشت فعلاً فقط روی این دستگاه ذخیره شده است.
-                </p>
-                <div>
-                  <Button type="button" disabled={retrying()} onClick={() => void retrySync()}>
-                    {retrying() ? "در حال تلاش…" : "تلاش دوباره"}
-                  </Button>
+              <section role="alert" class="alert alert-error items-start">
+                <div class="grid gap-2">
+                  <p class="m-0 leading-8">{syncFailureMessage(failure().code)}</p>
+                  <p class="m-0 text-[0.82rem] opacity-80">
+                    این یادداشت فعلاً فقط روی این دستگاه ذخیره شده است.
+                  </p>
+                  <div>
+                    <Button type="button" disabled={retrying()} onClick={() => void retrySync()}>
+                      {retrying() ? "در حال تلاش…" : "تلاش دوباره"}
+                    </Button>
+                  </div>
                 </div>
               </section>
             )}
           </Show>
 
           <Show when={actionError()}>
-            <p role="alert" style={errorStyle}>
+            <p role="alert" class="alert alert-error m-0 py-2.5 text-sm leading-8">
               {actionError()}
             </p>
           </Show>
 
-          <section style={cardStyle}>
-            <label for="note-title" style={{ display: "grid", gap: "6px" }}>
-              <span style={{ "font-size": "0.82rem", color: tokens.color.inkSoft }}>عنوان</span>
+          <section class="panel grid gap-4 p-4 sm:p-6">
+            <label for="note-title" class="grid gap-1.5">
+              <span class="text-[0.82rem] text-base-content/55">عنوان</span>
               <TextInput
                 id="note-title"
                 aria-label="عنوان یادداشت"
+                class="input-lg font-bold"
                 placeholder="بی‌عنوان"
                 value={title()}
                 onInput={(event) => onTitleInput(event.currentTarget.value)}
@@ -659,7 +648,7 @@ function NoteEditor() {
             </label>
 
             <Show when={tags().length > 0}>
-              <div aria-label="برچسب‌ها" style={{ display: "flex", gap: "6px", "flex-wrap": "wrap" }}>
+              <div aria-label="برچسب‌ها" class="flex flex-wrap gap-1.5">
                 <For each={tags()}>
                   {(tag) => (
                     <button
@@ -667,7 +656,11 @@ function NoteEditor() {
                       aria-pressed={tagIds().includes(tag.entityId) ? "true" : "false"}
                       disabled={isTrashed()}
                       onClick={() => void toggleTag(tag.entityId)}
-                      style={chipStyle(tagIds().includes(tag.entityId))}
+                      class={
+                        tagIds().includes(tag.entityId)
+                          ? "badge badge-primary cursor-pointer"
+                          : "badge badge-ghost cursor-pointer"
+                      }
                     >
                       {tagLabel(tag.entityId)}
                     </button>
@@ -676,8 +669,8 @@ function NoteEditor() {
               </div>
             </Show>
 
-            <label for="note-body" style={{ display: "grid", gap: "6px" }}>
-              <span style={{ "font-size": "0.82rem", color: tokens.color.inkSoft }}>
+            <label for="note-body" class="grid gap-1.5">
+              <span class="text-[0.82rem] text-base-content/55">
                 متن (ساده یا مارک‌داون)
               </span>
               <textarea
@@ -689,51 +682,42 @@ function NoteEditor() {
                 readonly={isTrashed()}
                 onInput={(event) => onTextInput(event.currentTarget.value)}
                 rows={14}
-                style={{
-                  "font-family": tokens.font.sans,
-                  "font-size": "1rem",
-                  "line-height": "2",
-                  padding: tokens.space.md,
-                  border: `1px solid ${tokens.color.line}`,
-                  "border-radius": tokens.radius.md,
-                  color: tokens.color.ink,
-                  background: tokens.color.surface,
-                  width: "100%",
-                  "box-sizing": "border-box",
-                  "min-height": "45dvh",
-                  resize: "vertical",
-                  "overflow-wrap": "anywhere",
-                  "white-space": "pre-wrap"
-                }}
+                class="textarea textarea-bordered min-h-[45dvh] w-full resize-y p-4 text-base leading-8"
               />
             </label>
 
-            <div style={{ display: "flex", gap: tokens.space.sm, "flex-wrap": "wrap" }}>
-              <button
+            <div class="flex flex-wrap gap-2">
+              <Button
                 type="button"
+                variant={isPinned() ? "primary" : "ghost"}
+                class="gap-1.5 rounded-full"
                 aria-pressed={isPinned() ? "true" : "false"}
                 onClick={() => void togglePinned()}
                 disabled={isTrashed()}
-                style={actionStyle(isPinned())}
               >
-                {isPinned() ? "★ پین‌شده" : "☆ پین کردن"}
-              </button>
-              <button
+                <Icon name="pin" class="size-4" />
+                {isPinned() ? "پین‌شده" : "پین کردن"}
+              </Button>
+              <Button
                 type="button"
+                variant="ghost"
+                class="gap-1.5 rounded-full"
                 onClick={() => void archive()}
                 disabled={isTrashed()}
-                style={actionStyle(isArchived())}
               >
+                <Icon name="archive" class="size-4" />
                 {isArchived() ? "بازگردانی از آرشیو" : "آرشیو"}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="ghost"
+                class="me-auto gap-1.5 rounded-full text-error"
                 onClick={() => void trash()}
                 disabled={isTrashed()}
-                style={actionStyle(false)}
               >
+                <Icon name="trash" class="size-4" />
                 انتقال به سطل زباله
-              </button>
+              </Button>
             </div>
           </section>
         </Show>
@@ -741,45 +725,3 @@ function NoteEditor() {
     </div>
   )
 }
-
-const cardStyle = {
-  background: tokens.color.surface,
-  border: `1px solid ${tokens.color.line}`,
-  "border-radius": tokens.radius.lg,
-  padding: tokens.space.lg,
-  display: "grid",
-  gap: tokens.space.md,
-  "min-width": 0
-} as const
-
-const errorStyle = {
-  margin: 0,
-  padding: "10px 12px",
-  "border-radius": tokens.radius.md,
-  background: "#fdecef",
-  color: "#9f1239",
-  "font-size": "0.88rem",
-  "line-height": "1.9"
-} as const
-
-const chipStyle = (active: boolean) => ({
-  "font-family": tokens.font.sans,
-  "font-size": "0.82rem",
-  padding: "3px 10px",
-  "border-radius": "999px",
-  border: `1px solid ${active ? tokens.color.brand : tokens.color.line}`,
-  background: active ? tokens.color.brand : tokens.color.surface,
-  color: active ? "#fff" : tokens.color.inkSoft,
-  cursor: "pointer"
-})
-
-const actionStyle = (active: boolean) => ({
-  "font-family": tokens.font.sans,
-  "font-size": "0.85rem",
-  padding: "6px 12px",
-  "border-radius": "999px",
-  border: `1px solid ${active ? tokens.color.brand : tokens.color.line}`,
-  background: active ? "#eaf0ff" : tokens.color.surface,
-  color: active ? tokens.color.brand : tokens.color.inkSoft,
-  cursor: "pointer"
-})

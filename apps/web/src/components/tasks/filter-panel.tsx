@@ -1,6 +1,4 @@
 import { For, Show, createSignal } from "solid-js"
-import type { JSX } from "@solidjs/web"
-import { tokens } from "@tali/ui"
 import { localizeDigits, type Digits, type Priority, type TaskStatus } from "@tali/domain"
 import {
   TASK_SORT_FIELDS,
@@ -14,7 +12,7 @@ import {
   type TaskSortField
 } from "../../lib/tasks/model"
 import { TagChip } from "./tag-chip"
-import { inputStyle, pillButtonStyle } from "./ui"
+import { pillButtonStyle } from "./ui"
 
 /**
  * The persistent filter bar and desktop project sidebar (FR-TASK-02).
@@ -56,8 +54,10 @@ const sortLabels: Record<TaskSortField, string> = {
   title: "عنوان"
 }
 
-const fieldStyle = { display: "grid", gap: "4px" } as const
-const fieldLabelStyle = { "font-size": "0.78rem", color: tokens.color.inkSoft } as const
+const projectButtonClass = (selected: boolean): string =>
+  selected
+    ? "flex min-w-0 items-center justify-between gap-2 rounded-lg bg-primary/10 px-2 py-1.5 text-start text-[0.82rem] font-medium text-primary"
+    : "flex min-w-0 items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-start text-[0.82rem] hover:bg-base-200"
 
 export function FilterPanel(props: {
   filters: TaskFilters
@@ -109,18 +109,7 @@ export function FilterPanel(props: {
   const active = () => activeFilterCount(props.filters)
 
   return (
-    <div
-      class="tasks-filter-card"
-      style={{
-        display: "grid",
-        gap: tokens.space.sm,
-        background: tokens.color.surface,
-        border: `1px solid ${tokens.color.line}`,
-        "border-radius": tokens.radius.lg,
-        padding: tokens.space.md,
-        "min-width": 0
-      }}
-    >
+    <div class="tasks-filter-card panel grid min-w-0 gap-2.5 p-4">
       <Show when={props.onClose}>
         <button
           type="button"
@@ -131,27 +120,27 @@ export function FilterPanel(props: {
         </button>
       </Show>
 
-      <header style={{ display: "grid", gap: "2px" }}>
-        <h2 style={{ margin: 0, "font-size": "0.95rem" }}>فیلتر و مرتب‌سازی</h2>
-        <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.78rem", "line-height": "1.8" }}>
+      <header class="grid gap-0.5">
+        <h2 class="m-0 text-[0.95rem] font-bold">فیلتر و مرتب‌سازی</h2>
+        <p class="m-0 text-[0.78rem] leading-7 text-base-content/50">
           {num(props.total)} کار · امروز {num(props.counts.today)} · آینده {num(props.counts.upcoming)} · بدون تاریخ{" "}
           {num(props.counts.inbox)}
         </p>
       </header>
 
-      <section aria-labelledby="tasks-filter-projects" style={{ display: "grid", gap: "4px" }}>
-        <h3 id="tasks-filter-projects" style={{ margin: 0, "font-size": "0.82rem", color: tokens.color.inkSoft }}>
+      <section aria-labelledby="tasks-filter-projects" class="grid gap-1">
+        <h3 id="tasks-filter-projects" class="m-0 text-[0.82rem] font-medium text-base-content/55">
           پروژه‌ها
         </h3>
-        <div style={{ display: "grid", gap: "2px" }}>
+        <div class="grid gap-0.5">
           <button
             type="button"
             aria-pressed={props.filters.projectId === undefined ? "true" : "false"}
             onClick={() => patch({ projectId: undefined })}
-            style={projectButtonStyle(props.filters.projectId === undefined)}
+            class={projectButtonClass(props.filters.projectId === undefined)}
           >
             <span>همه‌ی کارها</span>
-            <span style={countStyle}>{num(props.allCount)}</span>
+            <span class="shrink-0 text-[0.72rem] text-base-content/50">{num(props.allCount)}</span>
           </button>
           <For each={props.projects}>
             {(project) => (
@@ -159,12 +148,12 @@ export function FilterPanel(props: {
                 type="button"
                 aria-pressed={props.filters.projectId === project.id ? "true" : "false"}
                 onClick={() => patch({ projectId: project.id })}
-                style={projectButtonStyle(props.filters.projectId === project.id)}
+                class={projectButtonClass(props.filters.projectId === project.id)}
               >
-                <span style={{ "overflow-wrap": "anywhere", "min-width": 0 }}>
-                  {project.title}
+                <span class="min-w-0 break-words">{project.title}</span>
+                <span class="shrink-0 text-[0.72rem] text-base-content/50">
+                  {num(props.projectCounts.get(project.id) ?? 0)}
                 </span>
-                <span style={countStyle}>{num(props.projectCounts.get(project.id) ?? 0)}</span>
               </button>
             )}
           </For>
@@ -172,13 +161,13 @@ export function FilterPanel(props: {
             type="button"
             aria-pressed={props.filters.projectId === null ? "true" : "false"}
             onClick={() => patch({ projectId: null })}
-            style={projectButtonStyle(props.filters.projectId === null)}
+            class={projectButtonClass(props.filters.projectId === null)}
           >
             <span>بدون پروژه</span>
-            <span style={countStyle}>{num(props.noProjectCount)}</span>
+            <span class="shrink-0 text-[0.72rem] text-base-content/50">{num(props.noProjectCount)}</span>
           </button>
         </div>
-        <div style={{ display: "flex", gap: "4px", "flex-wrap": "wrap", "margin-top": "4px" }}>
+        <div class="mt-1 flex flex-wrap gap-1">
           <input
             type="text"
             aria-label="نام پروژه‌ی تازه"
@@ -192,7 +181,7 @@ export function FilterPanel(props: {
                 void addProject()
               }
             }}
-            style={{ ...inputStyle, "font-size": "0.82rem", flex: "1 1 110px", padding: "4px 8px" }}
+            class="input input-bordered input-xs min-w-0 flex-1 basis-28 text-[0.82rem]"
           />
           <button
             type="button"
@@ -205,19 +194,19 @@ export function FilterPanel(props: {
         </div>
       </section>
 
-      <section aria-labelledby="tasks-filter-tags" style={{ display: "grid", gap: "4px" }}>
-        <h3 id="tasks-filter-tags" style={{ margin: 0, "font-size": "0.82rem", color: tokens.color.inkSoft }}>
+      <section aria-labelledby="tasks-filter-tags" class="grid gap-1">
+        <h3 id="tasks-filter-tags" class="m-0 text-[0.82rem] font-medium text-base-content/55">
           برچسب‌ها {props.filters.tagIds.length > 0 ? `(${num(props.filters.tagIds.length)})` : ""}
         </h3>
         <Show
           when={props.tags.length > 0}
           fallback={
-            <p style={{ margin: 0, "font-size": "0.78rem", color: tokens.color.inkSoft }}>
+            <p class="m-0 text-[0.78rem] text-base-content/50">
               هنوز برچسبی ندارید.
             </p>
           }
         >
-          <div style={{ display: "flex", gap: "4px", "flex-wrap": "wrap" }}>
+          <div class="flex flex-wrap gap-1">
             <For each={props.tags}>
               {(tag) => (
                 <TagChip
@@ -229,7 +218,7 @@ export function FilterPanel(props: {
             </For>
           </div>
         </Show>
-        <div style={{ display: "flex", gap: "4px", "flex-wrap": "wrap", "margin-top": "2px" }}>
+        <div class="mt-0.5 flex flex-wrap gap-1">
           <input
             type="text"
             aria-label="نام برچسب تازه"
@@ -243,7 +232,7 @@ export function FilterPanel(props: {
                 void addTag()
               }
             }}
-            style={{ ...inputStyle, "font-size": "0.82rem", flex: "1 1 110px", padding: "4px 8px" }}
+            class="input input-bordered input-xs min-w-0 flex-1 basis-28 text-[0.82rem]"
           />
           <button
             type="button"
@@ -256,14 +245,14 @@ export function FilterPanel(props: {
         </div>
       </section>
 
-      <label style={fieldStyle}>
-        <span style={fieldLabelStyle}>اولویت</span>
+      <label class="grid gap-1">
+        <span class="text-[0.78rem] text-base-content/55">اولویت</span>
         <select
           value={props.filters.priority}
           onChange={(event) =>
             patch({ priority: event.currentTarget.value as Priority | "all" })
           }
-          style={inputStyle}
+          class="select select-bordered select-sm w-full"
         >
           <For each={priorityOptions}>
             {(option) => <option value={option.value}>{option.label}</option>}
@@ -271,14 +260,14 @@ export function FilterPanel(props: {
         </select>
       </label>
 
-      <label style={fieldStyle}>
-        <span style={fieldLabelStyle}>وضعیت</span>
+      <label class="grid gap-1">
+        <span class="text-[0.78rem] text-base-content/55">وضعیت</span>
         <select
           value={props.filters.status}
           onChange={(event) =>
             patch({ status: event.currentTarget.value as TaskStatus | "all" })
           }
-          style={inputStyle}
+          class="select select-bordered select-sm w-full"
         >
           <For each={statusOptions}>
             {(option) => <option value={option.value}>{option.label}</option>}
@@ -286,12 +275,12 @@ export function FilterPanel(props: {
         </select>
       </label>
 
-      <label style={fieldStyle}>
-        <span style={fieldLabelStyle}>زمان</span>
+      <label class="grid gap-1">
+        <span class="text-[0.78rem] text-base-content/55">زمان</span>
         <select
           value={props.filters.date}
           onChange={(event) => patch({ date: event.currentTarget.value as TaskDateFilter })}
-          style={inputStyle}
+          class="select select-bordered select-sm w-full"
         >
           <For each={dateOptions}>
             {(option) => <option value={option.value}>{option.label}</option>}
@@ -299,15 +288,15 @@ export function FilterPanel(props: {
         </select>
       </label>
 
-      <div style={{ display: "grid", gap: "4px", "grid-template-columns": "minmax(0, 1fr) auto" }}>
-        <label style={fieldStyle}>
-          <span style={fieldLabelStyle}>مرتب‌سازی</span>
+      <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-1">
+        <label class="grid gap-1">
+          <span class="text-[0.78rem] text-base-content/55">مرتب‌سازی</span>
           <select
             value={props.sort.by}
             onChange={(event) =>
               props.onSort({ ...props.sort, by: event.currentTarget.value as TaskSortField })
             }
-            style={inputStyle}
+            class="select select-bordered select-sm w-full"
           >
             <For each={TASK_SORT_FIELDS}>
               {(field) => <option value={field}>{sortLabels[field]}</option>}
@@ -326,7 +315,7 @@ export function FilterPanel(props: {
               direction: props.sort.direction === "asc" ? "desc" : "asc"
             })
           }
-          style={{ ...pillButtonStyle(true), "align-self": "end", "min-height": "38px" }}
+          class="btn btn-outline btn-sm self-end"
         >
           {props.sort.direction === "asc" ? "↑" : "↓"}
         </button>
@@ -338,33 +327,9 @@ export function FilterPanel(props: {
         </button>
       </Show>
 
-      <p style={{ margin: 0, color: tokens.color.inkSoft, "font-size": "0.72rem", "line-height": "1.8" }}>
+      <p class="m-0 text-[0.72rem] leading-7 text-base-content/40">
         فیلترها و مرتب‌سازی روی همین دستگاه ذخیره می‌شوند.
       </p>
     </div>
   )
 }
-
-const projectButtonStyle = (selected: boolean): JSX.CSSProperties => ({
-  display: "flex",
-  "align-items": "center",
-  "justify-content": "space-between",
-  gap: "8px",
-  "font-family": tokens.font.sans,
-  "font-size": "0.82rem",
-  "min-height": "36px",
-  padding: "4px 8px",
-  "border-radius": tokens.radius.md,
-  border: `1px solid ${selected ? tokens.color.brand : "transparent"}`,
-  background: selected ? "#eaf0ff" : "transparent",
-  color: selected ? tokens.color.brand : tokens.color.ink,
-  cursor: "pointer",
-  "text-align": "start",
-  "min-width": "0"
-})
-
-const countStyle = {
-  "font-size": "0.72rem",
-  color: tokens.color.inkSoft,
-  flex: "none"
-} as const

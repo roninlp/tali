@@ -1,6 +1,5 @@
 import { For, Show, createEffect, createSignal, onCleanup, untrack } from "solid-js"
-import type { JSX } from "@solidjs/web"
-import { tokens } from "@tali/ui"
+import { Button } from "@tali/ui"
 import type { Digits, Priority, TaskBucketBounds, TaskStatus } from "@tali/domain"
 import {
   dueLabel,
@@ -11,7 +10,7 @@ import {
   type TaskRow
 } from "../../lib/tasks/model"
 import { TagChip } from "./tag-chip"
-import { inputStyle, pillButtonStyle } from "./ui"
+import { inputStyle } from "./ui"
 
 /**
  * One task card (FR-TASK-01/02/05).
@@ -255,15 +254,7 @@ export function TaskCard(props: {
       </div>
 
       <Show when={!expanded() && props.task.description !== null && props.task.description !== ""}>
-        <p
-          style={{
-            margin: 0,
-            color: tokens.color.inkSoft,
-            "font-size": "0.82rem",
-            "line-height": "1.7",
-            "overflow-wrap": "anywhere"
-          }}
-        >
+        <p class="m-0 break-words text-[0.82rem] leading-7 text-base-content/60">
           {props.task.description}
         </p>
       </Show>
@@ -421,17 +412,17 @@ export function TaskCard(props: {
             </label>
           </div>
 
-          <div role="group" aria-label="برچسب‌ها" style={{ display: "grid", gap: "4px" }}>
-            <span style={{ "font-size": "0.78rem", color: tokens.color.inkSoft }}>برچسب‌ها</span>
+          <div role="group" aria-label="برچسب‌ها" class="grid gap-1">
+            <span class="text-[0.78rem] text-base-content/60">برچسب‌ها</span>
             <Show
               when={props.tags.length > 0}
               fallback={
-                <p style={{ margin: 0, "font-size": "0.78rem", color: tokens.color.inkSoft }}>
+                <p class="m-0 text-[0.78rem] text-base-content/50">
                   هنوز برچسبی ساخته نشده است.
                 </p>
               }
             >
-              <div style={{ display: "flex", gap: "4px", "flex-wrap": "wrap" }}>
+              <div class="flex flex-wrap gap-1">
                 <For each={props.tags}>
                   {(tag) => (
                     <TagChip
@@ -445,13 +436,15 @@ export function TaskCard(props: {
             </Show>
           </div>
 
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
+            class="justify-self-start"
             onClick={() => setExpanded(false)}
-            style={{ ...pillButtonStyle(false), "justify-self": "start" } as JSX.CSSProperties}
           >
             بستن
-          </button>
+          </Button>
         </div>
       </Show>
     </li>

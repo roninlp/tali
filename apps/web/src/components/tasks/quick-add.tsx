@@ -1,5 +1,5 @@
 import { For, Show, createEffect, createSignal, untrack, type ParentProps } from "solid-js"
-import { tokens } from "@tali/ui"
+import { Button } from "@tali/ui"
 import type { Digits, Priority } from "@tali/domain"
 import {
   formatLocalDate,
@@ -9,7 +9,7 @@ import {
   type TaskCreateDraft
 } from "../../lib/tasks/model"
 import { TagChip } from "./tag-chip"
-import { inputStyle, pillButtonStyle } from "./ui"
+import { pillButtonStyle } from "./ui"
 
 /**
  * One-field quick add (FR-TASK-01) with chips for due / priority / tags /
@@ -146,15 +146,7 @@ export function QuickAdd(props: {
   const Panel = (panelProps: ParentProps<{ id: string }>) => (
     <div
       id={panelProps.id}
-      style={{
-        display: "grid",
-        gap: "8px",
-        padding: "8px 10px",
-        border: `1px solid ${tokens.color.line}`,
-        "border-radius": tokens.radius.md,
-        background: tokens.color.surfaceMuted,
-        "min-width": 0
-      }}
+      class="grid min-w-0 gap-2 rounded-field border border-base-300 bg-base-200/60 p-2.5"
     >
       {panelProps.children}
     </div>
@@ -164,17 +156,9 @@ export function QuickAdd(props: {
     <form
       onSubmit={(event) => void submit(event)}
       aria-label="افزودن سریع کار"
-      style={{
-        display: "grid",
-        gap: tokens.space.sm,
-        background: tokens.color.surface,
-        border: `1px solid ${tokens.color.line}`,
-        "border-radius": tokens.radius.lg,
-        padding: tokens.space.md,
-        "min-width": 0
-      }}
+      class="panel grid min-w-0 gap-2 p-4"
     >
-      <div style={{ display: "flex", gap: tokens.space.sm, "flex-wrap": "wrap" }}>
+      <div class="flex flex-wrap gap-2">
         <input
           ref={(element) => (inputRef = element)}
           type="text"
@@ -183,29 +167,18 @@ export function QuickAdd(props: {
           value={title()}
           disabled={props.disabled}
           onInput={(event) => setTitle(event.currentTarget.value)}
-          style={{ ...inputStyle, flex: "1 1 180px" }}
+          class="input input-bordered h-11 min-w-0 flex-1 basis-48"
         />
-        <button
+        <Button
           type="submit"
           disabled={props.disabled || busy() || title().trim() === ""}
-          style={{
-            "font-family": tokens.font.sans,
-            "font-size": "0.95rem",
-            "min-height": "44px",
-            padding: "6px 18px",
-            "border-radius": tokens.radius.md,
-            border: `1px solid ${tokens.color.brand}`,
-            background: tokens.color.brand,
-            color: "#fff",
-            cursor: props.disabled || busy() ? "not-allowed" : "pointer",
-            opacity: props.disabled ? 0.6 : 1
-          }}
+          loading={busy()}
         >
-          {busy() ? "…" : "افزودن"}
-        </button>
+          افزودن
+        </Button>
       </div>
 
-      <div role="group" aria-label="جزئیات کار" style={{ display: "flex", gap: "6px", "flex-wrap": "wrap" }}>
+      <div role="group" aria-label="جزئیات کار" class="flex flex-wrap gap-1.5">
         <button
           type="button"
           aria-expanded={panel() === "due" ? "true" : "false"}
@@ -267,7 +240,7 @@ export function QuickAdd(props: {
               )}
             </For>
           </div>
-          <label style={{ display: "grid", gap: "4px", "font-size": "0.8rem", color: tokens.color.inkSoft }}>
+          <label class="grid gap-1 text-[0.8rem] text-base-content/60">
             <span>تاریخ دلخواه</span>
             <input
               type="date"
@@ -276,7 +249,7 @@ export function QuickAdd(props: {
               onInput={(event) =>
                 chooseDue(event.currentTarget.value === "" ? null : event.currentTarget.value)
               }
-              style={inputStyle}
+              class="input input-bordered input-sm w-full"
             />
           </label>
         </Panel>
@@ -306,12 +279,12 @@ export function QuickAdd(props: {
           <Show
             when={props.tags.length > 0}
             fallback={
-              <p style={{ margin: 0, "font-size": "0.8rem", color: tokens.color.inkSoft }}>
+              <p class="m-0 text-[0.8rem] text-base-content/50">
                 هنوز برچسبی ندارید.
               </p>
             }
           >
-            <div style={{ display: "flex", gap: "4px", "flex-wrap": "wrap" }}>
+            <div class="flex flex-wrap gap-1">
               <For each={props.tags}>
                 {(tag) => (
                   <TagChip
@@ -323,7 +296,7 @@ export function QuickAdd(props: {
               </For>
             </div>
           </Show>
-          <div style={{ display: "flex", gap: "6px", "flex-wrap": "wrap" }}>
+          <div class="flex flex-wrap gap-1.5">
             <input
               type="text"
               aria-label="نام برچسب تازه"
@@ -337,7 +310,7 @@ export function QuickAdd(props: {
                   void addTag()
                 }
               }}
-              style={{ ...inputStyle, flex: "1 1 140px" }}
+              class="input input-bordered input-sm min-w-0 flex-1 basis-36"
             />
             <button type="button" disabled={props.disabled || newTag().trim() === ""} onClick={() => void addTag()} style={pillButtonStyle(false)}>
               ساخت برچسب
@@ -348,7 +321,7 @@ export function QuickAdd(props: {
 
       <Show when={panel() === "project"}>
         <Panel id={`${uid}-project`}>
-          <label style={{ display: "grid", gap: "4px", "font-size": "0.8rem", color: tokens.color.inkSoft }}>
+          <label class="grid gap-1 text-[0.8rem] text-base-content/60">
             <span>پروژه</span>
             <select
               aria-label="پروژه"
@@ -356,7 +329,7 @@ export function QuickAdd(props: {
               onChange={(event) =>
                 setProjectId(event.currentTarget.value === "" ? null : event.currentTarget.value)
               }
-              style={inputStyle}
+              class="select select-bordered select-sm w-full"
             >
               <option value="">بدون پروژه</option>
               <For each={props.projects}>
@@ -364,7 +337,7 @@ export function QuickAdd(props: {
               </For>
             </select>
           </label>
-          <div style={{ display: "flex", gap: "6px", "flex-wrap": "wrap" }}>
+          <div class="flex flex-wrap gap-1.5">
             <input
               type="text"
               aria-label="نام پروژه‌ی تازه"
@@ -378,7 +351,7 @@ export function QuickAdd(props: {
                   void addProject()
                 }
               }}
-              style={{ ...inputStyle, flex: "1 1 140px" }}
+              class="input input-bordered input-sm min-w-0 flex-1 basis-36"
             />
             <button type="button" disabled={props.disabled || newProject().trim() === ""} onClick={() => void addProject()} style={pillButtonStyle(false)}>
               ساخت پروژه
@@ -387,9 +360,9 @@ export function QuickAdd(props: {
         </Panel>
       </Show>
 
-      <div aria-live="polite" role="status" style={{ "font-size": "0.76rem", color: tokens.color.inkSoft, "min-height": "1.1em" }}>
+      <div aria-live="polite" role="status" class="min-h-[1.1em] text-[0.76rem] text-base-content/50">
         <Show when={error()}>
-          <span style={{ color: "#9f1239" }}>{error()}</span>
+          <span class="text-error">{error()}</span>
         </Show>
         <Show when={error() === undefined && saved()}>ذخیره شد؛ در صف همگام‌سازی.</Show>
         <Show when={error() === undefined && !saved()}>
