@@ -184,7 +184,8 @@ export function LocalStoreProvider(props: ParentProps) {
     setError(undefined)
     // One cheap outbox `count()` before the pass: if the queue shrinks while
     // the handler runs, a push result may have marked a row, which is the only
-    // per-pass reason to read the mirror for failures.
+    // per-pass reason to read the mirror for failures. On a closed store, fall
+    // back to the last rendered count (the `pending` signal, not `store.pending()`).
     const queuedBefore = await current.pendingCount().catch(() => pending())
     try {
       for (;;) {

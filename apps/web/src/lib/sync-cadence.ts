@@ -6,8 +6,8 @@
  * therefore a latency/volume trade:
  *
  * - visible + recently active: the healthy 10s poll. A local write wakes an
- *   immediate pass, so the user's own edits never wait for it; the poll only
- *   pays for *remote* edits, where 10s is imperceptible next to typing.
+ *   immediate pass, so the user's own edits never wait for it; 10s is the
+ *   ceiling for *another* device's edit while the tab is in use.
  * - visible but idle: 30s. Nobody is watching, but the tab is still a target
  *   for a remote edit, so it must not stop entirely.
  * - hidden: 30s. A background tab's polls are pure cost; returning to the tab
