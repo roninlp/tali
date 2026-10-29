@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { env } from "cloudflare:workers"
 import {
   createHousehold,
   jsonRequest,
@@ -25,6 +26,19 @@ interface ErrorEnvelope {
 /** The cookie's `Max-Age` in seconds, or `NaN` when the attribute is absent. */
 const maxAgeOf = (setCookie: string | undefined): number =>
   Number(/max-age=(\d+)/i.exec(setCookie ?? "")?.[1])
+
+/** The stored expiry — the row the hot path used to rewrite on every request. */
+const expiresAtOf = async (userId: string): Promise<string | null> => {
+  const row = await env.DB.prepare("SELECT expires_at FROM sessions WHERE user_id = ?")
+    .bind(userId)
+    .first<{ readonly expires_at: string }>()
+  return row?.expires_at ?? null
+}
+
+const setExpiresAt = (userId: string, expiresAt: string): Promise<unknown> =>
+  env.DB.prepare("UPDATE sessions SET expires_at = ? WHERE user_id = ?")
+    .bind(expiresAt, userId)
+    .run()
 
 describe("POST /auth/register", () => {
   it("mints an HTTP-only session cookie alongside the created user", async () => {
@@ -79,20 +93,80 @@ describe("POST /auth/register", () => {
 })
 
 describe("GET /auth/me", () => {
-  it("resolves the cookie's session and re-stamps the cookie", async () => {
+  it("resolves the cookie's session without writing or re-stamping a fresh one", async () => {
     const session = await register()
-    const response = await workerFetch("/auth/me", {
-      headers: { cookie: session.cookie }
-    })
+    const before = await expiresAtOf(session.userId)
+    expect(before).not.toBeNull()
 
-    expect(response.status).toBe(200)
-    expect(sessionCookieOf(response)).toMatch(new RegExp(`^${SESSION_COOKIE}=`))
-    const body = await response.json() as {
+    const first = await workerFetch("/auth/me", { headers: { cookie: session.cookie } })
+    const second = await workerFetch("/auth/me", { headers: { cookie: session.cookie } })
+
+    expect(first.status).toBe(200)
+    expect(second.status).toBe(200)
+    // Regression: the old hot path extended the row (a D1 write) and re-stamped
+    // the cookie on every call. A healthy session must leave both untouched.
+    expect(sessionCookieOf(first)).toBeUndefined()
+    expect(sessionCookieOf(second)).toBeUndefined()
+    expect(await expiresAtOf(session.userId)).toBe(before)
+
+    const body = await second.json() as {
       readonly user: { readonly id: string }
       readonly householdId: null
     }
     expect(body.user.id).toBe(session.userId)
     expect(body.householdId).toBeNull()
+  })
+
+  it("does not extend a session that is not close to expiry", async () => {
+    const session = await register()
+    // 20 days left: well above the 7-day renewal threshold, and a fixed value
+    // so the old per-request `extend` would be visible no matter how fast the
+    // two calls run.
+    const pinned = new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString()
+    await setExpiresAt(session.userId, pinned)
+
+    await workerFetch("/auth/me", { headers: { cookie: session.cookie } })
+    const second = await workerFetch("/auth/me", { headers: { cookie: session.cookie } })
+
+    expect(second.status).toBe(200)
+    expect(await expiresAtOf(session.userId)).toBe(pinned)
+    expect(sessionCookieOf(second)).toBeUndefined()
+  })
+
+  it("slides the row and re-stamps the cookie when the session is close to expiry", async () => {
+    const session = await register()
+    await setExpiresAt(
+      session.userId,
+      new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString()
+    )
+
+    const response = await workerFetch("/auth/me", { headers: { cookie: session.cookie } })
+    expect(response.status).toBe(200)
+
+    const renewedAt = await expiresAtOf(session.userId)
+    if (renewedAt === null) throw new Error("session row disappeared")
+    expect(Date.parse(renewedAt)).toBeGreaterThan(Date.now() + 29 * 24 * 60 * 60 * 1000)
+
+    const setCookie = response.headers
+      .getSetCookie()
+      .find((value) => value.startsWith(`${SESSION_COOKIE}=`))
+    expect(setCookie).toBeDefined()
+    // Same token (no rotation), full TTL again.
+    expect(sessionCookieOf(response)).toBe(session.cookie)
+    expect(maxAgeOf(setCookie)).toBe(30 * 24 * 60 * 60)
+  })
+
+  it("rejects and deletes an expired session", async () => {
+    const session = await register()
+    await setExpiresAt(session.userId, new Date(Date.now() - 60 * 1000).toISOString())
+
+    const response = await workerFetch("/auth/me", { headers: { cookie: session.cookie } })
+
+    expect(response.status).toBe(401)
+    expect(await response.json<ErrorEnvelope>()).toMatchObject({
+      error: { code: "Unauthorized" }
+    })
+    expect(await expiresAtOf(session.userId)).toBeNull()
   })
 
   it("is 401 without a session cookie", async () => {

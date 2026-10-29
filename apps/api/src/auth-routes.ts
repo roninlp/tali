@@ -193,9 +193,15 @@ export const AuthRoutes = HttpRouter.use((router) =>
       "/auth/me",
       Effect.gen(function*() {
         const request = yield* HttpServerRequest.HttpServerRequest
-        const { token, context } = yield* authenticate(request)
-        // Re-stamp the cookie so the sliding server-side expiry is mirrored client-side.
-        return setSession(yield* json(200, context), token, request)
+        const token = request.cookies[SESSION_COOKIE]
+        if (token === undefined) {
+          return yield* Effect.fail(new Unauthorized())
+        }
+        const { context, renewed } = yield* auth.meWithRenewal(token)
+        const response = yield* json(200, context)
+        // Sliding: re-stamp the cookie only when the row also moved, so the
+        // browser and `expires_at` stay in step. A plain read touches neither.
+        return renewed ? setSession(response, token, request) : response
       }).pipe(
         Effect.catchTags(
           {
