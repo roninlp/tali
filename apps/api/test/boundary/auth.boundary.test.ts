@@ -169,6 +169,16 @@ describe("GET /auth/me", () => {
     expect(await expiresAtOf(session.userId)).toBeNull()
   })
 
+  it("rejects a malformed expiry instead of accepting it forever", async () => {
+    const session = await register()
+    await setExpiresAt(session.userId, "not-a-date")
+
+    const response = await workerFetch("/auth/me", { headers: { cookie: session.cookie } })
+
+    expect(response.status).toBe(401)
+    expect(await expiresAtOf(session.userId)).toBeNull()
+  })
+
   it("is 401 without a session cookie", async () => {
     const response = await workerFetch("/auth/me")
     expect(response.status).toBe(401)
@@ -254,8 +264,30 @@ describe("household routes", () => {
     const body = await join.json() as { readonly household: { readonly id: string } }
     expect(body.household.id).toBe(household.id)
 
-    // The join response re-stamps the cookie, so the client keeps its session.
-    expect(sessionCookieOf(join)).toBeDefined()
+    // A fresh session is already at full TTL, so the join does not re-stamp it.
+    expect(sessionCookieOf(join)).toBeUndefined()
+  })
+
+  it("renews the row and the cookie together when a mutation runs near expiry", async () => {
+    const owner = await register()
+    const household = await createHousehold(owner, "خانهٔ نزدیک انقضا")
+    const partner = await register()
+    await setExpiresAt(
+      partner.userId,
+      new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString()
+    )
+
+    const join = await workerFetch(
+      "/household/join",
+      jsonRequest("POST", partner.cookie, { inviteCode: household.inviteCode })
+    )
+
+    expect(join.status).toBe(200)
+    const renewedAt = await expiresAtOf(partner.userId)
+    if (renewedAt === null) throw new Error("session row disappeared")
+    expect(Date.parse(renewedAt)).toBeGreaterThan(Date.now() + 29 * 24 * 60 * 60 * 1000)
+    // The response must carry the same token with a fresh 30-day max-age.
+    expect(sessionCookieOf(join)).toBe(partner.cookie)
   })
 
   it("rejects an unknown invite code with the InviteInvalid envelope", async () => {

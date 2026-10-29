@@ -223,7 +223,8 @@ export class AuthService extends Context.Service<AuthService>()("AuthService", {
           const session = found.value
           const now = Date.now()
           const expiresAt = Date.parse(session.expiresAt)
-          if (expiresAt <= now) {
+          // A corrupted timestamp must fail closed, not become an immortal session.
+          if (!Number.isFinite(expiresAt) || expiresAt <= now) {
             yield* sessions.deleteByTokenHash(tokenHash).pipe(Effect.orDie)
             return yield* Effect.fail(new Unauthorized())
           }
