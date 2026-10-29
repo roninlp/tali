@@ -19,6 +19,11 @@ const REQUEST_TIMEOUT_MS = 5_000
 
 let cachedPublicKey: string | undefined
 
+/** Test hook: forget the session cache so a suite can pin the request count. */
+export const resetVapidPublicKeyCache = (): void => {
+  cachedPublicKey = undefined
+}
+
 /** The server's VAPID public key, cached for the session (empty = unconfigured). */
 export const loadVapidPublicKey = async (): Promise<string> => {
   if (cachedPublicKey !== undefined) return cachedPublicKey

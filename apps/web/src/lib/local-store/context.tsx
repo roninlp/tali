@@ -107,9 +107,10 @@ export function LocalStoreProvider(props: ParentProps) {
    * seconds. It is refreshed on store open, when a pass drains the outbox (the
    * one moment a push result can have marked rows), and otherwise at most once
    * per `FAILED_REFRESH_INTERVAL_MS`. Trade-off: a marker resolved by a pull
-   * while the outbox is empty can leave `failed()` stale for up to a minute.
-   * The badge is advisory and a rejected write still appears as soon as its
-   * push result lands, which is the case the status UI has to get right.
+   * while the outbox is empty can leave `failed()` stale for up to ~90 s: the
+   * 60 s gate is checked in a pass, and an idle tab only polls every 30 s. The
+   * badge is advisory and a rejected write still appears as soon as its push
+   * result lands, which is the case the status UI has to get right.
    */
   let failedRefreshedAt = 0
 

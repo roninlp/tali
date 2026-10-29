@@ -2,6 +2,7 @@ import { render, waitFor } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { uuidV7, type LoginInput, type SessionContext } from "@tali/domain"
 import { AuthProvider, useAuth, type AuthStore } from "../auth"
+import { resetVapidPublicKeyCache } from "./config"
 import { PushProvider } from "./context"
 
 /**
@@ -49,6 +50,7 @@ const stubServiceWorker = () => {
 }
 
 let auth: AuthStore | undefined
+const originalFetch = globalThis.fetch
 
 function Probe() {
   auth = useAuth()
@@ -85,6 +87,8 @@ describe("PushProvider boot", () => {
 
   afterEach(() => {
     Reflect.deleteProperty(navigator, "serviceWorker")
+    globalThis.fetch = originalFetch
+    resetVapidPublicKeyCache()
   })
 
   it("registers the worker but makes no VAPID request while signed out", async () => {
