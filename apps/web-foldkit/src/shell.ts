@@ -342,6 +342,8 @@ export type ShellConfig = Readonly<{
   content: Html
   /** The section the navigation highlights, if the route belongs to one. */
   maybeActiveSection: Option.Option<AppSection>
+  /** The signed-in user's name, shown beside the brand on wide screens. */
+  maybeDisplayName: Option.Option<string>
 }>
 
 export const view = <Message>(
@@ -366,6 +368,18 @@ export const view = <Message>(
             ],
             [
               brandView(h),
+              Option.match(config.maybeDisplayName, {
+                onNone: () => h.empty,
+                onSome: displayName =>
+                  h.span(
+                    [
+                      h.Class(
+                        'me-1 hidden max-w-32 truncate text-xs text-base-content/50 lg:inline',
+                      ),
+                    ],
+                    [displayName],
+                  ),
+              }),
               desktopNavView(config.maybeActiveSection, h),
               h.div(
                 [h.Class('ms-auto flex items-center gap-1 md:ms-0')],

@@ -111,6 +111,18 @@ export const settingsIcon = (className: string): Html =>
     ]),
   ])
 
+export const userIcon = (className: string): Html =>
+  strokeIcon(className, [
+    ih.circle([ih.Cx('12'), ih.Cy('8'), ih.R('4')]),
+    ih.path([...roundCaps(), ih.D('M4 21a8 8 0 0 1 16 0')]),
+  ])
+
+export const logoutIcon = (className: string): Html =>
+  strokeIcon(className, [
+    ih.path([...roundCaps(), ih.D('M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4')]),
+    ih.path([...roundCaps(), ih.D('M16 17l5-5-5-5M21 12H9')]),
+  ])
+
 export const searchIcon = (className: string): Html =>
   strokeIcon(className, [
     ih.circle([ih.Cx('11'), ih.Cy('11'), ih.R('7')]),

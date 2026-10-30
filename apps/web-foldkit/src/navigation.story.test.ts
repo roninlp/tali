@@ -4,15 +4,9 @@ import { Command, given, message, model, story } from 'foldkit/story'
 import { fromString, toString as urlToString } from 'foldkit/url'
 import { describe, expect, test } from 'vitest'
 
-import { LoadExternal, Message, Model, NavigateInternal, update } from './main'
+import { LoadExternal, Message, NavigateInternal, update } from './main'
 import { AppRoute } from './route'
-import * as Theme from './theme'
-
-const modelAt = (route: AppRoute): Model =>
-  Model.make({
-    route,
-    theme: Theme.Model.make({ theme: 'Tali' }),
-  })
+import { modelAt } from './test-fixtures'
 
 const url = (path: string) =>
   Option.getOrThrowWith(

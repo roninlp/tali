@@ -42,12 +42,28 @@ subtree_prompted: true
   `vite.config.ts` keeps `effect/schema` out of the dev dependency optimizer:
   bundling `effect` and `effect/schema` as separate entries crashes the
   optimizer in Vite 8.3.4.
-- **Migration progress.** P2.1 (shell, theming, RTL document) and P2.2 (route
-  union and navigation) are in place: `src/shell.ts` holds the chrome plus the
-  desktop section menu and mobile tab bar, `src/theme.ts` the house light/dark
-  Submodel, `src/route.ts` the `AppRoute` union and typed routers, and `src/ui/`
-  the button, field, and auth-card primitives. P2.3 adds auth and session
-  restore.
+- **Migration progress.** P2.1 (shell, theming, RTL document), P2.2 (route
+  union and navigation), and P2.3 (auth and session restore) are in place:
+  `src/shell.ts` holds the chrome plus the desktop section menu, mobile tab bar,
+  display name, and account slot; `src/theme.ts` the house light/dark Submodel;
+  `src/route.ts` the `AppRoute` union and typed routers; `src/auth.ts` the
+  session Submodel with restore, sign-out, and cache Commands; `src/guard.ts`
+  the guest/session/household access rules; and `src/page/` the login, register,
+  and household screens. `src/session.ts` and `src/household-summary.ts` hold
+  the plain Model projections the auth responses decode into, so no branded
+  domain value crosses the dev optimizer's `effect/schema` boundary. Auth HTTP
+  stays on the legacy `fetch` shape with `credentials: "include"` because the
+  session cookie is set by the raw response. P2.4 adds the local store and sync
+  engine.
+- **Auth smoke check.** With `pnpm dev` running, `pnpm test:smoke:foldkit`
+  registers a fresh account through the :3001 proxy, creates a household,
+  reloads into `/today`, signs out, logs back in, and checks the guard
+  redirects for signed-out, household, and no-household accounts. It uses the
+  local development database and does not reset it.
+- **Dev stack caveat.** `alchemy` 2.0.0-beta.83 imports the Effect 4.0
+  `effect/Crypto` path, so the api Worker does not boot under the workspace's
+  Effect 4.1 without a local compatibility shim. The Foldkit app and its tests
+  are unaffected; the infra dependency needs a separate fix.
 - **Styling.** `src/styles.css` is the Tali entry: Tailwind v4 + daisyUI, the
   `tali`/`talidark` themes, and the shared utilities. Vazirmatn stays in
   `@tali/ui`; the CSS references it across the workspace and Vite fingerprints

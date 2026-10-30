@@ -26,6 +26,22 @@ The five flows:
 | `04-reminder.spec.ts` | medication reminder fires → Done from the notification → inbox shows it |
 | `05-recurring-event.spec.ts` | recurring event in week/month → "this and following" split |
 
+## Foldkit auth smoke check
+
+The P2.3 auth flow has a separate smoke check against the Foldkit app on
+`:3001`. Start the local stack with `pnpm dev` (api Worker on `:8787`, legacy
+web on `:3000`, Foldkit app on `:3001`), then run:
+
+```sh
+pnpm test:smoke:foldkit
+```
+
+It registers a fresh account through the Vite proxy, creates a household,
+reloads into `/today`, signs out, logs back in, and checks the guard redirects
+for a signed-out visitor, a household member, and an account without a
+household. The script does not start or reset the stack; it uses the local
+development database.
+
 ## Seams
 
 Two parts of the product cannot be driven literally on a local dev stack; both

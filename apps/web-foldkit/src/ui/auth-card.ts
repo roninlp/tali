@@ -5,9 +5,8 @@ import { sparklesIcon } from './icons'
 /**
  * The auth-screen card, ported from `apps/web/src/components/form.tsx`.
  *
- * P2.2 renders route placeholders inside it; P2.3 fills it with the login,
- * register, and household forms. The surrounding standalone layout and the
- * theme toggle live in `shell.ts`.
+ * The login, register, and household screens render their forms inside it.
+ * The surrounding standalone layout and the theme toggle live in `shell.ts`.
  */
 
 export type AuthCardConfig = Readonly<{
@@ -15,6 +14,28 @@ export type AuthCardConfig = Readonly<{
   subtitle: string
   children: ReadonlyArray<Html>
 }>
+
+export type AuthFooterLinkConfig = Readonly<{
+  href: string
+  text: string
+  linkText: string
+}>
+
+export const authFooterLinkView = <Message>(
+  config: AuthFooterLinkConfig,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.nav(
+    [h.Class('text-center text-sm text-base-content/60')],
+    [
+      config.text,
+      ' ',
+      h.a(
+        [h.Href(config.href), h.Class('link link-primary font-medium')],
+        [config.linkText],
+      ),
+    ],
+  )
 
 export const authCardView = <Message>(
   config: AuthCardConfig,

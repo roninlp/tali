@@ -2,8 +2,8 @@
 
 **Status:** in progress. Phase 1 (scaffold), the Phase 2 prerequisites
 (workspace-wide Effect 4.1, api proxy, typed RPC entry point), P2.1 (shell,
-theming, RTL document), and P2.2 (route union and navigation) are in place.
-P2.3 (auth and session restore) is next.
+theming, RTL document), P2.2 (route union and navigation), and P2.3 (auth and
+session restore) are in place. P2.4 (local store and sync engine) is next.
 
 **Source of truth:** `apps/web` (Solid v2) for behavior, copy, and
 interaction. **Target:** `apps/web-foldkit` (Foldkit + Effect). Do not edit
@@ -92,8 +92,8 @@ while API calls still reach the Worker.
 
 No `Transition` is used yet: P2.2 has no data layer, so no route entry runs a
 fetch. The feature slices add `Transition.make(model.route, nextRoute)` with
-their first entry Command. The `/` auth redirect waits for P2.3; for now `/`
-renders the landing placeholder.
+their first entry Command. P2.2 rendered the landing placeholder at `/`; P2.3
+replaced it with the auth redirect.
 
 ### P2.3 — Auth and session restore
 
@@ -109,6 +109,25 @@ renders the landing placeholder.
 **Done when:** the legacy auth tests have Foldkit equivalents and the manual
 smoke path passes under `pnpm dev` (which runs the api Worker and both
 frontends).
+
+**Delivered:** `src/lib/auth-api.ts` ports the plain-HTTP auth client with
+`credentials: "include"` and the shared error-envelope shape;
+`src/lib/auth-copy.ts`, `src/lib/login-key.ts`, and `src/lib/session-cache.ts`
+carry the legacy copy, argon2id derivation, and local session hint.
+`src/auth.ts` is the session Submodel: a discriminated `SessionStatus`
+(`Restoring`, `SignedOut`, `SignedIn`, or `Failed`), boot restore, retry,
+sign-out, and cache Commands. `src/page/login.ts`, `src/page/register.ts`, and
+`src/page/household.ts` are the real screens, with Story and Scene tests.
+`src/guard.ts` maps each route to guest, session, or household access; the root
+applies it on URL changes, boot restore, and sign-out, and `/` resolves to
+`/today`, `/household`, or `/login`. The shell header shows the display name and
+an account menu with settings and sign-out. Session restore reads the cache
+through runtime Flags before first paint and reconciles `/auth/me` once per
+boot; a restore-attempt counter ignores late responses. Auth stays on plain
+HTTP because the session cookie is set by the raw response; the data slices use
+`withRpcClient`. The :3001 smoke check (`pnpm test:smoke:foldkit` with
+`pnpm dev` running) registers, creates a household, reloads into `/today`,
+signs out, and logs back in through the Vite proxy.
 
 ### P2.4 — Local store and sync engine
 

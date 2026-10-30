@@ -1,9 +1,18 @@
+import { Effect } from 'effect'
 import { Runtime } from 'foldkit'
 
-import { Message, Model, init, update, view } from './main'
+import { readCachedSession } from './lib/session-cache'
+import { Flags, Message, Model, init, update, view } from './main'
+
+const flags: Effect.Effect<Flags> = Effect.sync(() =>
+  Flags.make({
+    maybeCachedSession: readCachedSession(),
+  }),
+)
 
 const application = Runtime.makeApplication({
   Model,
+  Flags,
   init,
   update,
   view,
@@ -17,4 +26,4 @@ const application = Runtime.makeApplication({
   },
 })
 
-Runtime.run(application)
+Runtime.run(application, { flags })

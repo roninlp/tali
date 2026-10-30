@@ -1,17 +1,13 @@
 import { Command, given, message, model, story } from 'foldkit/story'
 import { describe, expect, test } from 'vitest'
 
-import { Message, Model, update } from './main'
+import { Message, update } from './main'
 import { AppRoute } from './route'
+import { modelAt } from './test-fixtures'
 import * as Theme from './theme'
 
 const givenTheme = (theme: Theme.Theme) =>
-  given(
-    Model.make({
-      route: AppRoute.Today(),
-      theme: Theme.Model.make({ theme }),
-    }),
-  )
+  given(modelAt(AppRoute.Today(), undefined, theme))
 
 const clickedThemeToggle = Message.GotThemeMessage({
   message: Theme.Message.ClickedThemeToggle(),
