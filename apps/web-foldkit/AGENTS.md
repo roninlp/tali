@@ -56,7 +56,8 @@ subtree_prompted: true
   the session Submodel with restore, sign-out, and cache Commands;
   `src/guard.ts` the guest/session/household access rules;
   `src/preferences.ts` the server-of-record display preferences with their
-  synchronous local cache; `src/push.ts` the Web Push subscription,
+  synchronous local cache; `src/settings.ts` the Settings password form with its
+  browser-side key derivation; `src/push.ts` the Web Push subscription,
   permission, and notification-action Submodel; `src/page/` the login,
   register, household, today, lists, tasks, habits, notes, and reminders
   screens; and
@@ -83,10 +84,10 @@ subtree_prompted: true
   `src/lib/today-api.ts`, `task-writes.ts`, `habit-log.ts`, `habit-writes.ts`,
   `note-body.ts`, `note-draft.ts`, `note-search.ts`, `note-search-api.ts`,
   `note-writes.ts`, `list-writes.ts`, and `reminders/api.ts`. `/settings`
-  renders `src/preferences.ts`'s display form, the theme gallery, and the push
-  health panel; the account/password, household, and trash Settings work stays
-  in P2.6. The remaining P2.6 screens (Occasions, Calendar, Settings
-  account/household/trash) are still placeholders.
+  renders `src/preferences.ts`'s display form, `src/settings.ts`'s password
+  form, the theme gallery, and the push health panel, in the legacy order;
+  Settings is complete. The remaining P2.6 screens (Occasions and Calendar) are
+  still placeholders.
   `src/session.ts`, `src/household-summary.ts`, and `src/preferences-model.ts`
   hold the plain Model projections the auth/preferences responses decode into,
   so no branded domain value crosses the dev optimizer's `effect/schema`

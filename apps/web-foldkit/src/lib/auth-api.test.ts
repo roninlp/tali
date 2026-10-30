@@ -75,6 +75,27 @@ describe('auth api', () => {
     })
   })
 
+  test('posts both login keys for a password change and no password', async () => {
+    const fetchMock = stubFetch(jsonResponse(200, { ok: true }))
+
+    const result = await run(
+      authApi.changePassword({
+        currentLoginKey: LoginKey.make('a'.repeat(43)),
+        newLoginKey: LoginKey.make('b'.repeat(43)),
+      }),
+    )
+
+    expect(result).toStrictEqual({ ok: true, value: { ok: true } })
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
+      '/auth/change-password',
+    )
+    const init = fetchMock.mock.calls[0]?.[1]
+    expect(JSON.parse(String(init?.body))).toStrictEqual({
+      currentLoginKey: 'a'.repeat(43),
+      newLoginKey: 'b'.repeat(43),
+    })
+  })
+
   test('decodes the shared error envelope', async () => {
     stubFetch(
       jsonResponse(401, {

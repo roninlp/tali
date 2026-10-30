@@ -103,13 +103,14 @@ describe('route placeholders', () => {
     )
   })
 
-  test('settings surfaces display preferences, the theme picker, and push health', () => {
+  test('settings surfaces display preferences, the password form, and push health', () => {
     scene(
       { update, view },
       given(modelAt(AppRoute.Settings())),
       expect(role('heading', { name: 'تنظیمات' })).toExist(),
       expect(role('heading', { name: 'ظاهر و پوسته' })).toExist(),
       expect(role('heading', { name: 'نمایش' })).toExist(),
+      expect(role('heading', { name: 'گذرواژه' })).toExist(),
       expect(role('heading', { name: 'وضعیت اعلان‌ها' })).toExist(),
     )
   })

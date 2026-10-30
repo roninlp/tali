@@ -1,6 +1,7 @@
 import { Option } from 'effect'
 import { UrlRequest } from 'foldkit/navigation'
 import { Command, given, message, model, story } from 'foldkit/story'
+import { modifyFields } from 'foldkit/struct'
 import { fromString, toString as urlToString } from 'foldkit/url'
 import { describe, expect, test } from 'vitest'
 
@@ -13,6 +14,7 @@ import * as Lists from './page/lists'
 import * as Notes from './page/notes'
 import * as Reminders from './page/reminders'
 import { AppRoute, listPath, notePath, notesRouter } from './route'
+import * as Settings from './settings'
 import * as Sync from './sync'
 import { modelAt } from './test-fixtures'
 
@@ -90,6 +92,31 @@ describe('ChangedUrl', () => {
         expect(model.route).toStrictEqual(
           AppRoute.NotFound({ path: '/notes/trash/extra' }),
         )
+      }),
+    )
+  })
+
+  test('leaving /settings drops the password form', () => {
+    const filled = Settings.Model.make({
+      currentPassword: 'old password value',
+      newPassword: 'new password value',
+      confirmPassword: 'new password value',
+      maybeError: Option.none(),
+      hasSucceeded: true,
+      isSubmitting: false,
+    })
+
+    story(
+      update,
+      given(
+        modifyFields(modelAt(AppRoute.Settings()), {
+          settings: () => filled,
+        }),
+      ),
+      message(Message.ChangedUrl({ url: url('/calendar') })),
+      model(model => {
+        expect(model.route).toStrictEqual(AppRoute.Calendar())
+        expect(model.settings).toStrictEqual(Settings.initialModel())
       }),
     )
   })

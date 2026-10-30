@@ -5,9 +5,9 @@
 theming, RTL document), P2.2 (route union and navigation), P2.3 (auth and
 session restore), P2.4 (local store and sync engine), and P2.5 (preferences,
 theme, and push) are in place. P2.6 (feature screens) is in progress: Today,
-Lists, Tasks, Habits, Notes, and Reminders are delivered; Occasions,
-Calendar, and Settings remain. P2.5's real vendor-push check is still blocked
-on a local VAPID pair and a real browser; everything else is verified.
+Lists, Tasks, Habits, Notes, Reminders, and Settings are delivered; Occasions
+and Calendar remain. P2.5's real vendor-push check is still blocked on a local
+VAPID pair and a real browser; everything else is verified.
 
 **Source of truth:** `apps/web` (Solid v2) for behavior, copy, and
 interaction. **Target:** `apps/web-foldkit` (Foldkit + Effect). Do not edit
@@ -187,9 +187,9 @@ read cache. `src/preferences.ts` is the Submodel: it adopts the cache before
 the network settles, reconciles `/preferences` once per signed-in identity,
 patches only the fields the settings form changed, and never enters the sync
 outbox (ADR-0002). `/settings` now renders the real display-preferences form,
-source badge, retry, and save confirmation; the account/password, household,
-and trash surfaces remain P2.6 work. Auth stays on plain fetch; the data slices
-still use `withRpcClient`.
+source badge, retry, and save confirmation; the password form followed in
+P2.6, and the legacy `/settings` route has no household or trash surface. Auth
+stays on plain fetch; the data slices still use `withRpcClient`.
 
 `src/theme.ts` now ports the legacy gallery and light/dark/system mode. The
 choice is device-local (`tali.theme` / `tali.mode`), `public/theme-boot.js`
@@ -232,7 +232,8 @@ checklist against the legacy screen:
 6. Occasions (`lib/occasions/*`, calendar lanes)
 7. Calendar (`routes/calendar.tsx`, `lib/calendar/*`, `lib/events/*`)
 8. Reminders (`routes/reminders.tsx`, `lib/reminders/*`)
-9. Settings, household, trash, and push-health
+9. Settings (`routes/settings.tsx`, `lib/preferences*`, the password form, and
+   the embedded push-health panel)
 
 **Done when:** the legacy app has no behavior the Foldkit app lacks; the
 Playwright gate flows can run against :3001; the legacy app can be retired.
@@ -370,6 +371,29 @@ The screen CSS is in `styles.css`. Parity gaps: the legacy editor hydrated a
 note missing from the mirror with `GET note` over RPC; this slice renders the
 missing state instead. Ctrl+K focuses the search box but does not select its
 text.
+
+**Delivered — Settings:** `src/settings.ts` is the `/settings` password-form
+Submodel and `/settings` now composes it between the display-preferences panel
+and the push-health panel, matching the legacy order: theme gallery, display
+preferences, password, push health. The form keeps the legacy heading and
+explanation, the three fields with their labels, autocomplete hints, and the
+new-password policy hint, and the same validation order: empty current
+password, the twelve-character policy, then the confirmation mismatch. The
+`ChangePassword` Command derives both login keys in the browser with
+`deriveLoginKey` for the signed-in email and posts them through the existing
+plain-HTTP `authApi.changePassword` with `credentials: "include"`; raw
+passwords never reach the request. A submit disables the fields and the button
+and swaps the button label for the spinner; success clears all three fields and
+shows `گذرواژه تغییر کرد.`, failures map through `authErrorMessage`, and the
+typed values survive a failed attempt. Leaving the screen clears the form like
+the legacy remount, and signing out clears it too. The
+settings subtitle now names account security as the legacy route did. Story
+tests cover the validation, command, busy, failure, and success transitions;
+Scene tests cover the rendered form states; the legacy `passwordProblem` and
+auth-client cases remain covered by `login-key.test.ts` and `auth-api.test.ts`.
+`/household` onboarding and `/notes/trash` were already delivered in P2.3 and
+P2.6, and the legacy `/settings` route exposes no household or trash forms.
+Settings is complete; Occasions and Calendar are the remaining P2.6 screens.
 
 ## Verification
 

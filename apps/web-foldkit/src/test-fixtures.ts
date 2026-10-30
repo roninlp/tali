@@ -17,6 +17,7 @@ import * as Preferences from './preferences'
 import * as Push from './push'
 import { AppRoute } from './route'
 import { Session } from './session'
+import * as Settings from './settings'
 import * as Sync from './sync'
 import * as Theme from './theme'
 
@@ -173,4 +174,5 @@ export const modelAt = (
     }),
     habits: Habits.initialModel(TODAY_NOW),
     reminders: Reminders.initialModel(),
+    settings: Settings.initialModel(),
   })

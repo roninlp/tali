@@ -42,6 +42,7 @@ import {
   urlToAppRoute,
 } from './route'
 import { Session } from './session'
+import * as Settings from './settings'
 import * as Shell from './shell'
 import * as Sync from './sync'
 import * as Theme from './theme'
@@ -65,6 +66,7 @@ export const Model = Schema.Struct({
   tasks: Tasks.Model,
   habits: Habits.Model,
   reminders: Reminders.Model,
+  settings: Settings.Model,
 })
 export type Model = typeof Model.Type
 
@@ -104,6 +106,7 @@ export const Message = defineMessageUnion({
   GotTasksMessage: { message: Tasks.Message },
   GotHabitsMessage: { message: Habits.Message },
   GotRemindersMessage: { message: Reminders.Message },
+  GotSettingsMessage: { message: Settings.Message },
 })
 export type Message = typeof Message.Type
 
@@ -171,6 +174,7 @@ export const init: Runtime.RoutingApplicationInit<
     tasks: tasksInit.model,
     habits: habitsInit.model,
     reminders: remindersInit.model,
+    settings: Settings.initialModel(),
   })
   const guarded = enforceGuard(model, route)
   const entered = enterRoute(
@@ -263,6 +267,9 @@ const toHabitsMessage = (message: Habits.Message): Message =>
 const toRemindersMessage = (message: Reminders.Message): Message =>
   Message.GotRemindersMessage({ message })
 
+const toSettingsMessage = (message: Settings.Message): Message =>
+  Message.GotSettingsMessage({ message })
+
 /** The page's sibling inputs: display settings and the live mirror snapshot. */
 const todayInputs = (model: Model): Today.Inputs => ({
   display: Preferences.currentDisplayFields(model.preferences),
@@ -319,6 +326,14 @@ const habitsInputs = (model: Model): Habits.Inputs => ({
   mirror: model.sync.mirror,
   pendingKeys: model.sync.pendingKeys,
   maybeSyncError: model.sync.maybeError,
+})
+
+/** The Settings password form needs only the signed-in email to derive keys. */
+const settingsInputs = (model: Model): Settings.Inputs => ({
+  maybeEmail: Option.map(
+    Auth.maybeSession(model.auth),
+    session => session.user.email,
+  ),
 })
 
 const authCommand = <E = never, R = never>(
@@ -438,6 +453,7 @@ const resetForms = (model: Model): Model =>
     login: () => Login.initialModel(),
     register: () => Register.initialModel(),
     household: () => Household.initialModel(),
+    settings: () => Settings.initialModel(),
   })
 
 const foldTheme: Update.Fold<Model, Message, Theme.Message> = Update.foldChild({
@@ -1101,6 +1117,34 @@ const foldRemindersEntered = Update.foldChildStep({
   toParentMessage: toRemindersMessage,
 })
 
+type SettingsFoldInput = Readonly<{
+  message: Settings.Message
+  inputs: Settings.Inputs
+}>
+
+const foldSettings = Update.foldChild({
+  update: (settings: Settings.Model, input: SettingsFoldInput) =>
+    Settings.update(settings, input.message, input.inputs),
+  read: (model: Model) => Option.some(model.settings),
+  write: (model: Model, nextSettings: Settings.Model) =>
+    modifyFields(model, { settings: () => nextSettings }),
+  toParentMessage: toSettingsMessage,
+})
+
+const foldSettingsMessage = (
+  model: Model,
+  message: Settings.Message,
+): UpdateReturn =>
+  foldSettings(model, { message, inputs: settingsInputs(model) })
+
+const foldSettingsReset = Update.foldChildStep({
+  update: Settings.reset,
+  read: (model: Model) => Option.some(model.settings),
+  write: (model: Model, nextSettings: Settings.Model) =>
+    modifyFields(model, { settings: () => nextSettings }),
+  toParentMessage: toSettingsMessage,
+})
+
 /** Enter `/habits` and re-read the mirror it renders from. */
 const enterHabitsPage = (model: Model): UpdateReturn => {
   const entered = foldHabitsEntered(model, undefined)
@@ -1292,9 +1336,14 @@ export const update = (model: Model, message: Message) =>
         model.route._tag === 'Note' &&
         (guarded.model.route._tag !== 'Note' ||
           guarded.model.route.noteId !== model.route.noteId)
+      const leavingSettings =
+        model.route._tag === 'Settings' &&
+        guarded.model.route._tag !== 'Settings'
       const left = leavingNote
         ? foldNotesLeftNote(guarded.model)
-        : { model: guarded.model }
+        : leavingSettings
+          ? foldSettingsReset(guarded.model)
+          : { model: guarded.model }
 
       const entered = enterRoute(
         left.model,
@@ -1341,6 +1390,7 @@ export const update = (model: Model, message: Message) =>
     GotTasksMessage: ({ message }) => foldTasksMessage(model, message),
     GotHabitsMessage: ({ message }) => foldHabitsMessage(model, message),
     GotRemindersMessage: ({ message }) => foldReminders(model, message),
+    GotSettingsMessage: ({ message }) => foldSettingsMessage(model, message),
   })
 
 // VIEW
@@ -1536,7 +1586,7 @@ const settingsPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
           ),
           h.p(
             [h.Class('m-0 text-sm leading-7 text-base-content/55')],
-            ['ظاهر برنامه، تقویم و منطقه‌ی زمانی، و وضعیت اعلان‌های این دستگاه.'],
+            ['ظاهر برنامه، تقویم و منطقه‌ی زمانی، و امنیت حساب.'],
           ),
         ],
       ),
@@ -1551,6 +1601,12 @@ const settingsPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
         model: model.preferences,
         view: Preferences.settingsView,
         toParentMessage: toPreferencesMessage,
+      }),
+      h.submodel({
+        slotId: 'settings-password',
+        model: model.settings,
+        view: Settings.view,
+        toParentMessage: toSettingsMessage,
       }),
       h.submodel({
         slotId: 'settings-push-health',
