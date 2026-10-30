@@ -5,9 +5,10 @@
 theming, RTL document), P2.2 (route union and navigation), P2.3 (auth and
 session restore), P2.4 (local store and sync engine), and P2.5 (preferences,
 theme, and push) are in place. P2.6 (feature screens) is in progress: Today,
-Lists, Tasks, Habits, Notes, Reminders, and Settings are delivered; Occasions
-and Calendar remain. P2.5's real vendor-push check is still blocked on a local
-VAPID pair and a real browser; everything else is verified.
+Lists, Tasks, Habits, Notes, Reminders, Settings, and Calendar (with the
+Occasions panel) are delivered; P2.6 is complete. P2.5's real vendor-push check
+is still blocked on a local VAPID pair and a real browser; everything else is
+verified.
 
 **Source of truth:** `apps/web` (Solid v2) for behavior, copy, and
 interaction. **Target:** `apps/web-foldkit` (Foldkit + Effect). Do not edit
@@ -393,7 +394,33 @@ Scene tests cover the rendered form states; the legacy `passwordProblem` and
 auth-client cases remain covered by `login-key.test.ts` and `auth-api.test.ts`.
 `/household` onboarding and `/notes/trash` were already delivered in P2.3 and
 P2.6, and the legacy `/settings` route exposes no household or trash forms.
-Settings is complete; Occasions and Calendar are the remaining P2.6 screens.
+Settings is complete, and P2.6 is complete.
+
+**Delivered — Calendar:** `src/page/calendar.ts` is the shared week/month
+Submodel and `calendar-view.ts` holds the grid, planning panel, day drill-down,
+event dialogs, and occasions panel; `calendar-model.ts` carries the Jalali
+labels, week/month projections, source selection, and pending/dirty overlays.
+`src/lib/calendar-data.ts` holds the plain wire/read-model schemas,
+`src/lib/calendar-api.ts` the ETag-revalidated `GET /week` / `GET /month`
+clients, `src/lib/event-writes.ts` the event row projection, local quick add,
+edit-scope rules, and `src/lib/occasion-writes.ts` the annual projection, the
+one-tap preparation task, and the legacy copy. `src/mirror.ts` now carries the
+live Event and Occasion rows (plus their trash tombstones) and the task
+recurrence fields the grid expands. `/calendar` renders the seven-day grid with
+task/event/occasion overlays, the month grid with busy marks and event/occasion
+chips, the day drill-down, and the week planning panel. Event quick adds,
+completions, priority/day moves, scoped occurrence edits, and every occasion
+write stay local-first through the IndexedDB mirror and outbox; a recurring
+occurrence edit on a connected device with a clean head uses
+`EditEventOccurrence`/`DeleteEventOccurrence` so the service's CAS gate and
+gated split stay in the path, while a split edit offline is refused with the
+legacy explanation. The screen reads `GET /week` / `GET /month` with
+`If-None-Match` when online and drained, falls back to the same domain builders
+over the mirror otherwise, and overlays pending/dirty/tombstoned ids on the
+server source rows. Vite proxies `/week` and `/month`. Story, Scene, model,
+event, and occasion tests cover the legacy checklist. Parity gap: the scope
+dialog traps Tab only through the browser's native radio order, not the legacy
+explicit focus loop.
 
 ## Verification
 

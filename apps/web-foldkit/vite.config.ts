@@ -64,6 +64,10 @@ export default defineConfig({
       },
       '/rpc': 'http://localhost:8787',
       '/sync': 'http://localhost:8787',
+      // The calendar's server read models. Both are API-only paths, so no
+      // document bypass is needed.
+      '/week': 'http://localhost:8787',
+      '/month': 'http://localhost:8787',
     },
   },
 })

@@ -4,6 +4,7 @@ import * as Auth from './auth'
 import type { AuthFailure } from './lib/auth-api'
 import { Model } from './main'
 import { emptyMirrorSnapshot } from './mirror'
+import * as Calendar from './page/calendar'
 import * as Habits from './page/habits'
 import * as Household from './page/household'
 import * as Lists from './page/lists'
@@ -173,6 +174,7 @@ export const modelAt = (
       maybeSettings: Option.none(),
     }),
     habits: Habits.initialModel(TODAY_NOW),
+    calendar: Calendar.initialModel(TODAY_NOW),
     reminders: Reminders.initialModel(),
     settings: Settings.initialModel(),
   })

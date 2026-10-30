@@ -10,6 +10,7 @@ import { ListId, NoteId } from '@tali/domain'
 import { COLOR_CHOICES, ICON_CHOICES } from './lists-model'
 import { LoadExternal, Message, NavigateInternal, update } from './main'
 import { emptyMirrorSnapshot } from './mirror'
+import * as Calendar from './page/calendar'
 import * as Lists from './page/lists'
 import * as Notes from './page/notes'
 import * as Reminders from './page/reminders'
@@ -114,6 +115,26 @@ describe('ChangedUrl', () => {
         }),
       ),
       message(Message.ChangedUrl({ url: url('/calendar') })),
+      Command.expectHas(Calendar.ReadCalendarClock()),
+      Command.resolve(
+        Calendar.ReadCalendarClock,
+        Calendar.Message.TickedCalendar({ now: 500 }),
+      ),
+      Command.expectHas(Calendar.FetchCalendar),
+      Command.resolve(
+        Calendar.FetchCalendar,
+        Calendar.Message.FailedFetchWeek({
+          generation: 2,
+          failure: { code: 'Network', retryable: true },
+        }),
+      ),
+      Command.expectHas(
+        Sync.ReadMirror({ pendingBefore: 0, failedRefreshedAt: 0 }),
+      ),
+      Command.resolve(
+        Sync.ReadMirror,
+        Sync.Message.SucceededReadMirror(emptySnapshot),
+      ),
       model(model => {
         expect(model.route).toStrictEqual(AppRoute.Calendar())
         expect(model.settings).toStrictEqual(Settings.initialModel())

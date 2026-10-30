@@ -10,12 +10,15 @@ import {
   toHabitEntryRow,
   toHabitRow,
 } from './habits-model'
+import { CalendarRecurrenceRule } from './lib/calendar-data'
+import { EventRow, eventRowsFromMirror } from './lib/event-writes'
 import {
   noteDisplayTitle,
   noteExcerpt,
   noteTextFromData,
   tagIdsOf,
 } from './lib/note-body'
+import { OccasionRow, occasionRowsFromMirror } from './lib/occasion-writes'
 import type { ServerNote, ServerTask } from './lib/today-api'
 import {
   ListItemRow,
@@ -48,6 +51,10 @@ export const TaskRow = Schema.Struct({
   tagIds: Schema.Array(Schema.String),
   startedAt: Schema.NullOr(Schema.String),
   completedAt: Schema.NullOr(Schema.String),
+  recurrence: Schema.optional(Schema.NullOr(CalendarRecurrenceRule)),
+  recurrenceMode: Schema.optional(
+    Schema.NullOr(Schema.Literals(['onCompletion', 'onDueDate'])),
+  ),
   createdAt: Schema.String,
   updatedAt: Schema.String,
   version: Schema.Int,
@@ -94,6 +101,10 @@ export const MirrorSnapshot = Schema.Struct({
   habitEntries: Schema.Array(HabitEntryRow),
   lists: Schema.Array(ListRow),
   listItems: Schema.Array(ListItemRow),
+  events: Schema.Array(EventRow),
+  trashedEvents: Schema.Array(EventRow),
+  occasions: Schema.Array(OccasionRow),
+  trashedOccasions: Schema.Array(OccasionRow),
 })
 export type MirrorSnapshot = typeof MirrorSnapshot.Type
 
@@ -108,6 +119,10 @@ export const emptyMirrorSnapshot = (): MirrorSnapshot =>
     habitEntries: [],
     lists: [],
     listItems: [],
+    events: [],
+    trashedEvents: [],
+    occasions: [],
+    trashedOccasions: [],
   })
 
 const asNullableString = (value: unknown): string | null =>
@@ -121,6 +136,25 @@ const asPriority = (value: unknown): TaskRow['priority'] =>
 
 const asStatus = (value: unknown): TaskRow['status'] =>
   value === 'doing' || value === 'done' ? value : 'todo'
+
+const asRecurrence = (value: unknown): TaskRow['recurrence'] => {
+  const parsed =
+    typeof value === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(value)
+          } catch {
+            return undefined
+          }
+        })()
+      : value
+  const decoded = Schema.decodeUnknownOption(CalendarRecurrenceRule)(parsed)
+
+  return Option.getOrUndefined(decoded)
+}
+
+const asRecurrenceMode = (value: unknown): TaskRow['recurrenceMode'] =>
+  value === 'onCompletion' || value === 'onDueDate' ? value : null
 
 /** Project a mirrored task row into the shape the screens understand. */
 export const toTaskRow = (record: MirrorRecord): TaskRow =>
@@ -140,6 +174,8 @@ export const toTaskRow = (record: MirrorRecord): TaskRow =>
     ),
     startedAt: asNullableString(record.data.startedAt),
     completedAt: asNullableString(record.data.completedAt),
+    recurrence: asRecurrence(record.data.recurrence),
+    recurrenceMode: asRecurrenceMode(record.data.recurrenceMode),
     createdAt: asNullableString(record.data.createdAt) ?? record.updatedAt,
     updatedAt: record.updatedAt,
     version: record.version,
@@ -232,6 +268,10 @@ export const readMirrorSnapshot = async (
     habitEntries,
     lists,
     listItems,
+    events,
+    trashedEvents,
+    occasions,
+    trashedOccasions,
   ] = await Promise.all([
     store.list('task'),
     store.list('project'),
@@ -242,6 +282,10 @@ export const readMirrorSnapshot = async (
     store.list('habitEntry'),
     store.list('list'),
     store.list('listItem'),
+    store.list('event'),
+    store.listTrashed('event'),
+    store.list('occasion'),
+    store.listTrashed('occasion'),
   ])
 
   return MirrorSnapshot.make({
@@ -254,6 +298,10 @@ export const readMirrorSnapshot = async (
     habitEntries: habitEntryRowsFromMirror(habitEntries),
     lists: sortListRows(listRowsFromMirror(lists)),
     listItems: listItemRowsFromMirror(listItems),
+    events: eventRowsFromMirror(events),
+    trashedEvents: eventRowsFromMirror(trashedEvents),
+    occasions: occasionRowsFromMirror(occasions),
+    trashedOccasions: occasionRowsFromMirror(trashedOccasions),
   })
 }
 
