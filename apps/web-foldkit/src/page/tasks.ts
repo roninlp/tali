@@ -229,6 +229,7 @@ export const Message = defineMessageUnion({
   CompletedCreateTask: { taskId: Schema.String, title: Schema.String },
   FailedCreateTask: { message: Schema.String },
   CompletedFocusQuickAdd: {},
+  CompletedClearQuickAddSaved: {},
 
   ClickedTaskTitle: { taskId: Schema.String },
   UpdatedTaskTitle: { taskId: Schema.String, value: Schema.String },
@@ -593,6 +594,13 @@ export const MoveTask = Command.define('MoveTask', {
     ),
 })
 
+export const ClearQuickAddSaved = Command.define('ClearQuickAddSaved', {
+  messages: [Message.CompletedClearQuickAddSaved],
+  execute: Effect.sleep(Duration.millis(2000)).pipe(
+    Effect.as(Message.CompletedClearQuickAddSaved()),
+  ),
+})
+
 export const DismissTaskToast = Command.define('DismissTaskToast', {
   args: { generation: Schema.Int },
   messages: [Message.CompletedDismissTaskToast],
@@ -617,10 +625,11 @@ export const ReadCachedTaskView = Command.define('ReadCachedTaskView', {
 export const CacheTaskView = Command.define('CacheTaskView', {
   args: { userId: Schema.String, settings: TaskViewSettings },
   messages: [Message.CompletedCacheTaskView],
-  execute: ({ userId, settings }) => {
-    cacheTaskViewSettings(userId, settings)
-    return Effect.succeed(Message.CompletedCacheTaskView())
-  },
+  execute: ({ userId, settings }) =>
+    Effect.sync(() => {
+      cacheTaskViewSettings(userId, settings)
+      return Message.CompletedCacheTaskView()
+    }),
 })
 
 // INIT
@@ -1189,7 +1198,7 @@ export const update = (
         ),
         { announcement: () => `کار تازه: ${title}` },
       ),
-      commands: [FocusQuickAdd()],
+      commands: [FocusQuickAdd(), ClearQuickAddSaved()],
       outMessage: OutMessage.WroteLocalData(),
     }),
 
@@ -1204,6 +1213,12 @@ export const update = (
     }),
 
     CompletedFocusQuickAdd: () => ({ model }),
+
+    CompletedClearQuickAddSaved: () => ({
+      model: updateQuickAdd(model, draft =>
+        modifyFields(draft, { hasSaved: () => false }),
+      ),
+    }),
 
     ClickedTaskTitle: ({ taskId }) => ({
       model: toggleEditor(model, taskId, inputs),
@@ -1512,6 +1527,7 @@ export const update = (
 export const entered = (model: Model): CommandReturn => ({
   model: modifyFields(model, {
     isFiltersOpen: () => false,
+    quickAdd: () => initialQuickAdd(),
     editors: () => [],
     maybeDraggingId: () => Option.none(),
     maybeDragOverBoard: () => Option.none(),

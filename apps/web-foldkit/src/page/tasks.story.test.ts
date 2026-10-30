@@ -116,6 +116,29 @@ describe('Tasks quick add', () => {
         Tasks.FocusQuickAdd,
         Tasks.Message.CompletedFocusQuickAdd(),
       ),
+      Command.resolve(
+        Tasks.ClearQuickAddSaved,
+        Tasks.Message.CompletedClearQuickAddSaved(),
+      ),
+    )
+  })
+
+  test('the saved line clears after the legacy two-second window', () => {
+    story(
+      update,
+      given(
+        modifyFields(baseModel(), {
+          quickAdd: () =>
+            modifyFields(baseModel().quickAdd, {
+              title: () => 'نان',
+              hasSaved: () => true,
+            }),
+        }),
+      ),
+      message(Tasks.Message.CompletedClearQuickAddSaved()),
+      model(next => {
+        expect(next.quickAdd.hasSaved).toBe(false)
+      }),
     )
   })
 
@@ -151,6 +174,10 @@ describe('Tasks quick add', () => {
       Command.resolve(
         Tasks.FocusQuickAdd,
         Tasks.Message.CompletedFocusQuickAdd(),
+      ),
+      Command.resolve(
+        Tasks.ClearQuickAddSaved,
+        Tasks.Message.CompletedClearQuickAddSaved(),
       ),
     )
   })

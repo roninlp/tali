@@ -156,6 +156,10 @@ describe('Tasks screen', () => {
       expect(label('عنوان کار تازه')).toHaveValue(''),
       expect(text('ذخیره شد؛ در صف همگام‌سازی.')).toExist(),
       expect(text('کار تازه: خرید شیر')).toExist(),
+      Command.resolve(
+        Tasks.ClearQuickAddSaved,
+        Tasks.Message.CompletedClearQuickAddSaved(),
+      ),
     )
   })
 
@@ -207,6 +211,10 @@ describe('Tasks screen', () => {
       Command.resolve(
         Tasks.FocusQuickAdd,
         Tasks.Message.CompletedFocusQuickAdd(),
+      ),
+      Command.resolve(
+        Tasks.ClearQuickAddSaved,
+        Tasks.Message.CompletedClearQuickAddSaved(),
       ),
     )
   })
