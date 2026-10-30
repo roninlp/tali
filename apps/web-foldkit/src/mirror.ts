@@ -55,6 +55,20 @@ export const TaskRow = Schema.Struct({
 })
 export type TaskRow = typeof TaskRow.Type
 
+export const ProjectRow = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  color: Schema.NullOr(Schema.String),
+})
+export type ProjectRow = typeof ProjectRow.Type
+
+export const TagRow = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  color: Schema.NullOr(Schema.String),
+})
+export type TagRow = typeof TagRow.Type
+
 export const NoteRow = Schema.Struct({
   id: Schema.String,
   title: Schema.String,
@@ -71,6 +85,8 @@ export type NoteRow = typeof NoteRow.Type
 
 export const MirrorSnapshot = Schema.Struct({
   tasks: Schema.Array(TaskRow),
+  projects: Schema.Array(ProjectRow),
+  tags: Schema.Array(TagRow),
   notes: Schema.Array(NoteRow),
   habits: Schema.Array(HabitRow),
   habitEntries: Schema.Array(HabitEntryRow),
@@ -82,6 +98,8 @@ export type MirrorSnapshot = typeof MirrorSnapshot.Type
 export const emptyMirrorSnapshot = (): MirrorSnapshot =>
   MirrorSnapshot.make({
     tasks: [],
+    projects: [],
+    tags: [],
     notes: [],
     habits: [],
     habitEntries: [],
@@ -140,9 +158,45 @@ export const toNoteRow = (record: MirrorRecord): NoteRow =>
     version: record.version,
   })
 
+/** Project a mirrored project row into the filter sidebar's shape. */
+export const toProjectRow = (record: MirrorRecord): ProjectRow =>
+  ProjectRow.make({
+    id: record.entityId,
+    title: typeof record.data.title === 'string' ? record.data.title : '',
+    color: asNullableString(record.data.color),
+  })
+
+/** Project a mirrored tag row into the chip / filter shape. */
+export const toTagRow = (record: MirrorRecord): TagRow =>
+  TagRow.make({
+    id: record.entityId,
+    name: typeof record.data.name === 'string' ? record.data.name : '',
+    color: asNullableString(record.data.color),
+  })
+
 export const taskRowsFromMirror = (
   records: ReadonlyArray<MirrorRecord>,
 ): ReadonlyArray<TaskRow> => Array.map(records, toTaskRow)
+
+/** Stable project order for the filter sidebar and quick-add. */
+export const sortProjects = (
+  projects: ReadonlyArray<ProjectRow>,
+): ReadonlyArray<ProjectRow> =>
+  [...projects].sort((left, right) =>
+    left.title.localeCompare(right.title, 'fa'),
+  )
+
+/** Stable tag order for chips and the filter bar. */
+export const sortTags = (tags: ReadonlyArray<TagRow>): ReadonlyArray<TagRow> =>
+  [...tags].sort((left, right) => left.name.localeCompare(right.name, 'fa'))
+
+export const projectRowsFromMirror = (
+  records: ReadonlyArray<MirrorRecord>,
+): ReadonlyArray<ProjectRow> => sortProjects(Array.map(records, toProjectRow))
+
+export const tagRowsFromMirror = (
+  records: ReadonlyArray<MirrorRecord>,
+): ReadonlyArray<TagRow> => sortTags(Array.map(records, toTagRow))
 
 export const noteRowsFromMirror = (
   records: ReadonlyArray<MirrorRecord>,
@@ -160,9 +214,11 @@ export const habitEntryRowsFromMirror = (
 export const readMirrorSnapshot = async (
   store: LocalStore,
 ): Promise<MirrorSnapshot> => {
-  const [tasks, notes, habits, habitEntries, lists, listItems] =
+  const [tasks, projects, tags, notes, habits, habitEntries, lists, listItems] =
     await Promise.all([
       store.list('task'),
+      store.list('project'),
+      store.list('tag'),
       store.list('note'),
       store.list('habit'),
       store.list('habitEntry'),
@@ -172,6 +228,8 @@ export const readMirrorSnapshot = async (
 
   return MirrorSnapshot.make({
     tasks: taskRowsFromMirror(tasks),
+    projects: projectRowsFromMirror(projects),
+    tags: tagRowsFromMirror(tags),
     notes: noteRowsFromMirror(notes),
     habits: habitRowsFromMirror(habits),
     habitEntries: habitEntryRowsFromMirror(habitEntries),

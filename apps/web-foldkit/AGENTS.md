@@ -48,29 +48,32 @@ subtree_prompted: true
 - **Migration progress.** P2.1 (shell, theming, RTL document), P2.2 (route
   union and navigation), P2.3 (auth and session restore), P2.4 (local store
   and sync engine), P2.5 (preferences, saved theme, and push), and P2.6's
-  Today and Lists screens are in place: `src/shell.ts` holds the chrome plus
-  the desktop section menu, mobile tab bar, display name, and account slot;
-  `src/theme.ts`
-  the persistent gallery + light/dark/system Submodel; `src/route.ts` the
-  `AppRoute` union and typed routers; `src/auth.ts` the session Submodel with
-  restore, sign-out, and cache Commands; `src/guard.ts` the guest/session/
-  household access rules; `src/preferences.ts` the server-of-record display
-  preferences with their synchronous local cache; `src/push.ts` the Web Push
-  subscription, permission, and notification-action Submodel; `src/page/` the
-  login, register, household, today, and lists screens; and `src/sync.ts` the
+  Today, Lists, and Tasks screens are in place: `src/shell.ts` holds the
+  chrome plus the desktop section menu, mobile tab bar, display name, and
+  account slot; `src/theme.ts` the persistent gallery + light/dark/system
+  Submodel; `src/route.ts` the `AppRoute` union and typed routers; `src/auth.ts`
+  the session Submodel with restore, sign-out, and cache Commands;
+  `src/guard.ts` the guest/session/household access rules;
+  `src/preferences.ts` the server-of-record display preferences with their
+  synchronous local cache; `src/push.ts` the Web Push subscription,
+  permission, and notification-action Submodel; `src/page/` the login,
+  register, household, today, lists, and tasks screens; and `src/sync.ts` the
   local-first sync Submodel with its managed IndexedDB mirror, engine
   Commands, cadence Subscription, and live mirror snapshot. `src/mirror.ts`
-  projects the mirrored Task, Note, Habit, HabitEntry, List, and ListItem rows
-  the feature screens read; `src/habits-model.ts` holds the streak/rate/copy
-  projection; `src/lists-model.ts` the List/ListItem ordering, summaries, and
-  pending-key projection; `src/page/today-model.ts` and `today-view.ts` hold
-  the dashboard's pure aggregation and view; `src/page/lists.ts`,
-  `lists-view.ts`, and `list-view.ts` hold the index/detail Submodel and its
-  views; `src/lib/today-api.ts`, `task-writes.ts`, `habit-log.ts`,
-  `note-body.ts`, and `list-writes.ts` are the client pieces. `/settings`
+  projects the mirrored Task, Project, Tag, Note, Habit, HabitEntry, List, and
+  ListItem rows the feature screens read; `src/habits-model.ts` holds the
+  streak/rate/copy projection; `src/lists-model.ts` the List/ListItem
+  ordering, summaries, and pending-key projection; `src/page/today-model.ts`
+  and `today-view.ts` hold the dashboard's pure aggregation and view;
+  `src/page/lists.ts`, `lists-view.ts`, and `list-view.ts` hold the
+  index/detail Submodel and its views; `src/page/tasks-model.ts`,
+  `tasks-view.ts`, and `tasks-view-cache.ts` hold the board's
+  grouping/filters, view, and per-user saved filter/sort state; the client
+  pieces are `src/lib/today-api.ts`, `task-writes.ts`, `habit-log.ts`,
+  `note-body.ts`, and `list-writes.ts`. `/settings`
   renders `src/preferences.ts`'s display form, the theme gallery, and the push
   health panel; the account/password, household, and trash Settings work stays
-  in P2.6. The remaining P2.6 screens (Tasks, Habits, Notes, Occasions,
+  in P2.6. The remaining P2.6 screens (Habits, Notes, Occasions,
   Calendar, Reminders, Settings account/household/trash) are still
   placeholders.
   `src/session.ts`, `src/household-summary.ts`, and `src/preferences-model.ts`

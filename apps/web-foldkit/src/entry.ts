@@ -14,6 +14,7 @@ import {
   update,
   view,
 } from './main'
+import { readTaskViewSettings } from './page/tasks-view-cache'
 import { readStoredMode, readStoredTheme } from './theme'
 
 const prefersDark = (): boolean =>
@@ -28,6 +29,9 @@ const flags: Effect.Effect<Flags> = Effect.sync(() => {
     maybeCachedSession,
     maybeCachedPreferences: Option.flatMap(maybeCachedSession, session =>
       readCachedPreferences(session.user.id),
+    ),
+    maybeCachedTaskView: Option.flatMap(maybeCachedSession, session =>
+      readTaskViewSettings(session.user.id),
     ),
     maybeSavedTheme: readStoredTheme(),
     maybeSavedMode: readStoredMode(),

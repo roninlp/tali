@@ -9,6 +9,7 @@ import {
 import type { Document, Html, HtmlBuilder } from 'foldkit/html'
 import { defineMessageUnion } from 'foldkit/message'
 import { UrlRequest, load, pushUrl, replaceUrl } from 'foldkit/navigation'
+import { Transition } from 'foldkit/route'
 import { modifyFields } from 'foldkit/struct'
 import { Url, toString as urlToString } from 'foldkit/url'
 
@@ -21,6 +22,8 @@ import * as Household from './page/household'
 import * as Lists from './page/lists'
 import * as Login from './page/login'
 import * as Register from './page/register'
+import * as Tasks from './page/tasks'
+import { TaskViewSettings } from './page/tasks-model'
 import * as Today from './page/today'
 import * as Preferences from './preferences'
 import { Preferences as PreferencesRow } from './preferences-model'
@@ -53,12 +56,14 @@ export const Model = Schema.Struct({
   sync: Sync.Model,
   today: Today.Model,
   lists: Lists.Model,
+  tasks: Tasks.Model,
 })
 export type Model = typeof Model.Type
 
 export const Flags = Schema.Struct({
   maybeCachedSession: Schema.Option(Session),
   maybeCachedPreferences: Schema.Option(PreferencesRow),
+  maybeCachedTaskView: Schema.Option(TaskViewSettings),
   maybeSavedTheme: Schema.Option(Schema.String),
   maybeSavedMode: Schema.Option(Schema.String),
   isSystemDark: Schema.Boolean,
@@ -87,6 +92,7 @@ export const Message = defineMessageUnion({
   GotSyncMessage: { message: Sync.Message },
   GotTodayMessage: { message: Today.Message },
   GotListsMessage: { message: Lists.Message },
+  GotTasksMessage: { message: Tasks.Message },
 })
 export type Message = typeof Message.Type
 
@@ -107,6 +113,7 @@ export const init: Runtime.RoutingApplicationInit<
   })
   const authInit = Auth.init(flags.maybeCachedSession)
   const maybeSession = Auth.maybeSession(authInit.model)
+  const maybeUserId = Option.map(maybeSession, session => session.user.id)
   const preferencesInit = Preferences.init({
     maybeUserId: Option.map(maybeSession, session => session.user.id),
     maybeProfileDefaults: Option.map(
@@ -130,6 +137,11 @@ export const init: Runtime.RoutingApplicationInit<
   })
   const todayInit = Today.init({ now: flags.now })
   const listsInit = Lists.init()
+  const tasksInit = Tasks.init({
+    now: flags.now,
+    maybeUserId,
+    maybeSettings: flags.maybeCachedTaskView,
+  })
   const model = Model.make({
     route,
     theme: themeInit.model,
@@ -142,19 +154,23 @@ export const init: Runtime.RoutingApplicationInit<
     sync: syncInit.model,
     today: todayInit.model,
     lists: listsInit.model,
+    tasks: tasksInit.model,
   })
   const guarded = enforceGuard(model, route)
-  const pageEntry = enterPage(guarded.model)
+  const entered = enterRoute(
+    guarded.model,
+    Transition.coldLoad(guarded.model.route),
+  )
 
   return {
-    model: pageEntry.model,
+    model: entered.model,
     commands: [
       ...Command.mapMessages(themeInit.commands, toThemeMessage),
       ...Command.mapMessages(authInit.commands, toAuthMessage),
       ...Command.mapMessages(preferencesInit.commands, toPreferencesMessage),
       ...Command.mapMessages(pushInit.commands, toPushMessage),
       ...(guarded.commands ?? []),
-      ...(pageEntry.commands ?? []),
+      ...(entered.commands ?? []),
     ],
   }
 }
@@ -219,6 +235,9 @@ const toTodayMessage = (message: Today.Message): Message =>
 const toListsMessage = (message: Lists.Message): Message =>
   Message.GotListsMessage({ message })
 
+const toTasksMessage = (message: Tasks.Message): Message =>
+  Message.GotTasksMessage({ message })
+
 /** The page's sibling inputs: display settings and the live mirror snapshot. */
 const todayInputs = (model: Model): Today.Inputs => ({
   display: Preferences.currentDisplayFields(model.preferences),
@@ -245,6 +264,15 @@ const listsInputs = (model: Model): Lists.Inputs => ({
     Auth.maybeSession(model.auth),
     session => session.user.id,
   ),
+})
+
+const tasksInputs = (model: Model): Tasks.Inputs => ({
+  display: Preferences.currentDisplayFields(model.preferences),
+  isStoreReady: Sync.isStoreReady(model.sync),
+  isOnline: model.sync.isOnline,
+  pending: model.sync.pending,
+  mirror: model.sync.mirror,
+  pendingKeys: model.sync.pendingKeys,
 })
 
 const authCommand = <E = never, R = never>(
@@ -294,10 +322,19 @@ const applyPushSession = Update.foldChild({
   toParentMessage: toPushMessage,
 })
 
+const applyTasksSession = Update.foldChild({
+  update: Tasks.applySession,
+  read: (model: Model) => Option.some(model.tasks),
+  write: (model: Model, nextTasks: Tasks.Model) =>
+    modifyFields(model, { tasks: () => nextTasks }),
+  toParentMessage: toTasksMessage,
+})
+
 /**
  * Push the current session into the child Submodels that key work by identity.
- * Preferences and push both start one read per sign-in; sync only swaps the
- * managed store resource. Each fold lifts the child's Commands to the root.
+ * Preferences, push, and the tasks view each start one read per sign-in; sync
+ * only swaps the managed store resource. Each fold lifts the child's Commands
+ * to the root.
  */
 const applySessionState: Update.Step<Model, Message> = Update.combine<
   Model,
@@ -312,6 +349,11 @@ const applySessionState: Update.Step<Model, Message> = Update.combine<
     ),
   (model: Model) =>
     applyPushSession(
+      model,
+      Option.map(Auth.maybeSession(model.auth), session => session.user.id),
+    ),
+  (model: Model) =>
+    applyTasksSession(
       model,
       Option.map(Auth.maybeSession(model.auth), session => session.user.id),
     ),
@@ -365,7 +407,7 @@ const foldAuthOutMessage = Auth.OutMessage.match<
   RestoredSession: () => stepModel => {
     const guarded = enforceGuardWithSessionUser(stepModel, stepModel.route)
 
-    return withStepCommands(guarded, enterPage(guarded.model))
+    return withStepCommands(guarded, enterCurrentRoute(guarded.model))
   },
   SignedOut: () => stepModel =>
     enforceGuardWithSessionUser(resetForms(stepModel), stepModel.route),
@@ -408,7 +450,7 @@ const foldLoginOutMessage = Login.OutMessage.match<
         route: () => landingRoute(session),
       })
       const sessionState = applySessionState(next)
-      const entered = enterPage(sessionState.model)
+      const entered = enterCurrentRoute(sessionState.model)
 
       return {
         model: entered.model,
@@ -450,7 +492,7 @@ const foldRegisterOutMessage = Register.OutMessage.match<
         route: () => landingRoute(session),
       })
       const sessionState = applySessionState(next)
-      const entered = enterPage(sessionState.model)
+      const entered = enterCurrentRoute(sessionState.model)
 
       return {
         model: entered.model,
@@ -514,7 +556,7 @@ const foldHouseholdOutMessage = Household.OutMessage.match<
           ),
         route: () => AppRoute.Today(),
       })
-      const entered = enterPage(next)
+      const entered = enterCurrentRoute(next)
 
       return {
         model: entered.model,
@@ -528,7 +570,7 @@ const foldHouseholdOutMessage = Household.OutMessage.match<
 
   AlreadyInHousehold: () => stepModel => {
     const refreshed = refreshAuth(stepModel)
-    const entered = enterPage(
+    const entered = enterCurrentRoute(
       modifyFields(refreshed.model, {
         route: () => AppRoute.Today(),
       }),
@@ -545,7 +587,7 @@ const foldHouseholdOutMessage = Household.OutMessage.match<
   },
 
   RequestedToday: () => stepModel => {
-    const entered = enterPage(
+    const entered = enterCurrentRoute(
       modifyFields(stepModel, { route: () => AppRoute.Today() }),
     )
 
@@ -760,22 +802,90 @@ const enterListsPage = (
 const foldListsMessage = (model: Model, message: Lists.Message): UpdateReturn =>
   foldLists(model, { message, inputs: listsInputs(model) })
 
-/** Enter the page owned by the current route, once its guard allows it. */
-const enterPage = (model: Model): UpdateReturn => {
-  if (!guardAllows(model, model.route)) {
+type TasksFoldInput = Readonly<{
+  message: Tasks.Message
+  inputs: Tasks.Inputs
+}>
+
+const foldTasksOutMessage = Tasks.OutMessage.match<
+  Update.Step<Model, Message, Sync.LocalStoreService>
+>({
+  WroteLocalData: () => stepModel => foldSyncRefresh(stepModel),
+})
+
+const foldTasks = Update.foldChild({
+  update: (tasks: Tasks.Model, input: TasksFoldInput) =>
+    Tasks.update(tasks, input.message, input.inputs),
+  read: (model: Model) => Option.some(model.tasks),
+  write: (model: Model, nextTasks: Tasks.Model) =>
+    modifyFields(model, { tasks: () => nextTasks }),
+  toParentMessage: toTasksMessage,
+  foldOutMessage: foldTasksOutMessage,
+})
+
+const foldTasksEntered = Update.foldChildStep({
+  update: Tasks.entered,
+  read: (model: Model) => Option.some(model.tasks),
+  write: (model: Model, nextTasks: Tasks.Model) =>
+    modifyFields(model, { tasks: () => nextTasks }),
+  toParentMessage: toTasksMessage,
+})
+
+const foldTasksMessage = (model: Model, message: Tasks.Message): UpdateReturn =>
+  foldTasks(model, { message, inputs: tasksInputs(model) })
+
+/** Run the entry capability of whichever page the transition landed on. */
+const enterRoute = (
+  model: Model,
+  transition: Transition.Transition<AppRoute>,
+): UpdateReturn => {
+  const nextRoute = transition.nextRoute
+
+  if (!guardAllows(model, nextRoute)) {
     return { model }
   }
 
-  return AppRoute.matchOrElse<UpdateReturn>(
-    model.route,
-    {
-      Today: () => foldTodayEntered(model, todayInputs(model)),
-      Lists: () => enterListsPage(model, Option.none()),
-      List: ({ listId }) => enterListsPage(model, Option.some(listId)),
-    },
-    () => ({ model }),
-  )
+  if (
+    model.route._tag === 'Today' &&
+    Option.isSome(Transition.entered(transition, 'Today'))
+  ) {
+    return foldTodayEntered(model, todayInputs(model))
+  }
+
+  if (
+    model.route._tag === 'Tasks' &&
+    Option.isSome(Transition.entered(transition, 'Tasks'))
+  ) {
+    return foldTasksEntered(model)
+  }
+
+  if (
+    model.route._tag === 'Lists' &&
+    Option.isSome(Transition.entered(transition, 'Lists'))
+  ) {
+    return enterListsPage(model, Option.none())
+  }
+
+  if (model.route._tag === 'List') {
+    const listId = model.route.listId
+    const isNewList =
+      Option.isNone(transition.maybePreviousRoute) ||
+      Option.exists(
+        transition.maybePreviousRoute,
+        previous => previous._tag !== 'List' || previous.listId !== listId,
+      )
+
+    if (isNewList) {
+      return enterListsPage(model, Option.some(listId))
+    }
+  }
+
+  return { model }
 }
+
+/** Enter the current route after a session change or a fresh landing. */
+const enterCurrentRoute = (model: Model): UpdateReturn =>
+  enterRoute(model, Transition.coldLoad(model.route))
 
 const withStepCommands = (
   base: UpdateReturn,
@@ -828,27 +938,21 @@ const foldSyncMessage = (model: Model, message: Sync.Message): UpdateReturn => {
   }
 }
 
-/** Whether this navigation opens a page whose entry capability must run. */
-const entersPage = (previous: AppRoute, next: AppRoute): boolean =>
-  next._tag === 'List' && previous._tag === 'List'
-    ? previous.listId !== next.listId
-    : previous._tag !== next._tag
-
 export const update = (model: Model, message: Message) =>
   Message.match<UpdateReturn>(message, {
     ChangedUrl: ({ url }) => {
       const nextRoute = urlToAppRoute(url)
       const guarded = enforceGuard(model, nextRoute)
 
-      if (
-        !entersPage(model.route, nextRoute) ||
-        guarded.model.route._tag !== nextRoute._tag ||
-        !guardAllows(guarded.model, nextRoute)
-      ) {
-        return guarded
-      }
+      const entered = enterRoute(
+        guarded.model,
+        Transition.make(model.route, guarded.model.route),
+      )
 
-      return withStepCommands(guarded, enterPage(guarded.model))
+      return {
+        model: entered.model,
+        commands: [...(guarded.commands ?? []), ...(entered.commands ?? [])],
+      }
     },
 
     ClickedLink: ({ request }) =>
@@ -877,6 +981,7 @@ export const update = (model: Model, message: Message) =>
     GotSyncMessage: ({ message }) => foldSyncMessage(model, message),
     GotTodayMessage: ({ message }) => foldTodayMessage(model, message),
     GotListsMessage: ({ message }) => foldListsMessage(model, message),
+    GotTasksMessage: ({ message }) => foldTasksMessage(model, message),
   })
 
 // VIEW
@@ -1035,6 +1140,15 @@ const todayPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
     toParentMessage: toTodayMessage,
   })
 
+const tasksPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
+  h.submodel({
+    slotId: 'tasks-page',
+    model: model.tasks,
+    view: Tasks.view,
+    viewInputs: tasksInputs(model),
+    toParentMessage: toTasksMessage,
+  })
+
 const settingsPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.section(
     [h.Class('page-wrap grid max-w-2xl gap-4')],
@@ -1139,6 +1253,7 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): Html =>
           viewInputs: listsInputs(model),
           toParentMessage: toListsMessage,
         }),
+      Tasks: () => tasksPageView(model, h),
       Settings: () => settingsPageView(model, h),
       PushHealth: () => pushHealthPageView(model, h),
       NotFound: () => notFoundView(h),
@@ -1262,9 +1377,19 @@ const todaySubscriptions = Subscription.lift(Today.subscriptions)<
   toParentMessage: toTodayMessage,
 })
 
+const tasksSubscriptions = Subscription.lift(Tasks.subscriptions)<
+  Model,
+  Message
+>({
+  read: model =>
+    model.route._tag === 'Tasks' ? Option.some(model.tasks) : Option.none(),
+  toParentMessage: toTasksMessage,
+})
+
 export const subscriptions = Subscription.aggregate(
   syncSubscriptions,
   themeSubscriptions,
   pushSubscriptions,
   todaySubscriptions,
+  tasksSubscriptions,
 )

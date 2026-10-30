@@ -4,10 +4,10 @@
 (workspace-wide Effect 4.1, api proxy, typed RPC entry point), P2.1 (shell,
 theming, RTL document), P2.2 (route union and navigation), P2.3 (auth and
 session restore), P2.4 (local store and sync engine), and P2.5 (preferences,
-theme, and push) are in place. P2.6 (feature screens) is in progress: Today and
-Lists are delivered; Tasks through Settings remain. P2.5's real vendor-push
-check is still blocked on a local VAPID pair and a real browser; everything
-else is verified.
+theme, and push) are in place. P2.6 (feature screens) is in progress: Today,
+Lists, and Tasks are delivered; Habits through Settings remain. P2.5's real
+vendor-push check is still blocked on a local VAPID pair and a real browser;
+everything else is verified.
 
 **Source of truth:** `apps/web` (Solid v2) for behavior, copy, and
 interaction. **Target:** `apps/web-foldkit` (Foldkit + Effect). Do not edit
@@ -273,6 +273,31 @@ through the existing `ListId` route parser, the screen CSS is ported into
 Scene tests. The legacy screens expose no item rename, description, colour or
 tag editors, so those stay out of scope; the mirror write helpers remain ready
 for a later slice.
+
+**Delivered — Tasks:** `src/page/tasks.ts` is the page Submodel and
+`tasks-model.ts` / `tasks-view.ts` hold the board's pure grouping, filters,
+sort, date copy, and view. `tasks-view-cache.ts` keeps the legacy
+`tali.tasks.view.v1.<id>` localStorage key and JSON shape, so a browser that
+used the Solid app keeps its saved filter/sort view; the boot flags read it
+synchronously, so the first paint has the right board. `src/mirror.ts` now
+projects Project and Tag rows into the shared snapshot, and
+`src/lib/task-writes.ts` adds the patch/project/tag helpers the board writes
+through. `/tasks` renders the real three-board workspace from the mirror:
+today/upcoming/inbox groups with counts and empty copy, the quick add (title,
+due presets, priority, project/tag selection, inline project/tag creation),
+the persistent filter panel (project/tag/priority/status/date, sort field and
+direction, counts, clear), inline card editors (title, description, due date,
+priority, status, project, tags) with debounced local autosave and
+saving/saved/error state, one-tap day moves, completion with an undo toast,
+and the seven-day completion history with restore. Writes stay local-first
+through the sync store and the outbox; no screen command calls RPC.
+Drag/drop moves a card between boards with native HTML5 drag state, while the
+always-visible move buttons keep the same moves keyboard and touch operable.
+Parity gaps: the legacy completion "ghost" animation is not rendered (the
+card leaves as soon as the mirror refresh lands) and drag/drop has no keyboard
+equivalent beyond the move buttons. The quick-add saved line clears after the
+legacy two-second window, and the transient quick-add draft resets on route
+entry like the legacy remount.
 
 ## Verification
 

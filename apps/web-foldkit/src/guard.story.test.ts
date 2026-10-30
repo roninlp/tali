@@ -10,6 +10,7 @@ import { HouseholdSummary } from './household-summary'
 import type { AuthFailure } from './lib/auth-api'
 import { Message, ReplaceUrl, update } from './main'
 import * as Household from './page/household'
+import * as Today from './page/today'
 import { AppRoute } from './route'
 import {
   failed,
@@ -53,7 +54,21 @@ describe('guard redirects', () => {
       model(model => {
         expect(model.route).toStrictEqual(AppRoute.Today())
       }),
-      Command.expectExact(ReplaceUrl({ url: '/today' })),
+      Command.expectExact(
+        Today.FetchToday({
+          generation: 1,
+          maybeEtag: Option.none(),
+          dirtyAtRequest: [],
+        }),
+        ReplaceUrl({ url: '/today' }),
+      ),
+      Command.resolve(
+        Today.FetchToday,
+        Today.Message.FailedFetchToday({
+          generation: 1,
+          failure: { code: 'Network', retryable: true },
+        }),
+      ),
       Command.resolve(ReplaceUrl, Message.CompletedReplaceUrl()),
     )
   })
@@ -79,7 +94,21 @@ describe('guard redirects', () => {
       model(model => {
         expect(model.route).toStrictEqual(AppRoute.Today())
       }),
-      Command.expectExact(ReplaceUrl({ url: '/today' })),
+      Command.expectExact(
+        Today.FetchToday({
+          generation: 1,
+          maybeEtag: Option.none(),
+          dirtyAtRequest: [],
+        }),
+        ReplaceUrl({ url: '/today' }),
+      ),
+      Command.resolve(
+        Today.FetchToday,
+        Today.Message.FailedFetchToday({
+          generation: 1,
+          failure: { code: 'Network', retryable: true },
+        }),
+      ),
       Command.resolve(ReplaceUrl, Message.CompletedReplaceUrl()),
     )
   })
@@ -105,7 +134,21 @@ describe('guard redirects', () => {
       model(model => {
         expect(model.route).toStrictEqual(AppRoute.Today())
       }),
-      Command.expectExact(ReplaceUrl({ url: '/today' })),
+      Command.expectExact(
+        Today.FetchToday({
+          generation: 1,
+          maybeEtag: Option.none(),
+          dirtyAtRequest: [],
+        }),
+        ReplaceUrl({ url: '/today' }),
+      ),
+      Command.resolve(
+        Today.FetchToday,
+        Today.Message.FailedFetchToday({
+          generation: 1,
+          failure: { code: 'Network', retryable: true },
+        }),
+      ),
       Command.resolve(ReplaceUrl, Message.CompletedReplaceUrl()),
     )
   })
