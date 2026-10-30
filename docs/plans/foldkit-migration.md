@@ -5,9 +5,9 @@
 theming, RTL document), P2.2 (route union and navigation), P2.3 (auth and
 session restore), P2.4 (local store and sync engine), and P2.5 (preferences,
 theme, and push) are in place. P2.6 (feature screens) is in progress: Today,
-Lists, and Tasks are delivered; Habits through Settings remain. P2.5's real
-vendor-push check is still blocked on a local VAPID pair and a real browser;
-everything else is verified.
+Lists, Tasks, and Habits are delivered; Notes, Occasions, Calendar,
+Reminders, and Settings remain. P2.5's real vendor-push check is still blocked
+on a local VAPID pair and a real browser; everything else is verified.
 
 **Source of truth:** `apps/web` (Solid v2) for behavior, copy, and
 interaction. **Target:** `apps/web-foldkit` (Foldkit + Effect). Do not edit
@@ -298,6 +298,27 @@ card leaves as soon as the mirror refresh lands) and drag/drop has no keyboard
 equivalent beyond the move buttons. The quick-add saved line clears after the
 legacy two-second window, and the transient quick-add draft resets on route
 entry like the legacy remount.
+
+**Delivered — Habits:** `src/page/habits.ts` is the `/habits` page Submodel and
+`habits-view.ts` / `habits-heatmap-view.ts` hold the form, list cards, and
+monthly Jalali heatmap. `src/habits-model.ts` now also carries the heatmap
+month projection, the weekday/form presets, the pending-key helper, and the
+habit's clock/zone helpers; `src/lib/habit-writes.ts` ports the local-first
+create, edit (with the frequency-era boundary), soft delete, and restore
+writes. The screen creates a habit with title, description, icon, colour,
+daily/weekdays/N-times-a-week frequency, and an optional reminder; edits reuse
+the same form; deleting asks the legacy confirmation and offers the 8-second
+undo toast that restores the same row. Cards show the tap cycle (Done →
+Partial → Missed), the recomputed streak badge, the 7/30/90-day rate copy, the
+counting-period note, the reminder, pending and sync-error badges, and an empty
+state. Every card can open its monthly heatmap with month navigation, weekday
+labels, raw done/partial/missed/blank cells, a today marker, and the legend.
+All writes commit the IndexedDB mirror row and outbox entry together; no habit
+write uses RPC. The legacy screen's tests are covered by `habits-model.test.ts`
+(writes, streak/rate edge cases, heatmap), `habits.story.test.ts` (update and
+Commands), and `habits.scene.test.ts` (rendered views), and the screen CSS is
+ported into `styles.css`. The sync engine's restore-refusal notice is surfaced
+from the sync error as the legacy screen did.
 
 ## Verification
 

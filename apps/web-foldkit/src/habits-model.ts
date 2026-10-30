@@ -1,14 +1,24 @@
-import { Array, Match, Option, Schema } from 'effect'
+import { Array, Match, Option, Order, Schema } from 'effect'
 
 import {
   DEFAULT_TIME_ZONE,
   formatJalaliDate,
   habitStreak,
+  jalaliDate,
+  jalaliMonthGrid,
   localDateIn,
+  localDateInOption,
   localizeDigits,
+  toIsoDate,
   toJalaliDate,
+  toJalaliFields,
 } from '@tali/domain'
-import type { Digits, HabitEntryStatus, StreakResult } from '@tali/domain'
+import type {
+  Digits,
+  HabitEntryStatus,
+  StreakResult,
+  WeekStart,
+} from '@tali/domain'
 import type { MirrorRecord } from '@tali/sync-client'
 
 /**
@@ -55,6 +65,7 @@ export const HabitRow = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.String,
   version: Schema.Int,
+  hasSyncError: Schema.Boolean,
 })
 export type HabitRow = typeof HabitRow.Type
 
@@ -206,6 +217,7 @@ export const toHabitRow = (record: MirrorRecord): HabitRow => {
     createdAt,
     updatedAt: record.updatedAt,
     version: record.version,
+    hasSyncError: record.syncError !== undefined,
   })
 }
 
@@ -240,7 +252,8 @@ export const sortHabitRows = (
 
 // ── Streak and rate projection ───────────────────────────────────────────
 
-export type HabitWindowDays = 7 | 30 | 90
+export const HabitWindowDays = Schema.Literals([7, 30, 90])
+export type HabitWindowDays = typeof HabitWindowDays.Type
 
 export const HABIT_WINDOW_DAYS: ReadonlyArray<HabitWindowDays> = [7, 30, 90]
 
@@ -465,4 +478,228 @@ export const habitStatusIcon = (status: HabitEntryStatus | null): string => {
     case null:
       return '○'
   }
+}
+
+// ── Monthly heatmap ──────────────────────────────────────────────────────
+
+export interface HabitHeatCell {
+  readonly date: string
+  readonly inMonth: boolean
+  readonly day: number
+  /** The raw entry status; `null` is a blank day, never a verdict. */
+  readonly status: HabitEntryStatus | null
+}
+
+export interface HabitHeatmapMonth {
+  readonly year: number
+  readonly month: number
+  readonly label: string
+  readonly weekdayLabels: ReadonlyArray<string>
+  readonly weeks: ReadonlyArray<ReadonlyArray<HabitHeatCell>>
+}
+
+const weekStartOffset = (weekStart: WeekStart): number =>
+  weekStart === 'saturday' ? 0 : weekStart === 'sunday' ? 1 : 2
+
+const statusOn = (
+  entries: ReadonlyArray<HabitEntryRow>,
+  habitId: string,
+  date: string,
+): HabitEntryStatus | null =>
+  Option.match(
+    Array.findFirst(
+      entries,
+      entry => entry.habitId === habitId && entry.localDate === date,
+    ),
+    {
+      onNone: () => null,
+      onSome: entry => entry.status,
+    },
+  )
+
+/**
+ * One Jalali month of raw entry statuses for one habit.
+ *
+ * The heatmap paints what was logged (done / partial / missed / blank) and
+ * never re-derives weights or quotas, so it cannot disagree with
+ * `habitStreak` by construction. A blank cell and a `missed` cell stay
+ * different colours: the streak treats blank as "not a done" and missed as an
+ * explicit answer, and the screen must not collapse them.
+ */
+export const habitHeatmapMonth = (input: {
+  readonly habitId: string
+  readonly entries: ReadonlyArray<HabitEntryRow>
+  readonly year: number
+  readonly month: number
+  readonly digits?: Digits
+  /** Display alignment only; the counting week stays Saturday–Friday. */
+  readonly weekStart?: WeekStart
+}): HabitHeatmapMonth => {
+  const digits = input.digits ?? 'persian'
+  const weekStart = input.weekStart ?? 'saturday'
+  const grid = jalaliMonthGrid(input.year, input.month, { weekStart })
+  const offset = weekStartOffset(weekStart)
+  const weekdayLabels = Array.makeBy(7, index =>
+    weekdayName(PERSIAN_WEEKDAY_ORDER[(offset + index) % 7] ?? 6),
+  )
+
+  return {
+    year: grid.year,
+    month: grid.month,
+    label: formatJalaliDate(jalaliDate(grid.year, grid.month, 1), {
+      digits,
+      style: 'medium',
+    }),
+    weekdayLabels,
+    weeks: Array.map(grid.weeks, week =>
+      Array.map(week.days, day => {
+        const date = toIsoDate(day.date)
+
+        return {
+          date,
+          inMonth: day.inMonth,
+          day: toJalaliFields(day.date).day,
+          status: statusOn(input.entries, input.habitId, date),
+        }
+      }),
+    ),
+  }
+}
+
+/** The Jalali year/month containing a local date (the heatmap's first bucket). */
+export const habitMonthOf = (
+  today: string,
+): Readonly<{
+  year: number
+  month: number
+}> => {
+  const fields = toJalaliFields(toJalaliDate(today))
+
+  return { year: fields.year, month: fields.month }
+}
+
+/** Move one Jalali month, leaving local-date arithmetic to the domain. */
+export const shiftHabitMonth = (
+  year: number,
+  month: number,
+  delta: number,
+): Readonly<{ year: number; month: number }> => {
+  const zero = month - 1 + delta
+
+  return {
+    year: year + Math.floor(zero / 12),
+    month: (((zero % 12) + 12) % 12) + 1,
+  }
+}
+
+// ── Form presets and drafts ──────────────────────────────────────────────
+
+export const HabitFrequencyMode = Schema.Literals([
+  'daily',
+  'weekdays',
+  'weekly',
+])
+export type HabitFrequencyMode = typeof HabitFrequencyMode.Type
+
+export const HABIT_COLORS: ReadonlyArray<
+  Readonly<{ value: string; label: string }>
+> = [
+  { value: '#2f5fe0', label: 'آبی' },
+  { value: '#0f9d8f', label: 'سبزآبی' },
+  { value: '#2e9d57', label: 'سبز' },
+  { value: '#d9822b', label: 'نارنجی' },
+  { value: '#c94f7c', label: 'صورتی' },
+  { value: '#7a5af8', label: 'بنفش' },
+]
+
+export const HABIT_ICONS: ReadonlyArray<string> = [
+  '📚',
+  '🏃',
+  '💧',
+  '🧘',
+  '💊',
+  '🌱',
+  '✍️',
+  '🛏️',
+]
+
+/** The default icon and colour the create form starts from. */
+export const DEFAULT_HABIT_ICON = '🌱'
+export const DEFAULT_HABIT_COLOR = HABIT_COLORS[0]?.value ?? '#2f5fe0'
+export const DEFAULT_HABIT_WEEKDAYS: ReadonlyArray<number> = [6, 1, 3]
+export const DEFAULT_HABIT_TIMES = 3
+
+/** The icon picker offers a stored custom icon alongside the presets. */
+export const habitIconChoices = (icon: string): ReadonlyArray<string> =>
+  Array.contains(HABIT_ICONS, icon) ? HABIT_ICONS : [icon, ...HABIT_ICONS]
+
+/** The submitted frequency: weekdays sorted, so the era hash is stable. */
+export const habitFrequencyDraft = (
+  mode: HabitFrequencyMode,
+  weekdays: ReadonlyArray<number>,
+  timesPerWeek: number,
+): HabitFrequency => {
+  if (mode === 'weekdays') {
+    return {
+      _tag: 'weekdays',
+      days: Array.sort(weekdays, Order.Number),
+    }
+  }
+
+  if (mode === 'weekly') {
+    return { _tag: 'weekly', times: timesPerWeek }
+  }
+
+  return { _tag: 'daily' }
+}
+
+/**
+ * Toggle one weekday, never emptying the selection: "never on any day" is a
+ * deleted habit, not a frequency.
+ */
+export const toggleHabitWeekday = (
+  weekdays: ReadonlyArray<number>,
+  day: number,
+): ReadonlyArray<number> => {
+  if (!Array.contains(weekdays, day)) {
+    return [...weekdays, day]
+  }
+
+  const rest = Array.filter(weekdays, value => value !== day)
+
+  return Array.isArrayNonEmpty(rest) ? rest : weekdays
+}
+
+export const clampHabitTimes = (times: number): number =>
+  Math.max(1, Math.min(7, times))
+
+// ── Pending and clock helpers ────────────────────────────────────────────
+
+const PENDING_HABIT_PREFIX = 'habit\u0000'
+
+/** Ids of the habits with an unsent outbox entry. */
+export const pendingHabitIds = (
+  keys: ReadonlyArray<string>,
+): ReadonlyArray<string> =>
+  Array.flatMap(keys, key =>
+    key.startsWith(PENDING_HABIT_PREFIX)
+      ? [key.slice(PENDING_HABIT_PREFIX.length)]
+      : [],
+  )
+
+/** The user's zone, or the house default when the preference is unusable. */
+export const habitTimeZone = (timeZone: string): string =>
+  localDateInOption('1970-01-01T00:00:00.000Z', timeZone) === null
+    ? DEFAULT_TIME_ZONE
+    : timeZone
+
+/** Today's wall date in the user's zone, recomputed from the ticking clock. */
+export const habitToday = (now: number, timeZone: string): string => {
+  const instant = new Date(now).toISOString()
+
+  return (
+    localDateInOption(instant, habitTimeZone(timeZone)) ??
+    localDateInOption(instant, DEFAULT_TIME_ZONE) ??
+    instant.slice(0, 10)
+  )
 }

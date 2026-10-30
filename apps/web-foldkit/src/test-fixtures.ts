@@ -4,6 +4,7 @@ import * as Auth from './auth'
 import type { AuthFailure } from './lib/auth-api'
 import { Model } from './main'
 import { emptyMirrorSnapshot } from './mirror'
+import * as Habits from './page/habits'
 import * as Household from './page/household'
 import * as Lists from './page/lists'
 import * as Login from './page/login'
@@ -157,4 +158,5 @@ export const modelAt = (
       maybeUserId: Option.some(USER_ID),
       maybeSettings: Option.none(),
     }),
+    habits: Habits.initialModel(TODAY_NOW),
   })

@@ -18,6 +18,7 @@ import { type ListId } from '@tali/domain'
 import * as Auth from './auth'
 import { GuardDecision, guardRoute, landingPath, landingRoute } from './guard'
 import { PushEnvironment } from './lib/push/service-worker'
+import * as Habits from './page/habits'
 import * as Household from './page/household'
 import * as Lists from './page/lists'
 import * as Login from './page/login'
@@ -57,6 +58,7 @@ export const Model = Schema.Struct({
   today: Today.Model,
   lists: Lists.Model,
   tasks: Tasks.Model,
+  habits: Habits.Model,
 })
 export type Model = typeof Model.Type
 
@@ -93,6 +95,7 @@ export const Message = defineMessageUnion({
   GotTodayMessage: { message: Today.Message },
   GotListsMessage: { message: Lists.Message },
   GotTasksMessage: { message: Tasks.Message },
+  GotHabitsMessage: { message: Habits.Message },
 })
 export type Message = typeof Message.Type
 
@@ -142,6 +145,7 @@ export const init: Runtime.RoutingApplicationInit<
     maybeUserId,
     maybeSettings: flags.maybeCachedTaskView,
   })
+  const habitsInit = Habits.init({ now: flags.now })
   const model = Model.make({
     route,
     theme: themeInit.model,
@@ -155,6 +159,7 @@ export const init: Runtime.RoutingApplicationInit<
     today: todayInit.model,
     lists: listsInit.model,
     tasks: tasksInit.model,
+    habits: habitsInit.model,
   })
   const guarded = enforceGuard(model, route)
   const entered = enterRoute(
@@ -238,6 +243,9 @@ const toListsMessage = (message: Lists.Message): Message =>
 const toTasksMessage = (message: Tasks.Message): Message =>
   Message.GotTasksMessage({ message })
 
+const toHabitsMessage = (message: Habits.Message): Message =>
+  Message.GotHabitsMessage({ message })
+
 /** The page's sibling inputs: display settings and the live mirror snapshot. */
 const todayInputs = (model: Model): Today.Inputs => ({
   display: Preferences.currentDisplayFields(model.preferences),
@@ -273,6 +281,17 @@ const tasksInputs = (model: Model): Tasks.Inputs => ({
   pending: model.sync.pending,
   mirror: model.sync.mirror,
   pendingKeys: model.sync.pendingKeys,
+})
+
+/** The Habits screen reads the same mirror plus the sync error banner. */
+const habitsInputs = (model: Model): Habits.Inputs => ({
+  display: Preferences.currentDisplayFields(model.preferences),
+  isStoreReady: Sync.isStoreReady(model.sync),
+  isOnline: model.sync.isOnline,
+  pending: model.sync.pending,
+  mirror: model.sync.mirror,
+  pendingKeys: model.sync.pendingKeys,
+  maybeSyncError: model.sync.maybeError,
 })
 
 const authCommand = <E = never, R = never>(
@@ -834,6 +853,54 @@ const foldTasksEntered = Update.foldChildStep({
 const foldTasksMessage = (model: Model, message: Tasks.Message): UpdateReturn =>
   foldTasks(model, { message, inputs: tasksInputs(model) })
 
+type HabitsFoldInput = Readonly<{
+  message: Habits.Message
+  inputs: Habits.Inputs
+}>
+
+const foldHabits = Update.foldChild({
+  update: (habits: Habits.Model, input: HabitsFoldInput) =>
+    Habits.update(habits, input.message, input.inputs),
+  read: (model: Model) => Option.some(model.habits),
+  write: (model: Model, nextHabits: Habits.Model) =>
+    modifyFields(model, { habits: () => nextHabits }),
+  toParentMessage: toHabitsMessage,
+  foldOutMessage: Habits.OutMessage.match<
+    Update.Step<Model, Message, Sync.LocalStoreService>
+  >({
+    WroteLocalData: () => stepModel => foldSyncRefresh(stepModel),
+  }),
+})
+
+const foldHabitsEntered = Update.foldChild({
+  update: Habits.entered,
+  read: (model: Model) => Option.some(model.habits),
+  write: (model: Model, nextHabits: Habits.Model) =>
+    modifyFields(model, { habits: () => nextHabits }),
+  toParentMessage: toHabitsMessage,
+})
+
+const foldHabitsMessage = (
+  model: Model,
+  message: Habits.Message,
+): UpdateReturn => foldHabits(model, { message, inputs: habitsInputs(model) })
+
+/** Enter `/habits` and re-read the mirror it renders from. */
+const enterHabitsPage = (model: Model): UpdateReturn => {
+  const entered = foldHabitsEntered(model, undefined)
+
+  if (!Sync.isStoreReady(entered.model.sync)) {
+    return entered
+  }
+
+  const refreshed = foldSyncRefresh(entered.model)
+
+  return {
+    model: refreshed.model,
+    commands: [...(entered.commands ?? []), ...(refreshed.commands ?? [])],
+  }
+}
+
 /** Run the entry capability of whichever page the transition landed on. */
 const enterRoute = (
   model: Model,
@@ -857,6 +924,13 @@ const enterRoute = (
     Option.isSome(Transition.entered(transition, 'Tasks'))
   ) {
     return foldTasksEntered(model)
+  }
+
+  if (
+    model.route._tag === 'Habits' &&
+    Option.isSome(Transition.entered(transition, 'Habits'))
+  ) {
+    return enterHabitsPage(model)
   }
 
   if (
@@ -982,6 +1056,7 @@ export const update = (model: Model, message: Message) =>
     GotTodayMessage: ({ message }) => foldTodayMessage(model, message),
     GotListsMessage: ({ message }) => foldListsMessage(model, message),
     GotTasksMessage: ({ message }) => foldTasksMessage(model, message),
+    GotHabitsMessage: ({ message }) => foldHabitsMessage(model, message),
   })
 
 // VIEW
@@ -1254,6 +1329,14 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): Html =>
           toParentMessage: toListsMessage,
         }),
       Tasks: () => tasksPageView(model, h),
+      Habits: () =>
+        h.submodel({
+          slotId: 'habits-page',
+          model: model.habits,
+          view: Habits.view,
+          viewInputs: habitsInputs(model),
+          toParentMessage: toHabitsMessage,
+        }),
       Settings: () => settingsPageView(model, h),
       PushHealth: () => pushHealthPageView(model, h),
       NotFound: () => notFoundView(h),
@@ -1386,10 +1469,20 @@ const tasksSubscriptions = Subscription.lift(Tasks.subscriptions)<
   toParentMessage: toTasksMessage,
 })
 
+const habitsSubscriptions = Subscription.lift(Habits.subscriptions)<
+  Model,
+  Message
+>({
+  read: model =>
+    model.route._tag === 'Habits' ? Option.some(model.habits) : Option.none(),
+  toParentMessage: toHabitsMessage,
+})
+
 export const subscriptions = Subscription.aggregate(
   syncSubscriptions,
   themeSubscriptions,
   pushSubscriptions,
   todaySubscriptions,
   tasksSubscriptions,
+  habitsSubscriptions,
 )
