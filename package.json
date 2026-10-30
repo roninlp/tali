@@ -10,6 +10,7 @@
     "test": "turbo run test",
     "test:e2e": "pnpm --filter @tali/e2e test:e2e",
     "dev": "turbo run dev",
+    "dev:foldkit": "pnpm --filter @tali/web-foldkit dev",
     "stack:plan": "turbo run plan",
     "stack:deploy": "turbo run deploy",
     "stack:destroy": "turbo run destroy",
