@@ -43,6 +43,20 @@ pnpm --filter @tali/web-foldkit format
   running and the app open in a browser, agents can inspect the Model, Message
   history, and replay state.
 
+## Migration status
+
+- [x] **Phase 1 — scaffold.** Official `create-foldkit-app` starter, workspace
+  integration, pinned dev port, vendored Foldkit source, agent skills, DevTools
+  MCP, and root agent docs.
+- [ ] **Phase 2 — port the app.** Shell/theming, auth and session restore,
+  routing union, local store and sync engine, preferences/push, then the feature
+  screens (today, tasks, lists, habits, notes, occasions, calendar, reminders,
+  settings).
+
+`apps/web` is the source of truth for behavior until Phase 2 is finished. The
+routing starter's `People` page, `fileTree` routes, and their tests are
+reference material for Foldkit patterns; they are expected to be replaced.
+
 ## Structure
 
 ```
