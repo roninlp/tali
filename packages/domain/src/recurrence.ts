@@ -374,7 +374,9 @@ export const nextOccurrence = (
   const next = expandOccurrences(rule, start, {
     from,
     limit: 1,
-    exceptions: options.exceptions
+    ...(options.exceptions === undefined
+      ? {}
+      : { exceptions: options.exceptions })
   })
   return next[0] ?? null
 }

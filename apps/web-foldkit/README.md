@@ -12,11 +12,19 @@ From the repo root:
 
 ```sh
 pnpm install
-pnpm --filter @tali/web-foldkit dev   # http://localhost:3001
+pnpm dev              # full stack; this app comes up on http://localhost:3001
 ```
 
-`pnpm dev:foldkit` is the shorthand. The port is pinned in `vite.config.ts`
-because the legacy app owns :3000 and the api Worker owns :8787.
+For frontend-only work, run this app on its own:
+
+```sh
+pnpm dev:foldkit      # http://localhost:3001
+```
+
+The port is pinned in `vite.config.ts` because the legacy app owns :3000 and
+the api Worker owns :8787. The dev server proxies the api Worker's routes to
+:8787, so auth and sync need the full `pnpm dev` stack (or a separately
+running api Worker).
 
 Other scripts:
 
@@ -48,10 +56,16 @@ pnpm --filter @tali/web-foldkit format
 - [x] **Phase 1 — scaffold.** Official `create-foldkit-app` starter, workspace
   integration, pinned dev port, vendored Foldkit source, agent skills, DevTools
   MCP, and root agent docs.
-- [ ] **Phase 2 — port the app.** Shell/theming, auth and session restore,
-  routing union, local store and sync engine, preferences/push, then the feature
-  screens (today, tasks, lists, habits, notes, occasions, calendar, reminders,
-  settings).
+- [x] **Phase 2 prerequisites.** Shared versions live in the pnpm catalog and
+  the whole workspace runs Effect 4.1, so `@tali/domain` and `@tali/rpc`
+  resolve to one Effect instance. Vite proxies the api Worker's routes to
+  `:8787`, and `src/lib/{config,rpc}.ts` provide the typed client the port
+  will use.
+- [ ] **Phase 2 — port the app.** Shell/theming, routing union, auth and
+  session restore, local store and sync engine, preferences/push, then the
+  feature screens (today, tasks, lists, habits, notes, occasions, calendar,
+  reminders, settings). The ordered slices and acceptance criteria live in
+  [`docs/plans/foldkit-migration.md`](../../docs/plans/foldkit-migration.md).
 
 `apps/web` is the source of truth for behavior until Phase 2 is finished. The
 routing starter's `People` page, `fileTree` routes, and their tests are
@@ -63,6 +77,8 @@ reference material for Foldkit patterns; they are expected to be replaced.
 src/entry.ts       Runtime bootstrap (Runtime.makeApplication + Runtime.run)
 src/main.ts        Model, Messages, init, update, view, subscriptions
 src/route.ts       Route union and URL parser
+src/lib/config.ts  API base URL (dev proxy vs deployed /api)
+src/lib/rpc.ts     Typed RPC client over the api Worker's contract
 src/page/          Submodels (the routing starter's People page)
 ```
 

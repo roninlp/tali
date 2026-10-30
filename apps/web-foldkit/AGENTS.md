@@ -25,11 +25,21 @@ subtree_prompted: true
   work unless the task says so; port behavior from it instead.
 - **Ports.** This app's Vite dev server is pinned to `http://localhost:3001`
   with `strictPort`. The legacy web app owns :3000 and the api Worker owns
-  :8787. API proxying and CORS wiring are not part of the scaffold yet.
-- **Effect version.** This app pins Effect 4.1, which Foldkit requires. The rest
-  of the workspace is still on Effect 4.0.x. Keep the new app on its own
-  versions; do not upgrade the whole workspace as part of a migration change
-  unless the task asks for it.
+  :8787. `pnpm dev` from the repo root runs all three; `pnpm dev:foldkit` runs
+  only this app.
+- **API access.** Vite proxies `/auth`, `/health`, `/household`, `/push`,
+  `/rpc`, and `/sync` to the api Worker on :8787, so the browser stays on
+  :3001 and cookies stay same-origin. `src/lib/config.ts` resolves the base
+  URL and `src/lib/rpc.ts` builds the typed `@tali/rpc` client; both are
+  ports of the legacy app's `lib/config.ts` and `lib/rpc.ts`. Deploys use
+  `VITE_API_URL=/api` and the `/api/*` service-binding hop.
+- **Effect version.** This app uses Effect 4.1, which Foldkit requires; the
+  whole workspace now runs 4.1 through the pnpm catalog. Shared dependency
+  versions live in `pnpm-workspace.yaml` and are referenced as `catalog:` in
+  package manifests, so bump them there rather than in this package alone.
 - **Phase 1 scope.** The `routing` starter is a working reference for routes,
   Submodels, Commands, and Story/Scene tests. Replacing it with Tali's screens
   is the migration phase, not the scaffold phase.
+- **Migration plan.** The ordered Phase 2 slices and acceptance criteria live
+  in `../../docs/plans/foldkit-migration.md`. Read it before picking up the
+  next slice; keep this file's notes project-specific.

@@ -39,11 +39,14 @@ locally — no Cloudflare account, no credentials, no `wrangler`:
   `/push/*`).
 - **web app** — Vite dev server with HMR on <http://localhost:3000>, allowed to
   call the api cross-origin (session cookie included).
+- **Foldkit app** — Vite dev server on <http://localhost:3001>, proxying the
+  api routes to :8787. It starts under `pnpm dev` too.
 
 Open <http://localhost:3000>, register, create a household, and you are in.
 Editing API or web code hot-reloads in place.
 
-The Foldkit migration target runs alongside the legacy app:
+The Foldkit migration target runs alongside the legacy app. To run only the
+Foldkit frontend (without the api stack):
 
 ```sh
 pnpm dev:foldkit      # http://localhost:3001
