@@ -1,5 +1,11 @@
 import { Effect, Option, Schema } from 'effect'
-import { Command, Runtime, Update } from 'foldkit'
+import {
+  Command,
+  ManagedResource,
+  Runtime,
+  Subscription,
+  Update,
+} from 'foldkit'
 import type { Document, Html, HtmlBuilder } from 'foldkit/html'
 import { defineMessageUnion } from 'foldkit/message'
 import { UrlRequest, load, pushUrl, replaceUrl } from 'foldkit/navigation'
@@ -14,6 +20,7 @@ import * as Register from './page/register'
 import { AppRoute, homeRouter, todayRouter, urlToAppRoute } from './route'
 import { Session } from './session'
 import * as Shell from './shell'
+import * as Sync from './sync'
 import * as Theme from './theme'
 import { searchIcon } from './ui/icons'
 
@@ -26,11 +33,14 @@ export const Model = Schema.Struct({
   login: Login.Model,
   register: Register.Model,
   household: Household.Model,
+  sync: Sync.Model,
 })
 export type Model = typeof Model.Type
 
 export const Flags = Schema.Struct({
   maybeCachedSession: Schema.Option(Session),
+  isOnline: Schema.Boolean,
+  isVisible: Schema.Boolean,
 })
 export type Flags = typeof Flags.Type
 
@@ -47,18 +57,34 @@ export const Message = defineMessageUnion({
   GotLoginMessage: { message: Login.Message },
   GotRegisterMessage: { message: Register.Message },
   GotHouseholdMessage: { message: Household.Message },
+  GotSyncMessage: { message: Sync.Message },
 })
 export type Message = typeof Message.Type
 
 // INIT
 
-export const init: Runtime.RoutingApplicationInit<Model, Message, Flags> = (
-  flags: Flags,
-  url: Url,
-) => {
+export const init: Runtime.RoutingApplicationInit<
+  Model,
+  Message,
+  Flags,
+  never,
+  Sync.LocalStoreService
+> = (flags: Flags, url: Url) => {
   const route = urlToAppRoute(url)
   const themeInit = Theme.init()
   const authInit = Auth.init(flags.maybeCachedSession)
+  const syncInit = Sync.init({
+    maybeUserId: Option.map(
+      Auth.maybeSession(authInit.model),
+      session => session.user.id,
+    ),
+    hasHousehold: Option.exists(
+      Auth.maybeSession(authInit.model),
+      session => session.householdId !== null,
+    ),
+    isOnline: flags.isOnline,
+    isVisible: flags.isVisible,
+  })
   const model = Model.make({
     route,
     theme: themeInit.model,
@@ -66,6 +92,7 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags> = (
     login: Login.initialModel(),
     register: Register.initialModel(),
     household: Household.initialModel(),
+    sync: syncInit.model,
   })
   const guarded = enforceGuard(model, route)
 
@@ -77,6 +104,21 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags> = (
     ],
   }
 }
+
+// MANAGED RESOURCE
+
+/**
+ * One IndexedDB mirror per signed-in user, opened as soon as the session is
+ * known and closed on sign-out. The child resource declares the requirement;
+ * the lift maps its facts into the root Model.
+ */
+export const managedResources = ManagedResource.lift(Sync.managedResources)<
+  Model,
+  Message
+>({
+  read: model => Option.some(model.sync),
+  toParentMessage: message => Message.GotSyncMessage({ message }),
+})
 
 // COMMAND
 
@@ -103,7 +145,7 @@ export const LoadExternal = Command.define('LoadExternal', {
 
 // UPDATE
 
-type UpdateReturn = Update.Return<Model, Message>
+type UpdateReturn = Update.Return<Model, Message, Sync.LocalStoreService>
 
 const toAuthMessage = (message: Auth.Message): Message =>
   Message.GotAuthMessage({ message })
@@ -123,6 +165,30 @@ const cacheSessionCommands = (
 const guardContext = (model: Model) => ({
   isHouseholdInviteVisible: Option.isSome(model.household.maybeCreated),
 })
+
+const syncSession = (model: Model): Sync.Model => {
+  const maybeSession = Auth.maybeSession(model.auth)
+
+  return Sync.applySession(
+    model.sync,
+    Option.map(maybeSession, session => session.user.id),
+    Option.exists(maybeSession, session => session.householdId !== null),
+  )
+}
+
+const enforceGuardWithSessionUser = (
+  model: Model,
+  route: AppRoute,
+): UpdateReturn => {
+  const guarded = enforceGuard(model, route)
+
+  return {
+    model: modifyFields(guarded.model, {
+      sync: () => syncSession(guarded.model),
+    }),
+    ...(guarded.commands === undefined ? {} : { commands: guarded.commands }),
+  }
+}
 
 const enforceGuard = (model: Model, route: AppRoute): UpdateReturn =>
   GuardDecision.match<UpdateReturn>(
@@ -151,10 +217,13 @@ const foldTheme: Update.Fold<Model, Message, Theme.Message> = Update.foldChild({
   toParentMessage: message => Message.GotThemeMessage({ message }),
 })
 
-const foldAuthOutMessage = Auth.OutMessage.match<Update.Step<Model, Message>>({
-  RestoredSession: () => stepModel => enforceGuard(stepModel, stepModel.route),
+const foldAuthOutMessage = Auth.OutMessage.match<
+  Update.Step<Model, Message, Sync.LocalStoreService>
+>({
+  RestoredSession: () => stepModel =>
+    enforceGuardWithSessionUser(stepModel, stepModel.route),
   SignedOut: () => stepModel =>
-    enforceGuard(resetForms(stepModel), stepModel.route),
+    enforceGuardWithSessionUser(resetForms(stepModel), stepModel.route),
 })
 
 const foldAuth = Update.foldChild({
@@ -183,6 +252,12 @@ const foldLoginOutMessage = Login.OutMessage.match<Update.Step<Model, Message>>(
       stepModel => ({
         model: modifyFields(stepModel, {
           auth: () => Auth.applySession(stepModel.auth, session),
+          sync: () =>
+            Sync.applySession(
+              stepModel.sync,
+              Option.some(session.user.id),
+              session.householdId !== null,
+            ),
           login: () => Login.initialModel(),
           route: () => landingRoute(session),
         }),
@@ -212,6 +287,12 @@ const foldRegisterOutMessage = Register.OutMessage.match<
     stepModel => ({
       model: modifyFields(stepModel, {
         auth: () => Auth.applySession(stepModel.auth, session),
+        sync: () =>
+          Sync.applySession(
+            stepModel.sync,
+            Option.some(session.user.id),
+            session.householdId !== null,
+          ),
         register: () => Register.initialModel(),
         route: () => landingRoute(session),
       }),
@@ -241,7 +322,18 @@ const foldHouseholdOutMessage = Household.OutMessage.match<
       const nextAuth = Auth.applyHouseholdId(stepModel.auth, householdId)
 
       return {
-        model: modifyFields(stepModel, { auth: () => nextAuth }),
+        model: modifyFields(stepModel, {
+          auth: () => nextAuth,
+          sync: () =>
+            Sync.applySession(
+              stepModel.sync,
+              Option.map(
+                Auth.maybeSession(nextAuth),
+                session => session.user.id,
+              ),
+              true,
+            ),
+        }),
         commands: cacheSessionCommands(nextAuth),
       }
     },
@@ -254,6 +346,15 @@ const foldHouseholdOutMessage = Household.OutMessage.match<
       return {
         model: modifyFields(stepModel, {
           auth: () => nextAuth,
+          sync: () =>
+            Sync.applySession(
+              stepModel.sync,
+              Option.map(
+                Auth.maybeSession(nextAuth),
+                session => session.user.id,
+              ),
+              true,
+            ),
           route: () => AppRoute.Today(),
         }),
         commands: [
@@ -293,6 +394,15 @@ const foldHousehold = Update.foldChild({
   foldOutMessage: foldHouseholdOutMessage,
 })
 
+const foldSync = Update.foldChild({
+  update: Sync.update,
+  read: (model: Model) => Option.some(model.sync),
+  write: (model: Model, nextSync: Sync.Model) =>
+    modifyFields(model, { sync: () => nextSync }),
+  toParentMessage: (message: Sync.Message) =>
+    Message.GotSyncMessage({ message }),
+})
+
 export const update = (model: Model, message: Message) =>
   Message.match<UpdateReturn>(message, {
     ChangedUrl: ({ url }) => enforceGuard(model, urlToAppRoute(url)),
@@ -318,6 +428,7 @@ export const update = (model: Model, message: Message) =>
     GotLoginMessage: ({ message }) => foldLogin(model, message),
     GotRegisterMessage: ({ message }) => foldRegister(model, message),
     GotHouseholdMessage: ({ message }) => foldHousehold(model, message),
+    GotSyncMessage: ({ message }) => foldSync(model, message),
   })
 
 // VIEW
@@ -468,6 +579,26 @@ const notFoundView = (h: HtmlBuilder<Message>): Html =>
     ],
   )
 
+const todayPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
+  h.section(
+    [h.Class('page-wrap grid max-w-5xl gap-3')],
+    [
+      h.h1([h.Class('m-0 text-3xl font-bold tracking-tight')], ['امروز']),
+      placeholderNoteView(h),
+      Option.match(Auth.maybeSession(model.auth), {
+        onNone: () => h.empty,
+        onSome: session =>
+          h.submodel({
+            slotId: 'today-sync',
+            model: model.sync,
+            view: Sync.todayView,
+            viewInputs: { timeZone: session.user.timeZone },
+            toParentMessage: message => Message.GotSyncMessage({ message }),
+          }),
+      }),
+    ],
+  )
+
 const pageView = (model: Model, h: HtmlBuilder<Message>): Html =>
   AppRoute.matchOrElse<Html>(
     model.route,
@@ -500,6 +631,7 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): Html =>
           },
           toParentMessage: message => Message.GotHouseholdMessage({ message }),
         }),
+      Today: () => todayPageView(model, h),
       NotFound: () => notFoundView(h),
     },
     () =>
@@ -523,6 +655,16 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
     maybeSession,
     session => session.user.displayName,
   )
+  const syncStatus = Option.match(maybeSession, {
+    onNone: () => h.empty,
+    onSome: () =>
+      h.submodel({
+        slotId: 'sync-status',
+        model: model.sync,
+        view: Sync.view,
+        toParentMessage: message => Message.GotSyncMessage({ message }),
+      }),
+  })
   const accountMenu = h.submodel({
     slotId: 'account-menu',
     model: model.auth,
@@ -538,7 +680,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
     })
   const actions = h.div(
     [h.Class('flex items-center gap-1')],
-    [themeToggle, accountMenu],
+    [syncStatus, themeToggle, accountMenu],
   )
   const guard = GuardDecision.match<
     Readonly<{
@@ -577,3 +719,14 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
     body,
   }
 }
+
+// SUBSCRIPTION
+
+const syncSubscriptions = Subscription.lift(Sync.subscriptions)<Model, Message>(
+  {
+    read: model => Option.some(model.sync),
+    toParentMessage: message => Message.GotSyncMessage({ message }),
+  },
+)
+
+export const subscriptions = syncSubscriptions

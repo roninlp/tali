@@ -43,18 +43,32 @@ subtree_prompted: true
   bundling `effect` and `effect/schema` as separate entries crashes the
   optimizer in Vite 8.3.4.
 - **Migration progress.** P2.1 (shell, theming, RTL document), P2.2 (route
-  union and navigation), and P2.3 (auth and session restore) are in place:
-  `src/shell.ts` holds the chrome plus the desktop section menu, mobile tab bar,
-  display name, and account slot; `src/theme.ts` the house light/dark Submodel;
-  `src/route.ts` the `AppRoute` union and typed routers; `src/auth.ts` the
-  session Submodel with restore, sign-out, and cache Commands; `src/guard.ts`
-  the guest/session/household access rules; and `src/page/` the login, register,
-  and household screens. `src/session.ts` and `src/household-summary.ts` hold
-  the plain Model projections the auth responses decode into, so no branded
-  domain value crosses the dev optimizer's `effect/schema` boundary. Auth HTTP
-  stays on the legacy `fetch` shape with `credentials: "include"` because the
-  session cookie is set by the raw response. P2.4 adds the local store and sync
-  engine.
+  union and navigation), P2.3 (auth and session restore), and P2.4 (local
+  store and sync engine) are in place: `src/shell.ts` holds the chrome plus the
+  desktop section menu, mobile tab bar, display name, and account slot;
+  `src/theme.ts` the house light/dark Submodel; `src/route.ts` the `AppRoute`
+  union and typed routers; `src/auth.ts` the session Submodel with restore,
+  sign-out, and cache Commands; `src/guard.ts` the guest/session/household
+  access rules; `src/page/` the login, register, and household screens; and
+  `src/sync.ts` the local-first sync Submodel with its managed IndexedDB
+  mirror, engine Commands, cadence Subscription, and quick-add snapshot.
+  `src/session.ts` and `src/household-summary.ts` hold the plain Model
+  projections the auth responses decode into, so no branded domain value
+  crosses the dev optimizer's `effect/schema` boundary. Auth HTTP stays on the
+  legacy `fetch` shape with `credentials: "include"` because the session cookie
+  is set by the raw response; the data slices use `withRpcClient`. The
+  framework-free client core lives in `packages/sync-client`
+  (`@tali/sync-client`): the IndexedDB store, sync engine, cadence table, and
+  task projection. `@tali/conflict-lab` imports that core, so the two-device
+  convergence suite runs against the same engine as the Foldkit app. P2.5
+  adds preferences, saved theme, and push.
+- **Sync smoke check.** With `pnpm dev` running (the api Worker and both
+  frontends), `pnpm test:smoke:foldkit:sync` registers a fresh account,
+  creates a household, writes a task online, switches the app to its offline
+  state, writes a second task, reloads twice, reconnects, checks both rows on
+  the server's pull feed, and signs a second device in to prove convergence.
+  The run cuts `/auth`, `/sync/*`, and `/rpc` while keeping Vite's module URLs
+  untouched. It uses the local development database and does not reset it.
 - **Auth smoke check.** With `pnpm dev` running, `pnpm test:smoke:foldkit`
   registers a fresh account through the :3001 proxy, creates a household,
   reloads into `/today`, signs out, logs back in, and checks the guard

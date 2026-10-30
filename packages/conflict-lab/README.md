@@ -3,15 +3,15 @@
 A **private, throwaway** test package (ticket #83). Nothing in production
 depends on it; it exists to prove that two devices converge.
 
-Each test runs the **real client engine** — `apps/web`'s `LocalStore` +
-`createSyncEngine` — with each device on its own `fake-indexeddb` database,
-next to the **real api Worker** in workerd (`@cloudflare/vitest-plugin`, the
-same harness as the `apps/api/test/boundary` suite). The only substitution is
-the network hop: `test/harness.ts`'s instrumented transport reproduces
-`httpSyncTransport`'s wire surface (`/sync/pull`, `/sync/bootstrap`,
-`/sync/push`, plus the two habit RPC repairs) while recording cursors and push
-results. Pushes, pulls, CAS, dedupe, visibility filtering and tombstones are
-the production code on both sides of the wire.
+Each test runs the **real client engine** — `@tali/sync-client`'s `LocalStore` +
+`createSyncEngine` (the core the Foldkit app also uses) — with each device on its
+own `fake-indexeddb` database, next to the **real api Worker** in workerd
+(`@cloudflare/vitest-plugin`, the same harness as the `apps/api/test/boundary`
+suite). The only substitution is the network hop: `test/harness.ts`'s
+instrumented transport reproduces `httpSyncTransport`'s wire surface
+(`/sync/pull`, `/sync/bootstrap`, `/sync/push`, plus the two habit RPC repairs)
+while recording cursors and push results. Pushes, pulls, CAS, dedupe, visibility
+filtering and tombstones are the production code on both sides of the wire.
 
 ## Suites
 

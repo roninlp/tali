@@ -18,6 +18,7 @@
     "@noble/hashes": "catalog:",
     "@tali/domain": "workspace:*",
     "@tali/rpc": "workspace:*",
+    "@tali/sync-client": "workspace:*",
     "effect": "catalog:",
     "foldkit": "0.170.0"
   },

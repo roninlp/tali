@@ -8,6 +8,7 @@ import * as Login from './page/login'
 import * as Register from './page/register'
 import { AppRoute } from './route'
 import { Session } from './session'
+import * as Sync from './sync'
 import * as Theme from './theme'
 
 const USER_ID = '0192f0a0-0000-7000-8000-000000000001'
@@ -57,6 +58,32 @@ export const authModel = (status: Auth.SessionStatus): Auth.Model =>
     maybeSignOutFailure: Option.none(),
   })
 
+export const syncModel = (
+  status: Sync.StoreStatus = Sync.StoreStatus.Ready(),
+): Sync.Model =>
+  Sync.Model.make({
+    maybeUserId: Option.some(USER_ID),
+    hasHousehold: true,
+    status,
+    isOnline: true,
+    isVisible: true,
+    pending: 0,
+    failed: 0,
+    failedRefreshedAt: 0,
+    isSyncing: false,
+    wakePending: false,
+    failures: 0,
+    lastActivity: 0,
+    isHalted: false,
+    hasSyncedOnce: true,
+    tick: 0,
+    maybeError: Option.none(),
+    tasks: [],
+    draft: '',
+    isCreatingTask: false,
+    maybeTaskError: Option.none(),
+  })
+
 export const modelAt = (
   route: AppRoute,
   status: Auth.SessionStatus = signedIn(),
@@ -69,4 +96,5 @@ export const modelAt = (
     login: Login.initialModel(),
     register: Register.initialModel(),
     household: Household.initialModel(),
+    sync: syncModel(),
   })

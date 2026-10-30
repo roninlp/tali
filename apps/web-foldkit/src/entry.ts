@@ -2,11 +2,22 @@ import { Effect } from 'effect'
 import { Runtime } from 'foldkit'
 
 import { readCachedSession } from './lib/session-cache'
-import { Flags, Message, Model, init, update, view } from './main'
+import {
+  Flags,
+  Message,
+  Model,
+  init,
+  managedResources,
+  subscriptions,
+  update,
+  view,
+} from './main'
 
 const flags: Effect.Effect<Flags> = Effect.sync(() =>
   Flags.make({
     maybeCachedSession: readCachedSession(),
+    isOnline: navigator.onLine,
+    isVisible: document.visibilityState !== 'hidden',
   }),
 )
 
@@ -16,6 +27,8 @@ const application = Runtime.makeApplication({
   init,
   update,
   view,
+  subscriptions,
+  managedResources,
   container: document.getElementById('root'),
   routing: {
     onUrlRequest: request => Message.ClickedLink({ request }),

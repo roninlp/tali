@@ -13,6 +13,7 @@
     "@cloudflare/workers-types": "catalog:",
     "@tali/api": "workspace:*",
     "@tali/domain": "workspace:*",
+    "@tali/sync-client": "workspace:*",
     "@tali/web": "workspace:*",
     "effect": "catalog:",
     "fake-indexeddb": "catalog:",

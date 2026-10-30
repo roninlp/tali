@@ -2,8 +2,9 @@
 
 **Status:** in progress. Phase 1 (scaffold), the Phase 2 prerequisites
 (workspace-wide Effect 4.1, api proxy, typed RPC entry point), P2.1 (shell,
-theming, RTL document), P2.2 (route union and navigation), and P2.3 (auth and
-session restore) are in place. P2.4 (local store and sync engine) is next.
+theming, RTL document), P2.2 (route union and navigation), P2.3 (auth and
+session restore), and P2.4 (local store and sync engine) are in place. P2.5
+(preferences, theme, and push) is next.
 
 **Source of truth:** `apps/web` (Solid v2) for behavior, copy, and
 interaction. **Target:** `apps/web-foldkit` (Foldkit + Effect). Do not edit
@@ -30,8 +31,8 @@ interaction. **Target:** `apps/web-foldkit` (Foldkit + Effect). Do not edit
 | --- | --- | --- |
 | `src/lib/rpc.ts`, `src/lib/config.ts` | `src/lib/rpc.ts`, `src/lib/config.ts` | Already ported as an Effect-returning helper |
 | `src/lib/{auth,session-cache,preferences*,push}/*` | Commands + Model | Port behavior; replace Solid contexts with Model fields |
-| `src/lib/local-store/store.ts` | local store service | Keep IndexedDB behind a thin service; Model stores snapshots |
-| `src/lib/sync-engine.ts`, `sync-cadence.ts` | Commands + Subscriptions | Pure logic is reusable; drive it from Foldkit Commands |
+| `src/lib/local-store/store.ts` | `@tali/sync-client` + `src/sync.ts` | Pure rules extracted; IndexedDB behind a managed service; Model holds snapshots |
+| `src/lib/sync-engine.ts`, `sync-cadence.ts` | `@tali/sync-client` + Commands/Subscriptions | Engine shared with the conflict lab; the runtime owns the timer chain |
 | `src/routes/*`, `src/router.ts` | `src/route.ts` | Rebuild the route union; URL parser gets tests |
 | `src/app.css`, `@tali/ui/base.css` | `src/styles.css` | Copy the CSS tokens/themes; components are Solid-only |
 | `@tali/domain`, `@tali/rpc`, `@tali/config` | same packages | Import directly; one Effect instance via the catalog |
@@ -143,6 +144,26 @@ signs out, and logs back in through the Vite proxy.
 
 **Done when:** a task created offline survives reload and syncs on reconnect;
 the conflict-lab suite runs against the Foldkit client or its extracted core.
+
+**Delivered:** the framework-free client core moved to `@tali/sync-client`
+(`packages/sync-client`): the IndexedDB store (with the coalescing and mirror
+rules extracted into pure modules), the sync engine, the cadence table, and
+the task quick-add projection. `apps/web-foldkit/src/sync.ts` is the Foldkit
+Submodel: the Model holds the store snapshot the views read (task rows, outbox
+and failure counts, connectivity, failures), the IndexedDB mirror is a
+`ManagedResource` keyed by the signed-in user, the engine runs in
+`RunSyncPass` and the quick-add in `CreateTask`, and the wake rhythm is a
+cadence `Subscription` driven by online/visibility/focus event streams.
+`src/lib/sync-transport.ts` keeps `/sync/*` on plain HTTP and builds the two
+habit repair paths with `withRpcClient`. `src/ui/sync-status.ts` is the status
+pill in the app header. `/today` keeps its placeholder plus the temporary
+local-first quick-add and mirror list the slice needs; P2.6 replaces it. The
+store is opened only for a signed-in user and the sync loop only runs once
+that user has a household, so onboarding never polls a 409. `@tali/conflict-lab`
+now imports the extracted core, and its 19-test deterministic + property suite
+still passes. The `:3001` sync smoke (`pnpm test:smoke:foldkit:sync` with
+`pnpm dev` running) writes a task online, goes offline, writes another, reloads
+twice, reconnects, and verifies the server feed and a second device converge.
 
 ### P2.5 — Preferences, theme, and push
 
