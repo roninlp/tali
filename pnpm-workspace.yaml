@@ -50,3 +50,10 @@ minimumReleaseAgeExclude:
   - '@foldkit/ui@0.170.0'
   - '@foldkit/vite-plugin@0.29.0'
   - foldkit@0.170.0
+
+# alchemy 2.0.0-beta.83 predates Effect 4.1 and imports the removed
+# `effect/Crypto` module. This backports upstream's 4.1 support
+# (alchemy-run/alchemy#2754). Drop it once a release contains that fix; see
+# infra/README.md.
+patchedDependencies:
+  alchemy@2.0.0-beta.83: patches/alchemy@2.0.0-beta.83.patch

@@ -74,10 +74,13 @@ subtree_prompted: true
   reloads into `/today`, signs out, logs back in, and checks the guard
   redirects for signed-out, household, and no-household accounts. It uses the
   local development database and does not reset it.
-- **Dev stack caveat.** `alchemy` 2.0.0-beta.83 imports the Effect 4.0
-  `effect/Crypto` path, so the api Worker does not boot under the workspace's
-  Effect 4.1 without a local compatibility shim. The Foldkit app and its tests
-  are unaffected; the infra dependency needs a separate fix.
+- **Dev stack and Effect 4.1.** `alchemy` 2.0.0-beta.83 predates Effect 4.1
+  and imports the removed `effect/Crypto` module. `infra` carries a pnpm patch
+  (a backport of upstream `alchemy-run/alchemy#2754`) that moves alchemy to
+  `effect/crypto/Digest` and `effect/crypto/SecureRandom`, so the api Worker
+  boots from a clean install with no `node_modules` shim. The Foldkit app was
+  unaffected. Drop the patch once a published alchemy release includes the fix;
+  see `../../infra/README.md`.
 - **Styling.** `src/styles.css` is the Tali entry: Tailwind v4 + daisyUI, the
   `tali`/`talidark` themes, and the shared utilities. Vazirmatn stays in
   `@tali/ui`; the CSS references it across the workspace and Vite fingerprints
