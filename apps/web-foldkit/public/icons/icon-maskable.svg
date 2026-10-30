@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#2f5fe0"/>
+  <circle cx="352" cy="160" r="30" fill="#39c2b2"/>
+  <text x="256" y="342" font-family="DejaVu Sans, sans-serif" font-size="236" font-weight="700"
+        text-anchor="middle" fill="#ffffff" direction="rtl">ت</text>
+</svg>

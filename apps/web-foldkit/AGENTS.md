@@ -27,14 +27,15 @@ subtree_prompted: true
   with `strictPort`. The legacy web app owns :3000 and the api Worker owns
   :8787. `pnpm dev` from the repo root runs all three; `pnpm dev:foldkit` runs
   only this app.
-- **API access.** Vite proxies `/auth`, `/health`, `/household`, `/push`,
-  `/rpc`, and `/sync` to the api Worker on :8787, so the browser stays on
-  :3001 and cookies stay same-origin. `/household` and `/push-health` are also
-  SPA routes that share two of those prefixes, so the proxy lets browser
-  navigations return `index.html` and proxies only API calls. `src/lib/config.ts`
-  resolves the base URL and `src/lib/rpc.ts` builds the typed `@tali/rpc`
-  client; both are ports of the legacy app's `lib/config.ts` and `lib/rpc.ts`.
-  Deploys use `VITE_API_URL=/api` and the `/api/*` service-binding hop.
+- **API access.** Vite proxies `/auth`, `/health`, `/household`,
+  `/preferences`, `/push`, `/reminders`, `/rpc`, and `/sync` to the api Worker
+  on :8787, so the browser stays on :3001 and cookies stay same-origin.
+  `/household`, `/push-health`, and `/reminders` are also SPA routes whose
+  prefixes belong to the Worker, so the proxy lets browser navigations return
+  `index.html` and proxies only API calls. `src/lib/config.ts` resolves the
+  base URL and `src/lib/rpc.ts` builds the typed `@tali/rpc` client; both are
+  ports of the legacy app's `lib/config.ts` and `lib/rpc.ts`. Deploys use
+  `VITE_API_URL=/api` and the `/api/*` service-binding hop.
 - **Effect version.** This app uses Effect 4.1, which Foldkit requires; the
   whole workspace now runs 4.1 through the pnpm catalog. Shared dependency
   versions live in `pnpm-workspace.yaml` and are referenced as `catalog:` in
@@ -43,25 +44,44 @@ subtree_prompted: true
   bundling `effect` and `effect/schema` as separate entries crashes the
   optimizer in Vite 8.3.4.
 - **Migration progress.** P2.1 (shell, theming, RTL document), P2.2 (route
-  union and navigation), P2.3 (auth and session restore), and P2.4 (local
-  store and sync engine) are in place: `src/shell.ts` holds the chrome plus the
-  desktop section menu, mobile tab bar, display name, and account slot;
-  `src/theme.ts` the house light/dark Submodel; `src/route.ts` the `AppRoute`
-  union and typed routers; `src/auth.ts` the session Submodel with restore,
-  sign-out, and cache Commands; `src/guard.ts` the guest/session/household
-  access rules; `src/page/` the login, register, and household screens; and
-  `src/sync.ts` the local-first sync Submodel with its managed IndexedDB
-  mirror, engine Commands, cadence Subscription, and quick-add snapshot.
-  `src/session.ts` and `src/household-summary.ts` hold the plain Model
-  projections the auth responses decode into, so no branded domain value
-  crosses the dev optimizer's `effect/schema` boundary. Auth HTTP stays on the
-  legacy `fetch` shape with `credentials: "include"` because the session cookie
-  is set by the raw response; the data slices use `withRpcClient`. The
-  framework-free client core lives in `packages/sync-client`
-  (`@tali/sync-client`): the IndexedDB store, sync engine, cadence table, and
-  task projection. `@tali/conflict-lab` imports that core, so the two-device
-  convergence suite runs against the same engine as the Foldkit app. P2.5
-  adds preferences, saved theme, and push.
+  union and navigation), P2.3 (auth and session restore), P2.4 (local store
+  and sync engine), and P2.5 (preferences, saved theme, and push) are in
+  place: `src/shell.ts` holds the chrome plus the desktop section menu, mobile
+  tab bar, display name, and account slot; `src/theme.ts` the persistent
+  gallery + light/dark/system Submodel; `src/route.ts` the `AppRoute` union and
+  typed routers; `src/auth.ts` the session Submodel with restore, sign-out, and
+  cache Commands; `src/guard.ts` the guest/session/household access rules;
+  `src/preferences.ts` the server-of-record display preferences with their
+  synchronous local cache; `src/push.ts` the Web Push subscription, permission,
+  and notification-action Submodel; `src/page/` the login, register, and
+  household screens; and `src/sync.ts` the local-first sync Submodel with its
+  managed IndexedDB mirror, engine Commands, cadence Subscription, and
+  quick-add snapshot. `/settings` currently renders `src/preferences.ts`'s
+  display form, the theme gallery, and the push health panel; the
+  account/password, household, and trash Settings work stays in P2.6.
+  `src/session.ts`, `src/household-summary.ts`, and `src/preferences-model.ts`
+  hold the plain Model projections the auth/preferences responses decode into,
+  so no branded domain value crosses the dev optimizer's `effect/schema`
+  boundary. Auth HTTP stays on the legacy `fetch` shape with
+  `credentials: "include"` because the session cookie is set by the raw
+  response; the data slices use `withRpcClient`. The framework-free client core
+  lives in `packages/sync-client` (`@tali/sync-client`): the IndexedDB store,
+  sync engine, cadence table, and task projection. `@tali/conflict-lab` imports
+  that core, so the two-device convergence suite runs against the same engine
+  as the Foldkit app.
+- **Theme boot.** `public/theme-boot.js` is loaded in `index.html`'s head and
+  applies `tali.theme` / `tali.mode` to `<html data-theme>` before first paint;
+  `src/theme.ts` starts from the same values in `entry.ts` flags, so a saved
+  dark or gallery theme never flashes the light palette.
+- **Push and service-worker scope.** `public/sw.js`,
+  `manifest.webmanifest`, and the icons are byte-for-byte ports of the legacy
+  public assets. The worker registers at `/sw.js` with scope `/`. Service
+  worker registrations are isolated per origin (scheme + host + port), so
+  `:3001` owns its own registration and the legacy `apps/web` worker on
+  `:3000` is untouched. The worker receives the API origin from the page so a
+  Done/Snooze tap can flush through the Vite proxy (`/reminders`) in dev and
+  the `/api` service-binding hop in production. `apps/web/public/sw.js` must
+  not be edited during the migration.
 - **Sync smoke check.** With `pnpm dev` running (the api Worker and both
   frontends), `pnpm test:smoke:foldkit:sync` registers a fresh account,
   creates a household, writes a task online, switches the app to its offline
@@ -74,6 +94,12 @@ subtree_prompted: true
   reloads into `/today`, signs out, logs back in, and checks the guard
   redirects for signed-out, household, and no-household accounts. It uses the
   local development database and does not reset it.
+- **Push check.** `/settings` and `/push-health` show the device's VAPID,
+  permission, subscription, and last-action state. The local stack needs
+  `VAPID_PRIVATE_KEY` exported before `pnpm dev` to enable a real subscription
+  and `pnpm test:push`; without it the panel correctly says the key is
+  unconfigured and the enable button is disabled. See
+  `../../docs/web-push-local.md`.
 - **Dev stack caveat.** `alchemy` 2.0.0-beta.83 imports the Effect 4.0
   `effect/Crypto` path, so the api Worker does not boot under the workspace's
   Effect 4.1 without a local compatibility shim. The Foldkit app and its tests
@@ -81,8 +107,8 @@ subtree_prompted: true
 - **Styling.** `src/styles.css` is the Tali entry: Tailwind v4 + daisyUI, the
   `tali`/`talidark` themes, and the shared utilities. Vazirmatn stays in
   `@tali/ui`; the CSS references it across the workspace and Vite fingerprints
-  it on build. The theme toggle is in-session only until P2.5 adds the saved
-  preference and pre-paint restore.
+  it on build. The theme toggle and the settings gallery are device-local and
+  restore from `public/theme-boot.js` before first paint.
 - **Migration plan.** The ordered Phase 2 slices and acceptance criteria live
   in `../../docs/plans/foldkit-migration.md`. Read it before picking up the
   next slice; keep this file's notes project-specific.

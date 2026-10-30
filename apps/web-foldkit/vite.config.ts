@@ -4,8 +4,9 @@ import { foldkit } from '@foldkit/vite-plugin'
 import tailwindcss from '@tailwindcss/vite'
 
 /**
- * `/household` and `/push-health` are SPA routes whose prefixes also belong to
- * the api Worker. A browser navigation gets the app; API calls still proxy.
+ * `/household`, `/push-health`, and `/reminders` are SPA routes whose prefixes
+ * also belong to the api Worker. A browser navigation gets the app; API calls
+ * still proxy.
  */
 const spaDocumentBypass = (request: {
   method?: string
@@ -45,6 +46,13 @@ export default defineConfig({
       },
       // `/push-health` shares the `/push` prefix with the push API.
       '/push': {
+        target: 'http://localhost:8787',
+        bypass: spaDocumentBypass,
+      },
+      '/preferences': 'http://localhost:8787',
+      // `/reminders` is both the SPA route a notification tap opens and the
+      // respond endpoint the service worker flushes queued actions to.
+      '/reminders': {
         target: 'http://localhost:8787',
         bypass: spaDocumentBypass,
       },

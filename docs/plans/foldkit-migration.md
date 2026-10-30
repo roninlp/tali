@@ -3,8 +3,10 @@
 **Status:** in progress. Phase 1 (scaffold), the Phase 2 prerequisites
 (workspace-wide Effect 4.1, api proxy, typed RPC entry point), P2.1 (shell,
 theming, RTL document), P2.2 (route union and navigation), P2.3 (auth and
-session restore), and P2.4 (local store and sync engine) are in place. P2.5
-(preferences, theme, and push) is next.
+session restore), P2.4 (local store and sync engine), and P2.5 (preferences,
+theme, and push) are in place. P2.5's real vendor-push check is still blocked
+on a local VAPID pair and a real browser; everything else is verified. P2.6
+(feature screens) is next.
 
 **Source of truth:** `apps/web` (Solid v2) for behavior, copy, and
 interaction. **Target:** `apps/web-foldkit` (Foldkit + Effect). Do not edit
@@ -176,6 +178,45 @@ twice, reconnects, and verifies the server feed and a second device converge.
 
 **Done when:** theme survives reload; a test notification from
 `pnpm test:push` opens the right screen; preference changes round-trip.
+
+**Delivered:** `src/preferences-model.ts` is the plain projection of the
+domain preferences row, `src/lib/preferences-api.ts` the `GET`/`PATCH` client,
+and `src/lib/preferences-cache.ts` the synchronous `tali.preferences.v1.<id>`
+read cache. `src/preferences.ts` is the Submodel: it adopts the cache before
+the network settles, reconciles `/preferences` once per signed-in identity,
+patches only the fields the settings form changed, and never enters the sync
+outbox (ADR-0002). `/settings` now renders the real display-preferences form,
+source badge, retry, and save confirmation; the account/password, household,
+and trash surfaces remain P2.6 work. Auth stays on plain fetch; the data slices
+still use `withRpcClient`.
+
+`src/theme.ts` now ports the legacy gallery and light/dark/system mode. The
+choice is device-local (`tali.theme` / `tali.mode`), `public/theme-boot.js`
+applies it before first paint, and the Model starts from the same storage
+values so the first render cannot flash the house light palette. The settings
+screen carries the gallery picker; the header keeps the sun/moon toggle.
+
+`src/push.ts` ports the VAPID, subscription, notification-action, and
+permission-health behavior from `apps/web/src/lib/push/*` into a Submodel.
+`src/lib/push/` holds the Effect-returning client pieces, the IndexedDB
+Done/Snooze queue, and the service-worker helpers. `/push-health` is the real
+diagnostic screen, and `/settings` embeds it. `public/sw.js`,
+`manifest.webmanifest`, `theme-boot.js`, and the icons are copied from the
+legacy app; the worker is registered at `/sw.js` with scope `/` on the :3001
+origin, which is a separate service-worker registration from the untouched
+legacy worker on :3000. The queue drains through `POST
+/reminders/dispatches/:id/respond`; Vite proxies `/reminders` for that path.
+
+The local stack had no `VAPID_PRIVATE_KEY`, so `GET /push/vapid` returns
+`null`, the panel correctly disables enabling, and `pnpm test:push` stops at
+the missing key. A generated pair plus a manual subscription in Playwright's
+Chromium let the harness reach the vendor endpoint, but Chrome for Testing's
+FCM endpoint rejected the send with HTTP 403, so no real notification could be
+delivered in this environment. The notification-click path was verified in
+headless Chromium by dispatching the worker's real `notificationclick` handler:
+a body tap targets `/reminders`, and a synthetic Done tap queues, drains, and
+shows in the health panel. A real device/browser with a matching local VAPID
+pair remains the only unverified part of the acceptance.
 
 ### P2.6 — Feature screens
 

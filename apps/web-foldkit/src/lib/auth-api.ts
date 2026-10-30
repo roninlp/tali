@@ -68,7 +68,10 @@ const networkFailure = AuthFailure.make({ code: 'Network', retryable: true })
 const decodeErrorCode = Schema.decodeUnknownOption(AuthErrorCode)
 
 /** Decode the shared envelope. Anything malformed falls back to the status. */
-const classify = (status: number, body: unknown): AuthFailure => {
+export const classifyApiFailure = (
+  status: number,
+  body: unknown,
+): AuthFailure => {
   const envelope = Schema.decodeUnknownOption(ErrorEnvelope)(body)
 
   if (Option.isSome(envelope)) {
@@ -130,7 +133,7 @@ const send = <A>(
     const json: unknown = Option.getOrUndefined(maybeJson)
 
     if (!response.ok) {
-      return { ok: false, error: classify(response.status, json) }
+      return { ok: false, error: classifyApiFailure(response.status, json) }
     }
 
     const decoded = Schema.decodeUnknownOption(schema)(json)

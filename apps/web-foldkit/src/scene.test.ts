@@ -101,6 +101,27 @@ describe('route placeholders', () => {
       expect(role('link', { name: 'بازگشت به تالی' })).toExist(),
     )
   })
+
+  test('settings surfaces display preferences, the theme picker, and push health', () => {
+    scene(
+      { update, view },
+      given(modelAt(AppRoute.Settings())),
+      expect(role('heading', { name: 'تنظیمات' })).toExist(),
+      expect(role('heading', { name: 'ظاهر و پوسته' })).toExist(),
+      expect(role('heading', { name: 'نمایش' })).toExist(),
+      expect(role('heading', { name: 'وضعیت اعلان‌ها' })).toExist(),
+    )
+  })
+
+  test('the push-health screen is the diagnostic panel on its own', () => {
+    scene(
+      { update, view },
+      given(modelAt(AppRoute.PushHealth())),
+      expect(role('heading', { name: 'وضعیت اعلان‌ها' })).toExist(),
+      expect(text('پشتیبانی می‌شود')).toExist(),
+      expect(text('بستر امن (HTTPS یا localhost)')).toExist(),
+    )
+  })
 })
 
 describe('navigation', () => {
@@ -260,7 +281,7 @@ describe('account menu', () => {
   test('the dark theme offers the switch back to light', () => {
     scene(
       { update, view },
-      given(modelAt(AppRoute.Today(), signedIn(), 'TaliDark')),
+      given(modelAt(AppRoute.Today(), signedIn(), 'talidark')),
       expect(role('button', { name: 'حالت روشن' })).toExist(),
     )
   })

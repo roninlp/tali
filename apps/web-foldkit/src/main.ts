@@ -14,9 +14,13 @@ import { Url, toString as urlToString } from 'foldkit/url'
 
 import * as Auth from './auth'
 import { GuardDecision, guardRoute, landingPath, landingRoute } from './guard'
+import { PushEnvironment } from './lib/push/service-worker'
 import * as Household from './page/household'
 import * as Login from './page/login'
 import * as Register from './page/register'
+import * as Preferences from './preferences'
+import { Preferences as PreferencesRow } from './preferences-model'
+import * as Push from './push'
 import { AppRoute, homeRouter, todayRouter, urlToAppRoute } from './route'
 import { Session } from './session'
 import * as Shell from './shell'
@@ -33,12 +37,19 @@ export const Model = Schema.Struct({
   login: Login.Model,
   register: Register.Model,
   household: Household.Model,
+  preferences: Preferences.Model,
+  push: Push.Model,
   sync: Sync.Model,
 })
 export type Model = typeof Model.Type
 
 export const Flags = Schema.Struct({
   maybeCachedSession: Schema.Option(Session),
+  maybeCachedPreferences: Schema.Option(PreferencesRow),
+  maybeSavedTheme: Schema.Option(Schema.String),
+  maybeSavedMode: Schema.Option(Schema.String),
+  isSystemDark: Schema.Boolean,
+  pushEnvironment: PushEnvironment,
   isOnline: Schema.Boolean,
   isVisible: Schema.Boolean,
 })
@@ -57,6 +68,8 @@ export const Message = defineMessageUnion({
   GotLoginMessage: { message: Login.Message },
   GotRegisterMessage: { message: Register.Message },
   GotHouseholdMessage: { message: Household.Message },
+  GotPreferencesMessage: { message: Preferences.Message },
+  GotPushMessage: { message: Push.Message },
   GotSyncMessage: { message: Sync.Message },
 })
 export type Message = typeof Message.Type
@@ -71,15 +84,29 @@ export const init: Runtime.RoutingApplicationInit<
   Sync.LocalStoreService
 > = (flags: Flags, url: Url) => {
   const route = urlToAppRoute(url)
-  const themeInit = Theme.init()
+  const themeInit = Theme.init({
+    maybeSavedTheme: flags.maybeSavedTheme,
+    maybeSavedMode: flags.maybeSavedMode,
+    isSystemDark: flags.isSystemDark,
+  })
   const authInit = Auth.init(flags.maybeCachedSession)
-  const syncInit = Sync.init({
-    maybeUserId: Option.map(
-      Auth.maybeSession(authInit.model),
-      session => session.user.id,
+  const maybeSession = Auth.maybeSession(authInit.model)
+  const preferencesInit = Preferences.init({
+    maybeUserId: Option.map(maybeSession, session => session.user.id),
+    maybeProfileDefaults: Option.map(
+      maybeSession,
+      session => Preferences.sessionProfile(session).defaults,
     ),
+    maybeCachedPreferences: flags.maybeCachedPreferences,
+  })
+  const pushInit = Push.init({
+    maybeUserId: Option.map(maybeSession, session => session.user.id),
+    environment: flags.pushEnvironment,
+  })
+  const syncInit = Sync.init({
+    maybeUserId: Option.map(maybeSession, session => session.user.id),
     hasHousehold: Option.exists(
-      Auth.maybeSession(authInit.model),
+      maybeSession,
       session => session.householdId !== null,
     ),
     isOnline: flags.isOnline,
@@ -92,6 +119,8 @@ export const init: Runtime.RoutingApplicationInit<
     login: Login.initialModel(),
     register: Register.initialModel(),
     household: Household.initialModel(),
+    preferences: preferencesInit.model,
+    push: pushInit.model,
     sync: syncInit.model,
   })
   const guarded = enforceGuard(model, route)
@@ -99,7 +128,10 @@ export const init: Runtime.RoutingApplicationInit<
   return {
     model: guarded.model,
     commands: [
+      ...Command.mapMessages(themeInit.commands, toThemeMessage),
       ...Command.mapMessages(authInit.commands, toAuthMessage),
+      ...Command.mapMessages(preferencesInit.commands, toPreferencesMessage),
+      ...Command.mapMessages(pushInit.commands, toPushMessage),
       ...(guarded.commands ?? []),
     ],
   }
@@ -150,6 +182,15 @@ type UpdateReturn = Update.Return<Model, Message, Sync.LocalStoreService>
 const toAuthMessage = (message: Auth.Message): Message =>
   Message.GotAuthMessage({ message })
 
+const toThemeMessage = (message: Theme.Message): Message =>
+  Message.GotThemeMessage({ message })
+
+const toPreferencesMessage = (message: Preferences.Message): Message =>
+  Message.GotPreferencesMessage({ message })
+
+const toPushMessage = (message: Push.Message): Message =>
+  Message.GotPushMessage({ message })
+
 const authCommand = <E = never, R = never>(
   command: Command.Command<Auth.Message, E, R>,
 ): Command.Command<Message, E, R> => Command.mapMessage(command, toAuthMessage)
@@ -176,17 +217,57 @@ const syncSession = (model: Model): Sync.Model => {
   )
 }
 
+const applyPreferencesSession = Update.foldChild({
+  update: Preferences.applySession,
+  read: (model: Model) => Option.some(model.preferences),
+  write: (model: Model, nextPreferences: Preferences.Model) =>
+    modifyFields(model, { preferences: () => nextPreferences }),
+  toParentMessage: toPreferencesMessage,
+})
+
+const applyPushSession = Update.foldChild({
+  update: Push.applySession,
+  read: (model: Model) => Option.some(model.push),
+  write: (model: Model, nextPush: Push.Model) =>
+    modifyFields(model, { push: () => nextPush }),
+  toParentMessage: toPushMessage,
+})
+
+/**
+ * Push the current session into the child Submodels that key work by identity.
+ * Preferences and push both start one read per sign-in; sync only swaps the
+ * managed store resource. Each fold lifts the child's Commands to the root.
+ */
+const applySessionState: Update.Step<Model, Message> = Update.combine<
+  Model,
+  Message
+>([
+  (model: Model) =>
+    applyPreferencesSession(
+      model,
+      Option.map(Auth.maybeSession(model.auth), session =>
+        Preferences.sessionProfile(session),
+      ),
+    ),
+  (model: Model) =>
+    applyPushSession(
+      model,
+      Option.map(Auth.maybeSession(model.auth), session => session.user.id),
+    ),
+])
+
 const enforceGuardWithSessionUser = (
   model: Model,
   route: AppRoute,
 ): UpdateReturn => {
   const guarded = enforceGuard(model, route)
+  const sessionState = applySessionState(guarded.model)
 
   return {
-    model: modifyFields(guarded.model, {
-      sync: () => syncSession(guarded.model),
+    model: modifyFields(sessionState.model, {
+      sync: () => syncSession(sessionState.model),
     }),
-    ...(guarded.commands === undefined ? {} : { commands: guarded.commands }),
+    commands: [...(guarded.commands ?? []), ...(sessionState.commands ?? [])],
   }
 }
 
@@ -249,8 +330,8 @@ const foldLoginOutMessage = Login.OutMessage.match<Update.Step<Model, Message>>(
   {
     SucceededLogin:
       ({ session }) =>
-      stepModel => ({
-        model: modifyFields(stepModel, {
+      stepModel => {
+        const next = modifyFields(stepModel, {
           auth: () => Auth.applySession(stepModel.auth, session),
           sync: () =>
             Sync.applySession(
@@ -260,12 +341,18 @@ const foldLoginOutMessage = Login.OutMessage.match<Update.Step<Model, Message>>(
             ),
           login: () => Login.initialModel(),
           route: () => landingRoute(session),
-        }),
-        commands: [
-          authCommand(Auth.CacheSession({ session })),
-          ReplaceUrl({ url: landingPath(session) }),
-        ],
-      }),
+        })
+        const sessionState = applySessionState(next)
+
+        return {
+          model: sessionState.model,
+          commands: [
+            authCommand(Auth.CacheSession({ session })),
+            ReplaceUrl({ url: landingPath(session) }),
+            ...(sessionState.commands ?? []),
+          ],
+        }
+      },
   },
 )
 
@@ -284,8 +371,8 @@ const foldRegisterOutMessage = Register.OutMessage.match<
 >({
   SucceededRegister:
     ({ session }) =>
-    stepModel => ({
-      model: modifyFields(stepModel, {
+    stepModel => {
+      const next = modifyFields(stepModel, {
         auth: () => Auth.applySession(stepModel.auth, session),
         sync: () =>
           Sync.applySession(
@@ -295,12 +382,18 @@ const foldRegisterOutMessage = Register.OutMessage.match<
           ),
         register: () => Register.initialModel(),
         route: () => landingRoute(session),
-      }),
-      commands: [
-        authCommand(Auth.CacheSession({ session })),
-        ReplaceUrl({ url: landingPath(session) }),
-      ],
-    }),
+      })
+      const sessionState = applySessionState(next)
+
+      return {
+        model: sessionState.model,
+        commands: [
+          authCommand(Auth.CacheSession({ session })),
+          ReplaceUrl({ url: landingPath(session) }),
+          ...(sessionState.commands ?? []),
+        ],
+      }
+    },
 })
 
 const foldRegister = Update.foldChild({
@@ -394,6 +487,24 @@ const foldHousehold = Update.foldChild({
   foldOutMessage: foldHouseholdOutMessage,
 })
 
+const foldPreferences = Update.foldChild({
+  update: Preferences.update,
+  read: (model: Model) => Option.some(model.preferences),
+  write: (model: Model, nextPreferences: Preferences.Model) =>
+    modifyFields(model, { preferences: () => nextPreferences }),
+  toParentMessage: (message: Preferences.Message) =>
+    Message.GotPreferencesMessage({ message }),
+})
+
+const foldPush = Update.foldChild({
+  update: Push.update,
+  read: (model: Model) => Option.some(model.push),
+  write: (model: Model, nextPush: Push.Model) =>
+    modifyFields(model, { push: () => nextPush }),
+  toParentMessage: (message: Push.Message) =>
+    Message.GotPushMessage({ message }),
+})
+
 const foldSync = Update.foldChild({
   update: Sync.update,
   read: (model: Model) => Option.some(model.sync),
@@ -428,6 +539,8 @@ export const update = (model: Model, message: Message) =>
     GotLoginMessage: ({ message }) => foldLogin(model, message),
     GotRegisterMessage: ({ message }) => foldRegister(model, message),
     GotHouseholdMessage: ({ message }) => foldHousehold(model, message),
+    GotPreferencesMessage: ({ message }) => foldPreferences(model, message),
+    GotPushMessage: ({ message }) => foldPush(model, message),
     GotSyncMessage: ({ message }) => foldSync(model, message),
   })
 
@@ -599,6 +712,61 @@ const todayPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
     ],
   )
 
+const settingsPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
+  h.section(
+    [h.Class('page-wrap grid max-w-2xl gap-4')],
+    [
+      h.header(
+        [h.Class('grid gap-1')],
+        [
+          h.h1(
+            [h.Class('m-0 text-2xl font-bold tracking-tight sm:text-3xl')],
+            ['تنظیمات'],
+          ),
+          h.p(
+            [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+            ['ظاهر برنامه، تقویم و منطقه‌ی زمانی، و وضعیت اعلان‌های این دستگاه.'],
+          ),
+        ],
+      ),
+      h.submodel({
+        slotId: 'settings-theme-picker',
+        model: model.theme,
+        view: Theme.pickerView,
+        toParentMessage: toThemeMessage,
+      }),
+      h.submodel({
+        slotId: 'settings-preferences',
+        model: model.preferences,
+        view: Preferences.settingsView,
+        toParentMessage: toPreferencesMessage,
+      }),
+      h.submodel({
+        slotId: 'settings-push-health',
+        model: model.push,
+        view: Push.healthView,
+        toParentMessage: toPushMessage,
+      }),
+    ],
+  )
+
+const pushHealthPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
+  h.section(
+    [h.Class('page-wrap grid max-w-2xl gap-4')],
+    [
+      h.h1(
+        [h.Class('m-0 text-2xl font-bold tracking-tight sm:text-3xl')],
+        ['وضعیت اعلان‌ها'],
+      ),
+      h.submodel({
+        slotId: 'push-health',
+        model: model.push,
+        view: Push.healthView,
+        toParentMessage: toPushMessage,
+      }),
+    ],
+  )
+
 const pageView = (model: Model, h: HtmlBuilder<Message>): Html =>
   AppRoute.matchOrElse<Html>(
     model.route,
@@ -632,6 +800,8 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): Html =>
           toParentMessage: message => Message.GotHouseholdMessage({ message }),
         }),
       Today: () => todayPageView(model, h),
+      Settings: () => settingsPageView(model, h),
+      PushHealth: () => pushHealthPageView(model, h),
       NotFound: () => notFoundView(h),
     },
     () =>
@@ -729,4 +899,23 @@ const syncSubscriptions = Subscription.lift(Sync.subscriptions)<Model, Message>(
   },
 )
 
-export const subscriptions = syncSubscriptions
+const themeSubscriptions = Subscription.lift(Theme.subscriptions)<
+  Model,
+  Message
+>({
+  read: model => Option.some(model.theme),
+  toParentMessage: toThemeMessage,
+})
+
+const pushSubscriptions = Subscription.lift(Push.subscriptions)<Model, Message>(
+  {
+    read: model => Option.some(model.push),
+    toParentMessage: toPushMessage,
+  },
+)
+
+export const subscriptions = Subscription.aggregate(
+  syncSubscriptions,
+  themeSubscriptions,
+  pushSubscriptions,
+)

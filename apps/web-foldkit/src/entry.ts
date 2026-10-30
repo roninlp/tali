@@ -1,6 +1,8 @@
-import { Effect } from 'effect'
+import { Effect, Option } from 'effect'
 import { Runtime } from 'foldkit'
 
+import { readCachedPreferences } from './lib/preferences-cache'
+import { detectPushEnvironment } from './lib/push/service-worker'
 import { readCachedSession } from './lib/session-cache'
 import {
   Flags,
@@ -12,14 +14,29 @@ import {
   update,
   view,
 } from './main'
+import { readStoredMode, readStoredTheme } from './theme'
 
-const flags: Effect.Effect<Flags> = Effect.sync(() =>
-  Flags.make({
-    maybeCachedSession: readCachedSession(),
+const prefersDark = (): boolean =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-color-scheme: dark)').matches
+
+const flags: Effect.Effect<Flags> = Effect.sync(() => {
+  const maybeCachedSession = readCachedSession()
+
+  return Flags.make({
+    maybeCachedSession,
+    maybeCachedPreferences: Option.flatMap(maybeCachedSession, session =>
+      readCachedPreferences(session.user.id),
+    ),
+    maybeSavedTheme: readStoredTheme(),
+    maybeSavedMode: readStoredMode(),
+    isSystemDark: prefersDark(),
+    pushEnvironment: detectPushEnvironment(),
     isOnline: navigator.onLine,
     isVisible: document.visibilityState !== 'hidden',
-  }),
-)
+  })
+})
 
 const application = Runtime.makeApplication({
   Model,

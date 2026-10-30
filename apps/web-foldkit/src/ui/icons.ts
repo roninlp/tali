@@ -129,6 +129,21 @@ export const searchIcon = (className: string): Html =>
     ih.path([...roundCaps(), ih.D('m20 20-3.5-3.5')]),
   ])
 
+export const monitorIcon = (className: string): Html =>
+  strokeIcon(className, [
+    ih.rect([
+      ih.X('3'),
+      ih.Y('4'),
+      ih.Width('18'),
+      ih.Height('13'),
+      ih.Rx('2'),
+    ]),
+    ih.path([...roundCaps(), ih.D('M8 21h8M12 17v4')]),
+  ])
+
+export const checkIcon = (className: string): Html =>
+  strokeIcon(className, [ih.path([...roundCaps(), ih.D('m5 12 4.5 4.5L19 7')])])
+
 export const sparklesIcon = (className: string): Html =>
   strokeIcon(className, [
     ih.path([

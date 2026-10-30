@@ -6,13 +6,15 @@ import { Model } from './main'
 import * as Household from './page/household'
 import * as Login from './page/login'
 import * as Register from './page/register'
+import * as Preferences from './preferences'
+import * as Push from './push'
 import { AppRoute } from './route'
 import { Session } from './session'
 import * as Sync from './sync'
 import * as Theme from './theme'
 
-const USER_ID = '0192f0a0-0000-7000-8000-000000000001'
-const HOUSEHOLD_ID = '0192f0a0-0000-7000-8000-000000000002'
+export const USER_ID = '0192f0a0-0000-7000-8000-000000000001'
+export const HOUSEHOLD_ID = '0192f0a0-0000-7000-8000-000000000002'
 
 const user: Session['user'] = {
   id: USER_ID,
@@ -84,17 +86,58 @@ export const syncModel = (
     maybeTaskError: Option.none(),
   })
 
+const DEFAULT_DISPLAY_FIELDS: Preferences.Model['defaults'] = {
+  timeZone: 'Asia/Tehran',
+  weekStart: 'saturday',
+  digits: 'persian',
+}
+
+export const preferencesModel = (
+  overrides: Partial<Preferences.Model> = {},
+): Preferences.Model =>
+  Preferences.Model.make({
+    maybeUserId: Option.some(USER_ID),
+    maybePreferences: Option.none(),
+    defaults: DEFAULT_DISPLAY_FIELDS,
+    draft: DEFAULT_DISPLAY_FIELDS,
+    source: 'Default',
+    isSaving: false,
+    hasSaved: false,
+    maybeError: Option.none(),
+    ...overrides,
+  })
+
+export const pushModel = (overrides: Partial<Push.Model> = {}): Push.Model =>
+  Push.Model.make({
+    ...Push.initialModel({
+      isSupported: true,
+      isSecure: true,
+      isInstalled: false,
+      permission: 'default',
+    }),
+    maybeUserId: Option.some(USER_ID),
+    ...overrides,
+  })
+
 export const modelAt = (
   route: AppRoute,
   status: Auth.SessionStatus = signedIn(),
-  theme: Theme.Theme = 'Tali',
+  theme: Theme.ThemeChoice = 'tali',
+  mode: Theme.ThemeMode = 'light',
+  isSystemDark = false,
 ): Model =>
   Model.make({
     route,
-    theme: Theme.Model.make({ theme }),
+    theme: Theme.Model.make({
+      theme,
+      mode,
+      isSystemDark,
+    }),
     auth: authModel(status),
     login: Login.initialModel(),
     register: Register.initialModel(),
     household: Household.initialModel(),
+    preferences: preferencesModel(),
+    push: pushModel(),
     sync: syncModel(),
   })

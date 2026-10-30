@@ -46,6 +46,8 @@ export type TextInputConfig<Message> = Readonly<{
   autoComplete?: string
   dir?: 'ltr' | 'rtl' | 'auto'
   placeholder?: string
+  /** Id of a `<datalist>` with suggestions for this input. */
+  listId?: string
   isDisabled?: boolean
   isRequired?: boolean
   class?: string
@@ -70,10 +72,41 @@ export const textInputView = <Message>(
     ...(config.placeholder === undefined
       ? []
       : [h.Placeholder(config.placeholder)]),
+    ...(config.listId === undefined ? [] : [h.List(config.listId)]),
     ...(config.isDisabled === true ? [h.Disabled(true)] : []),
     ...(config.isRequired === true ? [h.Required(true)] : []),
     h.OnInput(config.onInput),
   ])
+
+export type SelectOption = Readonly<{ value: string; label: string }>
+
+export type SelectInputConfig<Message> = Readonly<{
+  id: string
+  value: string
+  options: ReadonlyArray<SelectOption>
+  onChange: (value: string) => Message
+  name?: string
+  isDisabled?: boolean
+  class?: string
+}>
+
+export const selectInputView = <Message>(
+  config: SelectInputConfig<Message>,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.select(
+    [
+      h.Id(config.id),
+      h.Value(config.value),
+      h.Class(classNames('select w-full', config.class)),
+      ...(config.name === undefined ? [] : [h.Name(config.name)]),
+      ...(config.isDisabled === true ? [h.Disabled(true)] : []),
+      h.OnChange(config.onChange),
+    ],
+    config.options.map(option =>
+      h.option([h.Value(option.value)], [option.label]),
+    ),
+  )
 
 export const formErrorView = <Message>(
   maybeMessage: Option.Option<string>,
