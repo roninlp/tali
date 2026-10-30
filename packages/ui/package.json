@@ -12,12 +12,12 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@solidjs/web": "^2.0.0-rc.14",
-    "solid-js": "^2.0.0-rc.14"
+    "@solidjs/web": "catalog:",
+    "solid-js": "catalog:"
   },
   "devDependencies": {
-    "@solidjs/web": "^2.0.0-rc.14",
-    "solid-js": "^2.0.0-rc.14",
-    "typescript": "~5.9.3"
+    "@solidjs/web": "catalog:",
+    "solid-js": "catalog:",
+    "typescript": "catalog:"
   }
 }

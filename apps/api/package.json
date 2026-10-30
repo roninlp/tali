@@ -9,17 +9,17 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@effect/sql-d1": "^4.0.5",
+    "@effect/sql-d1": "catalog:",
     "@tali/config": "workspace:*",
     "@tali/domain": "workspace:*",
     "@tali/rpc": "workspace:*",
     "@tali/sql": "workspace:*",
-    "effect": "^4.0.5"
+    "effect": "catalog:"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "^1.4.7",
-    "@cloudflare/workers-types": "^5.20261021.1",
-    "typescript": "~5.9.3",
-    "vitest": "^5.0.4"
+    "@cloudflare/vitest-plugin": "catalog:",
+    "@cloudflare/workers-types": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

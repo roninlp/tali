@@ -18,7 +18,7 @@ The frontend is migrating from Solid to [Foldkit](https://foldkit.dev) (Elm Arch
 - **New app:** `apps/web-foldkit` (`@tali/web-foldkit`). Read `apps/web-foldkit/FOLDKIT.md` and `apps/web-foldkit/AGENTS.md` before editing it.
 - **Legacy app:** `apps/web` (`@tali/web`) is the Solid v2 implementation. Keep it working and use it as the behavioral reference until the migration is complete. Do not edit it during migration work unless the task explicitly says so.
 - **AI setup:** Foldkit skills are linked in `.agents/skills/`; DevTools MCP is configured in `opencode.json` and `apps/web-foldkit/.mcp.json`. Start the app with `pnpm --filter @tali/web-foldkit dev` (port 3001), open it in a browser, then use the `foldkit_*` MCP tools to inspect the Model and Message history.
-- **Versions:** the Foldkit app pins Effect 4.1 while the rest of the workspace is on Effect 4.0.x. Keep that split until the migration lands; do not upgrade the workspace as a side effect.
+- **Versions:** shared dependency versions are defined once in the pnpm catalog in `pnpm-workspace.yaml` and referenced as `catalog:` in each `package.json`. The whole workspace runs Effect 4.1. Bump shared versions in the catalog, not in individual manifests.
 
 ## Agent skills
 

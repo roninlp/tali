@@ -11,9 +11,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "effect": "^4.0.5"
+    "effect": "catalog:"
   },
   "devDependencies": {
-    "typescript": "~5.9.3"
+    "typescript": "catalog:"
   }
 }

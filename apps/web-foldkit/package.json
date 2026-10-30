@@ -13,9 +13,10 @@
     "lint": "oxlint src && effect-tsgo patch --no-typescript --oxlint && oxlint --config .oxlintrc.effect.json --deny-warnings src"
   },
   "dependencies": {
-    "@effect/platform-browser": "4.1.0",
+    "@effect/platform-browser": "catalog:",
     "@foldkit/ui": "0.170.0",
-    "effect": "4.1.0",
+    "@tali/rpc": "workspace:*",
+    "effect": "catalog:",
     "foldkit": "0.170.0"
   },
   "devDependencies": {
@@ -24,14 +25,14 @@
     "@foldkit/devtools-mcp": "0.26.0",
     "@foldkit/oxlint-plugin": "0.15.4",
     "@foldkit/vite-plugin": "0.29.0",
-    "@tailwindcss/vite": "^4.3.3",
+    "@tailwindcss/vite": "catalog:",
     "happy-dom": "^20.14.5",
     "oxfmt": "^0.66.0",
-    "oxlint": "1.85.0",
+    "oxlint": "catalog:",
     "oxlint-tsgolint": "7.0.2003",
-    "tailwindcss": "^4.3.3",
-    "typescript": "^7.0.2",
-    "vite": "^8.3.1",
-    "vitest": "^5.0.2"
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
   }
 }

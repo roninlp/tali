@@ -12,11 +12,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "effect": "^4.0.5",
+    "effect": "catalog:",
     "temporal-polyfill": "^1.0.6"
   },
   "devDependencies": {
-    "typescript": "~5.9.3",
-    "vitest": "^5.0.4"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

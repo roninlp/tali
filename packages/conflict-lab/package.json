@@ -9,15 +9,15 @@
     "test:nightly": "CONFLICT_LAB_NIGHTLY=1 vitest run"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "^1.4.7",
-    "@cloudflare/workers-types": "^5.20261021.1",
+    "@cloudflare/vitest-plugin": "catalog:",
+    "@cloudflare/workers-types": "catalog:",
     "@tali/api": "workspace:*",
     "@tali/domain": "workspace:*",
     "@tali/web": "workspace:*",
-    "effect": "^4.0.5",
-    "fake-indexeddb": "^6.2.6",
+    "effect": "catalog:",
+    "fake-indexeddb": "catalog:",
     "fast-check": "^4.10.2",
-    "typescript": "~5.9.3",
-    "vitest": "^5.0.4"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }
