@@ -3,8 +3,10 @@
 Tali's next frontend, built with [Foldkit](https://foldkit.dev) — the Elm
 Architecture on Effect — plus Vite and Tailwind CSS v4.
 
-This is the phase-1 scaffold. The legacy Solid app at `apps/web` stays in the
-repo as the behavioral reference until the migration is complete.
+This is the active migration target. The shell, the RTL document and the house
+theme are in place; the screens are being ported. The legacy Solid app at
+`apps/web` stays in the repo as the behavioral reference until the migration is
+complete.
 
 ## Run it
 
@@ -54,32 +56,35 @@ pnpm --filter @tali/web-foldkit format
 ## Migration status
 
 - [x] **Phase 1 — scaffold.** Official `create-foldkit-app` starter, workspace
-  integration, pinned dev port, vendored Foldkit source, agent skills, DevTools
-  MCP, and root agent docs.
+      integration, pinned dev port, vendored Foldkit source, agent skills, DevTools
+      MCP, and root agent docs.
 - [x] **Phase 2 prerequisites.** Shared versions live in the pnpm catalog and
-  the whole workspace runs Effect 4.1, so `@tali/domain` and `@tali/rpc`
-  resolve to one Effect instance. Vite proxies the api Worker's routes to
-  `:8787`, and `src/lib/{config,rpc}.ts` provide the typed client the port
-  will use.
-- [ ] **Phase 2 — port the app.** Shell/theming, routing union, auth and
-  session restore, local store and sync engine, preferences/push, then the
-  feature screens (today, tasks, lists, habits, notes, occasions, calendar,
-  reminders, settings). The ordered slices and acceptance criteria live in
-  [`docs/plans/foldkit-migration.md`](../../docs/plans/foldkit-migration.md).
+      the whole workspace runs Effect 4.1, so `@tali/domain` and `@tali/rpc`
+      resolve to one Effect instance. Vite proxies the api Worker's routes to
+      `:8787`, and `src/lib/{config,rpc}.ts` provide the typed client the port
+      will use.
+- [x] **P2.1 — shell, theming, RTL document.** The starter is gone; the
+      document, house themes, Vazirmatn, shell chrome, theme toggle, and the
+      button/field primitives are in place with Scene/Story tests.
+- [ ] **P2.2 onward — port the app.** Route union and navigation, auth and
+      session restore, local store and sync engine, preferences/push, then the
+      feature screens (today, tasks, lists, habits, notes, occasions, calendar,
+      reminders, settings). The ordered slices and acceptance criteria live in
+      [`docs/plans/foldkit-migration.md`](../../docs/plans/foldkit-migration.md).
 
-`apps/web` is the source of truth for behavior until Phase 2 is finished. The
-routing starter's `People` page, `fileTree` routes, and their tests are
-reference material for Foldkit patterns; they are expected to be replaced.
+`apps/web` is the source of truth for behavior until Phase 2 is finished.
 
 ## Structure
 
 ```
 src/entry.ts       Runtime bootstrap (Runtime.makeApplication + Runtime.run)
-src/main.ts        Model, Messages, init, update, view, subscriptions
-src/route.ts       Route union and URL parser
+src/main.ts        Model, Message, init, update, view
+src/shell.ts       The app chrome (header, action slot, main)
+src/theme.ts       House light/dark theme Submodel and toggle
+src/ui/            Button, field and icon primitives
+src/styles.css     Tailwind v4 + daisyUI themes and Tali utilities
 src/lib/config.ts  API base URL (dev proxy vs deployed /api)
 src/lib/rpc.ts     Typed RPC client over the api Worker's contract
-src/page/          Submodels (the routing starter's People page)
 ```
 
 The runtime stays separate from the pure definitions, so tests can import the

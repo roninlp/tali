@@ -1,8 +1,9 @@
 # Foldkit migration — Phase 2 plan
 
-**Status:** prepared. Phase 1 (scaffold) and the Phase 2 prerequisites
-(workspace-wide Effect 4.1, api proxy, typed RPC entry point) are in place;
-application code has not been ported.
+**Status:** in progress. Phase 1 (scaffold), the Phase 2 prerequisites
+(workspace-wide Effect 4.1, api proxy, typed RPC entry point), and P2.1
+(shell, theming, RTL document) are in place. P2.2 (route union and navigation)
+is next.
 
 **Source of truth:** `apps/web` (Solid v2) for behavior, copy, and
 interaction. **Target:** `apps/web-foldkit` (Foldkit + Effect). Do not edit
@@ -53,6 +54,14 @@ interaction. **Target:** `apps/web-foldkit` (Foldkit + Effect). Do not edit
 **Done when:** `pnpm dev:foldkit` boots an RTL Persian shell with the house
 theme on :3001; the starter is gone; a Scene test renders the shell.
 
+**Delivered:** the starter (People, file tree, starter routes) is removed. The
+document is `lang="fa" dir="rtl"` with the `tali` house theme, Vazirmatn from
+`@tali/ui`, and the ported `styles.css` (tokens, utilities, base layer). The
+shell is `src/shell.ts` (brand + action slot + main) and the theme is a
+Submodel in `src/theme.ts` (house light/dark toggle; persistence and system
+mode stay in P2.5). `src/ui/` ships the button and field primitives P2.2/P2.3
+consume; sheet and toast wait for their first consumer.
+
 ### P2.2 — Route union and navigation
 
 - Port the legacy route surface: `/`, `/login`, `/register`, `/today`,
@@ -61,8 +70,9 @@ theme on :3001; the starter is gone; a Scene test renders the shell.
   `/push-health`, `404`.
 - Keep `src/route.ts` pure: one tagged union, `urlToAppRoute`, typed routers.
   Unknown/deep paths map to `NotFound({ path })`.
-- Wire `Runtime.makeApplication` routing as the starter does; use Foldkit
-  `Transition` only where the legacy app re-fetches on entry.
+- Wire `Runtime.makeApplication` routing as the `routing` example in
+  `repos/foldkit/examples/routing` does; use Foldkit `Transition` only where
+  the legacy app re-fetches on entry.
 
 **Done when:** every route renders a placeholder with the right title and nav
 state; URL parser tests cover each tag plus `NotFound`.

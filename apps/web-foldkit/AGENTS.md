@@ -37,9 +37,15 @@ subtree_prompted: true
   whole workspace now runs 4.1 through the pnpm catalog. Shared dependency
   versions live in `pnpm-workspace.yaml` and are referenced as `catalog:` in
   package manifests, so bump them there rather than in this package alone.
-- **Phase 1 scope.** The `routing` starter is a working reference for routes,
-  Submodels, Commands, and Story/Scene tests. Replacing it with Tali's screens
-  is the migration phase, not the scaffold phase.
+- **Migration progress.** P2.1 (shell, theming, RTL document) is in place: the
+  starter is gone, `src/shell.ts` holds the chrome, `src/theme.ts` the house
+  light/dark Submodel, and `src/ui/` the button and field primitives. P2.2 adds
+  the route union and navigation.
+- **Styling.** `src/styles.css` is the Tali entry: Tailwind v4 + daisyUI, the
+  `tali`/`talidark` themes, and the shared utilities. Vazirmatn stays in
+  `@tali/ui`; the CSS references it across the workspace and Vite fingerprints
+  it on build. The theme toggle is in-session only until P2.5 adds the saved
+  preference and pre-paint restore.
 - **Migration plan.** The ordered Phase 2 slices and acceptance criteria live
   in `../../docs/plans/foldkit-migration.md`. Read it before picking up the
   next slice; keep this file's notes project-specific.
