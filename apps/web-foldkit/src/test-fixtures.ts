@@ -5,6 +5,7 @@ import type { AuthFailure } from './lib/auth-api'
 import { Model } from './main'
 import { emptyMirrorSnapshot } from './mirror'
 import * as Household from './page/household'
+import * as Lists from './page/lists'
 import * as Login from './page/login'
 import * as Register from './page/register'
 import * as Today from './page/today'
@@ -142,4 +143,12 @@ export const modelAt = (
     push: pushModel(),
     sync: syncModel(),
     today: Today.initialModel(TODAY_NOW),
+    lists:
+      route._tag === 'List'
+        ? Lists.mirrorSettled(
+            Lists.enteredDetail(Lists.initialModel(), {
+              listId: route.listId,
+            }).model,
+          ).model
+        : Lists.initialModel(),
   })

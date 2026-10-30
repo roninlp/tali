@@ -17,6 +17,13 @@ import {
   tagIdsOf,
 } from './lib/note-body'
 import type { ServerNote, ServerTask } from './lib/today-api'
+import {
+  ListItemRow,
+  ListRow,
+  listItemRowsFromMirror,
+  listRowsFromMirror,
+  sortListRows,
+} from './lists-model'
 
 /**
  * The client read model the feature screens render from.
@@ -67,6 +74,8 @@ export const MirrorSnapshot = Schema.Struct({
   notes: Schema.Array(NoteRow),
   habits: Schema.Array(HabitRow),
   habitEntries: Schema.Array(HabitEntryRow),
+  lists: Schema.Array(ListRow),
+  listItems: Schema.Array(ListItemRow),
 })
 export type MirrorSnapshot = typeof MirrorSnapshot.Type
 
@@ -76,6 +85,8 @@ export const emptyMirrorSnapshot = (): MirrorSnapshot =>
     notes: [],
     habits: [],
     habitEntries: [],
+    lists: [],
+    listItems: [],
   })
 
 const asNullableString = (value: unknown): string | null =>
@@ -149,18 +160,23 @@ export const habitEntryRowsFromMirror = (
 export const readMirrorSnapshot = async (
   store: LocalStore,
 ): Promise<MirrorSnapshot> => {
-  const [tasks, notes, habits, habitEntries] = await Promise.all([
-    store.list('task'),
-    store.list('note'),
-    store.list('habit'),
-    store.list('habitEntry'),
-  ])
+  const [tasks, notes, habits, habitEntries, lists, listItems] =
+    await Promise.all([
+      store.list('task'),
+      store.list('note'),
+      store.list('habit'),
+      store.list('habitEntry'),
+      store.list('list'),
+      store.list('listItem'),
+    ])
 
   return MirrorSnapshot.make({
     tasks: taskRowsFromMirror(tasks),
     notes: noteRowsFromMirror(notes),
     habits: habitRowsFromMirror(habits),
     habitEntries: habitEntryRowsFromMirror(habitEntries),
+    lists: sortListRows(listRowsFromMirror(lists)),
+    listItems: listItemRowsFromMirror(listItems),
   })
 }
 

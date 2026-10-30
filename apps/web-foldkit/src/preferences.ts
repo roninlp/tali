@@ -12,6 +12,7 @@ import {
   readCachedPreferences,
 } from './lib/preferences-cache'
 import {
+  CheckedItemPlacement,
   DEFAULT_DASHBOARD_ORDER,
   DEFAULT_DIGITS,
   DEFAULT_TIME_ZONE,
@@ -148,6 +149,15 @@ export const currentSectionOrder = (model: Model): ReadonlyArray<string> =>
   Option.match(model.maybePreferences, {
     onNone: () => DEFAULT_DASHBOARD_ORDER,
     onSome: preferences => preferences.dashboardSectionOrder,
+  })
+
+/** The checked-item placement a new list inherits from this device's prefs. */
+export const currentCheckedItemPlacement = (
+  model: Model,
+): CheckedItemPlacement =>
+  Option.match(model.maybePreferences, {
+    onNone: () => 'bottom',
+    onSome: preferences => preferences.checkedItemPlacement,
   })
 
 /**

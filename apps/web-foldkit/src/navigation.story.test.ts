@@ -4,8 +4,14 @@ import { Command, given, message, model, story } from 'foldkit/story'
 import { fromString, toString as urlToString } from 'foldkit/url'
 import { describe, expect, test } from 'vitest'
 
+import { ListId } from '@tali/domain'
+
+import { COLOR_CHOICES, ICON_CHOICES } from './lists-model'
 import { LoadExternal, Message, NavigateInternal, update } from './main'
-import { AppRoute } from './route'
+import { emptyMirrorSnapshot } from './mirror'
+import * as Lists from './page/lists'
+import { AppRoute, listPath } from './route'
+import * as Sync from './sync'
 import { modelAt } from './test-fixtures'
 
 const url = (path: string) =>
@@ -13,6 +19,17 @@ const url = (path: string) =>
     fromString(`http://localhost${path}`),
     () => new Error(`Failed to parse url: ${path}`),
   )
+
+const LIST_ID = '018f3a4c-7b2d-7c4e-9a1b-2c3d4e5f6a7b'
+
+const emptySnapshot = {
+  at: 500,
+  pending: 0,
+  maybeFailed: Option.none<number>(),
+  failedRefreshedAt: 0,
+  mirror: emptyMirrorSnapshot(),
+  pendingKeys: [],
+}
 
 describe('ChangedUrl', () => {
   test('navigating to /notes/trash keeps the trash route', () => {
@@ -34,6 +51,13 @@ describe('ChangedUrl', () => {
         Message.ChangedUrl({
           url: url('/lists/018f3a4c-7b2d-7c4e-9a1b-2c3d4e5f6a7b'),
         }),
+      ),
+      Command.expectExact(
+        Sync.ReadMirror({ pendingBefore: 0, failedRefreshedAt: 0 }),
+      ),
+      Command.resolve(
+        Sync.ReadMirror,
+        Sync.Message.SucceededReadMirror(emptySnapshot),
       ),
       model(model => {
         if (model.route._tag === 'List') {
@@ -87,6 +111,110 @@ describe('ClickedLink', () => {
       ),
       Command.expectHas(LoadExternal({ href: 'https://example.com' })),
       Command.resolve(LoadExternal, Message.CompletedLoadExternal()),
+    )
+  })
+})
+
+describe('lists navigation', () => {
+  test('a list detail URL stores the typed id before the screen renders', () => {
+    story(
+      update,
+      given(modelAt(AppRoute.Lists())),
+      message(
+        Message.ChangedUrl({
+          url: url(`/lists/${LIST_ID}`),
+        }),
+      ),
+      Command.expectExact(
+        Sync.ReadMirror({ pendingBefore: 0, failedRefreshedAt: 0 }),
+      ),
+      Command.resolve(
+        Sync.ReadMirror,
+        Sync.Message.SucceededReadMirror(emptySnapshot),
+      ),
+      model(model => {
+        expect(model.route._tag).toBe('List')
+        expect(model.lists.maybeListId).toStrictEqual(
+          Option.some(ListId.make(LIST_ID)),
+        )
+      }),
+    )
+  })
+
+  test('creating a list opens its detail and refreshes the mirror', () => {
+    story(
+      update,
+      given(modelAt(AppRoute.Lists())),
+      message(
+        Message.GotListsMessage({
+          message: Lists.Message.UpdatedIndexTitle({ value: 'خرید' }),
+        }),
+      ),
+      message(
+        Message.GotListsMessage({
+          message: Lists.Message.SubmittedCreateList(),
+        }),
+      ),
+      Command.expectHas(
+        Lists.CreateList({
+          title: 'خرید',
+          color: COLOR_CHOICES[0] ?? '',
+          icon: ICON_CHOICES[0] ?? '',
+          sort: 'manual',
+          checkedPlacement: 'bottom',
+          visibility: 'shared',
+        }),
+      ),
+      Command.resolve(
+        Lists.CreateList,
+        Lists.Message.CompletedCreateList({
+          listId: LIST_ID,
+          title: 'خرید',
+        }),
+      ),
+      Command.expectHas(NavigateInternal({ url: listPath(LIST_ID) })),
+      Command.resolve(
+        Sync.ReadMirror,
+        Sync.Message.SucceededReadMirror(emptySnapshot),
+      ),
+      Command.resolve(NavigateInternal, Message.CompletedNavigateInternal()),
+      model(model => {
+        expect(model.lists.indexTitle).toBe('')
+      }),
+    )
+  })
+
+  test('deleting the open list returns to the index', () => {
+    story(
+      update,
+      given(modelAt(AppRoute.List({ listId: ListId.make(LIST_ID) }))),
+      message(
+        Message.GotListsMessage({
+          message: Lists.Message.ClickedDeleteList({
+            listId: LIST_ID,
+            title: 'خرید',
+            scope: 'detail',
+          }),
+        }),
+      ),
+      Command.resolve(
+        Lists.ConfirmListDelete,
+        Lists.Message.CompletedConfirmListDelete({
+          listId: LIST_ID,
+          isConfirmed: true,
+        }),
+      ),
+      Command.expectHas(Lists.DeleteList({ listId: LIST_ID, itemIds: [] })),
+      Command.resolve(
+        Lists.DeleteList,
+        Lists.Message.CompletedDeleteList({ listId: LIST_ID }),
+      ),
+      Command.expectHas(NavigateInternal({ url: '/lists' })),
+      Command.resolve(
+        Sync.ReadMirror,
+        Sync.Message.SucceededReadMirror(emptySnapshot),
+      ),
+      Command.resolve(NavigateInternal, Message.CompletedNavigateInternal()),
     )
   })
 })

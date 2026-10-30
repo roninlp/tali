@@ -78,11 +78,11 @@ describe('route placeholders', () => {
     )
   })
 
-  test('a list detail shows the id captured by the router', () => {
+  test('a list detail reads the id captured by the router', () => {
     scene(
       { update, view },
       given(modelAt(AppRoute.List({ listId: LIST_ID }))),
-      expect(text(`شناسه‌ی فهرست: ${LIST_ID}`)).toExist(),
+      expect(text('این فهرست پیدا نشد یا حذف شده است.')).toExist(),
     )
   })
 

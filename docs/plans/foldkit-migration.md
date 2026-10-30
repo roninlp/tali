@@ -4,10 +4,10 @@
 (workspace-wide Effect 4.1, api proxy, typed RPC entry point), P2.1 (shell,
 theming, RTL document), P2.2 (route union and navigation), P2.3 (auth and
 session restore), P2.4 (local store and sync engine), and P2.5 (preferences,
-theme, and push) are in place. P2.6 (feature screens) is in progress: Today
-is delivered, Tasks through Settings remain. P2.5's real vendor-push check is
-still blocked on a local VAPID pair and a real browser; everything else is
-verified.
+theme, and push) are in place. P2.6 (feature screens) is in progress: Today and
+Lists are delivered; Tasks through Settings remain. P2.5's real vendor-push
+check is still blocked on a local VAPID pair and a real browser; everything
+else is verified.
 
 **Source of truth:** `apps/web` (Solid v2) for behavior, copy, and
 interaction. **Target:** `apps/web-foldkit` (Foldkit + Effect). Do not edit
@@ -255,6 +255,24 @@ sync smoke checks still pass; the sync smoke now drives the real Today list.
 One small legacy interaction is still missing: a half-typed quick-add title
 is not persisted across a reload (the P2.4 draft save/restore was removed
 with its temporary surface).
+
+**Delivered — Lists:** `src/page/lists.ts` is the shared index/detail Submodel
+and `lists-view.ts` / `list-view.ts` hold their views. `src/lists-model.ts`
+projects the mirrored List and ListItem rows and carries the
+manual/alpha/status ordering, checked placement, reorder helpers, index
+summaries and pending keys; `src/mirror.ts` now reads those two entity types
+into the live snapshot and `src/lib/list-writes.ts` ports the local-first
+writes. `/lists` creates lists with a title, colour, icon and privacy, shows
+open/checked counts and a two-item preview, and deletes with the legacy
+confirmation. `/lists/[id]` renames, changes sort/placement/visibility, adds
+items continuously, checks with an undo toast, reorders by arrow buttons and
+drag, and deletes items or the list. Every write commits the IndexedDB mirror
+row and outbox entry together; no list write uses RPC. The list id arrives
+through the existing `ListId` route parser, the screen CSS is ported into
+`styles.css`, and the legacy model/mirror/screen cases are covered by Story and
+Scene tests. The legacy screens expose no item rename, description, colour or
+tag editors, so those stay out of scope; the mirror write helpers remain ready
+for a later slice.
 
 ## Verification
 

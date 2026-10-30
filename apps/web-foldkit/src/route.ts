@@ -77,6 +77,10 @@ export const taskAnchorPath = (taskId: string): string =>
 export const notePath = (noteId: string): string =>
   noteRouter({ noteId: NoteId.make(noteId) })
 
+/** A list detail path from a plain list id string. */
+export const listPath = (listId: string): string =>
+  listRouter({ listId: ListId.make(listId) })
+
 export const habitsRouter = pipe(literal('habits'), mapTo(AppRoute.Habits))
 
 export const calendarRouter = pipe(
