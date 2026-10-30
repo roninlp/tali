@@ -51,6 +51,8 @@ jobs:
 
       - run: pnpm typecheck
 
+      - run: pnpm lint
+
       - run: pnpm build
 
       # Unit + SQL integration (fake-d1) + the workerd boundary suite.

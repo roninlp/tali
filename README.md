@@ -64,6 +64,7 @@ fresh database (migrations re-apply on the next `pnpm dev`).
 
 ```sh
 pnpm typecheck        # turbo typecheck across all packages/apps (includes the Alchemy stack)
+pnpm lint             # oxlint across the apps (Foldkit Effect rules are deny-warnings)
 pnpm test             # turbo test
 pnpm build            # turbo build (packages typecheck; web: static SPA build)
 
