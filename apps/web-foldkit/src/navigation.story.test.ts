@@ -10,6 +10,7 @@ import { COLOR_CHOICES, ICON_CHOICES } from './lists-model'
 import { LoadExternal, Message, NavigateInternal, update } from './main'
 import { emptyMirrorSnapshot } from './mirror'
 import * as Lists from './page/lists'
+import * as Reminders from './page/reminders'
 import { AppRoute, listPath } from './route'
 import * as Sync from './sync'
 import { modelAt } from './test-fixtures'
@@ -80,6 +81,30 @@ describe('ChangedUrl', () => {
         expect(model.route).toStrictEqual(
           AppRoute.NotFound({ path: '/notes/trash/extra' }),
         )
+      }),
+    )
+  })
+
+  test('opening /reminders drains the queue and reads the ledger', () => {
+    story(
+      update,
+      given(modelAt(AppRoute.Today())),
+      message(Message.ChangedUrl({ url: url('/reminders') })),
+      Command.expectHas(
+        Reminders.DrainQueueAndFetchInbox({
+          generation: 1,
+          history: false,
+        }),
+      ),
+      Command.resolve(
+        Reminders.DrainQueueAndFetchInbox,
+        Reminders.Message.CompletedDrainQueueAndFetchInbox({
+          generation: 1,
+          items: [],
+        }),
+      ),
+      model(model => {
+        expect(model.route).toStrictEqual(AppRoute.Reminders())
       }),
     )
   })

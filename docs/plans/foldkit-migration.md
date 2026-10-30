@@ -5,9 +5,9 @@
 theming, RTL document), P2.2 (route union and navigation), P2.3 (auth and
 session restore), P2.4 (local store and sync engine), and P2.5 (preferences,
 theme, and push) are in place. P2.6 (feature screens) is in progress: Today,
-Lists, Tasks, and Habits are delivered; Notes, Occasions, Calendar,
-Reminders, and Settings remain. P2.5's real vendor-push check is still blocked
-on a local VAPID pair and a real browser; everything else is verified.
+Lists, Tasks, Habits, and Reminders are delivered; Notes, Occasions, Calendar,
+and Settings remain. P2.5's real vendor-push check is still blocked on a local
+VAPID pair and a real browser; everything else is verified.
 
 **Source of truth:** `apps/web` (Solid v2) for behavior, copy, and
 interaction. **Target:** `apps/web-foldkit` (Foldkit + Effect). Do not edit
@@ -319,6 +319,26 @@ write uses RPC. The legacy screen's tests are covered by `habits-model.test.ts`
 Commands), and `habits.scene.test.ts` (rendered views), and the screen CSS is
 ported into `styles.css`. The sync engine's restore-refusal notice is surfaced
 from the sync error as the legacy screen did.
+
+**Delivered — Reminders:** `src/page/reminders.ts` is the `/reminders` page
+Submodel and `reminders-view.ts` holds the inbox panel. `src/lib/reminders/api.ts`
+is the plain-HTTP ledger client with `credentials: "include"`, ported from
+`apps/web/src/lib/reminders/api.ts`; it keeps the legacy status-to-code
+classification and the local plain response schemas so no branded domain value
+crosses the dev optimizer's `effect/schema` boundary. The screen reads
+`GET /reminders/inbox` and its `?history=1` page, renders title, scheduled time,
+kind and critical/medication badges, the optional note, and each row's
+Done/Snooze/Dismiss actions with the preset snooze select. Opening the screen,
+returning to the tab, and the worker's `tali:reminder-action` message first
+drain the service-worker Done/Snooze queue through the existing
+`src/lib/push/notification-actions.ts` helpers and then re-read the ledger;
+answers post to `POST /reminders/dispatches/:id/respond`, disappear
+optimistically, and surface the legacy failure copy. The panel keeps the
+loading spinner, error alert, inbox/history empty copy, history/back toggle,
+and footer hint, and `/reminders` composes the push-health panel above it as the
+legacy route did. The legacy API and inbox cases are covered by
+`src/lib/reminders/api.test.ts`, `reminders.story.test.ts`, and
+`reminders.scene.test.ts`; no screen command uses RPC or the sync outbox.
 
 ## Verification
 

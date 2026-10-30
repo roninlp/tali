@@ -23,6 +23,7 @@ import * as Household from './page/household'
 import * as Lists from './page/lists'
 import * as Login from './page/login'
 import * as Register from './page/register'
+import * as Reminders from './page/reminders'
 import * as Tasks from './page/tasks'
 import { TaskViewSettings } from './page/tasks-model'
 import * as Today from './page/today'
@@ -59,6 +60,7 @@ export const Model = Schema.Struct({
   lists: Lists.Model,
   tasks: Tasks.Model,
   habits: Habits.Model,
+  reminders: Reminders.Model,
 })
 export type Model = typeof Model.Type
 
@@ -96,6 +98,7 @@ export const Message = defineMessageUnion({
   GotListsMessage: { message: Lists.Message },
   GotTasksMessage: { message: Tasks.Message },
   GotHabitsMessage: { message: Habits.Message },
+  GotRemindersMessage: { message: Reminders.Message },
 })
 export type Message = typeof Message.Type
 
@@ -146,6 +149,7 @@ export const init: Runtime.RoutingApplicationInit<
     maybeSettings: flags.maybeCachedTaskView,
   })
   const habitsInit = Habits.init({ now: flags.now })
+  const remindersInit = Reminders.init()
   const model = Model.make({
     route,
     theme: themeInit.model,
@@ -160,6 +164,7 @@ export const init: Runtime.RoutingApplicationInit<
     lists: listsInit.model,
     tasks: tasksInit.model,
     habits: habitsInit.model,
+    reminders: remindersInit.model,
   })
   const guarded = enforceGuard(model, route)
   const entered = enterRoute(
@@ -245,6 +250,9 @@ const toTasksMessage = (message: Tasks.Message): Message =>
 
 const toHabitsMessage = (message: Habits.Message): Message =>
   Message.GotHabitsMessage({ message })
+
+const toRemindersMessage = (message: Reminders.Message): Message =>
+  Message.GotRemindersMessage({ message })
 
 /** The page's sibling inputs: display settings and the live mirror snapshot. */
 const todayInputs = (model: Model): Today.Inputs => ({
@@ -885,6 +893,22 @@ const foldHabitsMessage = (
   message: Habits.Message,
 ): UpdateReturn => foldHabits(model, { message, inputs: habitsInputs(model) })
 
+const foldReminders = Update.foldChild({
+  update: Reminders.update,
+  read: (model: Model) => Option.some(model.reminders),
+  write: (model: Model, nextReminders: Reminders.Model) =>
+    modifyFields(model, { reminders: () => nextReminders }),
+  toParentMessage: toRemindersMessage,
+})
+
+const foldRemindersEntered = Update.foldChildStep({
+  update: Reminders.entered,
+  read: (model: Model) => Option.some(model.reminders),
+  write: (model: Model, nextReminders: Reminders.Model) =>
+    modifyFields(model, { reminders: () => nextReminders }),
+  toParentMessage: toRemindersMessage,
+})
+
 /** Enter `/habits` and re-read the mirror it renders from. */
 const enterHabitsPage = (model: Model): UpdateReturn => {
   const entered = foldHabitsEntered(model, undefined)
@@ -938,6 +962,13 @@ const enterRoute = (
     Option.isSome(Transition.entered(transition, 'Lists'))
   ) {
     return enterListsPage(model, Option.none())
+  }
+
+  if (
+    model.route._tag === 'Reminders' &&
+    Option.isSome(Transition.entered(transition, 'Reminders'))
+  ) {
+    return foldRemindersEntered(model)
   }
 
   if (model.route._tag === 'List') {
@@ -1057,6 +1088,7 @@ export const update = (model: Model, message: Message) =>
     GotListsMessage: ({ message }) => foldListsMessage(model, message),
     GotTasksMessage: ({ message }) => foldTasksMessage(model, message),
     GotHabitsMessage: ({ message }) => foldHabitsMessage(model, message),
+    GotRemindersMessage: ({ message }) => foldReminders(model, message),
   })
 
 // VIEW
@@ -1224,6 +1256,38 @@ const tasksPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
     toParentMessage: toTasksMessage,
   })
 
+const remindersPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
+  h.section(
+    [h.Class('page-wrap grid max-w-3xl gap-4')],
+    [
+      h.header(
+        [h.Class('grid gap-1')],
+        [
+          h.h1(
+            [h.Class('m-0 text-2xl font-bold tracking-tight sm:text-3xl')],
+            ['یادآورها'],
+          ),
+          h.p(
+            [h.Class('m-0 text-sm text-base-content/55')],
+            ['اعلان‌های این دستگاه و یادآورهایی که مرورگر آن‌ها را ندیده است.'],
+          ),
+        ],
+      ),
+      h.submodel({
+        slotId: 'reminders-push-health',
+        model: model.push,
+        view: Push.healthView,
+        toParentMessage: toPushMessage,
+      }),
+      h.submodel({
+        slotId: 'reminders-inbox',
+        model: model.reminders,
+        view: Reminders.view,
+        toParentMessage: toRemindersMessage,
+      }),
+    ],
+  )
+
 const settingsPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.section(
     [h.Class('page-wrap grid max-w-2xl gap-4')],
@@ -1337,6 +1401,7 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): Html =>
           viewInputs: habitsInputs(model),
           toParentMessage: toHabitsMessage,
         }),
+      Reminders: () => remindersPageView(model, h),
       Settings: () => settingsPageView(model, h),
       PushHealth: () => pushHealthPageView(model, h),
       NotFound: () => notFoundView(h),
@@ -1478,6 +1543,17 @@ const habitsSubscriptions = Subscription.lift(Habits.subscriptions)<
   toParentMessage: toHabitsMessage,
 })
 
+const remindersSubscriptions = Subscription.lift(Reminders.subscriptions)<
+  Model,
+  Message
+>({
+  read: model =>
+    model.route._tag === 'Reminders'
+      ? Option.some(model.reminders)
+      : Option.none(),
+  toParentMessage: toRemindersMessage,
+})
+
 export const subscriptions = Subscription.aggregate(
   syncSubscriptions,
   themeSubscriptions,
@@ -1485,4 +1561,5 @@ export const subscriptions = Subscription.aggregate(
   todaySubscriptions,
   tasksSubscriptions,
   habitsSubscriptions,
+  remindersSubscriptions,
 )

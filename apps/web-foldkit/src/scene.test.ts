@@ -123,6 +123,16 @@ describe('route placeholders', () => {
       expect(text('بستر امن (HTTPS یا localhost)')).toExist(),
     )
   })
+
+  test('reminders composes the device panel above the ledger inbox', () => {
+    scene(
+      { update, view },
+      given(modelAt(AppRoute.Reminders())),
+      expect(role('heading', { name: 'یادآورها' })).toExist(),
+      expect(role('heading', { name: 'وضعیت اعلان‌ها' })).toExist(),
+      expect(role('heading', { name: 'یادآورهای ازدست‌رفته' })).toExist(),
+    )
+  })
 })
 
 describe('navigation', () => {

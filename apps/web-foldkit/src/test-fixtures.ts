@@ -9,6 +9,7 @@ import * as Household from './page/household'
 import * as Lists from './page/lists'
 import * as Login from './page/login'
 import * as Register from './page/register'
+import * as Reminders from './page/reminders'
 import * as Tasks from './page/tasks'
 import * as Today from './page/today'
 import * as Preferences from './preferences'
@@ -159,4 +160,5 @@ export const modelAt = (
       maybeSettings: Option.none(),
     }),
     habits: Habits.initialModel(TODAY_NOW),
+    reminders: Reminders.initialModel(),
   })
