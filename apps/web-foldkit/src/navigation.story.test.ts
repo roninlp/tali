@@ -4,14 +4,15 @@ import { Command, given, message, model, story } from 'foldkit/story'
 import { fromString, toString as urlToString } from 'foldkit/url'
 import { describe, expect, test } from 'vitest'
 
-import { ListId } from '@tali/domain'
+import { ListId, NoteId } from '@tali/domain'
 
 import { COLOR_CHOICES, ICON_CHOICES } from './lists-model'
 import { LoadExternal, Message, NavigateInternal, update } from './main'
 import { emptyMirrorSnapshot } from './mirror'
 import * as Lists from './page/lists'
+import * as Notes from './page/notes'
 import * as Reminders from './page/reminders'
-import { AppRoute, listPath } from './route'
+import { AppRoute, listPath, notePath, notesRouter } from './route'
 import * as Sync from './sync'
 import { modelAt } from './test-fixtures'
 
@@ -22,6 +23,7 @@ const url = (path: string) =>
   )
 
 const LIST_ID = '018f3a4c-7b2d-7c4e-9a1b-2c3d4e5f6a7b'
+const NOTE_ID = '018f3a4c-7b2d-7c4e-8a1b-2c3d4e5f6a7b'
 
 const emptySnapshot = {
   at: 500,
@@ -38,6 +40,13 @@ describe('ChangedUrl', () => {
       update,
       given(modelAt(AppRoute.Notes())),
       message(Message.ChangedUrl({ url: url('/notes/trash') })),
+      Command.expectExact(
+        Sync.ReadMirror({ pendingBefore: 0, failedRefreshedAt: 0 }),
+      ),
+      Command.resolve(
+        Sync.ReadMirror,
+        Sync.Message.SucceededReadMirror(emptySnapshot),
+      ),
       model(model => {
         expect(model.route).toStrictEqual(AppRoute.NotesTrash())
       }),
@@ -238,6 +247,56 @@ describe('lists navigation', () => {
       Command.resolve(
         Sync.ReadMirror,
         Sync.Message.SucceededReadMirror(emptySnapshot),
+      ),
+      Command.resolve(NavigateInternal, Message.CompletedNavigateInternal()),
+    )
+  })
+})
+
+describe('notes navigation', () => {
+  test('creating a note opens its editor and refreshes the mirror', () => {
+    story(
+      update,
+      given(modelAt(AppRoute.Notes())),
+      message(
+        Message.GotNotesMessage({
+          message: Notes.Message.SubmittedCreateNote(),
+        }),
+      ),
+      Command.expectHas(Notes.CreateNote()),
+      Command.resolve(
+        Notes.CreateNote,
+        Notes.Message.CompletedCreateNote({ noteId: NOTE_ID }),
+      ),
+      Command.expectHas(NavigateInternal({ url: notePath(NOTE_ID) })),
+      Command.resolve(
+        Sync.ReadMirror,
+        Sync.Message.SucceededReadMirror(emptySnapshot),
+      ),
+      Command.resolve(NavigateInternal, Message.CompletedNavigateInternal()),
+    )
+  })
+
+  test('trashing the open note returns to the notes index', () => {
+    story(
+      update,
+      given(modelAt(AppRoute.Note({ noteId: NoteId.make(NOTE_ID) }))),
+      message(
+        Message.GotNotesMessage({
+          message: Notes.Message.CompletedTrashNote({ noteId: NOTE_ID }),
+        }),
+      ),
+      Command.expectHas(NavigateInternal({ url: notesRouter() })),
+      Command.resolve(
+        Sync.ReadMirror,
+        Sync.Message.SucceededReadMirror(emptySnapshot),
+      ),
+      Command.resolve(
+        Notes.LoadNoteEditor,
+        Notes.Message.FailedLoadNote({
+          generation: 2,
+          message: 'خواندن یادداشت ممکن نشد.',
+        }),
       ),
       Command.resolve(NavigateInternal, Message.CompletedNavigateInternal()),
     )

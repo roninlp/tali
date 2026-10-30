@@ -68,6 +68,7 @@ export const note: NoteRow = {
   updatedAt: '2026-10-29T08:00:00.000Z',
   deletedAt: null,
   version: 1,
+  syncErrorCode: Option.none(),
 }
 
 export const habit: HabitRow = {

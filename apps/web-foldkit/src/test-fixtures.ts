@@ -8,6 +8,7 @@ import * as Habits from './page/habits'
 import * as Household from './page/household'
 import * as Lists from './page/lists'
 import * as Login from './page/login'
+import * as Notes from './page/notes'
 import * as Register from './page/register'
 import * as Reminders from './page/reminders'
 import * as Tasks from './page/tasks'
@@ -154,6 +155,17 @@ export const modelAt = (
             }).model,
           ).model
         : Lists.initialModel(),
+    notes:
+      route._tag === 'Note'
+        ? Notes.enteredNote(Notes.initialModel(), {
+            noteId: route.noteId,
+            isStoreReady: false,
+          }).model
+        : route._tag === 'Notes'
+          ? Notes.enteredIndex(Notes.initialModel()).model
+          : route._tag === 'NotesTrash'
+            ? Notes.enteredTrash(Notes.initialModel()).model
+            : Notes.initialModel(),
     tasks: Tasks.initialModel({
       now: TODAY_NOW,
       maybeUserId: Option.some(USER_ID),

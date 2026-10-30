@@ -13,7 +13,7 @@ import { Transition } from 'foldkit/route'
 import { modifyFields } from 'foldkit/struct'
 import { Url, toString as urlToString } from 'foldkit/url'
 
-import { type ListId } from '@tali/domain'
+import { type ListId, type NoteId } from '@tali/domain'
 
 import * as Auth from './auth'
 import { GuardDecision, guardRoute, landingPath, landingRoute } from './guard'
@@ -22,6 +22,7 @@ import * as Habits from './page/habits'
 import * as Household from './page/household'
 import * as Lists from './page/lists'
 import * as Login from './page/login'
+import * as Notes from './page/notes'
 import * as Register from './page/register'
 import * as Reminders from './page/reminders'
 import * as Tasks from './page/tasks'
@@ -35,6 +36,8 @@ import {
   homeRouter,
   listPath,
   listsRouter,
+  notePath,
+  notesRouter,
   todayRouter,
   urlToAppRoute,
 } from './route'
@@ -58,6 +61,7 @@ export const Model = Schema.Struct({
   sync: Sync.Model,
   today: Today.Model,
   lists: Lists.Model,
+  notes: Notes.Model,
   tasks: Tasks.Model,
   habits: Habits.Model,
   reminders: Reminders.Model,
@@ -96,6 +100,7 @@ export const Message = defineMessageUnion({
   GotSyncMessage: { message: Sync.Message },
   GotTodayMessage: { message: Today.Message },
   GotListsMessage: { message: Lists.Message },
+  GotNotesMessage: { message: Notes.Message },
   GotTasksMessage: { message: Tasks.Message },
   GotHabitsMessage: { message: Habits.Message },
   GotRemindersMessage: { message: Reminders.Message },
@@ -162,6 +167,7 @@ export const init: Runtime.RoutingApplicationInit<
     sync: syncInit.model,
     today: todayInit.model,
     lists: listsInit.model,
+    notes: Notes.initialModel(),
     tasks: tasksInit.model,
     habits: habitsInit.model,
     reminders: remindersInit.model,
@@ -245,6 +251,9 @@ const toTodayMessage = (message: Today.Message): Message =>
 const toListsMessage = (message: Lists.Message): Message =>
   Message.GotListsMessage({ message })
 
+const toNotesMessage = (message: Notes.Message): Message =>
+  Message.GotNotesMessage({ message })
+
 const toTasksMessage = (message: Tasks.Message): Message =>
   Message.GotTasksMessage({ message })
 
@@ -283,6 +292,16 @@ const listsInputs = (model: Model): Lists.Inputs => ({
 })
 
 const tasksInputs = (model: Model): Tasks.Inputs => ({
+  display: Preferences.currentDisplayFields(model.preferences),
+  isStoreReady: Sync.isStoreReady(model.sync),
+  isOnline: model.sync.isOnline,
+  pending: model.sync.pending,
+  mirror: model.sync.mirror,
+  pendingKeys: model.sync.pendingKeys,
+})
+
+/** The Notes screens read the same mirror and connectivity state. */
+const notesInputs = (model: Model): Notes.Inputs => ({
   display: Preferences.currentDisplayFields(model.preferences),
   isStoreReady: Sync.isStoreReady(model.sync),
   isOnline: model.sync.isOnline,
@@ -829,6 +848,179 @@ const enterListsPage = (
 const foldListsMessage = (model: Model, message: Lists.Message): UpdateReturn =>
   foldLists(model, { message, inputs: listsInputs(model) })
 
+type NotesFoldInput = Readonly<{
+  message: Notes.Message
+  inputs: Notes.Inputs
+}>
+
+const foldNotesOutMessage = Notes.OutMessage.match<
+  Update.Step<Model, Message, Sync.LocalStoreService>
+>({
+  WroteLocalData: () => stepModel => foldSyncRefresh(stepModel),
+
+  CreatedNote:
+    ({ noteId }) =>
+    stepModel => {
+      const refreshed = foldSyncRefresh(stepModel)
+
+      return {
+        model: refreshed.model,
+        commands: [
+          ...(refreshed.commands ?? []),
+          NavigateInternal({ url: notePath(noteId) }),
+        ],
+      }
+    },
+
+  ArchivedNote:
+    ({ noteId }) =>
+    stepModel => {
+      const refreshed = foldSyncRefresh(stepModel)
+      const wasCurrent =
+        stepModel.route._tag === 'Note' && stepModel.route.noteId === noteId
+
+      return wasCurrent
+        ? {
+            model: refreshed.model,
+            commands: [
+              ...(refreshed.commands ?? []),
+              NavigateInternal({ url: notesRouter() }),
+            ],
+          }
+        : refreshed
+    },
+
+  TrashedNote:
+    ({ noteId }) =>
+    stepModel => {
+      const refreshed = foldSyncRefresh(stepModel)
+      const wasCurrent =
+        stepModel.route._tag === 'Note' && stepModel.route.noteId === noteId
+
+      return wasCurrent
+        ? {
+            model: refreshed.model,
+            commands: [
+              ...(refreshed.commands ?? []),
+              NavigateInternal({ url: notesRouter() }),
+            ],
+          }
+        : refreshed
+    },
+})
+
+const foldNotes = Update.foldChild({
+  update: (notes: Notes.Model, input: NotesFoldInput) =>
+    Notes.update(notes, input.message, input.inputs),
+  read: (model: Model) => Option.some(model.notes),
+  write: (model: Model, nextNotes: Notes.Model) =>
+    modifyFields(model, { notes: () => nextNotes }),
+  toParentMessage: toNotesMessage,
+  foldOutMessage: foldNotesOutMessage,
+})
+
+const foldNotesEnteredIndex = Update.foldChildStep({
+  update: Notes.enteredIndex,
+  read: (model: Model) => Option.some(model.notes),
+  write: (model: Model, nextNotes: Notes.Model) =>
+    modifyFields(model, { notes: () => nextNotes }),
+  toParentMessage: toNotesMessage,
+})
+
+const foldNotesEnteredTrash = Update.foldChildStep({
+  update: Notes.enteredTrash,
+  read: (model: Model) => Option.some(model.notes),
+  write: (model: Model, nextNotes: Notes.Model) =>
+    modifyFields(model, { notes: () => nextNotes }),
+  toParentMessage: toNotesMessage,
+})
+
+const foldNotesEnteredNote = Update.foldChild({
+  update: (
+    notes: Notes.Model,
+    input: Readonly<{ noteId: NoteId; isStoreReady: boolean }>,
+  ) =>
+    Notes.enteredNote(notes, {
+      noteId: input.noteId,
+      isStoreReady: input.isStoreReady,
+    }),
+  read: (model: Model) => Option.some(model.notes),
+  write: (model: Model, nextNotes: Notes.Model) =>
+    modifyFields(model, { notes: () => nextNotes }),
+  toParentMessage: toNotesMessage,
+})
+
+const foldNotesLeftNote = Update.foldChildStep({
+  update: Notes.leftNote,
+  read: (model: Model) => Option.some(model.notes),
+  write: (model: Model, nextNotes: Notes.Model) =>
+    modifyFields(model, { notes: () => nextNotes }),
+  toParentMessage: toNotesMessage,
+})
+
+const foldNotesMirrorSettled = Update.foldChild({
+  update: (notes: Notes.Model, inputs: Notes.Inputs) =>
+    Notes.mirrorSettled(notes, inputs),
+  read: (model: Model) => Option.some(model.notes),
+  write: (model: Model, nextNotes: Notes.Model) =>
+    modifyFields(model, { notes: () => nextNotes }),
+  toParentMessage: toNotesMessage,
+})
+
+const foldNotesMessage = (model: Model, message: Notes.Message): UpdateReturn =>
+  foldNotes(model, { message, inputs: notesInputs(model) })
+
+/** Enter `/notes` and re-read the mirror the screen renders from. */
+const enterNotesIndex = (model: Model): UpdateReturn => {
+  const entered = foldNotesEnteredIndex(model)
+
+  if (!Sync.isStoreReady(entered.model.sync)) {
+    return entered
+  }
+
+  const refreshed = foldSyncRefresh(entered.model)
+
+  return {
+    model: refreshed.model,
+    commands: [...(entered.commands ?? []), ...(refreshed.commands ?? [])],
+  }
+}
+
+/** Enter `/notes/trash` and re-read the mirror it renders from. */
+const enterNotesTrash = (model: Model): UpdateReturn => {
+  const entered = foldNotesEnteredTrash(model)
+
+  if (!Sync.isStoreReady(entered.model.sync)) {
+    return entered
+  }
+
+  const refreshed = foldSyncRefresh(entered.model)
+
+  return {
+    model: refreshed.model,
+    commands: [...(entered.commands ?? []), ...(refreshed.commands ?? [])],
+  }
+}
+
+/** Enter one note editor, loading it from the mirror and its crash draft. */
+const enterNotesNote = (model: Model, noteId: NoteId): UpdateReturn => {
+  const entered = foldNotesEnteredNote(model, {
+    noteId,
+    isStoreReady: Sync.isStoreReady(model.sync),
+  })
+
+  if (!Sync.isStoreReady(entered.model.sync)) {
+    return entered
+  }
+
+  const refreshed = foldSyncRefresh(entered.model)
+
+  return {
+    model: refreshed.model,
+    commands: [...(entered.commands ?? []), ...(refreshed.commands ?? [])],
+  }
+}
+
 type TasksFoldInput = Readonly<{
   message: Tasks.Message
   inputs: Tasks.Inputs
@@ -985,6 +1177,34 @@ const enterRoute = (
     }
   }
 
+  if (
+    model.route._tag === 'Notes' &&
+    Option.isSome(Transition.entered(transition, 'Notes'))
+  ) {
+    return enterNotesIndex(model)
+  }
+
+  if (
+    model.route._tag === 'NotesTrash' &&
+    Option.isSome(Transition.entered(transition, 'NotesTrash'))
+  ) {
+    return enterNotesTrash(model)
+  }
+
+  if (model.route._tag === 'Note') {
+    const noteId = model.route.noteId
+    const isNewNote =
+      Option.isNone(transition.maybePreviousRoute) ||
+      Option.exists(
+        transition.maybePreviousRoute,
+        previous => previous._tag !== 'Note' || previous.noteId !== noteId,
+      )
+
+    if (isNewNote) {
+      return enterNotesNote(model, noteId)
+    }
+  }
+
   return { model }
 }
 
@@ -1008,6 +1228,16 @@ const isMirrorReadResult = (message: Sync.Message): boolean =>
     Match.orElse(() => false),
   )
 
+/** Messages that carry a fresh mirror snapshot the Notes editor adopts. */
+const isMirrorSettledMessage = (message: Sync.Message): boolean =>
+  Match.value(message).pipe(
+    Match.tag('SucceededReadMirror', () => true),
+    Match.tag('FailedReadMirror', () => true),
+    Match.tag('SucceededSyncPass', () => true),
+    Match.tag('FailedSyncPass', () => true),
+    Match.orElse(() => false),
+  )
+
 /**
  * A completed drain is the moment the server read model is worth revalidating:
  * while writes were queued, Today overlaid them instead of fetching.
@@ -1019,18 +1249,27 @@ const foldSyncMessage = (model: Model, message: Sync.Message): UpdateReturn => {
     folded.model.route._tag === 'List' && isMirrorReadResult(message)
       ? foldListsMirrorSettled(folded.model, listsInputs(folded.model))
       : { model: folded.model }
+  const notesStep =
+    AppRoute.isAnyOf(['Notes', 'Note', 'NotesTrash'])(folded.model.route) &&
+    isMirrorSettledMessage(message)
+      ? foldNotesMirrorSettled(folded.model, notesInputs(folded.model))
+      : { model: listsStep.model }
   const settled = wasPending > 0 && folded.model.sync.pending === 0
 
   if (!settled || folded.model.route._tag !== 'Today') {
     return {
-      model: listsStep.model,
-      commands: [...(folded.commands ?? []), ...(listsStep.commands ?? [])],
+      model: notesStep.model,
+      commands: [
+        ...(folded.commands ?? []),
+        ...(listsStep.commands ?? []),
+        ...(notesStep.commands ?? []),
+      ],
     }
   }
 
   const todayStep = foldTodaySyncSettled(
-    folded.model,
-    todayInputs(folded.model),
+    notesStep.model,
+    todayInputs(notesStep.model),
   )
 
   return {
@@ -1038,6 +1277,7 @@ const foldSyncMessage = (model: Model, message: Sync.Message): UpdateReturn => {
     commands: [
       ...(folded.commands ?? []),
       ...(listsStep.commands ?? []),
+      ...(notesStep.commands ?? []),
       ...(todayStep.commands ?? []),
     ],
   }
@@ -1048,15 +1288,26 @@ export const update = (model: Model, message: Message) =>
     ChangedUrl: ({ url }) => {
       const nextRoute = urlToAppRoute(url)
       const guarded = enforceGuard(model, nextRoute)
+      const leavingNote =
+        model.route._tag === 'Note' &&
+        (guarded.model.route._tag !== 'Note' ||
+          guarded.model.route.noteId !== model.route.noteId)
+      const left = leavingNote
+        ? foldNotesLeftNote(guarded.model)
+        : { model: guarded.model }
 
       const entered = enterRoute(
-        guarded.model,
+        left.model,
         Transition.make(model.route, guarded.model.route),
       )
 
       return {
         model: entered.model,
-        commands: [...(guarded.commands ?? []), ...(entered.commands ?? [])],
+        commands: [
+          ...(guarded.commands ?? []),
+          ...(left.commands ?? []),
+          ...(entered.commands ?? []),
+        ],
       }
     },
 
@@ -1086,6 +1337,7 @@ export const update = (model: Model, message: Message) =>
     GotSyncMessage: ({ message }) => foldSyncMessage(model, message),
     GotTodayMessage: ({ message }) => foldTodayMessage(model, message),
     GotListsMessage: ({ message }) => foldListsMessage(model, message),
+    GotNotesMessage: ({ message }) => foldNotesMessage(model, message),
     GotTasksMessage: ({ message }) => foldTasksMessage(model, message),
     GotHabitsMessage: ({ message }) => foldHabitsMessage(model, message),
     GotRemindersMessage: ({ message }) => foldReminders(model, message),
@@ -1149,35 +1401,18 @@ const usesAppShell = AppRoute.isAnyOf([
   'PushHealth',
 ])
 
-const routeDetail = (route: AppRoute): Option.Option<string> =>
-  AppRoute.matchOrElse<Option.Option<string>>(
-    route,
-    {
-      Note: ({ noteId }) => Option.some(`شناسه‌ی یادداشت: ${noteId}`),
-    },
-    () => Option.none(),
-  )
-
 const placeholderNoteView = (h: HtmlBuilder<Message>): Html =>
   h.p(
     [h.Class('m-0 text-sm leading-7 text-base-content/55')],
     ['این صفحه در گام بعدی ساخته می‌شود.'],
   )
 
-const placeholderPageView = (
-  heading: string,
-  maybeDetail: Option.Option<string>,
-  h: HtmlBuilder<Message>,
-): Html =>
+const placeholderPageView = (heading: string, h: HtmlBuilder<Message>): Html =>
   h.section(
     [h.Class('page-wrap grid max-w-5xl gap-3')],
     [
       h.h1([h.Class('m-0 text-3xl font-bold tracking-tight')], [heading]),
       placeholderNoteView(h),
-      Option.match(maybeDetail, {
-        onNone: () => h.empty,
-        onSome: detail => h.p([h.Class('soft-note m-0 text-xs')], [detail]),
-      }),
     ],
   )
 
@@ -1392,6 +1627,30 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): Html =>
           viewInputs: listsInputs(model),
           toParentMessage: toListsMessage,
         }),
+      Notes: () =>
+        h.submodel({
+          slotId: 'notes-index',
+          model: model.notes,
+          view: Notes.indexView,
+          viewInputs: notesInputs(model),
+          toParentMessage: toNotesMessage,
+        }),
+      Note: () =>
+        h.submodel({
+          slotId: 'note-editor',
+          model: model.notes,
+          view: Notes.noteView,
+          viewInputs: notesInputs(model),
+          toParentMessage: toNotesMessage,
+        }),
+      NotesTrash: () =>
+        h.submodel({
+          slotId: 'notes-trash',
+          model: model.notes,
+          view: Notes.trashView,
+          viewInputs: notesInputs(model),
+          toParentMessage: toNotesMessage,
+        }),
       Tasks: () => tasksPageView(model, h),
       Habits: () =>
         h.submodel({
@@ -1406,12 +1665,7 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): Html =>
       PushHealth: () => pushHealthPageView(model, h),
       NotFound: () => notFoundView(h),
     },
-    () =>
-      placeholderPageView(
-        pageCopy(model.route).heading,
-        routeDetail(model.route),
-        h,
-      ),
+    () => placeholderPageView(pageCopy(model.route).heading, h),
   )
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
@@ -1534,6 +1788,14 @@ const tasksSubscriptions = Subscription.lift(Tasks.subscriptions)<
   toParentMessage: toTasksMessage,
 })
 
+const notesSubscriptions = Subscription.lift(Notes.subscriptions)<
+  Model,
+  Message
+>({
+  read: model => Option.some(model.notes),
+  toParentMessage: toNotesMessage,
+})
+
 const habitsSubscriptions = Subscription.lift(Habits.subscriptions)<
   Model,
   Message
@@ -1560,6 +1822,7 @@ export const subscriptions = Subscription.aggregate(
   pushSubscriptions,
   todaySubscriptions,
   tasksSubscriptions,
+  notesSubscriptions,
   habitsSubscriptions,
   remindersSubscriptions,
 )

@@ -50,6 +50,7 @@ export default defineConfig({
         bypass: spaDocumentBypass,
       },
       '/preferences': 'http://localhost:8787',
+      '/search': 'http://localhost:8787',
       // `/today` is both the dashboard route and the read-model endpoint.
       '/today': {
         target: 'http://localhost:8787',

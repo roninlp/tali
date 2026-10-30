@@ -144,6 +144,31 @@ export const monitorIcon = (className: string): Html =>
 export const checkIcon = (className: string): Html =>
   strokeIcon(className, [ih.path([...roundCaps(), ih.D('m5 12 4.5 4.5L19 7')])])
 
+export const plusIcon = (className: string): Html =>
+  strokeIcon(className, [ih.path([...roundCaps(), ih.D('M12 5v14M5 12h14')])])
+
+export const pinIcon = (className: string): Html =>
+  strokeIcon(className, [
+    ih.path([...roundCaps(), ih.D('M12 17v5M8 3h8l-1 6 3 3v2H6v-2l3-3-1-6Z')]),
+  ])
+
+export const archiveIcon = (className: string): Html =>
+  strokeIcon(className, [
+    ih.rect([ih.X('3'), ih.Y('4'), ih.Width('18'), ih.Height('4'), ih.Rx('1')]),
+    ih.path([
+      ...roundCaps(),
+      ih.D('M5 8v11a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4'),
+    ]),
+  ])
+
+export const trashIcon = (className: string): Html =>
+  strokeIcon(className, [
+    ih.path([
+      ...roundCaps(),
+      ih.D('M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 11v6M14 11v6'),
+    ]),
+  ])
+
 export const sparklesIcon = (className: string): Html =>
   strokeIcon(className, [
     ih.path([

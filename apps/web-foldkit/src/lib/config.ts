@@ -2,11 +2,11 @@
  * Where the api Worker lives.
  *
  * Development: the Vite dev server on :3001 proxies `/auth`, `/health`,
- * `/household`, `/push`, `/rpc`, `/sync`, and `/today` to the Worker on :8787 (see
- * `vite.config.ts`). The browser therefore stays on its own origin, which
- * keeps cookies same-origin and avoids widening the Worker's CORS allowlist.
- * The Effect RPC client needs an absolute URL, so this is `location.origin`
- * rather than an empty string.
+ * `/household`, `/preferences`, `/push`, `/reminders`, `/rpc`, `/search`,
+ * `/sync`, and `/today` to the Worker on :8787 (see `vite.config.ts`). The
+ * browser therefore stays on its own origin, which keeps cookies same-origin
+ * and avoids widening the Worker's CORS allowlist. The Effect RPC client needs
+ * an absolute URL, so this is `location.origin` rather than an empty string.
  *
  * Deploy: set `VITE_API_URL=/api`; the static site forwards `/api/*` over the
  * `API` service binding, matching the legacy Solid app's setup.

@@ -5,9 +5,9 @@
 theming, RTL document), P2.2 (route union and navigation), P2.3 (auth and
 session restore), P2.4 (local store and sync engine), and P2.5 (preferences,
 theme, and push) are in place. P2.6 (feature screens) is in progress: Today,
-Lists, Tasks, Habits, and Reminders are delivered; Notes, Occasions, Calendar,
-and Settings remain. P2.5's real vendor-push check is still blocked on a local
-VAPID pair and a real browser; everything else is verified.
+Lists, Tasks, Habits, Notes, and Reminders are delivered; Occasions,
+Calendar, and Settings remain. P2.5's real vendor-push check is still blocked
+on a local VAPID pair and a real browser; everything else is verified.
 
 **Source of truth:** `apps/web` (Solid v2) for behavior, copy, and
 interaction. **Target:** `apps/web-foldkit` (Foldkit + Effect). Do not edit
@@ -339,6 +339,37 @@ and footer hint, and `/reminders` composes the push-health panel above it as the
 legacy route did. The legacy API and inbox cases are covered by
 `src/lib/reminders/api.test.ts`, `reminders.story.test.ts`, and
 `reminders.scene.test.ts`; no screen command uses RPC or the sync outbox.
+
+**Delivered — Notes:** `src/page/notes.ts` is the shared index/editor/trash
+Submodel and `notes-view.ts` / `note-view.ts` / `notes-trash-view.ts` hold the
+views. `src/lib/note-body.ts` keeps the plain-text/ProseMirror envelope and now
+exposes the raw editor title; `src/lib/note-draft.ts` ports the crash-draft
+parse/reconcile rules; `src/lib/note-search.ts` ports the variant-insensitive
+local search; `src/lib/note-search-api.ts` is the plain-HTTP `GET
+/search/notes` client; and `src/lib/note-writes.ts` ports create, content save,
+pin, archive, tag, trash and retry writes with the legacy per-note save queue
+and identical-save dedupe, plus the server-row projection a restore adopts.
+`src/mirror.ts` now also projects the trashed-note rows and each note's
+sync-error code, while the Today pinned-note lane reads the same live rows
+unchanged. `/notes` renders pinned, active and archive sections, tag filters,
+create, pin/archive/trash actions, pending and sync-error badges, the
+empty/offline states, and server-first search with the mirror fallback (marked
+titles and snippets). `/notes/[id]` loads from the mirror and crash draft,
+autosaves body text after 700 ms and the draft after 120 ms through
+Subscriptions, commits title edits immediately, flushes on route exit and
+pagehide, and renders saving/saved/error, trashed, missing and sync-rejection
+states with retry and restore. `/notes/trash` lists the mirror tombstones and
+restores through the `RestoreNote` RPC, because the sync protocol keeps
+tombstone-wins: restore refuses offline, refuses while the note still has a
+queued outbox entry, merges the returned server row into the mirror, and uses
+the legacy offline/queued/failure copy. Every other note write commits the
+IndexedDB mirror row and outbox entry together; no other note write uses RPC.
+Story and Scene tests cover the update/command paths and the rendered states,
+and the body, draft, search and saver cases are ported from the legacy tests.
+The screen CSS is in `styles.css`. Parity gaps: the legacy editor hydrated a
+note missing from the mirror with `GET note` over RPC; this slice renders the
+missing state instead. Ctrl+K focuses the search box but does not select its
+text.
 
 ## Verification
 

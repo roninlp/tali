@@ -86,11 +86,11 @@ describe('route placeholders', () => {
     )
   })
 
-  test('a note detail shows the id captured by the router', () => {
+  test('a note detail opens the editor for the id captured by the router', () => {
     scene(
       { update, view },
       given(modelAt(AppRoute.Note({ noteId: NOTE_ID }))),
-      expect(text(`شناسه‌ی یادداشت: ${NOTE_ID}`)).toExist(),
+      expect(text('در حال باز کردن یادداشت…')).toExist(),
     )
   })
 

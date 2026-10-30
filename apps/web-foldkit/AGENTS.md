@@ -28,10 +28,10 @@ subtree_prompted: true
   :8787. `pnpm dev` from the repo root runs all three; `pnpm dev:foldkit` runs
   only this app.
 - **API access.** Vite proxies `/auth`, `/health`, `/household`,
-  `/preferences`, `/push`, `/reminders`, `/rpc`, `/sync`, and `/today` to the
-  api Worker on :8787, so the browser stays on :3001 and cookies stay
-  same-origin. `/today` is both the dashboard route and its read-model
-  endpoint, so it uses the same document bypass as `/household`.
+  `/preferences`, `/push`, `/reminders`, `/rpc`, `/search`, `/sync`, and
+  `/today` to the api Worker on :8787, so the browser stays on :3001 and
+  cookies stay same-origin. `/today` is both the dashboard route and its
+  read-model endpoint, so it uses the same document bypass as `/household`.
   `/household`, `/push-health`, and `/reminders` are also SPA routes whose
   prefixes belong to the Worker, so the proxy lets browser navigations return
   `index.html` and proxies only API calls. `src/lib/config.ts` resolves the
@@ -48,7 +48,7 @@ subtree_prompted: true
 - **Migration progress.** P2.1 (shell, theming, RTL document), P2.2 (route
   union and navigation), P2.3 (auth and session restore), P2.4 (local store
   and sync engine), P2.5 (preferences, saved theme, and push), and P2.6's
-  Today, Lists, Tasks, Habits, and Reminders screens are in place:
+  Today, Lists, Tasks, Habits, Notes, and Reminders screens are in place:
   `src/shell.ts` holds the chrome plus the desktop section menu, mobile tab
   bar, display name, and account slot; `src/theme.ts` the persistent gallery +
   light/dark/system
@@ -58,7 +58,8 @@ subtree_prompted: true
   `src/preferences.ts` the server-of-record display preferences with their
   synchronous local cache; `src/push.ts` the Web Push subscription,
   permission, and notification-action Submodel; `src/page/` the login,
-  register, household, today, lists, tasks, habits, and reminders screens; and
+  register, household, today, lists, tasks, habits, notes, and reminders
+  screens; and
   `src/sync.ts` the local-first sync Submodel with its managed IndexedDB
   mirror, engine Commands, cadence Subscription, and live mirror snapshot.
   `src/mirror.ts` projects the mirrored Task, Project, Tag, Note, Habit,
@@ -73,15 +74,19 @@ subtree_prompted: true
   grouping/filters, view, and per-user saved filter/sort state;
   `src/page/habits.ts`, `habits-view.ts`, and `habits-heatmap-view.ts` hold
   the habits Submodel, its form/list view, and the monthly heatmap;
-  `src/page/reminders.ts`, `reminders-view.ts`, and `reminders-model.ts` hold
-  the ledger inbox Submodel, its panel, and its copy/formatting; the client
-  pieces are `src/lib/today-api.ts`, `task-writes.ts`, `habit-log.ts`,
-  `habit-writes.ts`, `note-body.ts`, `list-writes.ts`, and
-  `reminders/api.ts`. `/settings` renders `src/preferences.ts`'s display form,
-  the theme gallery, and the push health panel; the account/password,
-  household, and trash Settings work stays in P2.6. The remaining P2.6 screens
-  (Notes, Occasions, Calendar, Settings account/household/trash) are still
-  placeholders.
+  `src/page/notes.ts`, `notes-view.ts`, `note-view.ts`, and
+  `notes-trash-view.ts` hold the notes index/editor/trash Submodel and views,
+  with `src/page/notes-model.ts` carrying the section ordering, tag filter,
+  trash order, and pending-note projection; `src/page/reminders.ts`,
+  `reminders-view.ts`, and `reminders-model.ts` hold the ledger inbox Submodel,
+  its panel, and its copy/formatting; the client pieces are
+  `src/lib/today-api.ts`, `task-writes.ts`, `habit-log.ts`, `habit-writes.ts`,
+  `note-body.ts`, `note-draft.ts`, `note-search.ts`, `note-search-api.ts`,
+  `note-writes.ts`, `list-writes.ts`, and `reminders/api.ts`. `/settings`
+  renders `src/preferences.ts`'s display form, the theme gallery, and the push
+  health panel; the account/password, household, and trash Settings work stays
+  in P2.6. The remaining P2.6 screens (Occasions, Calendar, Settings
+  account/household/trash) are still placeholders.
   `src/session.ts`, `src/household-summary.ts`, and `src/preferences-model.ts`
   hold the plain Model projections the auth/preferences responses decode into,
   so no branded domain value crosses the dev optimizer's `effect/schema`

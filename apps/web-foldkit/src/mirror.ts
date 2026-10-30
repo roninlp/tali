@@ -1,4 +1,4 @@
-import { Array, Schema } from 'effect'
+import { Array, Option, Schema } from 'effect'
 
 import { DEFAULT_TIME_ZONE } from '@tali/domain'
 import type { LocalStore, MirrorRecord } from '@tali/sync-client'
@@ -80,6 +80,7 @@ export const NoteRow = Schema.Struct({
   updatedAt: Schema.String,
   deletedAt: Schema.NullOr(Schema.String),
   version: Schema.Int,
+  syncErrorCode: Schema.Option(Schema.String),
 })
 export type NoteRow = typeof NoteRow.Type
 
@@ -88,6 +89,7 @@ export const MirrorSnapshot = Schema.Struct({
   projects: Schema.Array(ProjectRow),
   tags: Schema.Array(TagRow),
   notes: Schema.Array(NoteRow),
+  trashedNotes: Schema.Array(NoteRow),
   habits: Schema.Array(HabitRow),
   habitEntries: Schema.Array(HabitEntryRow),
   lists: Schema.Array(ListRow),
@@ -101,6 +103,7 @@ export const emptyMirrorSnapshot = (): MirrorSnapshot =>
     projects: [],
     tags: [],
     notes: [],
+    trashedNotes: [],
     habits: [],
     habitEntries: [],
     lists: [],
@@ -156,6 +159,7 @@ export const toNoteRow = (record: MirrorRecord): NoteRow =>
     updatedAt: record.updatedAt,
     deletedAt: record.deletedAt,
     version: record.version,
+    syncErrorCode: Option.fromNullishOr(record.syncError?.code),
   })
 
 /** Project a mirrored project row into the filter sidebar's shape. */
@@ -202,6 +206,10 @@ export const noteRowsFromMirror = (
   records: ReadonlyArray<MirrorRecord>,
 ): ReadonlyArray<NoteRow> => Array.map(records, toNoteRow)
 
+export const trashedNoteRowsFromMirror = (
+  records: ReadonlyArray<MirrorRecord>,
+): ReadonlyArray<NoteRow> => Array.map(records, toNoteRow)
+
 export const habitRowsFromMirror = (
   records: ReadonlyArray<MirrorRecord>,
 ): ReadonlyArray<HabitRow> => sortHabitRows(Array.map(records, toHabitRow))
@@ -214,23 +222,34 @@ export const habitEntryRowsFromMirror = (
 export const readMirrorSnapshot = async (
   store: LocalStore,
 ): Promise<MirrorSnapshot> => {
-  const [tasks, projects, tags, notes, habits, habitEntries, lists, listItems] =
-    await Promise.all([
-      store.list('task'),
-      store.list('project'),
-      store.list('tag'),
-      store.list('note'),
-      store.list('habit'),
-      store.list('habitEntry'),
-      store.list('list'),
-      store.list('listItem'),
-    ])
+  const [
+    tasks,
+    projects,
+    tags,
+    notes,
+    trashedNotes,
+    habits,
+    habitEntries,
+    lists,
+    listItems,
+  ] = await Promise.all([
+    store.list('task'),
+    store.list('project'),
+    store.list('tag'),
+    store.list('note'),
+    store.listTrashed('note'),
+    store.list('habit'),
+    store.list('habitEntry'),
+    store.list('list'),
+    store.list('listItem'),
+  ])
 
   return MirrorSnapshot.make({
     tasks: taskRowsFromMirror(tasks),
     projects: projectRowsFromMirror(projects),
     tags: tagRowsFromMirror(tags),
     notes: noteRowsFromMirror(notes),
+    trashedNotes: trashedNoteRowsFromMirror(trashedNotes),
     habits: habitRowsFromMirror(habits),
     habitEntries: habitEntryRowsFromMirror(habitEntries),
     lists: sortListRows(listRowsFromMirror(lists)),
@@ -304,6 +323,7 @@ export const noteRowFromServer = (note: ServerNote): NoteRow => {
     updatedAt: note.updatedAt ?? '',
     deletedAt: note.deletedAt ?? null,
     version: note.version ?? 0,
+    syncErrorCode: Option.none(),
   })
 }
 

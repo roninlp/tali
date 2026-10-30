@@ -115,6 +115,11 @@ export const noteTextFromData = (
       : ''
 }
 
+/** The title exactly as stored, for the editor field (no display fallback). */
+export const noteTitleFromData = (
+  data: Readonly<Record<string, unknown>>,
+): string => (typeof data.title === 'string' ? data.title : '')
+
 /** A display title: the explicit title, else the first non-empty line. */
 export const noteDisplayTitle = (
   data: Readonly<Record<string, unknown>>,
