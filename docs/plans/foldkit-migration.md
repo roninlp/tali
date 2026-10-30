@@ -4,9 +4,10 @@
 (workspace-wide Effect 4.1, api proxy, typed RPC entry point), P2.1 (shell,
 theming, RTL document), P2.2 (route union and navigation), P2.3 (auth and
 session restore), P2.4 (local store and sync engine), and P2.5 (preferences,
-theme, and push) are in place. P2.5's real vendor-push check is still blocked
-on a local VAPID pair and a real browser; everything else is verified. P2.6
-(feature screens) is next.
+theme, and push) are in place. P2.6 (feature screens) is in progress: Today
+is delivered, Tasks through Settings remain. P2.5's real vendor-push check is
+still blocked on a local VAPID pair and a real browser; everything else is
+verified.
 
 **Source of truth:** `apps/web` (Solid v2) for behavior, copy, and
 interaction. **Target:** `apps/web-foldkit` (Foldkit + Effect). Do not edit
@@ -235,6 +236,25 @@ checklist against the legacy screen:
 
 **Done when:** the legacy app has no behavior the Foldkit app lacks; the
 Playwright gate flows can run against :3001; the legacy app can be retired.
+
+**Delivered — Today:** `src/page/today.ts` is the page Submodel and
+`today-model.ts` / `today-view.ts` hold its pure aggregation and view.
+`src/mirror.ts` projects the IndexedDB rows the screen reads (tasks, notes,
+habits, entries), and `src/sync.ts` now carries that mirror snapshot and the
+pending-entity keys in its Model, so every feature screen can read the same
+live rows. `src/lib/today-api.ts` is the plain-HTTP `GET /today` client with
+ETag revalidation; Vite proxies `/today` for API calls while browser
+navigations still return the SPA. `/today` renders the real dashboard: the
+server read model when online with a drained outbox, mirror aggregation
+otherwise, pending/dirty overlays that keep optimistic writes from flashing
+back, the quick-add, complete and move-to-tomorrow local writes, the keyboard
+cursor and timeline, the saved section order with its server PATCH, the
+habits lane (tap cycling and streak copy) and the pinned-note lane. The
+temporary P2.4 quick-add and mirror list are removed. The `:3001` auth and
+sync smoke checks still pass; the sync smoke now drives the real Today list.
+One small legacy interaction is still missing: a half-typed quick-add title
+is not persisted across a reload (the P2.4 draft save/restore was removed
+with its temporary surface).
 
 ## Verification
 

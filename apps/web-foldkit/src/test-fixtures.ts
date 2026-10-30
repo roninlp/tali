@@ -3,9 +3,11 @@ import { Option } from 'effect'
 import * as Auth from './auth'
 import type { AuthFailure } from './lib/auth-api'
 import { Model } from './main'
+import { emptyMirrorSnapshot } from './mirror'
 import * as Household from './page/household'
 import * as Login from './page/login'
 import * as Register from './page/register'
+import * as Today from './page/today'
 import * as Preferences from './preferences'
 import * as Push from './push'
 import { AppRoute } from './route'
@@ -15,6 +17,7 @@ import * as Theme from './theme'
 
 export const USER_ID = '0192f0a0-0000-7000-8000-000000000001'
 export const HOUSEHOLD_ID = '0192f0a0-0000-7000-8000-000000000002'
+export const TODAY_NOW = Date.parse('2026-10-30T09:30:00.000Z')
 
 const user: Session['user'] = {
   id: USER_ID,
@@ -80,10 +83,8 @@ export const syncModel = (
     hasSyncedOnce: true,
     tick: 0,
     maybeError: Option.none(),
-    tasks: [],
-    draft: '',
-    isCreatingTask: false,
-    maybeTaskError: Option.none(),
+    mirror: emptyMirrorSnapshot(),
+    pendingKeys: [],
   })
 
 const DEFAULT_DISPLAY_FIELDS: Preferences.Model['defaults'] = {
@@ -140,4 +141,5 @@ export const modelAt = (
     preferences: preferencesModel(),
     push: pushModel(),
     sync: syncModel(),
+    today: Today.initialModel(TODAY_NOW),
   })

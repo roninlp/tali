@@ -69,6 +69,14 @@ export const notesTrashRouter = pipe(
   mapTo(AppRoute.NotesTrash),
 )
 
+/** The task board row a Today title links to. */
+export const taskAnchorPath = (taskId: string): string =>
+  `${tasksRouter()}#task-${taskId}`
+
+/** A note detail path from a plain NoteId string. */
+export const notePath = (noteId: string): string =>
+  noteRouter({ noteId: NoteId.make(noteId) })
+
 export const habitsRouter = pipe(literal('habits'), mapTo(AppRoute.Habits))
 
 export const calendarRouter = pipe(

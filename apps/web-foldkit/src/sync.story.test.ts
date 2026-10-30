@@ -3,52 +3,18 @@ import { Command, given, message, model, story } from 'foldkit/story'
 import { modifyFields } from 'foldkit/struct'
 import { describe, expect, test } from 'vitest'
 
-import type { TaskRow } from '@tali/sync-client'
-
+import { emptyMirrorSnapshot } from './mirror'
 import * as Sync from './sync'
 import { syncModel } from './test-fixtures'
-
-const task: TaskRow = {
-  id: '0192f0a0-0000-7000-8000-000000000010',
-  title: 'نان',
-  status: 'todo',
-  dueDate: '2026-10-20',
-  updatedAt: '2026-10-20T09:00:00.000Z',
-  hasSyncError: false,
-}
-
-const syncedTask: TaskRow = {
-  ...task,
-  status: 'done',
-  updatedAt: '2026-10-20T09:00:05.000Z',
-}
 
 const emptySnapshot = {
   at: 500,
   pending: 0,
   maybeFailed: Option.none<number>(),
   failedRefreshedAt: 0,
-  tasks: [] satisfies ReadonlyArray<TaskRow>,
+  mirror: emptyMirrorSnapshot(),
+  pendingKeys: [],
 }
-
-const queuedSnapshot = {
-  at: 600,
-  pending: 1,
-  maybeFailed: Option.none<number>(),
-  failedRefreshedAt: 0,
-  tasks: [task] satisfies ReadonlyArray<TaskRow>,
-}
-
-const drainedSnapshot = {
-  at: 700,
-  pending: 0,
-  maybeFailed: Option.some(0),
-  failedRefreshedAt: 700,
-  tasks: [syncedTask] satisfies ReadonlyArray<TaskRow>,
-}
-
-const offline = (): Sync.Model =>
-  modifyFields(syncModel(), { isOnline: () => false })
 
 describe('local store lifecycle', () => {
   test('opening the store reads the mirror and starts the first pull', () => {
@@ -103,8 +69,6 @@ describe('local store lifecycle', () => {
         modifyFields(syncModel(), {
           pending: () => 3,
           failed: () => 1,
-          tasks: () => [task],
-          draft: () => 'نیمه‌نوشته',
         }),
       ),
       message(Sync.Message.ReleasedLocalStore()),
@@ -112,89 +76,8 @@ describe('local store lifecycle', () => {
         expect(next.status).toStrictEqual(Sync.StoreStatus.Idle())
         expect(next.pending).toBe(0)
         expect(next.failed).toBe(0)
-        expect(next.tasks).toStrictEqual([])
-        expect(next.draft).toBe('')
-      }),
-      Command.expectNone(),
-    )
-  })
-})
-
-describe('offline quick-add', () => {
-  test('an offline task is written locally and survives without a sync pass', () => {
-    story(
-      Sync.update,
-      given(offline()),
-      message(Sync.Message.UpdatedQuickAddDraft({ value: 'نان' })),
-      message(Sync.Message.SubmittedQuickAdd({ timeZone: 'Asia/Tehran' })),
-      model(next => {
-        expect(next.isCreatingTask).toBe(true)
-      }),
-      Command.expectExact(
-        Sync.CreateTask({ title: 'نان', timeZone: 'Asia/Tehran' }),
-      ),
-      Command.resolve(
-        Sync.CreateTask,
-        Sync.Message.CompletedCreateTask({ taskId: task.id }),
-      ),
-      model(next => {
-        expect(next.draft).toBe('')
-        expect(next.isCreatingTask).toBe(false)
-      }),
-      Command.expectExact(
-        Sync.ReadMirror({ pendingBefore: 0, failedRefreshedAt: 0 }),
-      ),
-      Command.resolve(
-        Sync.ReadMirror,
-        Sync.Message.SucceededReadMirror(queuedSnapshot),
-      ),
-      model(next => {
-        expect(next.pending).toBe(1)
-        expect(next.tasks).toStrictEqual([task])
-      }),
-      Command.expectNone(),
-    )
-  })
-
-  test('reconnecting starts the pass that drains the offline outbox', () => {
-    story(
-      Sync.update,
-      given(
-        modifyFields(offline(), {
-          pending: () => 1,
-          tasks: () => [task],
-        }),
-      ),
-      message(Sync.Message.WentOnline()),
-      model(next => {
-        expect(next.isOnline).toBe(true)
-        expect(next.isSyncing).toBe(true)
-      }),
-      Command.expectExact(
-        Sync.RunSyncPass({ pendingBefore: 1, failedRefreshedAt: 0 }),
-      ),
-      Command.resolve(
-        Sync.RunSyncPass,
-        Sync.Message.SucceededSyncPass(drainedSnapshot),
-      ),
-      model(next => {
-        expect(next.isSyncing).toBe(false)
-        expect(next.pending).toBe(0)
-        expect(next.failed).toBe(0)
-        expect(next.failures).toBe(0)
-        expect(next.tasks).toStrictEqual([syncedTask])
-      }),
-      Command.expectNone(),
-    )
-  })
-
-  test('an empty or whitespace title never creates a task', () => {
-    story(
-      Sync.update,
-      given(modifyFields(offline(), { draft: () => '   ' })),
-      message(Sync.Message.SubmittedQuickAdd({ timeZone: 'Asia/Tehran' })),
-      model(next => {
-        expect(next.isCreatingTask).toBe(false)
+        expect(next.mirror).toStrictEqual(emptyMirrorSnapshot())
+        expect(next.pendingKeys).toStrictEqual([])
       }),
       Command.expectNone(),
     )

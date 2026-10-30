@@ -35,6 +35,7 @@ const flags: Effect.Effect<Flags> = Effect.sync(() => {
     pushEnvironment: detectPushEnvironment(),
     isOnline: navigator.onLine,
     isVisible: document.visibilityState !== 'hidden',
+    now: Date.now(),
   })
 })
 

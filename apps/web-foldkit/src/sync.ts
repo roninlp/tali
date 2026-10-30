@@ -1,5 +1,4 @@
 import {
-  Array,
   Clock,
   Data,
   Duration,
@@ -17,24 +16,24 @@ import {
   Subscription,
   Update,
 } from 'foldkit'
-import type { Html, HtmlBuilder } from 'foldkit/html'
 import { defineMessageUnion } from 'foldkit/message'
 import { defineTaggedUnion } from 'foldkit/schema'
 import { modifyFields } from 'foldkit/struct'
 
-import { uuidV7 } from '@tali/domain'
 import {
   FAILED_REFRESH_INTERVAL_MS,
   SyncRejected,
-  TaskRow,
   createSyncEngine,
-  createTaskInMirror,
-  readTaskRows,
   syncDelayMs,
-  todayInZone,
 } from '@tali/sync-client'
 
 import { syncTransport } from './lib/sync-transport'
+import {
+  emptyMirrorSnapshot,
+  pendingKeysOf,
+  readMirrorSnapshot,
+} from './mirror'
+import { MirrorSnapshot } from './mirror'
 import {
   LocalStoreResource,
   closeStore,
@@ -73,7 +72,8 @@ const Snapshot = {
   pending: Schema.Int,
   maybeFailed: Schema.Option(Schema.Int),
   failedRefreshedAt: Schema.Number,
-  tasks: Schema.Array(TaskRow),
+  mirror: MirrorSnapshot,
+  pendingKeys: Schema.Array(Schema.String),
 }
 
 export const Model = Schema.Struct({
@@ -93,10 +93,8 @@ export const Model = Schema.Struct({
   hasSyncedOnce: Schema.Boolean,
   tick: Schema.Int,
   maybeError: Schema.Option(Schema.String),
-  tasks: Schema.Array(TaskRow),
-  draft: Schema.String,
-  isCreatingTask: Schema.Boolean,
-  maybeTaskError: Schema.Option(Schema.String),
+  mirror: MirrorSnapshot,
+  pendingKeys: Schema.Array(Schema.String),
 })
 export type Model = typeof Model.Type
 
@@ -118,10 +116,7 @@ export const Message = defineMessageUnion({
     message: Schema.String,
     maybeCode: Schema.Option(Schema.String),
   },
-  UpdatedQuickAddDraft: { value: Schema.String },
-  SubmittedQuickAdd: { timeZone: Schema.String },
-  CompletedCreateTask: { taskId: Schema.String },
-  FailedCreateTask: { message: Schema.String },
+  RequestedMirrorRefresh: {},
 })
 export type Message = typeof Message.Type
 
@@ -184,14 +179,16 @@ export const ReadMirror = Command.define('ReadMirror', {
       )
         ? Option.some(yield* tryStore(() => store.failedCount()))
         : Option.none()
-      const tasks = yield* tryStore(() => readTaskRows(store))
+      const mirror = yield* tryStore(() => readMirrorSnapshot(store))
+      const queued = yield* tryStore(() => store.pending())
 
       return Message.SucceededReadMirror({
         at: now,
         pending,
         maybeFailed,
         failedRefreshedAt: Option.isSome(maybeFailed) ? now : failedRefreshedAt,
-        tasks,
+        mirror,
+        pendingKeys: pendingKeysOf(queued),
       })
     }).pipe(
       Effect.catch(error =>
@@ -228,14 +225,16 @@ export const RunSyncPass = Command.define('RunSyncPass', {
       )
         ? Option.some(yield* tryStore(() => store.failedCount()))
         : Option.none()
-      const tasks = yield* tryStore(() => readTaskRows(store))
+      const mirror = yield* tryStore(() => readMirrorSnapshot(store))
+      const queued = yield* tryStore(() => store.pending())
 
       return Message.SucceededSyncPass({
         at: now,
         pending,
         maybeFailed,
         failedRefreshedAt: Option.isSome(maybeFailed) ? now : failedRefreshedAt,
-        tasks,
+        mirror,
+        pendingKeys: pendingKeysOf(queued),
       })
     }).pipe(
       Effect.catch(error =>
@@ -249,39 +248,16 @@ export const RunSyncPass = Command.define('RunSyncPass', {
     ),
 })
 
-export const CreateTask = Command.define('CreateTask', {
-  args: { title: Schema.String, timeZone: Schema.String },
-  messages: [Message.CompletedCreateTask, Message.FailedCreateTask],
-  execute: ({ title, timeZone }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* Clock.currentTimeMillis
-      const today = new Date(now)
-      const taskId = uuidV7(now)
-      yield* tryStore(() =>
-        createTaskInMirror(
-          store,
-          {
-            title,
-            dueDate: todayInZone(today, timeZone),
-            priority: 'medium',
-            projectId: null,
-            tagIds: [],
-            timeZone,
-          },
-          taskId,
-          today.toISOString(),
-        ),
-      )
-
-      return Message.CompletedCreateTask({ taskId })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedCreateTask({ message: operationMessage(error) }),
-        ),
-      ),
-    ),
+export const refreshMirror = (
+  model: Model,
+): Update.Return<Model, Message, LocalStoreService> => ({
+  model,
+  commands: [
+    ReadMirror({
+      pendingBefore: model.pending,
+      failedRefreshedAt: model.failedRefreshedAt,
+    }),
+  ],
 })
 
 // INIT
@@ -313,10 +289,8 @@ export const init = (options: InitOptions): Update.Return<Model, Message> => ({
     hasSyncedOnce: false,
     tick: 0,
     maybeError: Option.none(),
-    tasks: [],
-    draft: '',
-    isCreatingTask: false,
-    maybeTaskError: Option.none(),
+    mirror: emptyMirrorSnapshot(),
+    pendingKeys: [],
   }),
 })
 
@@ -346,6 +320,9 @@ export const applySession = (
 
 const isReady = StoreStatus.isAnyOf(['Ready'])
 
+/** Whether the local mirror is open and readable by the feature screens. */
+export const isStoreReady = (model: Model): boolean => isReady(model.status)
+
 const canRun = (model: Model): boolean =>
   isReady(model.status) &&
   model.hasHousehold &&
@@ -366,10 +343,8 @@ const clearMirrorSnapshot = (model: Model): Model =>
     hasSyncedOnce: () => false,
     tick: () => 0,
     maybeError: () => Option.none(),
-    tasks: () => [],
-    draft: () => '',
-    isCreatingTask: () => false,
-    maybeTaskError: () => Option.none(),
+    mirror: () => emptyMirrorSnapshot(),
+    pendingKeys: () => [],
   })
 
 /**
@@ -416,7 +391,8 @@ const applySnapshot = (
     readonly pending: number
     readonly maybeFailed: Option.Option<number>
     readonly failedRefreshedAt: number
-    readonly tasks: ReadonlyArray<TaskRow>
+    readonly mirror: MirrorSnapshot
+    readonly pendingKeys: ReadonlyArray<string>
   },
 ): Model =>
   modifyFields(model, {
@@ -427,7 +403,8 @@ const applySnapshot = (
         onSome: failed => failed,
       }),
     failedRefreshedAt: () => snapshot.failedRefreshedAt,
-    tasks: () => snapshot.tasks,
+    mirror: () => snapshot.mirror,
+    pendingKeys: () => snapshot.pendingKeys,
     lastActivity: () => snapshot.at,
   })
 
@@ -520,50 +497,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       }
     },
 
-    UpdatedQuickAddDraft: ({ value }) => ({
-      model: modifyFields(model, { draft: () => value }),
-    }),
-
-    SubmittedQuickAdd: ({ timeZone }) => {
-      const title = model.draft.trim()
-
-      if (!isReady(model.status) || title === '' || model.isCreatingTask) {
-        return { model }
-      }
-
-      return {
-        model: modifyFields(model, {
-          isCreatingTask: () => true,
-          maybeTaskError: () => Option.none(),
-        }),
-        commands: [CreateTask({ title, timeZone })],
-      }
-    },
-
-    CompletedCreateTask: () => {
-      const next = modifyFields(model, {
-        isCreatingTask: () => false,
-        draft: () => '',
-        maybeTaskError: () => Option.none(),
-      })
-
-      return {
-        model: next,
-        commands: [
-          ReadMirror({
-            pendingBefore: model.pending,
-            failedRefreshedAt: model.failedRefreshedAt,
-          }),
-        ],
-      }
-    },
-
-    FailedCreateTask: ({ message }) => ({
-      model: modifyFields(model, {
-        isCreatingTask: () => false,
-        maybeTaskError: () => Option.some(message),
-      }),
-    }),
+    RequestedMirrorRefresh: () => refreshMirror(model),
   })
 
 // MANAGED RESOURCE
@@ -733,101 +667,4 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
     },
     h,
   ),
-)
-
-const quickAddView = (
-  model: Model,
-  viewInputs: ViewInputs,
-  h: HtmlBuilder<Message>,
-): Html => {
-  const ready = isReady(model.status)
-  const canSubmit = ready && !model.isCreatingTask && model.draft.trim() !== ''
-
-  return h.form(
-    [
-      h.Class(
-        'grid grid-cols-[1fr_auto] gap-2 rounded-2xl border border-base-300 bg-base-100 p-2 shadow-sm',
-      ),
-      h.OnSubmit(Message.SubmittedQuickAdd({ timeZone: viewInputs.timeZone })),
-    ],
-    [
-      h.input([
-        h.Type('text'),
-        h.Value(model.draft),
-        h.Placeholder('افزودن کار…'),
-        h.AriaLabel('کار تازه برای امروز'),
-        h.Disabled(!ready),
-        h.Class('input input-ghost w-full text-sm'),
-        h.OnInput(value => Message.UpdatedQuickAddDraft({ value })),
-      ]),
-      h.button(
-        [
-          h.Type('submit'),
-          h.AriaLabel('افزودن کار'),
-          h.Disabled(!canSubmit),
-          h.Class('btn btn-primary btn-sm h-full min-h-9 px-4'),
-        ],
-        [model.isCreatingTask ? '…' : '+'],
-      ),
-    ],
-  )
-}
-
-const taskRowView = (task: TaskRow, h: HtmlBuilder<Message>): Html =>
-  h.keyed('li')(
-    task.id,
-    [
-      h.Class(
-        'flex items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm',
-      ),
-    ],
-    [
-      h.span([h.Class('m-0 flex-1 truncate')], [task.title]),
-      task.hasSyncError
-        ? h.span(
-            [h.Class('badge badge-error badge-sm whitespace-nowrap')],
-            ['ذخیره نشد'],
-          )
-        : h.empty,
-    ],
-  )
-
-const taskListView = (model: Model, h: HtmlBuilder<Message>): Html =>
-  Array.match(model.tasks, {
-    onEmpty: () =>
-      h.p(
-        [h.Class('m-0 text-xs text-base-content/45')],
-        ['هنوز کاری در حافظه‌ی محلی ذخیره نشده است.'],
-      ),
-    onNonEmpty: tasks =>
-      h.ul(
-        [h.Class('sync-task-list m-0 grid list-none gap-1.5 p-0')],
-        Array.map(tasks, task => taskRowView(task, h)),
-      ),
-  })
-
-export type ViewInputs = Readonly<{ timeZone: string }>
-
-/**
- * The temporary P2.4 acceptance surface on `/today`: a local-first quick-add
- * and the mirror rows it writes. P2.6 replaces this with the real Today
- * screen; nothing here reaches the Tasks/Notes/Calendar data screens yet.
- */
-export const todayView = Submodel.defineView<Model, Message, ViewInputs>(
-  (model, viewInputs, h) =>
-    h.section(
-      [h.Class('grid gap-2')],
-      [
-        quickAddView(model, viewInputs, h),
-        Option.match(model.maybeTaskError, {
-          onNone: () => h.empty,
-          onSome: message =>
-            h.p(
-              [h.Role('alert'), h.Class('m-0 text-xs text-error')],
-              [message],
-            ),
-        }),
-        taskListView(model, h),
-      ],
-    ),
 )

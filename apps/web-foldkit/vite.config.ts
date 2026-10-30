@@ -50,6 +50,11 @@ export default defineConfig({
         bypass: spaDocumentBypass,
       },
       '/preferences': 'http://localhost:8787',
+      // `/today` is both the dashboard route and the read-model endpoint.
+      '/today': {
+        target: 'http://localhost:8787',
+        bypass: spaDocumentBypass,
+      },
       // `/reminders` is both the SPA route a notification tap opens and the
       // respond endpoint the service worker flushes queued actions to.
       '/reminders': {

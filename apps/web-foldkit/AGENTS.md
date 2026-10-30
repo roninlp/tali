@@ -28,8 +28,10 @@ subtree_prompted: true
   :8787. `pnpm dev` from the repo root runs all three; `pnpm dev:foldkit` runs
   only this app.
 - **API access.** Vite proxies `/auth`, `/health`, `/household`,
-  `/preferences`, `/push`, `/reminders`, `/rpc`, and `/sync` to the api Worker
-  on :8787, so the browser stays on :3001 and cookies stay same-origin.
+  `/preferences`, `/push`, `/reminders`, `/rpc`, `/sync`, and `/today` to the
+  api Worker on :8787, so the browser stays on :3001 and cookies stay
+  same-origin. `/today` is both the dashboard route and its read-model
+  endpoint, so it uses the same document bypass as `/household`.
   `/household`, `/push-health`, and `/reminders` are also SPA routes whose
   prefixes belong to the Worker, so the proxy lets browser navigations return
   `index.html` and proxies only API calls. `src/lib/config.ts` resolves the
@@ -45,20 +47,28 @@ subtree_prompted: true
   optimizer in Vite 8.3.4.
 - **Migration progress.** P2.1 (shell, theming, RTL document), P2.2 (route
   union and navigation), P2.3 (auth and session restore), P2.4 (local store
-  and sync engine), and P2.5 (preferences, saved theme, and push) are in
-  place: `src/shell.ts` holds the chrome plus the desktop section menu, mobile
-  tab bar, display name, and account slot; `src/theme.ts` the persistent
-  gallery + light/dark/system Submodel; `src/route.ts` the `AppRoute` union and
-  typed routers; `src/auth.ts` the session Submodel with restore, sign-out, and
-  cache Commands; `src/guard.ts` the guest/session/household access rules;
-  `src/preferences.ts` the server-of-record display preferences with their
-  synchronous local cache; `src/push.ts` the Web Push subscription, permission,
-  and notification-action Submodel; `src/page/` the login, register, and
-  household screens; and `src/sync.ts` the local-first sync Submodel with its
-  managed IndexedDB mirror, engine Commands, cadence Subscription, and
-  quick-add snapshot. `/settings` currently renders `src/preferences.ts`'s
-  display form, the theme gallery, and the push health panel; the
-  account/password, household, and trash Settings work stays in P2.6.
+  and sync engine), P2.5 (preferences, saved theme, and push), and P2.6's
+  Today screen are in place: `src/shell.ts` holds the chrome plus the desktop
+  section menu, mobile tab bar, display name, and account slot; `src/theme.ts`
+  the persistent gallery + light/dark/system Submodel; `src/route.ts` the
+  `AppRoute` union and typed routers; `src/auth.ts` the session Submodel with
+  restore, sign-out, and cache Commands; `src/guard.ts` the guest/session/
+  household access rules; `src/preferences.ts` the server-of-record display
+  preferences with their synchronous local cache; `src/push.ts` the Web Push
+  subscription, permission, and notification-action Submodel; `src/page/` the
+  login, register, household, and today screens; and `src/sync.ts` the
+  local-first sync Submodel with its managed IndexedDB mirror, engine
+  Commands, cadence Subscription, and live mirror snapshot. `src/mirror.ts`
+  projects the mirrored Task, Note, Habit, and HabitEntry rows the feature
+  screens read; `src/habits-model.ts` holds the streak/rate/copy projection;
+  `src/page/today-model.ts` and `today-view.ts` hold the dashboard's pure
+  aggregation and view; `src/lib/today-api.ts`, `task-writes.ts`,
+  `habit-log.ts`, and `note-body.ts` are its client pieces. `/settings`
+  renders `src/preferences.ts`'s display form, the theme gallery, and the push
+  health panel; the account/password, household, and trash Settings work stays
+  in P2.6. The remaining P2.6 screens (Tasks, Lists, Habits, Notes, Occasions,
+  Calendar, Reminders, Settings account/household/trash) are still
+  placeholders.
   `src/session.ts`, `src/household-summary.ts`, and `src/preferences-model.ts`
   hold the plain Model projections the auth/preferences responses decode into,
   so no branded domain value crosses the dev optimizer's `effect/schema`

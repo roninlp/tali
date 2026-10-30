@@ -12,6 +12,7 @@ import {
   readCachedPreferences,
 } from './lib/preferences-cache'
 import {
+  DEFAULT_DASHBOARD_ORDER,
   DEFAULT_DIGITS,
   DEFAULT_TIME_ZONE,
   DEFAULT_WEEK_START,
@@ -137,6 +138,36 @@ const confirmedDisplayFields = (model: Model): DisplayFields =>
     onNone: () => model.defaults,
     onSome: preferences => displayFieldsOf(preferences),
   })
+
+/** The display fields every screen renders with, cache/default fallback included. */
+export const currentDisplayFields = (model: Model): DisplayFields =>
+  confirmedDisplayFields(model)
+
+/** The saved dashboard permutation, normalized by the consumer. */
+export const currentSectionOrder = (model: Model): ReadonlyArray<string> =>
+  Option.match(model.maybePreferences, {
+    onNone: () => DEFAULT_DASHBOARD_ORDER,
+    onSome: preferences => preferences.dashboardSectionOrder,
+  })
+
+/**
+ * Adopt a row another surface saved (Today's section reorder). The row is
+ * authoritative, so it updates the draft, the source, and the cache together.
+ */
+export const applySaved = (
+  model: Model,
+  preferences: Preferences,
+): Update.Return<Model, Message> => ({
+  model: modifyFields(model, {
+    maybePreferences: () => Option.some(preferences),
+    draft: () => displayFieldsOf(preferences),
+    source: () => 'Server',
+    isSaving: () => false,
+    hasSaved: () => false,
+    maybeError: () => Option.none(),
+  }),
+  commands: [CachePreferences({ preferences })],
+})
 
 // MESSAGE
 

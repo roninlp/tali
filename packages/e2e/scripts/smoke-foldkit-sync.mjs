@@ -64,7 +64,7 @@ page.on('pageerror', error => {
 
 const log = message => console.log(`PASS ${message}`)
 const status = () => page.locator("header span[role='status']")
-const taskList = () => page.locator('.sync-task-list')
+const taskList = () => page.locator('.today-list')
 const quickAdd = () => page.getByLabel('کار تازه برای امروز')
 const waitForHeading = name =>
   page.getByRole('heading', { name, exact: true }).waitFor({ timeout: 15_000 })
@@ -196,11 +196,11 @@ try {
     await secondPage.getByRole('button', { name: 'ورود' }).click()
     await secondPage.waitForURL(`${BASE}/today`, { timeout: 20_000 })
     await secondPage
-      .locator('.sync-task-list')
+      .locator('.today-list')
       .filter({ hasText: onlineTitle })
       .waitFor({ timeout: 20_000 })
     await secondPage
-      .locator('.sync-task-list')
+      .locator('.today-list')
       .filter({ hasText: offlineTitle })
       .waitFor({ timeout: 20_000 })
     log('a second device pulls both tasks and converges')

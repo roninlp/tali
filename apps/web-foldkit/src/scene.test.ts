@@ -21,6 +21,7 @@ import { Message, ReplaceUrl, update, view } from './main'
 import * as Household from './page/household'
 import * as Login from './page/login'
 import * as Register from './page/register'
+import * as Today from './page/today'
 import { AppRoute } from './route'
 import {
   failed,
@@ -255,6 +256,13 @@ describe('guard', () => {
       Command.expectHas(ReplaceUrl({ url: '/today' })),
       Command.resolve(Auth.CacheSession, Auth.Message.CompletedCacheSession()),
       Command.resolve(ReplaceUrl, Message.CompletedReplaceUrl()),
+      Command.resolve(
+        Today.FetchToday,
+        Today.Message.FailedFetchToday({
+          generation: 1,
+          failure: { code: 'Network', retryable: true },
+        }),
+      ),
       expect(role('heading', { name: 'امروز' })).toExist(),
     )
   })
@@ -303,6 +311,13 @@ describe('login flow', () => {
       Command.expectHas(ReplaceUrl({ url: '/today' })),
       Command.resolve(Auth.CacheSession, Auth.Message.CompletedCacheSession()),
       Command.resolve(ReplaceUrl, Message.CompletedReplaceUrl()),
+      Command.resolve(
+        Today.FetchToday,
+        Today.Message.FailedFetchToday({
+          generation: 1,
+          failure: { code: 'Network', retryable: true },
+        }),
+      ),
       expect(role('heading', { name: 'امروز' })).toExist(),
     )
   })
@@ -355,6 +370,13 @@ describe('household onboarding', () => {
       click(role('button', { name: 'ادامه به امروز' })),
       Command.expectHas(ReplaceUrl({ url: '/today' })),
       Command.resolve(ReplaceUrl, Message.CompletedReplaceUrl()),
+      Command.resolve(
+        Today.FetchToday,
+        Today.Message.FailedFetchToday({
+          generation: 1,
+          failure: { code: 'Network', retryable: true },
+        }),
+      ),
       expect(role('heading', { name: 'امروز' })).toExist(),
     )
   })

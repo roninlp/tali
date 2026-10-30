@@ -9,6 +9,7 @@ import {
 import type { Document, Html, HtmlBuilder } from 'foldkit/html'
 import { defineMessageUnion } from 'foldkit/message'
 import { UrlRequest, load, pushUrl, replaceUrl } from 'foldkit/navigation'
+import { Transition } from 'foldkit/route'
 import { modifyFields } from 'foldkit/struct'
 import { Url, toString as urlToString } from 'foldkit/url'
 
@@ -18,6 +19,7 @@ import { PushEnvironment } from './lib/push/service-worker'
 import * as Household from './page/household'
 import * as Login from './page/login'
 import * as Register from './page/register'
+import * as Today from './page/today'
 import * as Preferences from './preferences'
 import { Preferences as PreferencesRow } from './preferences-model'
 import * as Push from './push'
@@ -40,6 +42,7 @@ export const Model = Schema.Struct({
   preferences: Preferences.Model,
   push: Push.Model,
   sync: Sync.Model,
+  today: Today.Model,
 })
 export type Model = typeof Model.Type
 
@@ -52,6 +55,7 @@ export const Flags = Schema.Struct({
   pushEnvironment: PushEnvironment,
   isOnline: Schema.Boolean,
   isVisible: Schema.Boolean,
+  now: Schema.Number,
 })
 export type Flags = typeof Flags.Type
 
@@ -71,6 +75,7 @@ export const Message = defineMessageUnion({
   GotPreferencesMessage: { message: Preferences.Message },
   GotPushMessage: { message: Push.Message },
   GotSyncMessage: { message: Sync.Message },
+  GotTodayMessage: { message: Today.Message },
 })
 export type Message = typeof Message.Type
 
@@ -112,6 +117,7 @@ export const init: Runtime.RoutingApplicationInit<
     isOnline: flags.isOnline,
     isVisible: flags.isVisible,
   })
+  const todayInit = Today.init({ now: flags.now })
   const model = Model.make({
     route,
     theme: themeInit.model,
@@ -122,17 +128,25 @@ export const init: Runtime.RoutingApplicationInit<
     preferences: preferencesInit.model,
     push: pushInit.model,
     sync: syncInit.model,
+    today: todayInit.model,
   })
   const guarded = enforceGuard(model, route)
+  const todayEntry =
+    guarded.model.route._tag === 'Today' && guardAllows(guarded.model, route)
+      ? Today.entered(guarded.model.today, todayInputs(guarded.model))
+      : { model: guarded.model.today }
 
   return {
-    model: guarded.model,
+    model: modifyFields(guarded.model, {
+      today: () => todayEntry.model,
+    }),
     commands: [
       ...Command.mapMessages(themeInit.commands, toThemeMessage),
       ...Command.mapMessages(authInit.commands, toAuthMessage),
       ...Command.mapMessages(preferencesInit.commands, toPreferencesMessage),
       ...Command.mapMessages(pushInit.commands, toPushMessage),
       ...(guarded.commands ?? []),
+      ...Command.mapMessages(todayEntry.commands, toTodayMessage),
     ],
   }
 }
@@ -191,6 +205,20 @@ const toPreferencesMessage = (message: Preferences.Message): Message =>
 const toPushMessage = (message: Push.Message): Message =>
   Message.GotPushMessage({ message })
 
+const toTodayMessage = (message: Today.Message): Message =>
+  Message.GotTodayMessage({ message })
+
+/** The page's sibling inputs: display settings and the live mirror snapshot. */
+const todayInputs = (model: Model): Today.Inputs => ({
+  display: Preferences.currentDisplayFields(model.preferences),
+  sectionOrder: Preferences.currentSectionOrder(model.preferences),
+  isStoreReady: Sync.isStoreReady(model.sync),
+  isOnline: model.sync.isOnline,
+  pending: model.sync.pending,
+  mirror: model.sync.mirror,
+  pendingKeys: model.sync.pendingKeys,
+})
+
 const authCommand = <E = never, R = never>(
   command: Command.Command<Auth.Message, E, R>,
 ): Command.Command<Message, E, R> => Command.mapMessage(command, toAuthMessage)
@@ -206,6 +234,11 @@ const cacheSessionCommands = (
 const guardContext = (model: Model) => ({
   isHouseholdInviteVisible: Option.isSome(model.household.maybeCreated),
 })
+
+const guardAllows = (model: Model, route: AppRoute): boolean =>
+  GuardDecision.isAnyOf(['Allow'])(
+    guardRoute(route, model.auth, guardContext(model)),
+  )
 
 const syncSession = (model: Model): Sync.Model => {
   const maybeSession = Auth.maybeSession(model.auth)
@@ -301,8 +334,11 @@ const foldTheme: Update.Fold<Model, Message, Theme.Message> = Update.foldChild({
 const foldAuthOutMessage = Auth.OutMessage.match<
   Update.Step<Model, Message, Sync.LocalStoreService>
 >({
-  RestoredSession: () => stepModel =>
-    enforceGuardWithSessionUser(stepModel, stepModel.route),
+  RestoredSession: () => stepModel => {
+    const guarded = enforceGuardWithSessionUser(stepModel, stepModel.route)
+
+    return withStepCommands(guarded, enterToday(guarded.model))
+  },
   SignedOut: () => stepModel =>
     enforceGuardWithSessionUser(resetForms(stepModel), stepModel.route),
 })
@@ -326,35 +362,37 @@ const refreshAuth = Update.foldChildStep({
     Message.GotAuthMessage({ message }),
 })
 
-const foldLoginOutMessage = Login.OutMessage.match<Update.Step<Model, Message>>(
-  {
-    SucceededLogin:
-      ({ session }) =>
-      stepModel => {
-        const next = modifyFields(stepModel, {
-          auth: () => Auth.applySession(stepModel.auth, session),
-          sync: () =>
-            Sync.applySession(
-              stepModel.sync,
-              Option.some(session.user.id),
-              session.householdId !== null,
-            ),
-          login: () => Login.initialModel(),
-          route: () => landingRoute(session),
-        })
-        const sessionState = applySessionState(next)
+const foldLoginOutMessage = Login.OutMessage.match<
+  Update.Step<Model, Message, Sync.LocalStoreService>
+>({
+  SucceededLogin:
+    ({ session }) =>
+    stepModel => {
+      const next = modifyFields(stepModel, {
+        auth: () => Auth.applySession(stepModel.auth, session),
+        sync: () =>
+          Sync.applySession(
+            stepModel.sync,
+            Option.some(session.user.id),
+            session.householdId !== null,
+          ),
+        login: () => Login.initialModel(),
+        route: () => landingRoute(session),
+      })
+      const sessionState = applySessionState(next)
+      const entered = enterToday(sessionState.model)
 
-        return {
-          model: sessionState.model,
-          commands: [
-            authCommand(Auth.CacheSession({ session })),
-            ReplaceUrl({ url: landingPath(session) }),
-            ...(sessionState.commands ?? []),
-          ],
-        }
-      },
-  },
-)
+      return {
+        model: entered.model,
+        commands: [
+          authCommand(Auth.CacheSession({ session })),
+          ReplaceUrl({ url: landingPath(session) }),
+          ...(sessionState.commands ?? []),
+          ...(entered.commands ?? []),
+        ],
+      }
+    },
+})
 
 const foldLogin = Update.foldChild({
   update: Login.update,
@@ -367,7 +405,7 @@ const foldLogin = Update.foldChild({
 })
 
 const foldRegisterOutMessage = Register.OutMessage.match<
-  Update.Step<Model, Message>
+  Update.Step<Model, Message, Sync.LocalStoreService>
 >({
   SucceededRegister:
     ({ session }) =>
@@ -384,13 +422,15 @@ const foldRegisterOutMessage = Register.OutMessage.match<
         route: () => landingRoute(session),
       })
       const sessionState = applySessionState(next)
+      const entered = enterToday(sessionState.model)
 
       return {
-        model: sessionState.model,
+        model: entered.model,
         commands: [
           authCommand(Auth.CacheSession({ session })),
           ReplaceUrl({ url: landingPath(session) }),
           ...(sessionState.commands ?? []),
+          ...(entered.commands ?? []),
         ],
       }
     },
@@ -407,7 +447,7 @@ const foldRegister = Update.foldChild({
 })
 
 const foldHouseholdOutMessage = Household.OutMessage.match<
-  Update.Step<Model, Message>
+  Update.Step<Model, Message, Sync.LocalStoreService>
 >({
   CreatedHousehold:
     ({ householdId }) =>
@@ -436,45 +476,59 @@ const foldHouseholdOutMessage = Household.OutMessage.match<
     stepModel => {
       const nextAuth = Auth.applyHouseholdId(stepModel.auth, householdId)
 
+      const next = modifyFields(stepModel, {
+        auth: () => nextAuth,
+        sync: () =>
+          Sync.applySession(
+            stepModel.sync,
+            Option.map(Auth.maybeSession(nextAuth), session => session.user.id),
+            true,
+          ),
+        route: () => AppRoute.Today(),
+      })
+      const entered = enterToday(next)
+
       return {
-        model: modifyFields(stepModel, {
-          auth: () => nextAuth,
-          sync: () =>
-            Sync.applySession(
-              stepModel.sync,
-              Option.map(
-                Auth.maybeSession(nextAuth),
-                session => session.user.id,
-              ),
-              true,
-            ),
-          route: () => AppRoute.Today(),
-        }),
+        model: entered.model,
         commands: [
           ...cacheSessionCommands(nextAuth),
           ReplaceUrl({ url: todayRouter() }),
+          ...(entered.commands ?? []),
         ],
       }
     },
 
   AlreadyInHousehold: () => stepModel => {
     const refreshed = refreshAuth(stepModel)
-
-    return {
-      model: modifyFields(refreshed.model, {
+    const entered = enterToday(
+      modifyFields(refreshed.model, {
         route: () => AppRoute.Today(),
       }),
+    )
+
+    return {
+      model: entered.model,
       commands: [
         ...(refreshed.commands ?? []),
         ReplaceUrl({ url: todayRouter() }),
+        ...(entered.commands ?? []),
       ],
     }
   },
 
-  RequestedToday: () => stepModel => ({
-    model: modifyFields(stepModel, { route: () => AppRoute.Today() }),
-    commands: [ReplaceUrl({ url: todayRouter() })],
-  }),
+  RequestedToday: () => stepModel => {
+    const entered = enterToday(
+      modifyFields(stepModel, { route: () => AppRoute.Today() }),
+    )
+
+    return {
+      model: entered.model,
+      commands: [
+        ReplaceUrl({ url: todayRouter() }),
+        ...(entered.commands ?? []),
+      ],
+    }
+  },
 })
 
 const foldHousehold = Update.foldChild({
@@ -514,9 +568,134 @@ const foldSync = Update.foldChild({
     Message.GotSyncMessage({ message }),
 })
 
+type TodayFoldInput = Readonly<{
+  message: Today.Message
+  inputs: Today.Inputs
+}>
+
+const foldSyncRefresh = Update.foldChildStep({
+  update: Sync.refreshMirror,
+  read: (model: Model) => Option.some(model.sync),
+  write: (model: Model, nextSync: Sync.Model) =>
+    modifyFields(model, { sync: () => nextSync }),
+  toParentMessage: (message: Sync.Message) =>
+    Message.GotSyncMessage({ message }),
+})
+
+const foldPreferencesSaved = Update.foldChild({
+  update: Preferences.applySaved,
+  read: (model: Model) => Option.some(model.preferences),
+  write: (model: Model, nextPreferences: Preferences.Model) =>
+    modifyFields(model, { preferences: () => nextPreferences }),
+  toParentMessage: toPreferencesMessage,
+})
+
+const foldTodayOutMessage = Today.OutMessage.match<
+  Update.Step<Model, Message, Sync.LocalStoreService>
+>({
+  WroteLocalData: () => stepModel => foldSyncRefresh(stepModel),
+
+  SavedSectionOrder:
+    ({ preferences }) =>
+    stepModel =>
+      foldPreferencesSaved(stepModel, preferences),
+})
+
+const foldToday = Update.foldChild({
+  update: (today: Today.Model, input: TodayFoldInput) =>
+    Today.update(today, input.message, input.inputs),
+  read: (model: Model) => Option.some(model.today),
+  write: (model: Model, nextToday: Today.Model) =>
+    modifyFields(model, { today: () => nextToday }),
+  toParentMessage: toTodayMessage,
+  foldOutMessage: foldTodayOutMessage,
+})
+
+const foldTodayEntered = Update.foldChild({
+  update: Today.entered,
+  read: (model: Model) => Option.some(model.today),
+  write: (model: Model, nextToday: Today.Model) =>
+    modifyFields(model, { today: () => nextToday }),
+  toParentMessage: toTodayMessage,
+})
+
+const foldTodaySyncSettled = Update.foldChild({
+  update: Today.syncSettled,
+  read: (model: Model) => Option.some(model.today),
+  write: (model: Model, nextToday: Today.Model) =>
+    modifyFields(model, { today: () => nextToday }),
+  toParentMessage: toTodayMessage,
+})
+
+const foldTodayMessage = (model: Model, message: Today.Message): UpdateReturn =>
+  foldToday(model, { message, inputs: todayInputs(model) })
+
+/** Land on a freshly opened Today screen: refresh the read model once. */
+const enterToday = (model: Model): UpdateReturn =>
+  model.route._tag === 'Today' && guardAllows(model, model.route)
+    ? foldTodayEntered(model, todayInputs(model))
+    : { model }
+
+const withStepCommands = (
+  base: UpdateReturn,
+  step: UpdateReturn,
+): UpdateReturn => ({
+  model: step.model,
+  commands: [...(base.commands ?? []), ...(step.commands ?? [])],
+})
+
+/**
+ * A completed drain is the moment the server read model is worth revalidating:
+ * while writes were queued, Today overlaid them instead of fetching.
+ */
+const foldSyncMessage = (model: Model, message: Sync.Message): UpdateReturn => {
+  const wasPending = model.sync.pending
+  const folded = foldSync(model, message)
+  const settled = wasPending > 0 && folded.model.sync.pending === 0
+
+  if (!settled || folded.model.route._tag !== 'Today') {
+    return folded
+  }
+
+  const todayStep = foldTodaySyncSettled(
+    folded.model,
+    todayInputs(folded.model),
+  )
+
+  return {
+    model: todayStep.model,
+    commands: [...(folded.commands ?? []), ...(todayStep.commands ?? [])],
+  }
+}
+
 export const update = (model: Model, message: Message) =>
   Message.match<UpdateReturn>(message, {
-    ChangedUrl: ({ url }) => enforceGuard(model, urlToAppRoute(url)),
+    ChangedUrl: ({ url }) => {
+      const nextRoute = urlToAppRoute(url)
+      const guarded = enforceGuard(model, nextRoute)
+      const entered = Transition.entered(
+        Transition.make(model.route, nextRoute),
+        'Today',
+      )
+
+      if (
+        Option.isNone(entered) ||
+        guarded.model.route._tag !== 'Today' ||
+        !guardAllows(guarded.model, nextRoute)
+      ) {
+        return guarded
+      }
+
+      const todayStep = foldTodayEntered(
+        guarded.model,
+        todayInputs(guarded.model),
+      )
+
+      return {
+        model: todayStep.model,
+        commands: [...(guarded.commands ?? []), ...(todayStep.commands ?? [])],
+      }
+    },
 
     ClickedLink: ({ request }) =>
       UrlRequest.match<UpdateReturn>(request, {
@@ -541,7 +720,8 @@ export const update = (model: Model, message: Message) =>
     GotHouseholdMessage: ({ message }) => foldHousehold(model, message),
     GotPreferencesMessage: ({ message }) => foldPreferences(model, message),
     GotPushMessage: ({ message }) => foldPush(model, message),
-    GotSyncMessage: ({ message }) => foldSync(model, message),
+    GotSyncMessage: ({ message }) => foldSyncMessage(model, message),
+    GotTodayMessage: ({ message }) => foldTodayMessage(model, message),
   })
 
 // VIEW
@@ -693,24 +873,13 @@ const notFoundView = (h: HtmlBuilder<Message>): Html =>
   )
 
 const todayPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
-  h.section(
-    [h.Class('page-wrap grid max-w-5xl gap-3')],
-    [
-      h.h1([h.Class('m-0 text-3xl font-bold tracking-tight')], ['امروز']),
-      placeholderNoteView(h),
-      Option.match(Auth.maybeSession(model.auth), {
-        onNone: () => h.empty,
-        onSome: session =>
-          h.submodel({
-            slotId: 'today-sync',
-            model: model.sync,
-            view: Sync.todayView,
-            viewInputs: { timeZone: session.user.timeZone },
-            toParentMessage: message => Message.GotSyncMessage({ message }),
-          }),
-      }),
-    ],
-  )
+  h.submodel({
+    slotId: 'today-page',
+    model: model.today,
+    view: Today.view,
+    viewInputs: todayInputs(model),
+    toParentMessage: toTodayMessage,
+  })
 
 const settingsPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.section(
@@ -914,8 +1083,18 @@ const pushSubscriptions = Subscription.lift(Push.subscriptions)<Model, Message>(
   },
 )
 
+const todaySubscriptions = Subscription.lift(Today.subscriptions)<
+  Model,
+  Message
+>({
+  read: model =>
+    model.route._tag === 'Today' ? Option.some(model.today) : Option.none(),
+  toParentMessage: toTodayMessage,
+})
+
 export const subscriptions = Subscription.aggregate(
   syncSubscriptions,
   themeSubscriptions,
   pushSubscriptions,
+  todaySubscriptions,
 )
