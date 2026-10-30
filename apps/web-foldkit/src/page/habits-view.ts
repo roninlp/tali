@@ -692,7 +692,11 @@ export const habitsPageView = (
     [h.Class('habits-root'), h.Dir('rtl'), h.Lang('fa')],
     [
       h.div(
-        [h.Class('habits-screen page-wrap grid gap-2.5')],
+        [
+          h.Class(
+            'habits-screen page-wrap mx-auto grid w-full max-w-4xl gap-2.5',
+          ),
+        ],
         [
           h.header(
             [h.Class('habits-head')],
