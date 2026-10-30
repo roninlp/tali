@@ -10,7 +10,8 @@ database, the api Worker, and the web assets.
 
 ```
 apps/
-  web/          Solid v2 (client-only, Vite) SPA — RTL Persian shell
+  web/          Solid v2 (client-only, Vite) SPA — RTL Persian shell (legacy reference)
+  web-foldkit/  Foldkit + Effect SPA — migration target (Vite on :3001)
   api/          Effect HTTP/RPC server on Cloudflare Workers + D1
 packages/
   domain/       @effect/schema entities, invariants, typed errors  (only shared dep)
@@ -41,6 +42,17 @@ locally — no Cloudflare account, no credentials, no `wrangler`:
 
 Open <http://localhost:3000>, register, create a household, and you are in.
 Editing API or web code hot-reloads in place.
+
+The Foldkit migration target runs alongside the legacy app:
+
+```sh
+pnpm dev:foldkit      # http://localhost:3001
+```
+
+It has its own AI setup: `apps/web-foldkit/FOLDKIT.md`, the vendored Foldkit
+source at `repos/foldkit`, Foldkit skills in `.agents/skills/`, and the
+DevTools MCP server in `opencode.json`. See `apps/web-foldkit/README.md` for
+the migration status.
 
 Local state lives in `infra/.alchemy/`. `rm -rf infra/.alchemy` gives you a
 fresh database (migrations re-apply on the next `pnpm dev`).
