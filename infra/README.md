@@ -87,5 +87,15 @@ before `pnpm dev`. See `docs/web-push-local.md` §1.
   `env.DB`, and `InferEnv` types the binding as `D1Database`.
 - `alchemy dev` requires `@effect/platform-node` next to `alchemy` (peer
   dependency of the CLI).
+- **Effect 4.1 patch.** `alchemy` 2.0.0-beta.83 was built against Effect 4.0
+  and imports `effect/Crypto`, which Effect 4.1 replaced with
+  `effect/crypto/Digest` and `effect/crypto/SecureRandom`.
+  `pnpm-workspace.yaml` applies `patches/alchemy@2.0.0-beta.83.patch`, a backport
+  of upstream's `fix: support effect 4.1` (`alchemy-run/alchemy#2754`,
+  commit `9d0709d`) covering the runtime `lib/` output, the `src` Bun entry, and
+  the affected type declarations. No `node_modules` shim is needed. The fix
+  landed after 2.0.0-beta.84, so drop the patch once a published alchemy release
+  contains it: bump `alchemy`, delete the patch, and remove its
+  `patchedDependencies` entry.
 - If a resource ever has no local provider, `alchemy dev` deploys it live into
   your personal `dev_$USER` stage — separate from anything `alchemy deploy` owns.
