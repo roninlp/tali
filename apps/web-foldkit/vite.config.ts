@@ -3,10 +3,26 @@ import { defineConfig } from 'vite'
 import { foldkit } from '@foldkit/vite-plugin'
 import tailwindcss from '@tailwindcss/vite'
 
+/**
+ * `/household` and `/push-health` are SPA routes whose prefixes also belong to
+ * the api Worker. A browser navigation gets the app; API calls still proxy.
+ */
+const spaDocumentBypass = (request: {
+  method?: string
+  headers: { accept?: string }
+}) =>
+  request.method === 'GET' &&
+  request.headers.accept?.includes('text/html') === true
+    ? '/index.html'
+    : undefined
+
 export default defineConfig({
   plugins: [tailwindcss(), foldkit()],
   optimizeDeps: {
-    entries: ['src/entry.ts'],
+    // `effect/schema` arrives through `@tali/domain`'s branded ids. The Vite 8
+    // optimizer chokes when it bundles `effect` and `effect/schema` as two
+    // entries, so leave the subpath unbundled in dev.
+    exclude: ['effect/schema'],
   },
   server: {
     // The legacy Solid app owns :3000 and the api Worker owns :8787. Pinning a
@@ -21,8 +37,17 @@ export default defineConfig({
     proxy: {
       '/auth': 'http://localhost:8787',
       '/health': 'http://localhost:8787',
-      '/household': 'http://localhost:8787',
-      '/push': 'http://localhost:8787',
+      // `/household` is both the SPA onboarding route and the API's create
+      // endpoint.
+      '/household': {
+        target: 'http://localhost:8787',
+        bypass: spaDocumentBypass,
+      },
+      // `/push-health` shares the `/push` prefix with the push API.
+      '/push': {
+        target: 'http://localhost:8787',
+        bypass: spaDocumentBypass,
+      },
       '/rpc': 'http://localhost:8787',
       '/sync': 'http://localhost:8787',
     },

@@ -29,18 +29,25 @@ subtree_prompted: true
   only this app.
 - **API access.** Vite proxies `/auth`, `/health`, `/household`, `/push`,
   `/rpc`, and `/sync` to the api Worker on :8787, so the browser stays on
-  :3001 and cookies stay same-origin. `src/lib/config.ts` resolves the base
-  URL and `src/lib/rpc.ts` builds the typed `@tali/rpc` client; both are
-  ports of the legacy app's `lib/config.ts` and `lib/rpc.ts`. Deploys use
-  `VITE_API_URL=/api` and the `/api/*` service-binding hop.
+  :3001 and cookies stay same-origin. `/household` and `/push-health` are also
+  SPA routes that share two of those prefixes, so the proxy lets browser
+  navigations return `index.html` and proxies only API calls. `src/lib/config.ts`
+  resolves the base URL and `src/lib/rpc.ts` builds the typed `@tali/rpc`
+  client; both are ports of the legacy app's `lib/config.ts` and `lib/rpc.ts`.
+  Deploys use `VITE_API_URL=/api` and the `/api/*` service-binding hop.
 - **Effect version.** This app uses Effect 4.1, which Foldkit requires; the
   whole workspace now runs 4.1 through the pnpm catalog. Shared dependency
   versions live in `pnpm-workspace.yaml` and are referenced as `catalog:` in
   package manifests, so bump them there rather than in this package alone.
-- **Migration progress.** P2.1 (shell, theming, RTL document) is in place: the
-  starter is gone, `src/shell.ts` holds the chrome, `src/theme.ts` the house
-  light/dark Submodel, and `src/ui/` the button and field primitives. P2.2 adds
-  the route union and navigation.
+  `vite.config.ts` keeps `effect/schema` out of the dev dependency optimizer:
+  bundling `effect` and `effect/schema` as separate entries crashes the
+  optimizer in Vite 8.3.4.
+- **Migration progress.** P2.1 (shell, theming, RTL document) and P2.2 (route
+  union and navigation) are in place: `src/shell.ts` holds the chrome plus the
+  desktop section menu and mobile tab bar, `src/theme.ts` the house light/dark
+  Submodel, `src/route.ts` the `AppRoute` union and typed routers, and `src/ui/`
+  the button, field, and auth-card primitives. P2.3 adds auth and session
+  restore.
 - **Styling.** `src/styles.css` is the Tali entry: Tailwind v4 + daisyUI, the
   `tali`/`talidark` themes, and the shared utilities. Vazirmatn stays in
   `@tali/ui`; the CSS references it across the workspace and Vite fingerprints

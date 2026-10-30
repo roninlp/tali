@@ -348,6 +348,9 @@ importers:
       '@foldkit/ui':
         specifier: 0.170.0
         version: 0.170.0(effect@4.1.0)(foldkit@0.170.0(@effect/platform-browser@4.1.0(effect@4.1.0))(effect@4.1.0))
+      '@tali/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@tali/rpc':
         specifier: workspace:*
         version: link:../../packages/rpc

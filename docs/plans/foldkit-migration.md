@@ -1,9 +1,9 @@
 # Foldkit migration — Phase 2 plan
 
 **Status:** in progress. Phase 1 (scaffold), the Phase 2 prerequisites
-(workspace-wide Effect 4.1, api proxy, typed RPC entry point), and P2.1
-(shell, theming, RTL document) are in place. P2.2 (route union and navigation)
-is next.
+(workspace-wide Effect 4.1, api proxy, typed RPC entry point), P2.1 (shell,
+theming, RTL document), and P2.2 (route union and navigation) are in place.
+P2.3 (auth and session restore) is next.
 
 **Source of truth:** `apps/web` (Solid v2) for behavior, copy, and
 interaction. **Target:** `apps/web-foldkit` (Foldkit + Effect). Do not edit
@@ -76,6 +76,24 @@ consume; sheet and toast wait for their first consumer.
 
 **Done when:** every route renders a placeholder with the right title and nav
 state; URL parser tests cover each tag plus `NotFound`.
+
+**Delivered:** `src/route.ts` declares the `AppRoute` union and one typed
+router per route. Unknown and deep paths become `NotFound({ path })`, and the
+list/note detail ids decode through the `@tali/domain` UUID v7 brands.
+`entry.ts` wires `onUrlRequest`/`onUrlChange`, so internal links push history
+and back/forward parse the URL again. `src/shell.ts` carries the desktop
+section menu and the phone tab bar with `aria-current="page"`;
+`sectionForRoute` keeps `/lists/[id]`, `/notes/[id]`, and `/notes/trash` on
+their parent section. Every route renders its heading and document title.
+Login, register, household, `/` and the 404 render outside the signed-in shell,
+and the auth placeholders keep the theme toggle in a standalone layout. The dev
+proxy passes browser navigations for `/household` and `/push-health` to the SPA
+while API calls still reach the Worker.
+
+No `Transition` is used yet: P2.2 has no data layer, so no route entry runs a
+fetch. The feature slices add `Transition.make(model.route, nextRoute)` with
+their first entry Command. The `/` auth redirect waits for P2.3; for now `/`
+renders the landing placeholder.
 
 ### P2.3 — Auth and session restore
 

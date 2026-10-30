@@ -1,24 +1,169 @@
+import { Array, Option } from 'effect'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
+import {
+  AppRoute,
+  calendarRouter,
+  habitsRouter,
+  listsRouter,
+  notesRouter,
+  remindersRouter,
+  settingsRouter,
+  tasksRouter,
+  todayRouter,
+} from './route'
+import { classNames } from './ui/class-names'
+import {
+  calendarIcon,
+  habitsIcon,
+  listsIcon,
+  notesIcon,
+  remindersIcon,
+  settingsIcon,
+  tasksIcon,
+  todayIcon,
+} from './ui/icons'
+
 /**
- * The signed-in app chrome shared by every household screen.
+ * The app chrome shared by every signed-in screen.
  *
- * P2.1 carries the frame only: the brand and the header action slot. The
- * section navigation, sync status, quick-note action and account menu arrive
- * with the navigation (P2.2), auth (P2.3) and local-store (P2.4) slices, each
- * plugging into `actions` or extending this module.
+ * Desktop shows the full section menu in the sticky header; phones get a fixed
+ * bottom tab bar with the four primary destinations plus a "more" menu, the
+ * pattern the legacy header uses. Both mark the active section with
+ * `aria-current="page"`.
  */
 
-export type ShellConfig = Readonly<{
-  /** Header actions, rendered at the inline-end of the top bar. */
-  actions: Html
-  /** The active route's content. */
-  content: Html
+export type AppSection =
+  | 'Today'
+  | 'Calendar'
+  | 'Tasks'
+  | 'Habits'
+  | 'Lists'
+  | 'Notes'
+  | 'Reminders'
+  | 'Settings'
+
+type NavItem = Readonly<{
+  section: AppSection
+  href: string
+  label: string
+  icon: (className: string) => Html
 }>
 
+const NAV_ITEMS: Readonly<Record<AppSection, NavItem>> = {
+  Today: {
+    section: 'Today',
+    href: todayRouter(),
+    label: 'امروز',
+    icon: todayIcon,
+  },
+  Calendar: {
+    section: 'Calendar',
+    href: calendarRouter(),
+    label: 'تقویم',
+    icon: calendarIcon,
+  },
+  Tasks: {
+    section: 'Tasks',
+    href: tasksRouter(),
+    label: 'کارها',
+    icon: tasksIcon,
+  },
+  Habits: {
+    section: 'Habits',
+    href: habitsRouter(),
+    label: 'عادت‌ها',
+    icon: habitsIcon,
+  },
+  Lists: {
+    section: 'Lists',
+    href: listsRouter(),
+    label: 'فهرست‌ها',
+    icon: listsIcon,
+  },
+  Notes: {
+    section: 'Notes',
+    href: notesRouter(),
+    label: 'یادداشت‌ها',
+    icon: notesIcon,
+  },
+  Reminders: {
+    section: 'Reminders',
+    href: remindersRouter(),
+    label: 'یادآورها',
+    icon: remindersIcon,
+  },
+  Settings: {
+    section: 'Settings',
+    href: settingsRouter(),
+    label: 'تنظیمات',
+    icon: settingsIcon,
+  },
+}
+
+const DESKTOP_SECTIONS: ReadonlyArray<AppSection> = [
+  'Today',
+  'Calendar',
+  'Tasks',
+  'Habits',
+  'Lists',
+  'Notes',
+  'Reminders',
+  'Settings',
+]
+
+const MOBILE_PRIMARY_SECTIONS: ReadonlyArray<AppSection> = [
+  'Today',
+  'Tasks',
+  'Calendar',
+  'Notes',
+]
+
+const MOBILE_MORE_SECTIONS: ReadonlyArray<AppSection> = [
+  'Habits',
+  'Lists',
+  'Reminders',
+  'Settings',
+]
+
+const navItems = (
+  sections: ReadonlyArray<AppSection>,
+): ReadonlyArray<NavItem> => Array.map(sections, section => NAV_ITEMS[section])
+
+export const sectionForRoute = (route: AppRoute): Option.Option<AppSection> =>
+  AppRoute.match<Option.Option<AppSection>>(route, {
+    Home: () => Option.none(),
+    Login: () => Option.none(),
+    Register: () => Option.none(),
+    Today: () => Option.some('Today'),
+    Tasks: () => Option.some('Tasks'),
+    Lists: () => Option.some('Lists'),
+    List: () => Option.some('Lists'),
+    Notes: () => Option.some('Notes'),
+    Note: () => Option.some('Notes'),
+    NotesTrash: () => Option.some('Notes'),
+    Habits: () => Option.some('Habits'),
+    Calendar: () => Option.some('Calendar'),
+    Reminders: () => Option.some('Reminders'),
+    Settings: () => Option.some('Settings'),
+    Household: () => Option.none(),
+    PushHealth: () => Option.none(),
+    NotFound: () => Option.none(),
+  })
+
+const isActiveSection = (
+  maybeActiveSection: Option.Option<AppSection>,
+  section: AppSection,
+): boolean =>
+  Option.exists(maybeActiveSection, activeSection => activeSection === section)
+
 const brandView = <Message>(h: HtmlBuilder<Message>): Html =>
-  h.div(
-    [h.Class('flex shrink-0 items-center gap-2 rounded-lg px-1 py-1')],
+  h.a(
+    [
+      h.Href(todayRouter()),
+      h.AriaLabel('تالی — امروز'),
+      h.Class('flex shrink-0 items-center gap-2 rounded-lg px-1 py-1'),
+    ],
     [
       h.span(
         [
@@ -34,6 +179,170 @@ const brandView = <Message>(h: HtmlBuilder<Message>): Html =>
       ),
     ],
   )
+
+const desktopLinkView = <Message>(
+  item: NavItem,
+  maybeActiveSection: Option.Option<AppSection>,
+  h: HtmlBuilder<Message>,
+): Html => {
+  const isActive = isActiveSection(maybeActiveSection, item.section)
+
+  return h.a(
+    [
+      h.Href(item.href),
+      h.Class(
+        classNames(
+          'gap-1.5 rounded-lg px-2.5 text-[0.82rem] font-medium',
+          isActive ? 'bg-primary/10 text-primary' : undefined,
+        ),
+      ),
+      ...(isActive ? [h.AriaCurrent('page')] : []),
+    ],
+    [item.icon('size-4'), item.label],
+  )
+}
+
+const desktopNavView = <Message>(
+  maybeActiveSection: Option.Option<AppSection>,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.nav(
+    [h.AriaLabel('بخش‌های تالی'), h.Class('mx-auto hidden md:block')],
+    [
+      h.ul(
+        [h.Class('menu menu-horizontal gap-0.5 px-0')],
+        Array.map(navItems(DESKTOP_SECTIONS), item =>
+          h.li([], [desktopLinkView(item, maybeActiveSection, h)]),
+        ),
+      ),
+    ],
+  )
+
+const mobileLinkView = <Message>(
+  item: NavItem,
+  maybeActiveSection: Option.Option<AppSection>,
+  h: HtmlBuilder<Message>,
+): Html => {
+  const isActive = isActiveSection(maybeActiveSection, item.section)
+
+  return h.a(
+    [
+      h.Href(item.href),
+      h.Class(
+        classNames(
+          'flex flex-col items-center gap-0.5 py-2 text-[0.68rem] font-medium',
+          isActive ? 'text-primary' : 'text-base-content/55',
+        ),
+      ),
+      ...(isActive ? [h.AriaCurrent('page')] : []),
+    ],
+    [
+      h.span(
+        [
+          h.Class(
+            classNames(
+              'grid size-8 place-items-center rounded-xl',
+              isActive ? 'bg-primary/10' : undefined,
+            ),
+          ),
+        ],
+        [item.icon('size-5')],
+      ),
+      item.label,
+    ],
+  )
+}
+
+const mobileMoreLinkView = <Message>(
+  item: NavItem,
+  maybeActiveSection: Option.Option<AppSection>,
+  h: HtmlBuilder<Message>,
+): Html => {
+  const isActive = isActiveSection(maybeActiveSection, item.section)
+
+  return h.li(
+    [],
+    [
+      h.a(
+        [
+          h.Href(item.href),
+          h.Class(
+            classNames(isActive ? 'bg-primary/10 text-primary' : undefined),
+          ),
+          ...(isActive ? [h.AriaCurrent('page')] : []),
+        ],
+        [item.icon('size-4'), item.label],
+      ),
+    ],
+  )
+}
+
+const mobileNavView = <Message>(
+  maybeActiveSection: Option.Option<AppSection>,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.nav(
+    [
+      h.AriaLabel('نوار پایین تالی'),
+      h.Class(
+        'fixed inset-x-0 bottom-0 z-40 border-t border-base-300 bg-base-100/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden',
+      ),
+    ],
+    [
+      h.ul(
+        [h.Class('mx-auto grid max-w-lg grid-cols-5')],
+        [
+          ...Array.map(navItems(MOBILE_PRIMARY_SECTIONS), item =>
+            h.li([], [mobileLinkView(item, maybeActiveSection, h)]),
+          ),
+          h.li(
+            [],
+            [
+              h.details(
+                [h.Class('dropdown dropdown-top dropdown-end w-full')],
+                [
+                  h.summary(
+                    [
+                      h.AriaLabel('بخش‌های بیشتر'),
+                      h.Class(
+                        'flex cursor-pointer list-none flex-col items-center gap-0.5 py-2 text-[0.68rem] font-medium text-base-content/55 [&::-webkit-details-marker]:hidden',
+                      ),
+                    ],
+                    [
+                      h.span(
+                        [h.Class('grid size-8 place-items-center rounded-xl')],
+                        [listsIcon('size-5')],
+                      ),
+                      'بیشتر',
+                    ],
+                  ),
+                  h.ul(
+                    [
+                      h.Class(
+                        'menu dropdown-content z-50 mb-2 w-44 rounded-box border border-base-300 bg-base-100 p-2 shadow-lg',
+                      ),
+                    ],
+                    Array.map(navItems(MOBILE_MORE_SECTIONS), item =>
+                      mobileMoreLinkView(item, maybeActiveSection, h),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    ],
+  )
+
+export type ShellConfig = Readonly<{
+  /** Header actions, rendered at the inline-end of the top bar. */
+  actions: Html
+  /** The active route's content. */
+  content: Html
+  /** The section the navigation highlights, if the route belongs to one. */
+  maybeActiveSection: Option.Option<AppSection>
+}>
 
 export const view = <Message>(
   config: ShellConfig,
@@ -57,14 +366,49 @@ export const view = <Message>(
             ],
             [
               brandView(h),
+              desktopNavView(config.maybeActiveSection, h),
               h.div(
-                [h.Class('ms-auto flex items-center gap-1')],
+                [h.Class('ms-auto flex items-center gap-1 md:ms-0')],
                 [config.actions],
               ),
             ],
           ),
         ],
       ),
-      h.main([h.Class('py-8')], [config.content]),
+      h.main([], [config.content]),
+      mobileNavView(config.maybeActiveSection, h),
+    ],
+  )
+
+/**
+ * The full-page layout for screens that carry no section navigation: the
+ * boot landing, login, register, and household onboarding.
+ */
+
+export type StandaloneConfig = Readonly<{
+  /** Page-level actions, rendered in the inline-end corner. */
+  actions: Html
+  content: Html
+}>
+
+export const standaloneView = <Message>(
+  config: StandaloneConfig,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.main(
+    [
+      h.Class(
+        'relative grid min-h-dvh place-items-center overflow-hidden bg-base-200 px-4 py-10',
+      ),
+    ],
+    [
+      h.div([
+        h.AriaHidden(true),
+        h.Class(
+          'pointer-events-none absolute inset-0 bg-[radial-gradient(60rem_40rem_at_100%_0%,color-mix(in_oklch,var(--color-primary)_14%,transparent),transparent_60%),radial-gradient(50rem_30rem_at_0%_100%,color-mix(in_oklch,var(--color-secondary)_12%,transparent),transparent_60%)]',
+        ),
+      ]),
+      h.div([h.Class('absolute end-4 top-4 z-10')], [config.actions]),
+      config.content,
     ],
   )
