@@ -307,7 +307,7 @@ describe('List detail', () => {
       expect(label('مرتب‌سازی')).toHaveValue('manual'),
       change(label('مرتب‌سازی'), 'alpha'),
       Command.expectExact(
-        Lists.SetListSort({ listId: LIST_ID, sort: 'alpha' }),
+        Lists.SetListSort({ listId: LIST_ID, sort: 'alpha', revision: 1 }),
       ),
       Command.resolve(
         Lists.SetListSort,
@@ -318,6 +318,7 @@ describe('List detail', () => {
         Lists.SetCheckedPlacement({
           listId: LIST_ID,
           placement: 'inPlace',
+          revision: 2,
         }),
       ),
       Command.resolve(

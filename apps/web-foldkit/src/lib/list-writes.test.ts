@@ -25,6 +25,7 @@ import {
   setListItemCheckedInMirror,
   uncheckListItemInMirror,
   updateListInMirror,
+  writeListSettingIfLatest,
 } from './list-writes'
 
 /**
@@ -305,6 +306,44 @@ describe('list mirror writes', () => {
     })
 
     store.close()
+  })
+
+  test('a stale setting write cannot overwrite a newer one', async () => {
+    const store = await open()
+    const listId = uuidV7(1_700_000_000_900)
+    const now = '2026-10-20T09:00:00.000Z'
+    await createListInMirror(store, { title: 'خرید' }, listId, now)
+
+    await writeListSettingIfLatest(
+      store,
+      'sort',
+      listId,
+      1,
+      { sort: 'alpha' },
+      now,
+    )
+    await writeListSettingIfLatest(
+      store,
+      'sort',
+      listId,
+      2,
+      { sort: 'manual' },
+      now,
+    )
+    // The older command finally runs; it must not clobber the newer intent.
+    await writeListSettingIfLatest(
+      store,
+      'sort',
+      listId,
+      1,
+      { sort: 'status' },
+      now,
+    )
+
+    const record = await store.get('list', listId)
+    expect(record === undefined ? undefined : toListRow(record).sort).toBe(
+      'manual',
+    )
   })
 
   test('drains an offline list+items queue on reconnect', async () => {

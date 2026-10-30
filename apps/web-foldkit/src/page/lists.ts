@@ -16,6 +16,7 @@ import {
   setListItemCheckedInMirror,
   uncheckListItemInMirror,
   updateListInMirror,
+  writeListSettingIfLatest,
 } from '../lib/list-writes'
 import {
   COLOR_CHOICES,
@@ -72,7 +73,11 @@ export const Model = Schema.Struct({
   maybeIndexError: Schema.Option(Schema.String),
   maybeListId: Schema.Option(ListId),
   maybeTitleDraft: Schema.Option(Schema.String),
+  maybeSortDraft: Schema.Option(ListSort),
+  maybePlacementDraft: Schema.Option(CheckedPlacement),
+  maybeVisibilityDraft: Schema.Option(ListVisibility),
   isRenaming: Schema.Boolean,
+  settingsRevision: Schema.Int,
   itemDraft: Schema.String,
   isAddingItem: Schema.Boolean,
   isDeletingList: Schema.Boolean,
@@ -96,7 +101,11 @@ export const initialModel = (): Model =>
     maybeIndexError: Option.none(),
     maybeListId: Option.none(),
     maybeTitleDraft: Option.none(),
+    maybeSortDraft: Option.none(),
+    maybePlacementDraft: Option.none(),
+    maybeVisibilityDraft: Option.none(),
     isRenaming: false,
+    settingsRevision: 0,
     itemDraft: '',
     isAddingItem: false,
     isDeletingList: false,
@@ -278,15 +287,23 @@ export const RenameList = Command.define('RenameList', {
 })
 
 export const SetListSort = Command.define('SetListSort', {
-  args: { listId: Schema.String, sort: ListSort },
+  args: { listId: Schema.String, sort: ListSort, revision: Schema.Int },
   messages: [Message.CompletedSetListSort, Message.FailedSetListSort],
-  execute: ({ listId, sort }) =>
+  execute: ({ listId, sort, revision }) =>
     Effect.gen(function* () {
       const store = yield* LocalStoreResource.get
       const now = yield* currentIso
 
       yield* Effect.tryPromise({
-        try: () => updateListInMirror(store, listId, { sort }, now),
+        try: () =>
+          writeListSettingIfLatest(
+            store,
+            'sort',
+            listId,
+            revision,
+            { sort },
+            now,
+          ),
         catch: storeFailureMessage,
       })
 
@@ -301,21 +318,27 @@ export const SetListSort = Command.define('SetListSort', {
 })
 
 export const SetCheckedPlacement = Command.define('SetCheckedPlacement', {
-  args: { listId: Schema.String, placement: CheckedPlacement },
+  args: {
+    listId: Schema.String,
+    placement: CheckedPlacement,
+    revision: Schema.Int,
+  },
   messages: [
     Message.CompletedSetCheckedPlacement,
     Message.FailedSetCheckedPlacement,
   ],
-  execute: ({ listId, placement }) =>
+  execute: ({ listId, placement, revision }) =>
     Effect.gen(function* () {
       const store = yield* LocalStoreResource.get
       const now = yield* currentIso
 
       yield* Effect.tryPromise({
         try: () =>
-          updateListInMirror(
+          writeListSettingIfLatest(
             store,
+            'placement',
             listId,
+            revision,
             { checkedPlacement: placement },
             now,
           ),
@@ -335,18 +358,30 @@ export const SetCheckedPlacement = Command.define('SetCheckedPlacement', {
 })
 
 export const SetListVisibility = Command.define('SetListVisibility', {
-  args: { listId: Schema.String, visibility: ListVisibility },
+  args: {
+    listId: Schema.String,
+    visibility: ListVisibility,
+    revision: Schema.Int,
+  },
   messages: [
     Message.CompletedSetListVisibility,
     Message.FailedSetListVisibility,
   ],
-  execute: ({ listId, visibility }) =>
+  execute: ({ listId, visibility, revision }) =>
     Effect.gen(function* () {
       const store = yield* LocalStoreResource.get
       const now = yield* currentIso
 
       yield* Effect.tryPromise({
-        try: () => updateListInMirror(store, listId, { visibility }, now),
+        try: () =>
+          writeListSettingIfLatest(
+            store,
+            'visibility',
+            listId,
+            revision,
+            { visibility },
+            now,
+          ),
         catch: storeFailureMessage,
       })
 
@@ -876,16 +911,24 @@ export const update = (
 
     SelectedListSort: ({ listId, sort }) => {
       const maybeList = findListRow(inputs.mirror.lists, listId)
+      const effective = Option.match(model.maybeSortDraft, {
+        onNone: () => Option.map(maybeList, list => list.sort),
+        onSome: draft => Option.some(draft),
+      })
 
-      if (!Option.exists(maybeList, list => list.sort !== sort)) {
+      if (Option.contains(effective, sort)) {
         return { model }
       }
 
+      const revision = model.settingsRevision + 1
+
       return {
         model: modifyFields(model, {
+          maybeSortDraft: () => Option.some(sort),
+          settingsRevision: () => revision,
           maybeDetailError: () => Option.none(),
         }),
-        commands: [SetListSort({ listId, sort })],
+        commands: [SetListSort({ listId, sort, revision })],
       }
     },
 
@@ -897,22 +940,35 @@ export const update = (
       outMessage: OutMessage.WroteLocalData(),
     }),
 
-    FailedSetListSort: ({ message }) => withDetailError(model, message),
+    FailedSetListSort: ({ message }) => {
+      const failed = withDetailError(model, message)
+      return {
+        model: modifyFields(failed.model, {
+          maybeSortDraft: () => Option.none(),
+        }),
+      }
+    },
 
     SelectedCheckedPlacement: ({ listId, placement }) => {
       const maybeList = findListRow(inputs.mirror.lists, listId)
+      const effective = Option.match(model.maybePlacementDraft, {
+        onNone: () => Option.map(maybeList, list => list.checkedPlacement),
+        onSome: draft => Option.some(draft),
+      })
 
-      if (
-        !Option.exists(maybeList, list => list.checkedPlacement !== placement)
-      ) {
+      if (Option.contains(effective, placement)) {
         return { model }
       }
 
+      const revision = model.settingsRevision + 1
+
       return {
         model: modifyFields(model, {
+          maybePlacementDraft: () => Option.some(placement),
+          settingsRevision: () => revision,
           maybeDetailError: () => Option.none(),
         }),
-        commands: [SetCheckedPlacement({ listId, placement })],
+        commands: [SetCheckedPlacement({ listId, placement, revision })],
       }
     },
 
@@ -924,26 +980,38 @@ export const update = (
       outMessage: OutMessage.WroteLocalData(),
     }),
 
-    FailedSetCheckedPlacement: ({ message }) => withDetailError(model, message),
+    FailedSetCheckedPlacement: ({ message }) => {
+      const failed = withDetailError(model, message)
+      return {
+        model: modifyFields(failed.model, {
+          maybePlacementDraft: () => Option.none(),
+        }),
+      }
+    },
 
     SelectedListVisibility: ({ listId, visibility }) => {
       const maybeList = findListRow(inputs.mirror.lists, listId)
       const canChange = Option.exists(maybeList, list =>
         Option.exists(inputs.maybeUserId, userId => userId === list.ownerId),
       )
+      const effective = Option.match(model.maybeVisibilityDraft, {
+        onNone: () => Option.map(maybeList, list => list.visibility),
+        onSome: draft => Option.some(draft),
+      })
 
-      if (
-        !canChange ||
-        !Option.exists(maybeList, list => list.visibility !== visibility)
-      ) {
+      if (!canChange || Option.contains(effective, visibility)) {
         return { model }
       }
 
+      const revision = model.settingsRevision + 1
+
       return {
         model: modifyFields(model, {
+          maybeVisibilityDraft: () => Option.some(visibility),
+          settingsRevision: () => revision,
           maybeDetailError: () => Option.none(),
         }),
-        commands: [SetListVisibility({ listId, visibility })],
+        commands: [SetListVisibility({ listId, visibility, revision })],
       }
     },
 
@@ -955,7 +1023,14 @@ export const update = (
       outMessage: OutMessage.WroteLocalData(),
     }),
 
-    FailedSetListVisibility: ({ message }) => withDetailError(model, message),
+    FailedSetListVisibility: ({ message }) => {
+      const failed = withDetailError(model, message)
+      return {
+        model: modifyFields(failed.model, {
+          maybeVisibilityDraft: () => Option.none(),
+        }),
+      }
+    },
 
     UpdatedItemDraft: ({ value }) => ({
       model: modifyFields(model, { itemDraft: () => value }),
@@ -1178,10 +1253,41 @@ export const enteredIndex = (model: Model): Update.Return<Model, Message> => ({
   }),
 })
 
-/** A mirror read settled: stop treating an absent list as still loading. */
-export const mirrorSettled = (model: Model): Update.Return<Model, Message> => ({
-  model: modifyFields(model, { isDetailLoading: () => false }),
-})
+/**
+ * A mirror read settled: stop treating an absent list as still loading and
+ * retire any optimistic setting the authoritative row now agrees with.
+ */
+export const mirrorSettled = (
+  model: Model,
+  maybeInputs?: Inputs,
+): Update.Return<Model, Message> => {
+  const cleared = Option.match(Option.fromNullishOr(maybeInputs), {
+    onNone: () => model,
+    onSome: inputs =>
+      Option.match(currentList(model, inputs), {
+        onNone: () => model,
+        onSome: list =>
+          modifyFields(model, {
+            maybeSortDraft: () =>
+              Option.contains(model.maybeSortDraft, list.sort)
+                ? Option.none()
+                : model.maybeSortDraft,
+            maybePlacementDraft: () =>
+              Option.contains(model.maybePlacementDraft, list.checkedPlacement)
+                ? Option.none()
+                : model.maybePlacementDraft,
+            maybeVisibilityDraft: () =>
+              Option.contains(model.maybeVisibilityDraft, list.visibility)
+                ? Option.none()
+                : model.maybeVisibilityDraft,
+          }),
+      }),
+  })
+
+  return {
+    model: modifyFields(cleared, { isDetailLoading: () => false }),
+  }
+}
 
 /** The root folds this when the detail route is entered or its id changes. */
 export const enteredDetail = (
@@ -1191,6 +1297,9 @@ export const enteredDetail = (
   model: modifyFields(model, {
     maybeListId: () => Option.some(options.listId),
     maybeTitleDraft: () => Option.none(),
+    maybeSortDraft: () => Option.none(),
+    maybePlacementDraft: () => Option.none(),
+    maybeVisibilityDraft: () => Option.none(),
     isRenaming: () => false,
     itemDraft: () => '',
     isAddingItem: () => false,

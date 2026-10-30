@@ -322,7 +322,7 @@ describe('list preferences', () => {
         Lists.Message.SelectedListSort({ listId: LIST_ID, sort: 'alpha' }),
       ),
       Command.expectExact(
-        Lists.SetListSort({ listId: LIST_ID, sort: 'alpha' }),
+        Lists.SetListSort({ listId: LIST_ID, sort: 'alpha', revision: 1 }),
       ),
       Command.resolve(
         Lists.SetListSort,
@@ -338,6 +338,7 @@ describe('list preferences', () => {
         Lists.SetCheckedPlacement({
           listId: LIST_ID,
           placement: 'inPlace',
+          revision: 2,
         }),
       ),
       Command.resolve(
@@ -354,12 +355,46 @@ describe('list preferences', () => {
         Lists.SetListVisibility({
           listId: LIST_ID,
           visibility: 'private',
+          revision: 3,
         }),
       ),
       Command.resolve(
         Lists.SetListVisibility,
         Lists.Message.CompletedSetListVisibility({ listId: LIST_ID }),
       ),
+    )
+  })
+
+  test('a second choice before the mirror settles still writes', () => {
+    story(
+      defaultUpdate,
+      given(openDetail()),
+      message(
+        Lists.Message.SelectedListSort({ listId: LIST_ID, sort: 'alpha' }),
+      ),
+      Command.expectExact(
+        Lists.SetListSort({ listId: LIST_ID, sort: 'alpha', revision: 1 }),
+      ),
+      Command.resolve(
+        Lists.SetListSort,
+        Lists.Message.CompletedSetListSort({ listId: LIST_ID }),
+      ),
+      model(next => {
+        expect(next.maybeSortDraft).toStrictEqual(Option.some('alpha'))
+      }),
+      message(
+        Lists.Message.SelectedListSort({ listId: LIST_ID, sort: 'manual' }),
+      ),
+      Command.expectExact(
+        Lists.SetListSort({ listId: LIST_ID, sort: 'manual', revision: 2 }),
+      ),
+      Command.resolve(
+        Lists.SetListSort,
+        Lists.Message.CompletedSetListSort({ listId: LIST_ID }),
+      ),
+      model(next => {
+        expect(next.maybeSortDraft).toStrictEqual(Option.some('manual'))
+      }),
     )
   })
 

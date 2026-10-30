@@ -131,6 +131,45 @@ export const updateListInMirror = async (
   })
 }
 
+type ListSettingField = 'sort' | 'placement' | 'visibility'
+
+/**
+ * The newest revision seen per list and setting.
+ *
+ * A fast pair of select changes can start two Commands whose writes land out
+ * of order. Each helper records the revision immediately before its write, so
+ * an older intent can never overwrite a newer one: whichever call runs last
+ * either carries the newest revision or is skipped.
+ */
+const latestSettingRevisions: Readonly<
+  Record<ListSettingField, Map<string, number>>
+> = {
+  sort: new Map(),
+  placement: new Map(),
+  visibility: new Map(),
+}
+
+const writeListSettingIfLatest = async (
+  store: LocalStore,
+  field: ListSettingField,
+  listId: string,
+  revision: number,
+  patch: ListEditPatch,
+  now: string,
+): Promise<void> => {
+  const revisions = latestSettingRevisions[field]
+  const latest = revisions.get(listId) ?? 0
+
+  if (revision < latest) {
+    return
+  }
+
+  revisions.set(listId, revision)
+  await updateListInMirror(store, listId, patch, now)
+}
+
+export { writeListSettingIfLatest }
+
 /** Soft delete the list and its locally known items. */
 export const deleteListInMirror = async (
   store: LocalStore,

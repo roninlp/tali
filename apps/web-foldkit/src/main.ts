@@ -727,7 +727,8 @@ const foldListsEnteredDetail = Update.foldChild({
 })
 
 const foldListsMirrorSettled = Update.foldChild({
-  update: Lists.mirrorSettled,
+  update: (lists: Lists.Model, inputs: Lists.Inputs) =>
+    Lists.mirrorSettled(lists, inputs),
   read: (model: Model) => Option.some(model.lists),
   write: (model: Model, nextLists: Lists.Model) =>
     modifyFields(model, { lists: () => nextLists }),
@@ -801,7 +802,7 @@ const foldSyncMessage = (model: Model, message: Sync.Message): UpdateReturn => {
   const folded = foldSync(model, message)
   const listsStep =
     folded.model.route._tag === 'List' && isMirrorReadResult(message)
-      ? foldListsMirrorSettled(folded.model, undefined)
+      ? foldListsMirrorSettled(folded.model, listsInputs(folded.model))
       : { model: folded.model }
   const settled = wasPending > 0 && folded.model.sync.pending === 0
 

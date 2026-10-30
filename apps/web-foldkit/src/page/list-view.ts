@@ -65,6 +65,15 @@ const headerView = (
   h: HtmlBuilder<Message>,
 ): Html => {
   const titleValue = Option.getOrElse(model.maybeTitleDraft, () => list.title)
+  const sortValue = Option.getOrElse(model.maybeSortDraft, () => list.sort)
+  const placementValue = Option.getOrElse(
+    model.maybePlacementDraft,
+    () => list.checkedPlacement,
+  )
+  const visibilityValue = Option.getOrElse(
+    model.maybeVisibilityDraft,
+    () => list.visibility,
+  )
 
   return h.header(
     [h.Class('panel grid gap-2 p-4 sm:p-5')],
@@ -162,7 +171,7 @@ const headerView = (
                     selectInputView(
                       {
                         id: 'list-sort-select',
-                        value: list.sort,
+                        value: sortValue,
                         class: 'select-bordered select-sm',
                         options: [
                           { value: 'manual', label: 'دستی' },
@@ -189,7 +198,7 @@ const headerView = (
                     selectInputView(
                       {
                         id: 'list-placement-select',
-                        value: list.checkedPlacement,
+                        value: placementValue,
                         class: 'select-bordered select-sm',
                         options: [
                           { value: 'bottom', label: 'انتهای فهرست' },
@@ -215,7 +224,7 @@ const headerView = (
                     selectInputView(
                       {
                         id: 'list-visibility-select',
-                        value: list.visibility,
+                        value: visibilityValue,
                         class: 'select-bordered select-sm',
                         isDisabled: !isOwner,
                         options: [
