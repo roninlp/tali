@@ -265,10 +265,16 @@ const eventQuickAdd = (
 ): Html => {
   const draft = quickEventOf(model, date)
 
-  return h.details(
+  return h.keyed('details')(
+    `${date}:${draft.open ? 'open' : 'closed'}`,
     [
       h.Class('calendar-event-add'),
-      h.Open(draft.open),
+      // The details is native-controlled while open: rendering an explicit
+      // `open=false` on every pass can close it between the click and the
+      // OnToggle dispatch while the mirror is still settling. Keying the
+      // element on the open state remounts it closed after a successful add
+      // without racing the native toggle.
+      ...(draft.open ? [h.Open(true)] : []),
       h.OnToggle(isOpen => Message.ToggledEventQuickAdd({ date, isOpen })),
     ],
     [

@@ -9,22 +9,18 @@ import {
   EventException as EventExceptionSchema,
   EventId,
   type EventOccurrence,
-  Event as EventSchema,
   type EventTiming,
   HouseholdId,
   LocalDate,
   OccasionId,
   UserId,
-  deleteEventOccurrence,
   eventAnchorDate,
   isEventOccurrence,
   localDateTimeInstant,
+  localDayBefore,
   localizeDigits,
-  overrideEventOccurrence,
-  patchEventSeries,
   splitEventSeries,
-  trashEvent,
-  truncateEventSeries,
+  storedOccurrenceOverrides,
   uuidV7,
 } from '@tali/domain'
 import type { LocalStore, MirrorRecord, ServerRow } from '@tali/sync-client'
@@ -392,6 +388,104 @@ const assertOccurrence = (event: Event, instanceId: string): void => {
   }
 }
 
+/**
+ * Single-row transforms on the already-hydrated aggregate. They stay plain
+ * objects instead of calling the domain's `new Event(...)` builders: the dev
+ * optimizer serves `effect/schema` through a second module graph, and the
+ * Model constructor rejects values built by the other copy. The domain
+ * helpers below read the same fields, so the resulting shape is identical.
+ */
+const withEventFields = (event: Event, patch: Partial<Event>): Event => ({
+  ...event,
+  ...patch,
+})
+
+const patchSeriesLocal = (
+  event: Event,
+  overrides: EventExceptionOverrides,
+  now: string,
+): Event => {
+  const anchor = eventAnchorDate(event)
+  const merged: EventExceptionOverrides = {
+    ...(storedOccurrenceOverrides(event, anchor) ?? {}),
+    ...overrides,
+  }
+
+  return withEventFields(event, {
+    title: merged.title ?? event.title,
+    description:
+      merged.description !== undefined ? merged.description : event.description,
+    location: merged.location !== undefined ? merged.location : event.location,
+    color: merged.color !== undefined ? merged.color : event.color,
+    timing: merged.timing ?? event.timing,
+    timeZone: merged.timeZone ?? event.timeZone,
+    exceptions: event.exceptions.filter(
+      exception => exception.instanceId !== anchor,
+    ),
+    version: event.version + 1,
+    updatedAt: now,
+  })
+}
+
+const withExceptionLocal = (
+  event: Event,
+  instanceId: string,
+  action: 'override' | 'delete',
+  overrides: EventExceptionOverrides | null,
+  exceptionId: string,
+  now: string,
+): Event =>
+  withEventFields(event, {
+    exceptions: [
+      ...event.exceptions.filter(
+        exception => exception.instanceId !== instanceId,
+      ),
+      {
+        id: EventExceptionId.make(exceptionId),
+        instanceId: LocalDate.make(instanceId),
+        action,
+        overrides,
+        createdAt: now,
+      },
+    ],
+    version: event.version + 1,
+    updatedAt: now,
+  })
+
+const trashLocal = (event: Event, now: string): Event =>
+  withEventFields(event, {
+    deletedAt: now,
+    version: event.version + 1,
+    updatedAt: now,
+  })
+
+const truncateLocal = (
+  event: Event,
+  instanceId: string,
+  now: string,
+): Event => {
+  const anchor = eventAnchorDate(event)
+
+  if (instanceId <= anchor) {
+    return trashLocal(event, now)
+  }
+
+  return withEventFields(event, {
+    recurrence:
+      event.recurrence === null
+        ? null
+        : {
+            ...event.recurrence,
+            end: { _tag: 'until', date: localDayBefore(instanceId) },
+          },
+    exceptions: event.exceptions.filter(
+      exception => exception.instanceId < instanceId,
+    ),
+    version: event.version + 1,
+    updatedAt: now,
+  })
+}
+
 /** "This occurrence" / "this and following" edit. */
 export const editEventWithinScope = (
   input: EventScopeInput & {
@@ -407,7 +501,7 @@ export const editEventWithinScope = (
     }
 
     return {
-      series: patchEventSeries(event, overrides, input.now),
+      series: patchSeriesLocal(event, overrides, input.now),
       following: null,
     }
   }
@@ -425,7 +519,7 @@ export const editEventWithinScope = (
 
     if (instanceId === eventAnchorDate(event)) {
       return {
-        series: patchEventSeries(event, overrides, input.now),
+        series: patchSeriesLocal(event, overrides, input.now),
         following: null,
       }
     }
@@ -446,13 +540,14 @@ export const editEventWithinScope = (
   }
 
   return {
-    series: overrideEventOccurrence({
+    series: withExceptionLocal(
       event,
-      instanceId: LocalDate.make(instanceId),
+      instanceId,
+      'override',
       overrides,
-      exceptionId: EventExceptionId.make(input.exceptionId),
-      now: input.now,
-    }),
+      input.exceptionId,
+      input.now,
+    ),
     following: null,
   }
 }
@@ -468,25 +563,27 @@ export const deleteEventWithinScope = (
       throw notAnOccurrence(instanceId)
     }
 
-    return { series: trashEvent(event, input.now), following: null }
+    return { series: trashLocal(event, input.now), following: null }
   }
 
   assertOccurrence(event, instanceId)
 
   if (scope === 'thisAndFollowing') {
     return {
-      series: truncateEventSeries({ event, instanceId, now: input.now }),
+      series: truncateLocal(event, instanceId, input.now),
       following: null,
     }
   }
 
   return {
-    series: deleteEventOccurrence({
+    series: withExceptionLocal(
       event,
-      instanceId: LocalDate.make(instanceId),
-      exceptionId: EventExceptionId.make(input.exceptionId),
-      now: input.now,
-    }),
+      instanceId,
+      'delete',
+      null,
+      input.exceptionId,
+      input.now,
+    ),
     following: null,
   }
 }
@@ -621,7 +718,12 @@ export const eventFromMirror = (
   }
 
   try {
-    return EventSchema.make({
+    // A plain object cast at the seam: both `new Event(...)` and
+    // `Event.make(...)` validate through the domain module's Model adapter,
+    // which throws across the dev optimizer's second `effect/schema` graph.
+    // The fields below are the exact aggregate shape the pure scope
+    // functions consume.
+    const event: Event = {
       id: EventId.make(row.id),
       type: 'event',
       title: row.title,
@@ -646,7 +748,9 @@ export const eventFromMirror = (
       updatedAt: row.updatedAt,
       version: row.version,
       deletedAt: row.deletedAt,
-    })
+    }
+
+    return event
   } catch {
     return null
   }
