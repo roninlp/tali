@@ -3,12 +3,12 @@
 **Status:** in progress. Phase 1 (scaffold), the Phase 2 prerequisites
 (workspace-wide Effect 4.1, api proxy, typed RPC entry point), P2.1 (shell,
 theming, RTL document), P2.2 (route union and navigation), P2.3 (auth and
-session restore), P2.4 (local store and sync engine), and P2.5 (preferences,
-theme, and push) are in place. P2.6 (feature screens) is in progress: Today,
-Lists, Tasks, Habits, Notes, Reminders, Settings, and Calendar (with the
-Occasions panel) are delivered; P2.6 is complete. P2.5's real vendor-push check
-is still blocked on a local VAPID pair and a real browser; everything else is
-verified.
+session restore), P2.4 (local store and sync engine), P2.5 (preferences,
+theme, and push), and P2.6 (feature screens) are in place: Today, Lists, Tasks,
+Habits, Notes, Reminders, Settings, and Calendar (with the Occasions panel) are
+delivered. P2.5's real vendor-push check is still blocked on a local VAPID pair
+and a real browser, and the legacy app's full Playwright gate flows have not
+yet been run against :3001; everything else is verified.
 
 **Source of truth:** `apps/web` (Solid v2) for behavior, copy, and
 interaction. **Target:** `apps/web-foldkit` (Foldkit + Effect). Do not edit
