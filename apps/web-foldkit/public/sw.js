@@ -9,13 +9,15 @@
  *
  * The queue is written **before** the network attempt, so an offline tap is
  * never lost; a failed flush is retried by the page on its next open
- * (`apps/web/src/lib/push/notification-actions.ts`) and by the next tap. The
- * server ledger, not the push, remains the source of truth: a browser that
- * never saw the notification still finds the dispatch in the missed inbox.
+ * (`apps/web-foldkit/src/lib/push/notification-actions.ts`) and by the next
+ * tap. The server ledger, not the push, remains the source of truth: a browser
+ * that never saw the notification still finds the dispatch in the missed
+ * inbox.
  *
  * The payload's `id` is the **dispatch id** (one fire = one row = one answer).
- * Keep this file in sync with `apps/web/src/lib/push/notification-actions.ts`
- * (IndexedDB names) and `packages/domain/src/push.ts` (payload shape).
+ * Keep this file in sync with
+ * `apps/web-foldkit/src/lib/push/notification-actions.ts` (IndexedDB names)
+ * and `packages/domain/src/push.ts` (payload shape).
  */
 
 const PUSH_DB_NAME = "tali.push.v1"

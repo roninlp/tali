@@ -86,6 +86,14 @@ const quickAddView = (
         h.AriaLabel('کار تازه برای امروز'),
         h.Disabled(!inputs.isStoreReady),
         h.OnInput(value => Message.UpdatedQuickAddDraft({ value })),
+        // Enter submits even while the button is still disabled for a frame:
+        // Foldkit folds the input message before the next render, but the
+        // browser's implicit submission checks the rendered button state.
+        h.OnKeyDownPreventDefault(key =>
+          key === 'Enter'
+            ? Option.some(Message.SubmittedQuickAdd())
+            : Option.none(),
+        ),
       ]),
       h.button(
         [h.Type('submit'), h.AriaLabel('افزودن کار'), h.Disabled(!canSubmit)],

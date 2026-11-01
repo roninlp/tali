@@ -153,7 +153,7 @@ Lifecycle:
 - A normal local write **keeps** the marker: a new patch is not proof that the previously rejected fields reached the server.
 - **Retry** (`retryFailed`) clears the marker and queues the mirror's current data as a fresh `upsert` with a new `clientMutationId`, `baseVersion` = the mirror's current version and `clientUpdatedAt` = now. It never replays the acked entry and never folds into a queued one. If the server rejects it again, the marker returns.
 
-Client policy per code (Persian copy lives in `apps/web/src/lib/sync-copy.ts`; no raw codes reach the UI):
+Client policy per code (Persian copy lives in `apps/web-foldkit/src/lib/sync-copy.ts`; no raw codes reach the UI):
 
 - `InvalidPatch` / `ValidationError`: retry only helps after the data changes, so the editor asks the user to fix the text/labels first.
 - `UniqueViolation`: the server row moved or another row owns the unique key now; retrying with the mirror's fresh anchor can converge.

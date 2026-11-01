@@ -1,12 +1,10 @@
 # @tali/web-foldkit
 
-Tali's next frontend, built with [Foldkit](https://foldkit.dev) — the Elm
+Tali's frontend, built with [Foldkit](https://foldkit.dev) — the Elm
 Architecture on Effect — plus Vite and Tailwind CSS v4.
 
-This is the active migration target. The shell, the RTL document and the house
-theme are in place; the screens are being ported. The legacy Solid app at
-`apps/web` stays in the repo as the behavioral reference until the migration is
-complete.
+The app is the single web client: the shell, the RTL document, the local-first
+sync engine, and every feature screen live here.
 
 ## Run it
 
@@ -23,10 +21,9 @@ For frontend-only work, run this app on its own:
 pnpm dev:foldkit      # http://localhost:3001
 ```
 
-The port is pinned in `vite.config.ts` because the legacy app owns :3000 and
-the api Worker owns :8787. The dev server proxies the api Worker's routes to
-:8787, so auth and sync need the full `pnpm dev` stack (or a separately
-running api Worker).
+The port is pinned in `vite.config.ts`; the api Worker owns :8787. The dev
+server proxies the api Worker's routes to :8787, so auth and sync need the full
+`pnpm dev` stack (or a separately running api Worker).
 
 Other scripts:
 
@@ -55,24 +52,26 @@ pnpm --filter @tali/web-foldkit format
 
 ## Migration status
 
+The Foldkit migration is complete and the legacy Solid app has been retired.
+Every slice below is delivered and covered by Story/Scene tests:
+
 - [x] **Phase 1 — scaffold.** Official `create-foldkit-app` starter, workspace
       integration, pinned dev port, vendored Foldkit source, agent skills, DevTools
       MCP, and root agent docs.
 - [x] **Phase 2 prerequisites.** Shared versions live in the pnpm catalog and
       the whole workspace runs Effect 4.1, so `@tali/domain` and `@tali/rpc`
       resolve to one Effect instance. Vite proxies the api Worker's routes to
-      `:8787`, and `src/lib/{config,rpc}.ts` provide the typed client the port
-      will use.
-- [x] **P2.1 — shell, theming, RTL document.** The starter is gone; the
-      document, house themes, Vazirmatn, shell chrome, theme toggle, and the
-      button/field primitives are in place with Scene/Story tests.
-- [ ] **P2.2 onward — port the app.** Route union and navigation, auth and
-      session restore, local store and sync engine, preferences/push, then the
-      feature screens (today, tasks, lists, habits, notes, occasions, calendar,
-      reminders, settings). The ordered slices and acceptance criteria live in
-      [`docs/plans/foldkit-migration.md`](../../docs/plans/foldkit-migration.md).
+      `:8787`, and `src/lib/{config,rpc}.ts` provide the typed client.
+- [x] **P2.1 — shell, theming, RTL document.**
+- [x] **P2.2 — route union and navigation.**
+- [x] **P2.3 — auth and session restore.**
+- [x] **P2.4 — local store and sync engine.**
+- [x] **P2.5 — preferences, saved theme, and push.**
+- [x] **P2.6 — Today, Lists, Tasks, Habits, Notes, Reminders, Settings, and
+      Calendar (with the Occasions panel).**
 
-`apps/web` is the source of truth for behavior until Phase 2 is finished.
+The slice record and acceptance criteria live in
+[`docs/plans/foldkit-migration.md`](../../docs/plans/foldkit-migration.md).
 
 ## Structure
 
@@ -82,9 +81,11 @@ src/main.ts        Model, Message, init, update, view
 src/shell.ts       The app chrome (header, action slot, main)
 src/theme.ts       House light/dark theme Submodel and toggle
 src/ui/            Button, field and icon primitives
+src/fonts/         Self-hosted Vazirmatn and its OFL licence
 src/styles.css     Tailwind v4 + daisyUI themes and Tali utilities
 src/lib/config.ts  API base URL (dev proxy vs deployed /api)
 src/lib/rpc.ts     Typed RPC client over the api Worker's contract
+worker.ts          Deployed Worker: serves the assets and proxies /api/*
 ```
 
 The runtime stays separate from the pure definitions, so tests can import the

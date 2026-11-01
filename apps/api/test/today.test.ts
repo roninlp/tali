@@ -521,7 +521,7 @@ describe("GET /today", () => {
 
   /**
    * The browser only sees an `ETag` that CORS exposes, and only sends an
-   * `If-None-Match` that CORS allows. The dev web app (:3000) calls the Worker
+   * `If-None-Match` that CORS allows. The dev web app (:3001) calls the Worker
    * (:8787) cross-origin, so without those headers revalidation never happens
    * in the one environment where the dashboard is exercised by hand.
    */
@@ -532,7 +532,7 @@ describe("GET /today", () => {
     const call = async (headers: Record<string, string>) => {
       const response = await worker.fetch(
         new Request("http://localhost/today", {
-          headers: { origin: "http://localhost:3000", ...headers }
+          headers: { origin: "http://localhost:3001", ...headers }
         }),
         env as never,
         {} as never

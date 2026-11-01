@@ -7,7 +7,7 @@
 //
 //   - the stage's local state is deleted first, so every run starts from an
 //     empty D1 with the real migrations applied on reconcile;
-//   - the api Worker binds :8787 and the SPA :3000, the two origins the
+//   - the api Worker binds :8787 and the SPA :3001, the two origins the
 //     product is built around (CORS allow-list + host-scoped session cookie).
 //
 // Playwright owns this process for the length of the run and kills it at the
@@ -31,7 +31,7 @@ const busy = (port) =>
     server.listen(port, "::")
   })
 
-for (const port of [3000, 8787]) {
+for (const port of [3001, 8787]) {
   if (await busy(port)) {
     console.error(
       `[e2e] port ${port} is already in use. Stop the running stack (pnpm dev) ` +
@@ -52,7 +52,7 @@ const child = spawn(
     cwd: repoRoot,
     stdio: "inherit",
     // Own process group: alchemy spawns vite and workerd as children, and they
-    // are what would otherwise keep :3000/:8787 bound after the run.
+    // are what would otherwise keep :3001/:8787 bound after the run.
     detached: true,
     env: { ...process.env, ALCHEMY_STAGE: STAGE }
   }

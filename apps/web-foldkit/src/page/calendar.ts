@@ -781,19 +781,46 @@ export const CommitCalendarEventScope = Command.define(
             : client.DeleteEventOccurrence(base),
         )
 
-        yield* Effect.tryPromise({
-          try: () => applyEventChangeFromServer(store, change),
-          catch: storeFailureMessage,
-        })
+        // In a production build the RPC client decodes the complete domain
+        // `Event` rows, so the mirror can adopt them immediately. In the Vite
+        // dev server `effect/schema` is a second module graph (see
+        // `vite.config.ts`), so the decoded rows can lose their Model variant
+        // fields. The server write is authoritative either way: keep the ids
+        // dirty and let the next sync pull bring both rows into the mirror.
+        const hasCompleteSeries =
+          typeof change.series.id === 'string' && change.series.id !== ''
+        const hasCompleteFollowing =
+          change.following === null ||
+          (typeof change.following.id === 'string' &&
+            change.following.id !== '')
+
+        if (hasCompleteSeries && hasCompleteFollowing) {
+          yield* Effect.tryPromise({
+            try: () => applyEventChangeFromServer(store, change),
+            catch: storeFailureMessage,
+          })
+        }
+
+        const seriesId = hasCompleteSeries ? change.series.id : event.id
+        const maybeFollowingId = Option.match(
+          Option.fromNullishOr(change.following),
+          {
+            onNone: () =>
+              action === 'edit' && scope === 'thisAndFollowing'
+                ? Option.some(ids.followingId)
+                : Option.none<string>(),
+            onSome: following =>
+              typeof following.id === 'string' && following.id !== ''
+                ? Option.some(following.id)
+                : Option.some(ids.followingId),
+          },
+        )
 
         return Message.CompletedCommitEventScope({
           action,
           scope,
-          seriesId: change.series.id,
-          maybeFollowingId: Option.map(
-            Option.fromNullishOr(change.following),
-            following => following.id,
-          ),
+          seriesId,
+          maybeFollowingId,
           title: Option.match(maybeDraft, {
             onNone: () => occurrence.title,
             onSome: draft => draft.title,

@@ -5,7 +5,7 @@ import { Schema } from 'effect'
  *
  * `PushSubscription` is a DOM object that cannot live in a Schema Model, so
  * the app stores `toJSON()`'s plain shape. Keep this in step with
- * `packages/domain/src/push.ts` and `apps/web/public/sw.js`.
+ * `packages/domain/src/push.ts` and this app's `public/sw.js`.
  */
 
 export const PushSubscriptionJson = Schema.Struct({

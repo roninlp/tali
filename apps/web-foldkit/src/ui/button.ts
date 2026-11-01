@@ -7,10 +7,11 @@ type Child = Html | string
 /**
  * The shared button primitive.
  *
- * Ported from `@tali/ui`'s Solid `Button` as a plain view helper: the app's
- * screens render it with the Foldkit builder, so it takes attributes and
- * children instead of JSX props. Colours come from the active daisyUI theme;
- * the button carries none of its own.
+ * The house button styles come from the design tokens in `styles.css`; this
+ * wrapper only picks the variants and classes. Screens render it with the
+ * Foldkit builder, so it takes attributes and children instead of JSX props.
+ * Colours come from the active daisyUI theme; the button carries none of its
+ * own.
  */
 
 export type ButtonVariant =

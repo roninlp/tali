@@ -20,13 +20,9 @@ subtree_prompted: true
   from the `foldkit` npm package, never from the subtree.
 - **Agent skills.** The `foldkit`, `generate-program`, and `audit-program`
   skills are linked at the repo root in `.agents/skills/`.
-- **Legacy app.** `apps/web` is the Solid v2 app and remains the behavioral
-  reference until the migration is complete. Do not edit it during migration
-  work unless the task says so; port behavior from it instead.
 - **Ports.** This app's Vite dev server is pinned to `http://localhost:3001`
-  with `strictPort`. The legacy web app owns :3000 and the api Worker owns
-  :8787. `pnpm dev` from the repo root runs all three; `pnpm dev:foldkit` runs
-  only this app.
+  with `strictPort`. The api Worker owns :8787. `pnpm dev` from the repo root
+  runs the whole stack; `pnpm dev:foldkit` runs only this app.
 - **API access.** Vite proxies `/auth`, `/health`, `/household`, `/month`,
   `/preferences`, `/push`, `/reminders`, `/rpc`, `/search`, `/sync`, `/today`,
   and `/week` to the api Worker on :8787, so the browser stays on :3001 and
@@ -35,9 +31,8 @@ subtree_prompted: true
   `/household`, `/push-health`, and `/reminders` are also SPA routes whose
   prefixes belong to the Worker, so the proxy lets browser navigations return
   `index.html` and proxies only API calls. `src/lib/config.ts` resolves the
-  base URL and `src/lib/rpc.ts` builds the typed `@tali/rpc` client; both are
-  ports of the legacy app's `lib/config.ts` and `lib/rpc.ts`. Deploys use
-  `VITE_API_URL=/api` and the `/api/*` service-binding hop.
+  base URL and `src/lib/rpc.ts` builds the typed `@tali/rpc` client. Deploys
+  use `VITE_API_URL=/api` and the `/api/*` service-binding hop.
 - **Effect version.** This app uses Effect 4.1, which Foldkit requires; the
   whole workspace now runs 4.1 through the pnpm catalog. Shared dependency
   versions live in `pnpm-workspace.yaml` and are referenced as `catalog:` in
@@ -45,14 +40,9 @@ subtree_prompted: true
   `vite.config.ts` keeps `effect/schema` out of the dev dependency optimizer:
   bundling `effect` and `effect/schema` as separate entries crashes the
   optimizer in Vite 8.3.4.
-- **Migration progress.** P2.1 (shell, theming, RTL document), P2.2 (route
-  union and navigation), P2.3 (auth and session restore), P2.4 (local store
-  and sync engine), P2.5 (preferences, saved theme, and push), and P2.6's
-  Today, Lists, Tasks, Habits, Notes, Reminders, Settings, and Calendar screens
-  (with the Occasions panel) are in place:
-  `src/shell.ts` holds the chrome plus the desktop section menu, mobile tab
-  bar, display name, and account slot; `src/theme.ts` the persistent gallery +
-  light/dark/system
+- **Frontend layout.** `src/shell.ts` holds the chrome plus the desktop section
+  menu, mobile tab bar, display name, and account slot; `src/theme.ts` the
+  persistent gallery + light/dark/system
   Submodel; `src/route.ts` the `AppRoute` union and typed routers; `src/auth.ts`
   the session Submodel with restore, sign-out, and cache Commands;
   `src/guard.ts` the guest/session/household access rules;
@@ -91,12 +81,12 @@ subtree_prompted: true
   `calendar-data.ts`, `calendar-api.ts`, `event-writes.ts`,
   `occasion-writes.ts`, and `reminders/api.ts`. `/settings`
   renders `src/preferences.ts`'s display form, `src/settings.ts`'s password
-  form, the theme gallery, and the push health panel, in the legacy order;
-  Settings is complete and the P2.6 feature screens are all delivered.
+  form, the theme gallery, and the push health panel. All feature screens are
+  delivered.
   `src/session.ts`, `src/household-summary.ts`, and `src/preferences-model.ts`
   hold the plain Model projections the auth/preferences responses decode into,
   so no branded domain value crosses the dev optimizer's `effect/schema`
-  boundary. Auth HTTP stays on the legacy `fetch` shape with
+  boundary. Auth HTTP stays on the plain `fetch` shape with
   `credentials: "include"` because the session cookie is set by the raw
   response; the data slices use `withRpcClient`. The framework-free client core
   lives in `packages/sync-client` (`@tali/sync-client`): the IndexedDB store,
@@ -108,16 +98,13 @@ subtree_prompted: true
   `src/theme.ts` starts from the same values in `entry.ts` flags, so a saved
   dark or gallery theme never flashes the light palette.
 - **Push and service-worker scope.** `public/sw.js`,
-  `manifest.webmanifest`, and the icons are byte-for-byte ports of the legacy
-  public assets. The worker registers at `/sw.js` with scope `/`. Service
-  worker registrations are isolated per origin (scheme + host + port), so
-  `:3001` owns its own registration and the legacy `apps/web` worker on
-  `:3000` is untouched. The worker receives the API origin from the page so a
-  Done/Snooze tap can flush through the Vite proxy (`/reminders`) in dev and
-  the `/api` service-binding hop in production. `apps/web/public/sw.js` must
-  not be edited during the migration.
-- **Sync smoke check.** With `pnpm dev` running (the api Worker and both
-  frontends), `pnpm test:smoke:foldkit:sync` registers a fresh account,
+  `manifest.webmanifest`, and the icons are the app's public assets. The worker
+  registers at `/sw.js` with scope `/`. The worker receives the API origin from
+  the page so a Done/Snooze tap can flush through the Vite proxy (`/reminders`)
+  in dev and the `/api` service-binding hop in production. Keep
+  `src/lib/push/notification-actions.ts` and `public/sw.js` in sync.
+- **Sync smoke check.** With `pnpm dev` running (the api Worker and the app),
+  `pnpm test:smoke:foldkit:sync` registers a fresh account,
   creates a household, writes a task online, switches the app to its offline
   state, writes a second task, reloads twice, reconnects, checks both rows on
   the server's pull feed, and signs a second device in to prove convergence.
@@ -142,10 +129,10 @@ subtree_prompted: true
   unaffected. Drop the patch once a published alchemy release includes the fix;
   see `../../infra/README.md`.
 - **Styling.** `src/styles.css` is the Tali entry: Tailwind v4 + daisyUI, the
-  `tali`/`talidark` themes, and the shared utilities. Vazirmatn stays in
-  `@tali/ui`; the CSS references it across the workspace and Vite fingerprints
-  it on build. The theme toggle and the settings gallery are device-local and
-  restore from `public/theme-boot.js` before first paint.
-- **Migration plan.** The ordered Phase 2 slices and acceptance criteria live
-  in `../../docs/plans/foldkit-migration.md`. Read it before picking up the
-  next slice; keep this file's notes project-specific.
+  `tali`/`talidark` themes, and the shared utilities. Vazirmatn ships in
+  `src/fonts/` with its OFL licence and Vite fingerprints it on build. The
+  theme toggle and the settings gallery are device-local and restore from
+  `public/theme-boot.js` before first paint.
+- **Migration record.** The completed Phase 2 slices and acceptance criteria
+  live in `../../docs/plans/foldkit-migration.md`. Keep this file's notes
+  project-specific.

@@ -22,13 +22,15 @@ export default defineConfig({
   optimizeDeps: {
     // `effect/schema` arrives through `@tali/domain`'s branded ids. The Vite 8
     // optimizer chokes when it bundles `effect` and `effect/schema` as two
-    // entries, so leave the subpath unbundled in dev.
+    // entries, so leave the subpath unbundled in dev. That means the RPC client
+    // can decode a domain Model class with a second Schema instance; callers
+    // that need the returned row should treat a missing `Model` variant field
+    // as "wait for the sync pull" (see the calendar's scope command).
     exclude: ['effect/schema'],
   },
   server: {
-    // The legacy Solid app owns :3000 and the api Worker owns :8787. Pinning a
-    // separate port keeps both frontends runnable side by side during the
-    // migration.
+    // The api Worker owns :8787. Pin the app to its own port so the two
+    // origins stay explicit, exactly like the deployed service-binding split.
     port: 3001,
     strictPort: true,
     // Keep the browser on :3001 while the api Worker stays on :8787. This

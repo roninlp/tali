@@ -10,11 +10,11 @@ import type { PushSubscriptionJson } from './subscription'
  * Registration is best-effort: browsers without service-worker/push support
  * (or a blocked registration) must leave the rest of the app usable.
  *
- * Scope decision for the Foldkit app: `public/sw.js` is registered at `/sw.js`
- * with scope `/`. Service worker registrations are isolated per origin
- * (scheme + host + port), so `http://localhost:3001` gets its own registration
- * and the legacy app's worker on `:3000` is untouched. In production the
- * Foldkit app deploys on its own origin, so the same root scope applies there.
+ * Scope decision: `public/sw.js` is registered at `/sw.js` with scope `/`.
+ * Service worker registrations are isolated per origin (scheme + host + port),
+ * so the Vite dev origin (`http://localhost:3001`) gets its own registration
+ * and the deployed origin gets another. In production the app deploys on its
+ * own origin, so the same root scope applies there.
  */
 
 export const PushPermission = Schema.Literals([

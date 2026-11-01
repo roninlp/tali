@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url"
  * through (`/sync/push`, the reminder inbox).
  */
 
-export const WEB_URL = "http://localhost:3000"
+export const WEB_URL = "http://localhost:3001"
 export const API_URL = "http://localhost:8787"
 
 /** The session cookie minted by `/auth/register` (auth-routes.ts). */

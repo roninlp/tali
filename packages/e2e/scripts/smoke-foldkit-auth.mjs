@@ -3,11 +3,10 @@ import { chromium } from '@playwright/test'
 /**
  * The P2.3 auth smoke check against the Foldkit app on :3001.
  *
- * Run `pnpm dev` first: it starts the api Worker on :8787, the legacy web app
- * on :3000, and the Foldkit app on :3001. This script registers a fresh
- * account through the Vite proxy, creates a household, reloads into /today,
- * signs out, logs back in, and checks the guard redirects and the
- * no-household onboarding path.
+ * Run `pnpm dev` first: it starts the api Worker on :8787 and the Foldkit app
+ * on :3001. This script registers a fresh account through the Vite proxy,
+ * creates a household, reloads into /today, signs out, logs back in, and
+ * checks the guard redirects and the no-household onboarding path.
  */
 
 const BASE = 'http://localhost:3001'

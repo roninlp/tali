@@ -6,7 +6,7 @@ import { modifyFields } from 'foldkit/struct'
 
 import { type AuthFailure } from './lib/auth-api'
 import { authErrorMessage } from './lib/auth-copy'
-import { API_URL } from './lib/config'
+import { API_URL, isDevServer } from './lib/config'
 import { loadVapidPublicKey } from './lib/push/config'
 import {
   QueuedReminderAction,
@@ -956,7 +956,7 @@ export const healthView = Submodel.defineView<Model, Message>((model, h) => {
                 ),
               ]
             : []),
-          ...(import.meta.env.DEV && isSubscribed
+          ...(isDevServer && isSubscribed
             ? [
                 buttonView(
                   {

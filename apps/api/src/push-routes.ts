@@ -59,7 +59,7 @@ export const PushRoutes = HttpRouter.use((router) =>
      * The subscription's `applicationServerKey` (ticket #61).
      *
      * The server is the source of truth for its own VAPID identity, so a local
-     * stack works without copying a key into `apps/web/.env.local`, and a
+     * stack works without copying a key into `apps/web-foldkit/.env.local`, and a
      * build-time key can never disagree with the one that signs the pushes
      * (a mismatch makes every subscription silently reject with 403).
      * Unauthenticated: the public key and subject are public by design

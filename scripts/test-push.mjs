@@ -47,7 +47,7 @@ const parseEnvFile = (path) => {
 
 const fileEnv = {
   ...parseEnvFile(resolve(root, "apps/api/.dev.vars")),
-  ...parseEnvFile(resolve(root, "apps/web/.env.local"))
+  ...parseEnvFile(resolve(root, "apps/web-foldkit/.env.local"))
 }
 const env = { ...fileEnv, ...process.env }
 

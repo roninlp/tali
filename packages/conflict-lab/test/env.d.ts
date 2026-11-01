@@ -34,11 +34,13 @@ declare global {
   }
 
   /**
-   * The only Vite env the web modules read (`apps/web/src/lib/config.ts`).
+   * The only Vite env the web modules read (`apps/web-foldkit/src/lib/config.ts`).
    * Vitest still substitutes `import.meta.env` at transform time.
    */
   interface ImportMetaEnv {
     readonly VITE_API_URL?: string
+    /** Vite's mode, read by the shared `src/lib/config.ts`. */
+    readonly MODE: string
   }
 
   interface ImportMeta {

@@ -1,18 +1,17 @@
 # Foldkit migration — Phase 2 plan
 
-**Status:** in progress. Phase 1 (scaffold), the Phase 2 prerequisites
+**Status:** complete. Phase 1 (scaffold), the Phase 2 prerequisites
 (workspace-wide Effect 4.1, api proxy, typed RPC entry point), P2.1 (shell,
 theming, RTL document), P2.2 (route union and navigation), P2.3 (auth and
 session restore), P2.4 (local store and sync engine), P2.5 (preferences,
-theme, and push), and P2.6 (feature screens) are in place: Today, Lists, Tasks,
+theme, and push), and P2.6 (feature screens) are delivered: Today, Lists, Tasks,
 Habits, Notes, Reminders, Settings, and Calendar (with the Occasions panel) are
-delivered. P2.5's real vendor-push check is still blocked on a local VAPID pair
-and a real browser, and the legacy app's full Playwright gate flows have not
-yet been run against :3001; everything else is verified.
+in place. The legacy Solid app was retired after the `@tali/e2e` gate flows
+passed against the Foldkit dev server on :3001.
 
-**Source of truth:** `apps/web` (Solid v2) for behavior, copy, and
-interaction. **Target:** `apps/web-foldkit` (Foldkit + Effect). Do not edit
-`apps/web` during migration work.
+**Source of truth:** `apps/web-foldkit` is now the only web client. The former
+Solid app at `apps/web` was the behavioral reference during the port and is
+recorded in git history only.
 
 ## Ground rules
 
@@ -239,6 +238,10 @@ checklist against the legacy screen:
 **Done when:** the legacy app has no behavior the Foldkit app lacks; the
 Playwright gate flows can run against :3001; the legacy app can be retired.
 
+Both conditions held before retirement: the `@tali/e2e` suite passed 6/6
+against `:3001` (seed, household, offline task, shared list, reminder, and
+recurring-event split), and the parity gaps recorded below were accepted.
+
 **Delivered — Today:** `src/page/today.ts` is the page Submodel and
 `today-model.ts` / `today-view.ts` hold its pure aggregation and view.
 `src/mirror.ts` projects the IndexedDB rows the screen reads (tasks, notes,
@@ -431,3 +434,29 @@ explicit focus loop.
 - Before retiring `apps/web`: run the `@tali/e2e` gate flows against the
   Foldkit dev server and the local api stack, and record the result in the
   migration issue.
+
+## Retirement
+
+The Solid app (`apps/web`) and its `@tali/ui` component package were removed
+after the gate flows passed against the Foldkit app:
+
+- `@tali/e2e` now boots `alchemy dev --stage e2e` with the Foldkit SPA on
+  `:3001`; all six tests passed (`seed`, household, offline task, shared list,
+  reminder, recurring-event split).
+- `infra/alchemy.run.ts` serves `apps/web-foldkit` (assets from `dist`,
+  `worker.ts` for the `/api/*` service-binding hop) and starts Vite on `:3001`;
+  the api Worker's `DEV_ORIGIN` is `http://localhost:3001`.
+- Vazirmatn and its OFL licence moved to `apps/web-foldkit/src/fonts/`, so the
+  app no longer depends on the Solid design-system package.
+- `@tali/conflict-lab` now imports the Foldkit RPC client instead of the Solid
+  app's client.
+- The full root gates were rerun after the removal: `pnpm typecheck`,
+  `pnpm build`, `pnpm test`, and `pnpm lint`.
+
+A dev-only caveat remains documented in `apps/web-foldkit/vite.config.ts`:
+Vite pre-bundles `effect` and `effect/schema` separately, so an RPC response
+that decodes a domain `Model` class can lose its variant fields in development.
+The calendar's occurrence mutation therefore treats a missing id as "wait for
+the next sync pull"; a production build decodes the complete rows. The
+`HttpError` seen while iterating on this was caused by a dev-server restart
+aborting an in-flight RPC, not by the deployed path.

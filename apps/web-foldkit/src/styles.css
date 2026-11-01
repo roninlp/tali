@@ -97,12 +97,11 @@
     'Vazirmatn', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
-/* Self-hosted Persian font. The file lives in @tali/ui so both frontends ship
- * the same Vazirmatn build during the migration. */
+/* Self-hosted Persian font. The file ships with the app so the deployed bundle
+ * needs no extra request; the OFL licence sits next to it. */
 @font-face {
   font-family: 'Vazirmatn';
-  src: url('../../../packages/ui/src/fonts/vazirmatn-variable.woff2')
-    format('woff2');
+  src: url('./fonts/vazirmatn-variable.woff2') format('woff2');
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;

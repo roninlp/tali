@@ -14,7 +14,7 @@
     "@tali/api": "workspace:*",
     "@tali/domain": "workspace:*",
     "@tali/sync-client": "workspace:*",
-    "@tali/web": "workspace:*",
+    "@tali/web-foldkit": "workspace:*",
     "effect": "catalog:",
     "fake-indexeddb": "catalog:",
     "fast-check": "^4.10.2",

@@ -1,5 +1,5 @@
 import { exports } from "cloudflare:workers"
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { IDBFactory } from "fake-indexeddb"
 import {
   SyncBootstrapResponse,
@@ -14,7 +14,7 @@ import {
 import { openLocalStore } from "@tali/sync-client"
 import type { LocalStore, MirrorRecord } from "@tali/sync-client"
 import { createSyncEngine, SyncRejected, type SyncEngine, type SyncTransport } from "@tali/sync-client"
-import { api } from "@tali/web/src/lib/rpc"
+import { withRpcClient } from "@tali/web-foldkit/src/lib/rpc"
 import type { LabMode } from "./mode"
 
 /**
@@ -234,8 +234,18 @@ export const makeTransport = (
      * The two explicit repair paths the real engine uses. They are the web
      * client's Effect RPC procedures, pointed at the test Worker by `withRpc`.
      */
-    logHabitEntry: (input) => withRpc(account, () => api.logHabitEntry(input)),
-    restoreHabit: (input) => withRpc(account, () => api.restoreHabit(input))
+    logHabitEntry: (input) =>
+      withRpc(account, () =>
+        Effect.runPromise(
+          withRpcClient((client) => client.LogHabitEntry(input))
+        )
+      ),
+    restoreHabit: (input) =>
+      withRpc(account, () =>
+        Effect.runPromise(
+          withRpcClient((client) => client.RestoreHabit(input))
+        )
+      )
   }
 }
 

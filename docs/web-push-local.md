@@ -89,20 +89,17 @@ Rotating the pair invalidates every existing subscription.
 ## 2. Run the app
 
 ```sh
-pnpm dev        # alchemy dev: local D1 (migrations applied) + api on :8787 + both web apps
+pnpm dev        # alchemy dev: local D1 (migrations applied) + api on :8787 + web app
 ```
 
-Open <http://localhost:3000> for the legacy Solid app or
-<http://localhost:3001> for the Foldkit app, sign in, create or join the
-household, then go to **تنظیمات** (`/settings`) or **یادآورها** (`/reminders`).
+Open <http://localhost:3001>, sign in, create or join the household, then go to
+**تنظیمات** (`/settings`) or **یادآورها** (`/reminders`).
 
-Both origins are secure contexts (localhost), and each has its **own**
-service-worker registration. The Foldkit copy lives in
+The origin is a secure context (localhost). The service worker lives in
 `apps/web-foldkit/public/sw.js` and registers at `/sw.js` with scope `/` on
-`:3001`; it does not touch the legacy registration on `:3000`. In dev the
-worker is given the page origin as its API base, so queued Done/Snooze answers
-flush through the Vite proxy (`/reminders`). In production it receives the
-`/api` origin and uses the service-binding hop.
+`:3001`. In dev the worker is given the page origin as its API base, so queued
+Done/Snooze answers flush through the Vite proxy (`/reminders`). In production
+it receives the `/api` origin and uses the service-binding hop.
 
 ## 3. Install the PWA and subscribe
 

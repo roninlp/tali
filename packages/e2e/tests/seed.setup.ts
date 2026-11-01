@@ -14,7 +14,7 @@ import { API_URL, STATE_DIR, uniqueTag } from "./support"
  * signed in.
  *
  * The cookie is host-scoped (`localhost`) and browsers ignore ports for
- * cookies, so a session minted on :8787 is sent to the SPA on :3000.
+ * cookies, so a session minted on :8787 is sent to the SPA on :3001.
  */
 
 const LOGIN_KEY = "a".repeat(43) // any 43-char base64url key: the API never derives it

@@ -18,4 +18,4 @@ VAPID_PUBLIC_KEY=
 VAPID_SUBJECT=mailto:you@example.com
 
 # Origin allowed to call the API cross-origin during local dev.
-WEB_ORIGIN=http://localhost:3000
+WEB_ORIGIN=http://localhost:3001

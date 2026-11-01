@@ -10,15 +10,13 @@ database, the api Worker, and the web assets.
 
 ```
 apps/
-  web/          Solid v2 (client-only, Vite) SPA — RTL Persian shell (legacy reference)
-  web-foldkit/  Foldkit + Effect SPA — migration target (Vite on :3001)
+  web-foldkit/  Foldkit + Effect SPA (Vite on :3001)
   api/          Effect HTTP/RPC server on Cloudflare Workers + D1
 packages/
   domain/       @effect/schema entities, invariants, typed errors  (only shared dep)
   sql/          @effect/sql-d1 repositories + D1 migrations
   rpc/          Effect RPC contract (RpcGroup) consumed by web + api
   config/       typed env (Effect Config)
-  ui/           Solid design-system components + tokens
 infra/          Alchemy stack — D1 + api Worker + web static assets
 ```
 
@@ -37,16 +35,13 @@ locally — no Cloudflare account, no credentials, no `wrangler`:
 - **api Worker** — the real Worker bundle running in workerd, bound to that
   database, on <http://localhost:8787> (`/health`, `/auth/*`, `/rpc`, `/sync/*`,
   `/push/*`).
-- **web app** — Vite dev server with HMR on <http://localhost:3000>, allowed to
-  call the api cross-origin (session cookie included).
-- **Foldkit app** — Vite dev server on <http://localhost:3001>, proxying the
-  api routes to :8787. It starts under `pnpm dev` too.
+- **web app** — the Foldkit SPA on <http://localhost:3001>, proxying the api
+  routes to :8787 so cookies stay same-origin.
 
-Open <http://localhost:3000>, register, create a household, and you are in.
+Open <http://localhost:3001>, register, create a household, and you are in.
 Editing API or web code hot-reloads in place.
 
-The Foldkit migration target runs alongside the legacy app. To run only the
-Foldkit frontend (without the api stack):
+To run only the frontend (without the api stack):
 
 ```sh
 pnpm dev:foldkit      # http://localhost:3001
@@ -55,7 +50,7 @@ pnpm dev:foldkit      # http://localhost:3001
 It has its own AI setup: `apps/web-foldkit/FOLDKIT.md`, the vendored Foldkit
 source at `repos/foldkit`, Foldkit skills in `.agents/skills/`, and the
 DevTools MCP server in `opencode.json`. See `apps/web-foldkit/README.md` for
-the migration status.
+the app layout.
 
 Local state lives in `infra/.alchemy/`. `rm -rf infra/.alchemy` gives you a
 fresh database (migrations re-apply on the next `pnpm dev`).
@@ -67,15 +62,14 @@ pnpm typecheck        # turbo typecheck across all packages/apps (includes the A
 pnpm lint             # oxlint across the apps (Foldkit Effect rules are deny-warnings)
 pnpm test             # turbo test
 pnpm build            # turbo build (packages typecheck; web: static SPA build)
-
 pnpm stack:plan       # alchemy plan  — diff the Cloudflare stack (needs a profile)
 pnpm stack:deploy     # alchemy deploy
 pnpm stack:destroy    # alchemy destroy
 ```
 
 Package-level dev servers still work on their own when you want one process:
-`pnpm --filter @tali/web exec vite` (Vite on :3000). Alchemy owns the API
-Worker — there is no separate `wrangler dev` path.
+`pnpm --filter @tali/web-foldkit exec vite` (Vite on :3001). Alchemy owns the
+API Worker — there is no separate `wrangler dev` path.
 
 Web Push shell (service worker, VAPID subscription, permission panel):
 
@@ -93,7 +87,7 @@ pnpm test:push
 | `TaliDatabase` (D1) | local simulator + migrations | real D1 + migrations |
 | `TaliBackups` (R2) | local R2 simulator | private bucket for nightly dumps |
 | `TaliApi` (Worker) | workerd on :8787 | uploaded Worker, `DB` + `BACKUP_BUCKET` bindings |
-| `TaliWeb` (StaticSite) | `vite` dev server on :3000 | `vite build` → `dist/client` assets |
+| `TaliWeb` (StaticSite) | `vite` dev server on :3001 | `vite build` → `dist` assets |
 
 The api entry stays a plain `async fetch(request, env)` module: Alchemy binds
 `env.DB` as a native `D1Database`, which is what `@effect/sql-d1` already
@@ -116,8 +110,8 @@ The last two are decided in ADR-0009; restoring a dump is documented in
 4. **`apps/api`** — `ListItemService` layer → RPC handlers → `RpcServer.layerHttp`
    at `/rpc`; plain-HTTP `/sync/pull`; served as a Cloudflare Worker via
    `HttpRouter.toWebHandler` + `D1Client.layer`.
-5. **`apps/web`** — Solid v2 shell; the browser calls a derived `RpcClient`
-   (`effect/rpc` + `FetchHttpClient`) over HTTP directly at `/rpc`.
+5. **`apps/web-foldkit`** — Foldkit shell; the browser calls a derived
+   `RpcClient` (`effect/rpc` + `FetchHttpClient`) over HTTP directly at `/rpc`.
 
 Migrations are applied by Alchemy (deploy) and by the local D1 provider (dev),
 because D1 has no interactive transactions and Effect's `Migrator` cannot run on
