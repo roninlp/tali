@@ -1,6 +1,7 @@
-import { Input, Textarea, Select as UiSelect } from '@foldkit/ui'
-import { Array, Option } from 'effect'
+import { Option } from 'effect'
 import type { Html, HtmlBuilder } from 'foldkit/html'
+
+import { Input, Textarea } from '@foldkit/ui'
 
 import { classNames } from './class-names'
 
@@ -155,55 +156,6 @@ export const textAreaFieldView = <Message>(
     h,
   )
 }
-
-export type SelectOption = Readonly<{ value: string; label: string }>
-
-export type SelectInputConfig<Message> = Readonly<{
-  id: string
-  label: string
-  value: string
-  options: ReadonlyArray<SelectOption>
-  onChange: (value: string) => Message
-  name?: string
-  isDisabled?: boolean
-  isInvalid?: boolean
-  class?: string
-}>
-
-export const selectInputView = <Message>(
-  config: SelectInputConfig<Message>,
-  h: HtmlBuilder<Message>,
-): Html =>
-  UiSelect.view(
-    {
-      id: config.id,
-      value: config.value,
-      onChange: config.onChange,
-      ...(config.name === undefined ? {} : { name: config.name }),
-      ...(config.isDisabled === true ? { isDisabled: true } : {}),
-      ...(config.isInvalid === true ? { isInvalid: true } : {}),
-      toView: attributes =>
-        h.div(
-          [h.Class(classNames('grid gap-1.5', config.class))],
-          [
-            h.label(
-              [...attributes.label, h.Class(LABEL_CLASS)],
-              [config.label],
-            ),
-            h.select(
-              [...attributes.select, h.Class('field-input min-h-[2.2rem] text-[0.85rem]')],
-              Array.map(config.options, option =>
-                h.option(
-                  [h.Key(option.value), h.Value(option.value)],
-                  [option.label],
-                ),
-              ),
-            ),
-          ],
-        ),
-    },
-    h,
-  )
 
 export const formErrorView = <Message>(
   maybeMessage: Option.Option<string>,

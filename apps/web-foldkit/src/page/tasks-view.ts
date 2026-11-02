@@ -1,26 +1,35 @@
 import { Array, Option } from 'effect'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
+import { Listbox } from '@foldkit/ui'
 import { localizeDigits } from '@tali/domain'
 import type { Digits, TaskBucketBounds } from '@tali/domain'
 
-import type { ProjectRow, TagRow, TaskRow } from '../mirror'
+import type { TagRow, TaskRow } from '../mirror'
 import { taskKey } from '../mirror'
 import { buttonView } from '../ui/button'
-import {
-  selectInputView,
-  textAreaFieldView,
-  textInputView,
-} from '../ui/field'
+import { textAreaFieldView, textInputView } from '../ui/field'
+import { listboxViewInputs } from '../ui/listbox'
 import { Message } from './tasks'
 import type {
   Model,
   QuickAddDraft,
   TaskEditor,
+  TaskStatusEditorOption,
   TaskToast,
   ViewInputs,
 } from './tasks'
 import { quickAddDue } from './tasks'
+import {
+  DateListbox,
+  PriorityListbox,
+  QuickAddProjectListbox,
+  SortListbox,
+  StatusListbox,
+  TaskPriorityListbox,
+  TaskProjectListbox,
+  TaskStatusListbox,
+} from './tasks'
 import {
   BOARD_COPY,
   DATE_OPTIONS,
@@ -36,21 +45,16 @@ import {
   type TaskView,
   activeFilterCount,
   buildTaskView,
-  dateFilterOf,
   dueLabel,
   formatCompletionTime,
   formatLocalDate,
   liveTasks,
   noProjectCountOf,
-  priorityFilterOf,
   priorityLabel,
-  priorityOf,
   projectCountsOf,
   projectOf,
   recentCompletions,
   shiftLocalDate,
-  sortFieldOf,
-  statusFilterOf,
   tagColor,
   tagsOfTask,
   validTimeZone,
@@ -133,17 +137,6 @@ const chipView = (
     ],
     [label],
   )
-
-const projectOptions = (
-  projects: ReadonlyArray<ProjectRow>,
-  noneLabel: string,
-  h: HtmlBuilder<Message>,
-): ReadonlyArray<Html> => [
-  h.option([h.Value('')], [noneLabel]),
-  ...Array.map(projects, project =>
-    h.option([h.Value(project.id)], [project.title]),
-  ),
-]
 
 // QUICK ADD
 
@@ -336,24 +329,29 @@ const quickAddPanelView = (
                     [h.Class('tasks-field')],
                     [
                       h.span([], ['پروژه']),
-                      h.select(
-                        [
-                          h.AriaLabel('پروژه'),
-                          h.Class('tasks-select'),
-                          h.Value(
+                      h.submodel({
+                        slotId: model.quickAddProjectListbox.id,
+                        model: model.quickAddProjectListbox,
+                        view: QuickAddProjectListbox.view,
+                        viewInputs: listboxViewInputs({
+                          items: [
+                            { value: '', label: 'بدون پروژه' },
+                            ...Array.map(
+                              inputs.mirror.projects,
+                              project => ({
+                                value: project.id,
+                                label: project.title,
+                              }),
+                            ),
+                          ],
+                          maybeSelectedValue: Option.some(
                             Option.getOrElse(draft.maybeProjectId, () => ''),
                           ),
-                          h.OnChange(value =>
-                            Message.SelectedQuickAddProject({
-                              maybeProjectId:
-                                value === ''
-                                  ? Option.none()
-                                  : Option.some(value),
-                            }),
-                          ),
-                        ],
-                        projectOptions(inputs.mirror.projects, 'بدون پروژه', h),
-                      ),
+                          h,
+                        }),
+                        toParentMessage: message =>
+                          Message.GotQuickAddProjectListboxMessage({ message }),
+                      }),
                     ],
                   ),
                   h.div(
@@ -778,70 +776,107 @@ const filterPanelView = (
           ),
         ],
       ),
-      selectInputView(
-        {
-          id: 'tasks-filter-priority',
-          label: 'اولویت',
-          value: model.settings.filters.priority,
-          options: Array.map(PRIORITY_OPTIONS, option => ({
-            value: option.value,
-            label: option.label,
-          })),
-          onChange: value =>
-            Message.SelectedPriorityFilter({
-              priority: priorityFilterOf(value),
+      h.div(
+        [h.Class('grid gap-1.5')],
+        [
+          h.label(
+            [
+              h.For(Listbox.buttonId(model.priorityListbox.id)),
+              h.Class('text-sm font-medium text-base-content/70'),
+            ],
+            ['اولویت'],
+          ),
+          h.submodel({
+            slotId: model.priorityListbox.id,
+            model: model.priorityListbox,
+            view: PriorityListbox.view,
+            viewInputs: listboxViewInputs({
+              items: PRIORITY_OPTIONS,
+              maybeSelectedValue: Option.some(model.settings.filters.priority),
+              h,
             }),
-        },
-        h,
+            toParentMessage: message =>
+              Message.GotPriorityListboxMessage({ message }),
+          }),
+        ],
       ),
-      selectInputView(
-        {
-          id: 'tasks-filter-status',
-          label: 'وضعیت',
-          value: model.settings.filters.status,
-          options: Array.map(STATUS_OPTIONS, option => ({
-            value: option.value,
-            label: option.label,
-          })),
-          onChange: value =>
-            Message.SelectedStatusFilter({
-              status: statusFilterOf(value),
+      h.div(
+        [h.Class('grid gap-1.5')],
+        [
+          h.label(
+            [
+              h.For(Listbox.buttonId(model.statusListbox.id)),
+              h.Class('text-sm font-medium text-base-content/70'),
+            ],
+            ['وضعیت'],
+          ),
+          h.submodel({
+            slotId: model.statusListbox.id,
+            model: model.statusListbox,
+            view: StatusListbox.view,
+            viewInputs: listboxViewInputs({
+              items: STATUS_OPTIONS,
+              maybeSelectedValue: Option.some(model.settings.filters.status),
+              h,
             }),
-        },
-        h,
+            toParentMessage: message =>
+              Message.GotStatusListboxMessage({ message }),
+          }),
+        ],
       ),
-      selectInputView(
-        {
-          id: 'tasks-filter-date',
-          label: 'زمان',
-          value: model.settings.filters.date,
-          options: Array.map(DATE_OPTIONS, option => ({
-            value: option.value,
-            label: option.label,
-          })),
-          onChange: value =>
-            Message.SelectedDateFilter({ date: dateFilterOf(value) }),
-        },
-        h,
+      h.div(
+        [h.Class('grid gap-1.5')],
+        [
+          h.label(
+            [
+              h.For(Listbox.buttonId(model.dateListbox.id)),
+              h.Class('text-sm font-medium text-base-content/70'),
+            ],
+            ['زمان'],
+          ),
+          h.submodel({
+            slotId: model.dateListbox.id,
+            model: model.dateListbox,
+            view: DateListbox.view,
+            viewInputs: listboxViewInputs({
+              items: DATE_OPTIONS,
+              maybeSelectedValue: Option.some(model.settings.filters.date),
+              h,
+            }),
+            toParentMessage: message =>
+              Message.GotDateListboxMessage({ message }),
+          }),
+        ],
       ),
       h.div(
         [h.Class('tasks-sort-row')],
         [
-          selectInputView(
-            {
-              id: 'tasks-filter-sort',
-              label: 'مرتب‌سازی',
-              value: model.settings.sort.by,
-              options: Array.map(TASK_SORT_FIELDS, field => ({
-                value: field,
-                label: SORT_FIELD_LABELS[field],
-              })),
-              onChange: value =>
-                Message.SelectedSortField({
-                  by: sortFieldOf(value),
+          h.div(
+            [h.Class('grid gap-1.5')],
+            [
+              h.label(
+                [
+                  h.For(Listbox.buttonId(model.sortListbox.id)),
+                  h.Class('text-sm font-medium text-base-content/70'),
+                ],
+                ['مرتب‌سازی'],
+              ),
+              h.submodel({
+                slotId: model.sortListbox.id,
+                model: model.sortListbox,
+                view: SortListbox.view,
+                viewInputs: listboxViewInputs({
+                  items: Array.map(TASK_SORT_FIELDS, field => ({
+                    value: field,
+                    label: SORT_FIELD_LABELS[field],
+                  })),
+                  maybeSelectedValue: Option.some(model.settings.sort.by),
+                  h,
                 }),
-            },
-            h,
+                toParentMessage: message =>
+                  Message.GotSortListboxMessage({ message }),
+              }),
+            ],
           ),
           buttonView(
             {
@@ -881,6 +916,14 @@ const filterPanelView = (
 }
 
 // TASK CARD
+
+const STATUS_EDITOR_OPTIONS: ReadonlyArray<TaskStatusEditorOption> = [
+  { value: 'todo', label: STATUS_LABELS.todo },
+  { value: 'doing', label: STATUS_LABELS.doing },
+]
+
+const statusValue = (status: TaskRow['status']): 'todo' | 'doing' =>
+  status === 'doing' ? 'doing' : 'todo'
 
 const moveButton = (
   label: string,
@@ -952,60 +995,95 @@ const editorView = (
             },
             h,
           ),
-          selectInputView(
-            {
-              id: `task-${task.id}-priority`,
-              label: 'اولویت',
-              value: task.priority,
-              options: Array.map(PRIORITY_CHOICES, choice => ({
-                value: choice.value,
-                label: choice.label,
-              })),
-              onChange: value =>
-                Message.SelectedTaskPriority({
-                  taskId: task.id,
-                  priority: priorityOf(value),
+          h.div(
+            [h.Class('grid gap-1.5')],
+            [
+              h.label(
+                [
+                  h.For(Listbox.buttonId(editor.priorityListbox.id)),
+                  h.Class('text-sm font-medium text-base-content/70'),
+                ],
+                ['اولویت'],
+              ),
+              h.submodel({
+                slotId: editor.priorityListbox.id,
+                model: editor.priorityListbox,
+                view: TaskPriorityListbox.view,
+                viewInputs: listboxViewInputs({
+                  items: PRIORITY_CHOICES,
+                  maybeSelectedValue: Option.some(task.priority),
+                  h,
+                  isDisabled: !inputs.isStoreReady,
                 }),
-            },
-            h,
+                toParentMessage: message =>
+                  Message.GotTaskPriorityListboxMessage({
+                    taskId: task.id,
+                    message,
+                  }),
+              }),
+            ],
           ),
-          selectInputView(
-            {
-              id: `task-${task.id}-status`,
-              label: 'وضعیت',
-              value: task.status === 'doing' ? 'doing' : 'todo',
-              options: [
-                { value: 'todo', label: STATUS_LABELS.todo },
-                { value: 'doing', label: STATUS_LABELS.doing },
-              ],
-              onChange: value =>
-                Message.SelectedTaskStatus({
-                  taskId: task.id,
-                  status: value === 'doing' ? 'doing' : 'todo',
+          h.div(
+            [h.Class('grid gap-1.5')],
+            [
+              h.label(
+                [
+                  h.For(Listbox.buttonId(editor.statusListbox.id)),
+                  h.Class('text-sm font-medium text-base-content/70'),
+                ],
+                ['وضعیت'],
+              ),
+              h.submodel({
+                slotId: editor.statusListbox.id,
+                model: editor.statusListbox,
+                view: TaskStatusListbox.view,
+                viewInputs: listboxViewInputs({
+                  items: STATUS_EDITOR_OPTIONS,
+                  maybeSelectedValue: Option.some(statusValue(task.status)),
+                  h,
+                  isDisabled: !inputs.isStoreReady,
                 }),
-            },
-            h,
+                toParentMessage: message =>
+                  Message.GotTaskStatusListboxMessage({
+                    taskId: task.id,
+                    message,
+                  }),
+              }),
+            ],
           ),
-          selectInputView(
-            {
-              id: `task-${task.id}-project`,
-              label: 'پروژه',
-              value: task.projectId ?? '',
-              options: [
-                { value: '', label: 'بدون پروژه' },
-                ...Array.map(inputs.mirror.projects, project => ({
-                  value: project.id,
-                  label: project.title,
-                })),
-              ],
-              onChange: value =>
-                Message.SelectedTaskProject({
-                  taskId: task.id,
-                  maybeProjectId:
-                    value === '' ? Option.none() : Option.some(value),
+          h.div(
+            [h.Class('grid gap-1.5')],
+            [
+              h.label(
+                [
+                  h.For(Listbox.buttonId(editor.projectListbox.id)),
+                  h.Class('text-sm font-medium text-base-content/70'),
+                ],
+                ['پروژه'],
+              ),
+              h.submodel({
+                slotId: editor.projectListbox.id,
+                model: editor.projectListbox,
+                view: TaskProjectListbox.view,
+                viewInputs: listboxViewInputs({
+                  items: [
+                    { value: '', label: 'بدون پروژه' },
+                    ...Array.map(inputs.mirror.projects, project => ({
+                      value: project.id,
+                      label: project.title,
+                    })),
+                  ],
+                  maybeSelectedValue: Option.some(task.projectId ?? ''),
+                  h,
+                  isDisabled: !inputs.isStoreReady,
                 }),
-            },
-            h,
+                toParentMessage: message =>
+                  Message.GotTaskProjectListboxMessage({
+                    taskId: task.id,
+                    message,
+                  }),
+              }),
+            ],
           ),
         ],
       ),

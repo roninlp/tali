@@ -3,6 +3,7 @@ import { Command, Dom, Submodel, Subscription, Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
 
+import { Listbox } from '@foldkit/ui'
 import { uuidV7 } from '@tali/domain'
 import { createTaskInMirror } from '@tali/sync-client'
 
@@ -92,6 +93,9 @@ export const TaskEditor = Schema.Struct({
   saveState: TaskSaveState,
   hasPendingSave: Schema.Boolean,
   generation: Schema.Int,
+  priorityListbox: Listbox.Model,
+  statusListbox: Listbox.Model,
+  projectListbox: Listbox.Model,
 })
 export type TaskEditor = typeof TaskEditor.Type
 
@@ -102,6 +106,63 @@ export const TaskToast = Schema.Struct({
   maybeStartedAt: Schema.Option(Schema.String),
 })
 export type TaskToast = typeof TaskToast.Type
+
+export type PriorityFilterOption = Readonly<{
+  value: TaskPriorityFilter
+  label: string
+}>
+export type StatusFilterOption = Readonly<{
+  value: TaskStatusFilter
+  label: string
+}>
+export type DateFilterOption = Readonly<{
+  value: TaskDateFilter
+  label: string
+}>
+export type SortFieldOption = Readonly<{
+  value: TaskSortField
+  label: string
+}>
+export type ProjectOption = Readonly<{
+  value: string
+  label: string
+}>
+export type TaskPriorityEditorOption = Readonly<{
+  value: TaskPriority
+  label: string
+}>
+export type TaskStatusEditorOption = Readonly<{
+  value: TaskStatusOption
+  label: string
+}>
+export type TaskProjectEditorOption = Readonly<{
+  value: string
+  label: string
+}>
+
+export const PriorityListbox = Listbox.create<
+  PriorityFilterOption,
+  TaskPriorityFilter
+>()
+export const StatusListbox = Listbox.create<
+  StatusFilterOption,
+  TaskStatusFilter
+>()
+export const DateListbox = Listbox.create<DateFilterOption, TaskDateFilter>()
+export const SortListbox = Listbox.create<SortFieldOption, TaskSortField>()
+export const QuickAddProjectListbox = Listbox.create<ProjectOption, string>()
+export const TaskPriorityListbox = Listbox.create<
+  TaskPriorityEditorOption,
+  TaskPriority
+>()
+export const TaskStatusListbox = Listbox.create<
+  TaskStatusEditorOption,
+  TaskStatusOption
+>()
+export const TaskProjectListbox = Listbox.create<
+  TaskProjectEditorOption,
+  string
+>()
 
 export const CreateSource = Schema.Literals(['quickAdd', 'filters'])
 export type CreateSource = typeof CreateSource.Type
@@ -121,6 +182,11 @@ export const Model = Schema.Struct({
   maybeToast: Schema.Option(TaskToast),
   maybeError: Schema.Option(Schema.String),
   announcement: Schema.String,
+  priorityListbox: Listbox.Model,
+  statusListbox: Listbox.Model,
+  dateListbox: Listbox.Model,
+  sortListbox: Listbox.Model,
+  quickAddProjectListbox: Listbox.Model,
 })
 export type Model = typeof Model.Type
 
@@ -162,6 +228,13 @@ export const initialModel = (options: InitOptions): Model =>
     maybeToast: Option.none(),
     maybeError: Option.none(),
     announcement: '',
+    priorityListbox: Listbox.init({ id: 'tasks-priority-listbox' }),
+    statusListbox: Listbox.init({ id: 'tasks-status-listbox' }),
+    dateListbox: Listbox.init({ id: 'tasks-date-listbox' }),
+    sortListbox: Listbox.init({ id: 'tasks-sort-listbox' }),
+    quickAddProjectListbox: Listbox.init({
+      id: 'tasks-quick-add-project-listbox',
+    }),
   })
 
 /** Everything the page reads from its siblings on each dispatch. */
@@ -192,6 +265,23 @@ export const Message = defineMessageUnion({
   SelectedSortField: { by: TaskSortField },
   ToggledSortDirection: {},
   ClickedClearFilters: {},
+  GotPriorityListboxMessage: { message: Listbox.Message },
+  GotStatusListboxMessage: { message: Listbox.Message },
+  GotDateListboxMessage: { message: Listbox.Message },
+  GotSortListboxMessage: { message: Listbox.Message },
+  GotQuickAddProjectListboxMessage: { message: Listbox.Message },
+  GotTaskPriorityListboxMessage: {
+    taskId: Schema.String,
+    message: Listbox.Message,
+  },
+  GotTaskStatusListboxMessage: {
+    taskId: Schema.String,
+    message: Listbox.Message,
+  },
+  GotTaskProjectListboxMessage: {
+    taskId: Schema.String,
+    message: Listbox.Message,
+  },
 
   UpdatedNewProjectTitle: { value: Schema.String },
   UpdatedNewTagName: { value: Schema.String },
@@ -827,6 +917,191 @@ const boardDueDate = (
   return Option.some(board === 'upcoming' ? bounds.tomorrow : bounds.today)
 }
 
+const foldPriorityListboxOutMessage = (
+  inputs: Inputs,
+  handleUpdate: (
+    model: Model,
+    message: Message,
+    inputs: Inputs,
+  ) => UpdateReturn,
+) =>
+  Listbox.OutMessage.match<
+    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
+    Listbox.OutMessage<TaskPriorityFilter>
+  >({
+    Selected:
+      ({ value }) =>
+      stepModel =>
+        handleUpdate(
+          stepModel,
+          Message.SelectedPriorityFilter({ priority: value }),
+          inputs,
+        ),
+  })
+
+const foldStatusListboxOutMessage = (
+  inputs: Inputs,
+  handleUpdate: (
+    model: Model,
+    message: Message,
+    inputs: Inputs,
+  ) => UpdateReturn,
+) =>
+  Listbox.OutMessage.match<
+    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
+    Listbox.OutMessage<TaskStatusFilter>
+  >({
+    Selected:
+      ({ value }) =>
+      stepModel =>
+        handleUpdate(
+          stepModel,
+          Message.SelectedStatusFilter({ status: value }),
+          inputs,
+        ),
+  })
+
+const foldDateListboxOutMessage = (
+  inputs: Inputs,
+  handleUpdate: (
+    model: Model,
+    message: Message,
+    inputs: Inputs,
+  ) => UpdateReturn,
+) =>
+  Listbox.OutMessage.match<
+    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
+    Listbox.OutMessage<TaskDateFilter>
+  >({
+    Selected:
+      ({ value }) =>
+      stepModel =>
+        handleUpdate(
+          stepModel,
+          Message.SelectedDateFilter({ date: value }),
+          inputs,
+        ),
+  })
+
+const foldSortListboxOutMessage = (
+  inputs: Inputs,
+  handleUpdate: (
+    model: Model,
+    message: Message,
+    inputs: Inputs,
+  ) => UpdateReturn,
+) =>
+  Listbox.OutMessage.match<
+    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
+    Listbox.OutMessage<TaskSortField>
+  >({
+    Selected:
+      ({ value }) =>
+      stepModel =>
+        handleUpdate(
+          stepModel,
+          Message.SelectedSortField({ by: value }),
+          inputs,
+        ),
+  })
+
+const foldQuickAddProjectListboxOutMessage = (
+  inputs: Inputs,
+  handleUpdate: (
+    model: Model,
+    message: Message,
+    inputs: Inputs,
+  ) => UpdateReturn,
+) =>
+  Listbox.OutMessage.match<
+    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
+    Listbox.OutMessage<string>
+  >({
+    Selected:
+      ({ value }) =>
+      stepModel =>
+        handleUpdate(
+          stepModel,
+          Message.SelectedQuickAddProject({
+            maybeProjectId:
+              value === '' ? Option.none() : Option.some(value),
+          }),
+          inputs,
+        ),
+  })
+
+const foldTaskPriorityListboxOutMessage = (
+  taskId: string,
+  inputs: Inputs,
+  handleUpdate: (
+    model: Model,
+    message: Message,
+    inputs: Inputs,
+  ) => UpdateReturn,
+) =>
+  Listbox.OutMessage.match<
+    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
+    Listbox.OutMessage<TaskPriority>
+  >({
+    Selected:
+      ({ value }) =>
+      stepModel =>
+        handleUpdate(
+          stepModel,
+          Message.SelectedTaskPriority({ taskId, priority: value }),
+          inputs,
+        ),
+  })
+
+const foldTaskStatusListboxOutMessage = (
+  taskId: string,
+  inputs: Inputs,
+  handleUpdate: (
+    model: Model,
+    message: Message,
+    inputs: Inputs,
+  ) => UpdateReturn,
+) =>
+  Listbox.OutMessage.match<
+    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
+    Listbox.OutMessage<TaskStatusOption>
+  >({
+    Selected:
+      ({ value }) =>
+      stepModel =>
+        handleUpdate(
+          stepModel,
+          Message.SelectedTaskStatus({ taskId, status: value }),
+          inputs,
+        ),
+  })
+
+const foldTaskProjectListboxOutMessage = (
+  taskId: string,
+  inputs: Inputs,
+  handleUpdate: (
+    model: Model,
+    message: Message,
+    inputs: Inputs,
+  ) => UpdateReturn,
+) =>
+  Listbox.OutMessage.match<
+    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
+    Listbox.OutMessage<string>
+  >({
+    Selected:
+      ({ value }) =>
+      stepModel =>
+        handleUpdate(
+          stepModel,
+          Message.SelectedTaskProject({
+            taskId,
+            maybeProjectId: value === '' ? Option.none() : Option.some(value),
+          }),
+          inputs,
+        ),
+  })
+
 const dropOnBoard = (
   model: Model,
   inputs: Inputs,
@@ -854,7 +1129,7 @@ const dropOnBoard = (
 }
 
 /** Attach the editor from a task row without clobbering an open draft. */
-const editorFor = (task: TaskRow): TaskEditor =>
+export const taskEditorFor = (task: TaskRow): TaskEditor =>
   TaskEditor.make({
     taskId: task.id,
     title: task.title,
@@ -864,6 +1139,11 @@ const editorFor = (task: TaskRow): TaskEditor =>
     saveState: 'idle',
     hasPendingSave: false,
     generation: 0,
+    priorityListbox: Listbox.init({
+      id: `task-${task.id}-priority-listbox`,
+    }),
+    statusListbox: Listbox.init({ id: `task-${task.id}-status-listbox` }),
+    projectListbox: Listbox.init({ id: `task-${task.id}-project-listbox` }),
   })
 
 const toggleEditor = (model: Model, taskId: string, inputs: Inputs): Model => {
@@ -876,7 +1156,7 @@ const toggleEditor = (model: Model, taskId: string, inputs: Inputs): Model => {
   return task === undefined
     ? model
     : modifyFields(model, {
-        editors: () => [...model.editors, editorFor(task)],
+        editors: () => [...model.editors, taskEditorFor(task)],
       })
 }
 
@@ -884,8 +1164,111 @@ export const update = (
   model: Model,
   message: Message,
   inputs: Inputs,
-): UpdateReturn =>
-  Message.match<UpdateReturn>(message, {
+): UpdateReturn => {
+  const foldPriorityListbox = Update.foldChild({
+    update: PriorityListbox.update,
+    read: (model: Model) => Option.some(model.priorityListbox),
+    write: (model, nextListbox) =>
+      modifyFields(model, { priorityListbox: () => nextListbox }),
+    toParentMessage: message => Message.GotPriorityListboxMessage({ message }),
+    foldOutMessage: foldPriorityListboxOutMessage(inputs, update),
+  })
+
+  const foldStatusListbox = Update.foldChild({
+    update: StatusListbox.update,
+    read: (model: Model) => Option.some(model.statusListbox),
+    write: (model, nextListbox) =>
+      modifyFields(model, { statusListbox: () => nextListbox }),
+    toParentMessage: message => Message.GotStatusListboxMessage({ message }),
+    foldOutMessage: foldStatusListboxOutMessage(inputs, update),
+  })
+
+  const foldDateListbox = Update.foldChild({
+    update: DateListbox.update,
+    read: (model: Model) => Option.some(model.dateListbox),
+    write: (model, nextListbox) =>
+      modifyFields(model, { dateListbox: () => nextListbox }),
+    toParentMessage: message => Message.GotDateListboxMessage({ message }),
+    foldOutMessage: foldDateListboxOutMessage(inputs, update),
+  })
+
+  const foldSortListbox = Update.foldChild({
+    update: SortListbox.update,
+    read: (model: Model) => Option.some(model.sortListbox),
+    write: (model, nextListbox) =>
+      modifyFields(model, { sortListbox: () => nextListbox }),
+    toParentMessage: message => Message.GotSortListboxMessage({ message }),
+    foldOutMessage: foldSortListboxOutMessage(inputs, update),
+  })
+
+  const foldQuickAddProjectListbox = Update.foldChild({
+    update: QuickAddProjectListbox.update,
+    read: (model: Model) => Option.some(model.quickAddProjectListbox),
+    write: (model: Model, nextListbox: Listbox.Model) =>
+      modifyFields(model, { quickAddProjectListbox: () => nextListbox }),
+    toParentMessage: message =>
+      Message.GotQuickAddProjectListboxMessage({ message }),
+    foldOutMessage: foldQuickAddProjectListboxOutMessage(inputs, update),
+  })
+
+  const foldTaskPriorityListbox = Update.foldChildAt({
+    update: TaskPriorityListbox.update,
+    readAt: (model: Model, taskId: string) => {
+      const editor = findEditor(model, taskId)
+
+      return editor === undefined
+        ? Option.none()
+        : Option.some(editor.priorityListbox)
+    },
+    writeAt: (model, taskId, nextListbox) =>
+      updateEditor(model, taskId, editor =>
+        modifyFields(editor, { priorityListbox: () => nextListbox }),
+      ),
+    toParentMessage: (taskId, message) =>
+      Message.GotTaskPriorityListboxMessage({ taskId, message }),
+    foldOutMessage: taskId =>
+      foldTaskPriorityListboxOutMessage(taskId, inputs, update),
+  })
+
+  const foldTaskStatusListbox = Update.foldChildAt({
+    update: TaskStatusListbox.update,
+    readAt: (model: Model, taskId: string) => {
+      const editor = findEditor(model, taskId)
+
+      return editor === undefined
+        ? Option.none()
+        : Option.some(editor.statusListbox)
+    },
+    writeAt: (model, taskId, nextListbox) =>
+      updateEditor(model, taskId, editor =>
+        modifyFields(editor, { statusListbox: () => nextListbox }),
+      ),
+    toParentMessage: (taskId, message) =>
+      Message.GotTaskStatusListboxMessage({ taskId, message }),
+    foldOutMessage: taskId =>
+      foldTaskStatusListboxOutMessage(taskId, inputs, update),
+  })
+
+  const foldTaskProjectListbox = Update.foldChildAt({
+    update: TaskProjectListbox.update,
+    readAt: (model: Model, taskId: string) => {
+      const editor = findEditor(model, taskId)
+
+      return editor === undefined
+        ? Option.none()
+        : Option.some(editor.projectListbox)
+    },
+    writeAt: (model, taskId, nextListbox) =>
+      updateEditor(model, taskId, editor =>
+        modifyFields(editor, { projectListbox: () => nextListbox }),
+      ),
+    toParentMessage: (taskId, message) =>
+      Message.GotTaskProjectListboxMessage({ taskId, message }),
+    foldOutMessage: taskId =>
+      foldTaskProjectListboxOutMessage(taskId, inputs, update),
+  })
+
+  return Message.match<UpdateReturn>(message, {
     TickedClock: ({ now }) => ({
       model: modifyFields(model, { now: () => now }),
     }),
@@ -1519,7 +1902,29 @@ export const update = (
         : { model },
 
     CompletedCacheTaskView: () => ({ model }),
+
+    GotPriorityListboxMessage: ({ message }) =>
+      foldPriorityListbox(model, message),
+
+    GotStatusListboxMessage: ({ message }) => foldStatusListbox(model, message),
+
+    GotDateListboxMessage: ({ message }) => foldDateListbox(model, message),
+
+    GotSortListboxMessage: ({ message }) => foldSortListbox(model, message),
+
+    GotQuickAddProjectListboxMessage: ({ message }) =>
+      foldQuickAddProjectListbox(model, message),
+
+    GotTaskPriorityListboxMessage: ({ taskId, message }) =>
+      foldTaskPriorityListbox(model, taskId, message),
+
+    GotTaskStatusListboxMessage: ({ taskId, message }) =>
+      foldTaskStatusListbox(model, taskId, message),
+
+    GotTaskProjectListboxMessage: ({ taskId, message }) =>
+      foldTaskProjectListbox(model, taskId, message),
   })
+}
 
 // CAPABILITIES
 
@@ -1533,6 +1938,12 @@ export const entered = (model: Model): CommandReturn => ({
     maybeDragOverBoard: () => Option.none(),
     maybeToast: () => Option.none(),
     maybeError: () => Option.none(),
+    priorityListbox: () => Listbox.init({ id: 'tasks-priority-listbox' }),
+    statusListbox: () => Listbox.init({ id: 'tasks-status-listbox' }),
+    dateListbox: () => Listbox.init({ id: 'tasks-date-listbox' }),
+    sortListbox: () => Listbox.init({ id: 'tasks-sort-listbox' }),
+    quickAddProjectListbox: () =>
+      Listbox.init({ id: 'tasks-quick-add-project-listbox' }),
   }),
   commands: [ScrollToTaskAnchor()],
 })

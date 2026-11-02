@@ -1,12 +1,14 @@
 import { Option } from 'effect'
 import {
   Command,
+  Mount,
   click,
   expect,
   given,
   label,
   role,
   scene,
+  selector,
   text,
   type,
   withViewInputs,
@@ -14,6 +16,8 @@ import {
 } from 'foldkit/scene'
 import { modifyFields } from 'foldkit/struct'
 import { describe, test } from 'vitest'
+
+import { Listbox } from '@foldkit/ui'
 
 import { emptyMirrorSnapshot, taskKey } from '../mirror'
 import type { Inputs } from './tasks'
@@ -33,6 +37,8 @@ import {
   inboxTask,
   laterTask,
   overdueTask,
+  project,
+  projectId,
   tag,
   tagId,
   todayTask,
@@ -309,6 +315,143 @@ describe('Tasks screen', () => {
       ),
       expect(label('عنوان')).toHaveValue('نان سنگک'),
       expect(text('ذخیره شد')).toBeAbsent(),
+    )
+  })
+
+  test('the editor pickers set priority, status and project', () => {
+    const editorButton = (name: string) =>
+      within(selector(`#task-${todayTask.id}-editor`), role('button', { name }))
+
+    scene(
+      sceneWith(baseModel()),
+      given(baseModel()),
+      click(role('button', { name: todayTask.title })),
+      click(editorButton('اولویت')),
+      Mount.resolve(
+        Listbox.AnchorListbox,
+        Listbox.Message.CompletedAnchorListbox(),
+      ),
+      Mount.resolve(
+        Listbox.PortalListboxBackdrop,
+        Listbox.Message.CompletedPortalListboxBackdrop(),
+      ),
+      Command.resolve(
+        Listbox.FocusItems,
+        Listbox.Message.CompletedFocusItems(),
+      ),
+      click(within(role('listbox'), text('بالا'))),
+      Command.resolve(
+        Listbox.FocusButton,
+        Listbox.Message.CompletedFocusButton(),
+      ),
+      Mount.expectEnded(Listbox.AnchorListbox),
+      Mount.expectEnded(Listbox.PortalListboxBackdrop),
+      Command.expectExact(
+        Tasks.SaveTaskFields({
+          taskId: todayTask.id,
+          patch: { priority: 'high' },
+          generation: 1,
+          delayMs: 0,
+        }),
+      ),
+      Command.resolve(
+        Tasks.SaveTaskFields,
+        Tasks.Message.CompletedSaveTaskFields({
+          taskId: todayTask.id,
+          generation: 1,
+        }),
+      ),
+      Command.resolve(
+        Tasks.ClearTaskSaveState,
+        Tasks.Message.CompletedClearTaskSaveState({
+          taskId: todayTask.id,
+          generation: 1,
+        }),
+      ),
+      click(editorButton('وضعیت')),
+      Mount.resolve(
+        Listbox.AnchorListbox,
+        Listbox.Message.CompletedAnchorListbox(),
+      ),
+      Mount.resolve(
+        Listbox.PortalListboxBackdrop,
+        Listbox.Message.CompletedPortalListboxBackdrop(),
+      ),
+      Command.resolve(
+        Listbox.FocusItems,
+        Listbox.Message.CompletedFocusItems(),
+      ),
+      click(within(role('listbox'), text('در حال انجام'))),
+      Command.resolve(
+        Listbox.FocusButton,
+        Listbox.Message.CompletedFocusButton(),
+      ),
+      Mount.expectEnded(Listbox.AnchorListbox),
+      Mount.expectEnded(Listbox.PortalListboxBackdrop),
+      Command.expectExact(
+        Tasks.SaveTaskFields({
+          taskId: todayTask.id,
+          patch: { status: 'doing' },
+          generation: 2,
+          delayMs: 0,
+        }),
+      ),
+      Command.resolve(
+        Tasks.SaveTaskFields,
+        Tasks.Message.CompletedSaveTaskFields({
+          taskId: todayTask.id,
+          generation: 2,
+        }),
+      ),
+      Command.resolve(
+        Tasks.ClearTaskSaveState,
+        Tasks.Message.CompletedClearTaskSaveState({
+          taskId: todayTask.id,
+          generation: 2,
+        }),
+      ),
+      click(editorButton('پروژه')),
+      Mount.resolve(
+        Listbox.AnchorListbox,
+        Listbox.Message.CompletedAnchorListbox(),
+      ),
+      Mount.resolve(
+        Listbox.PortalListboxBackdrop,
+        Listbox.Message.CompletedPortalListboxBackdrop(),
+      ),
+      Command.resolve(
+        Listbox.FocusItems,
+        Listbox.Message.CompletedFocusItems(),
+      ),
+      click(within(role('listbox'), text(project.title))),
+      Command.resolve(
+        Listbox.FocusButton,
+        Listbox.Message.CompletedFocusButton(),
+      ),
+      Mount.expectEnded(Listbox.AnchorListbox),
+      Mount.expectEnded(Listbox.PortalListboxBackdrop),
+      Command.expectExact(
+        Tasks.SaveTaskFields({
+          taskId: todayTask.id,
+          patch: { projectId },
+          generation: 3,
+          delayMs: 0,
+        }),
+      ),
+      Command.resolve(
+        Tasks.SaveTaskFields,
+        Tasks.Message.CompletedSaveTaskFields({
+          taskId: todayTask.id,
+          generation: 3,
+        }),
+      ),
+      Command.resolve(
+        Tasks.ClearTaskSaveState,
+        Tasks.Message.CompletedClearTaskSaveState({
+          taskId: todayTask.id,
+          generation: 3,
+        }),
+      ),
     )
   })
 

@@ -138,16 +138,5 @@ export const withEditor = (
   task: TaskRow = todayTask,
 ): Tasks.Model =>
   modifyFields(model, {
-    editors: () => [
-      {
-        taskId: task.id,
-        title: task.title,
-        description: task.description ?? '',
-        dueDate: task.dueDate ?? '',
-        tagIds: [...task.tagIds],
-        saveState: 'idle',
-        hasPendingSave: false,
-        generation: 0,
-      },
-    ],
+    editors: () => [Tasks.taskEditorFor(task)],
   })

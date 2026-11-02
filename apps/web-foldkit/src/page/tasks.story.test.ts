@@ -426,10 +426,8 @@ describe('Tasks inline editing', () => {
         modifyFields(withEditor(baseModel()), {
           editors: () => [
             {
-              taskId: todayTask.id,
+              ...Tasks.taskEditorFor(todayTask),
               title: 'نان سنگک تازه',
-              description: '',
-              dueDate: '2026-10-30',
               tagIds: [],
               saveState: 'saving',
               hasPendingSave: true,
@@ -476,10 +474,8 @@ describe('Tasks inline editing', () => {
         modifyFields(withEditor(baseModel()), {
           editors: () => [
             {
-              taskId: todayTask.id,
+              ...Tasks.taskEditorFor(todayTask),
               title: 'نان سنگک',
-              description: '',
-              dueDate: '2026-10-30',
               tagIds: [],
               saveState: 'saving',
               hasPendingSave: true,
@@ -727,16 +723,7 @@ describe('Tasks inline editing', () => {
       given(baseModel()),
       message(Tasks.Message.ClickedTaskTitle({ taskId: laterTask.id })),
       model(next => {
-        expect(next.editors[0]).toStrictEqual({
-          taskId: laterTask.id,
-          title: laterTask.title,
-          description: '',
-          dueDate: '2026-11-05',
-          tagIds: [],
-          saveState: 'idle',
-          hasPendingSave: false,
-          generation: 0,
-        })
+        expect(next.editors[0]).toStrictEqual(Tasks.taskEditorFor(laterTask))
       }),
       message(Tasks.Message.ClickedCloseTaskEditor({ taskId: laterTask.id })),
       model(next => {
