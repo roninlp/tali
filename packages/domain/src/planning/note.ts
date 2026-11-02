@@ -13,6 +13,8 @@ import { commonItemFields, NoteId, TagIds } from "./common.js"
  */
 export class Note extends Model.Class<Note>("Note")({
   ...commonItemFields("note", NoteId),
+  /** Resolved from the note's `shareable` policy (ADR-0011); default `private`. */
+  visibility: Visibility,
   title: Schema.String,
   body: Schema.NullOr(Schema.Json),
   /** Extracted text, normalized at write time for FTS + snippets. */

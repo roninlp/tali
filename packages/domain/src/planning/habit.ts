@@ -281,6 +281,8 @@ export const habitFrequencyHistoryAfter = (input: {
 
 export class Habit extends Model.Class<Habit>("Habit")({
   ...commonItemFields("habit", HabitId),
+  /** Resolved from the habit's `shareable` policy (ADR-0011); default `private`. */
+  visibility: Visibility,
   /**
    * The habit's name. The model only checks the *shape* (a string): the
    * service enforces a non-empty title, because a tombstone row inserted by a

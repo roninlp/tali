@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { Model } from "effect/schema"
-import { HouseholdId, UserId, Visibility } from "../common.js"
+import { HouseholdId, UserId } from "../common.js"
 
 /**
  * Shared building blocks for the core-planning aggregates (Slice 2).
@@ -10,7 +10,8 @@ import { HouseholdId, UserId, Visibility } from "../common.js"
  * (later) search work uniformly:
  *
  * - a client-mintable UUID v7 id;
- * - `ownerId` + household `visibility` for the per-client pull filter;
+ * - `ownerId` for the per-client pull filter, plus a **resolved** `visibility`
+ *   that each model adds itself from its `VisibilityPolicy` (ADR-0011);
  * - a server-monotonic `version` and `updatedAt` for conflict resolution;
  * - a nullable `deletedAt` tombstone (30-day trash, then purge).
  *
@@ -173,10 +174,11 @@ export type TagIds = Schema.Schema.Type<typeof TagIds>
 
 /**
  * The fields every core-planning aggregate shares. Each model spreads this map
- * into its own `Model.Class` and adds its own `type` literal, title/name and
- * aggregate-specific columns. The id is the only insert-generated field; the
- * server stamps timestamps and versions on write, so the model only declares
- * their shape.
+ * into its own `Model.Class` and adds its own `type` literal, title/name,
+ * aggregate-specific columns, and — because it is derived from the aggregate's
+ * policy rather than chosen by the user — `visibility`. The id is the only
+ * insert-generated field; the server stamps timestamps and versions on write,
+ * so the model only declares their shape.
  */
 export const commonItemFields = <const T extends ItemType, const B extends string>(
   type: T,
@@ -186,7 +188,6 @@ export const commonItemFields = <const T extends ItemType, const B extends strin
   type: Schema.Literal(type),
   ownerId: UserId,
   householdId: HouseholdId,
-  visibility: Visibility,
   color: Schema.NullOr(Schema.String),
   createdAt: TimestampUtc,
   updatedAt: TimestampUtc,
