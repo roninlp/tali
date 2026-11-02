@@ -47,8 +47,9 @@ recorded in git history only.
 
 - Replace the starter (`src/page/People`, `src/fileTree.ts`, starter routes and
   their tests) with the Tali shell.
-- `index.html`: `lang="fa" dir="rtl"`, title `Tali`, Vazirmatn from
-  `packages/ui/src/fonts/vazirmatn-variable.woff2`.
+- `index.html`: `lang="fa" dir="rtl"`, title `Tali`, Vazirmatn (then re-exported
+  from `packages/ui`; self-hosted in `apps/web-foldkit/src/fonts/` since the
+  retirement).
 - `src/styles.css`: Tailwind v4 + daisyUI, porting the `tali`/`talidark` theme
   tokens from `apps/web/src/app.css`; keep logical properties (`ms`/`me`,
   `ps`/`pe`, `start`/`end`).
@@ -59,12 +60,13 @@ recorded in git history only.
 theme on :3001; the starter is gone; a Scene test renders the shell.
 
 **Delivered:** the starter (People, file tree, starter routes) is removed. The
-document is `lang="fa" dir="rtl"` with the `tali` house theme, Vazirmatn from
-`@tali/ui`, and the ported `styles.css` (tokens, utilities, base layer). The
-shell is `src/shell.ts` (brand + action slot + main) and the theme is a
-Submodel in `src/theme.ts` (house light/dark toggle; persistence and system
-mode stay in P2.5). `src/ui/` ships the button and field primitives P2.2/P2.3
-consume; sheet and toast wait for their first consumer.
+document is `lang="fa" dir="rtl"` with the `tali` house theme, Vazirmatn
+(self-hosted in `src/fonts/` since the retirement), and the ported
+`styles.css` (tokens, utilities, base layer). The shell is `src/shell.ts`
+(brand + action slot + main) and the theme is a Submodel in `src/theme.ts`
+(house light/dark toggle; persistence and system mode stay in P2.5). `src/ui/`
+ships the button and field primitives P2.2/P2.3 consume; sheet and toast wait
+for their first consumer.
 
 ### P2.2 — Route union and navigation
 
@@ -451,7 +453,11 @@ after the gate flows passed against the Foldkit app:
 - `@tali/conflict-lab` now imports the Foldkit RPC client instead of the Solid
   app's client.
 - The full root gates were rerun after the removal: `pnpm typecheck`,
-  `pnpm build`, `pnpm test`, and `pnpm lint`.
+  `pnpm build`, `pnpm test`, and `pnpm lint`. They were run again on the
+  migration branch before it merged, with the app gates
+  (`pnpm --filter @tali/web-foldkit typecheck|lint|build|test`; 58 files,
+  714 tests) and the `@tali/e2e` gate flows (`pnpm test:e2e`, 6/6 against the
+  `alchemy dev --stage e2e` stack on `:3001`).
 
 A dev-only caveat remains documented in `apps/web-foldkit/vite.config.ts`:
 Vite pre-bundles `effect` and `effect/schema` separately, so an RPC response
@@ -466,3 +472,17 @@ the cutover: the shell entry points are `no-store`, and a request for a
 previously-deployed (now removed) `/assets/*` hash returns a tiny
 cache-clearing module that unregisters the old service worker, clears Cache
 Storage, and reloads into the current app.
+
+## Known caveats
+
+- **Real vendor push is unverified.** The P2.5 acceptance item — a real VAPID
+  pair, a subscription created from `/settings`, and a notification delivered
+  through the vendor push service and tapped on a real device — has **not**
+  passed and is not claimed here. The local stack only enables subscriptions
+  with `VAPID_PRIVATE_KEY` exported, and no key pair was available; Chrome for
+  Testing's FCM endpoint rejected the send with HTTP 403, so `pnpm test:push`
+  cannot complete in this environment. What was verified is the worker side in
+  headless Chromium by dispatching the real `notificationclick` handler: a body
+  tap targets `/reminders`, and a synthetic Done tap queues, drains, and shows
+  in the push-health panel. Close this caveat only by running the vendor push
+  end to end with matching local VAPID keys and a real browser/device.
