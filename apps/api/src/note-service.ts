@@ -22,8 +22,8 @@ import {
   type Tag,
   type TagId,
   type UserId,
-  uuidV7,
-  type Visibility
+  resolveCreateVisibility,
+  uuidV7
 } from "@tali/domain"
 import {
   NoteRepo,
@@ -361,7 +361,7 @@ export class NoteService extends Context.Service<NoteService>()("NoteService", {
           plainText: input.plainText ?? extractNotePlainText(body),
           ownerId: viewer.userId,
           householdId: viewer.householdId,
-          visibility: (input.visibility ?? "shared") as Visibility,
+          visibility: resolveCreateVisibility("note", input.visibility),
           color: input.color ?? null,
           isPinned: input.isPinned ?? false,
           isArchived: input.isArchived ?? false,
@@ -449,6 +449,10 @@ export class NoteService extends Context.Service<NoteService>()("NoteService", {
       now: string
     ): Effect.Effect<Note, NoteServiceError> =>
       Effect.gen(function*() {
+        // Shared means co-edit; un-sharing is the owner's alone (ADR-0011).
+        if (patch.visibility === "private" && current.ownerId !== viewer.userId) {
+          return yield* invalid("visibility", "only the note owner can make it private")
+        }
         if (patch.tagIds !== undefined) {
           yield* requireTags(viewer, patch.tagIds)
         }

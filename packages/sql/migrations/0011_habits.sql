@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS habits (
   icon               TEXT,
   owner_id           TEXT NOT NULL,
   household_id       TEXT NOT NULL,
-  visibility         TEXT NOT NULL DEFAULT 'shared',
+  -- Shareable, default private (ADR-0011).
+  visibility         TEXT NOT NULL DEFAULT 'private',
   color              TEXT,
   -- The structured frequency union (JSON text).
   frequency          TEXT NOT NULL DEFAULT '{"_tag":"daily"}',
@@ -83,6 +84,8 @@ CREATE TABLE IF NOT EXISTS habit_entries (
   -- Denormalized for the sync pull filter and per-member reads.
   owner_id      TEXT NOT NULL,
   household_id  TEXT NOT NULL,
+  -- Inherited from the habit (ADR-0011). The fallback is inert for
+  -- policy-aware writers, which always supply the resolved value.
   visibility    TEXT NOT NULL DEFAULT 'shared',
   -- The local calendar date this entry logs (YYYY-MM-DD).
   local_date    TEXT NOT NULL,

@@ -31,6 +31,7 @@ import {
   TimeZone,
   type UserId,
   type Visibility,
+  resolveCreateVisibility,
   uuidV7
 } from "@tali/domain"
 import {
@@ -431,7 +432,7 @@ export class HabitService extends Context.Service<HabitService>()("HabitService"
           timeZone,
           ownerId: viewer.userId,
           householdId: viewer.householdId,
-          visibility: (input.visibility ?? "shared") as Visibility,
+          visibility: resolveCreateVisibility("habit", input.visibility),
           color: input.color ?? null,
           createdAt: now,
           updatedAt: now,

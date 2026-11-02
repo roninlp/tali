@@ -513,3 +513,41 @@ describe("EventService", () => {
     expect(listed.map((event) => event.id)).toEqual([inRange])
   })
 })
+
+describe("event visibility policy (ADR-0011)", () => {
+  it("defaults new events to shared and lets only the owner un-share", async () => {
+    const h = makeHarness()
+    const created = await h.svc((svc) =>
+      svc.create(
+        viewer(),
+        {
+          clientMutationId: "v-create",
+          title: "مشترک",
+          timing: { _tag: "allDay", date: "2026-10-21" }
+        },
+        NOW
+      )
+    )
+    expect(created.visibility).toBe("shared")
+
+    const partnerFlip = await h
+      .svc((svc) =>
+        svc.update(
+          viewer({ userId: USER_B }),
+          { id: created.id, clientMutationId: "v-partner", patch: { visibility: "private" } },
+          NOW
+        )
+      )
+      .catch((cause: unknown) => cause)
+    expect(partnerFlip).toMatchObject({ _tag: "EventValidationError" })
+
+    const ownerFlip = await h.svc((svc) =>
+      svc.update(
+        viewer(),
+        { id: created.id, clientMutationId: "v-owner", patch: { visibility: "private" } },
+        NOW
+      )
+    )
+    expect(ownerFlip.visibility).toBe("private")
+  })
+})

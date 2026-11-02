@@ -25,6 +25,8 @@ import {
   type SyncEntityType,
   type TagId,
   type UserId,
+  resolveCreateVisibility,
+  resolveInheritedVisibility,
   uuidV7,
   type Visibility
 } from "@tali/domain"
@@ -363,6 +365,25 @@ export class ListService extends Context.Service<ListService>()("ListService", {
         Effect.asVoid
       )
 
+    /**
+     * An item inherits its list's visibility and may only be narrower (ADR-0011):
+     * a private item is allowed inside a shared list, but never a shared item
+     * inside a private list. The rule is shared with the sync registry.
+     */
+    const itemVisibility = (
+      parent: List,
+      requested: Visibility | undefined
+    ): Effect.Effect<Visibility, ListValidationError> => {
+      const resolved = resolveInheritedVisibility(
+        "listItem",
+        parent.visibility,
+        requested
+      )
+      return resolved._tag === "resolved"
+        ? Effect.succeed(resolved.visibility)
+        : invalid("visibility", "an item cannot be shared inside a private list")
+    }
+
     /** Replay guard for one list: same mutation id + same row ⇒ stored row. */
     const replayList = (
       viewer: ListViewer,
@@ -435,7 +456,7 @@ export class ListService extends Context.Service<ListService>()("ListService", {
           description: input.description ?? null,
           ownerId: viewer.userId,
           householdId: viewer.householdId,
-          visibility: (input.visibility ?? "shared") as Visibility,
+          visibility: resolveCreateVisibility("list", input.visibility),
           color: input.color ?? null,
           icon: input.icon ?? null,
           sort: input.sort ?? "manual",
@@ -599,6 +620,9 @@ export class ListService extends Context.Service<ListService>()("ListService", {
         yield* requireTags(viewer, input.tagIds ?? [])
         const name = input.name.trim()
         if (name === "") return yield* invalid("name", "an item needs a name")
+        // The create schema has no `visibility` (the item inherits the list),
+        // so the resolved value is the parent's.
+        const visibility = yield* itemVisibility(parent, undefined)
 
         const item = new ListItem({
           id: (input.id ?? uuidV7()) as ListItem["id"],
@@ -611,9 +635,7 @@ export class ListService extends Context.Service<ListService>()("ListService", {
           tagIds: input.tagIds ?? [],
           ownerId: viewer.userId,
           householdId: viewer.householdId,
-          visibility: parent.visibility === "private"
-            ? "private"
-            : (input.visibility ?? "shared") as Visibility,
+          visibility,
           color: input.color ?? null,
           createdAt: now,
           updatedAt: now,
@@ -664,6 +686,7 @@ export class ListService extends Context.Service<ListService>()("ListService", {
         if (prior.size > 0) return yield* listItems(viewer, { listId: input.listId })
 
         const baseOrder = yield* nextOrder(parent.id, viewer.householdId)
+        const visibility = yield* itemVisibility(parent, undefined)
         const created = input.items.map((entry, index) =>
           new ListItem({
             id: (entry.id ?? uuidV7()) as ListItem["id"],
@@ -676,9 +699,7 @@ export class ListService extends Context.Service<ListService>()("ListService", {
             tagIds: entry.tagIds ?? [],
             ownerId: viewer.userId,
             householdId: viewer.householdId,
-            visibility: parent.visibility === "private"
-              ? "private"
-              : (entry.visibility ?? "shared") as Visibility,
+            visibility,
             color: entry.color ?? null,
             createdAt: now,
             updatedAt: now,
@@ -715,16 +736,21 @@ export class ListService extends Context.Service<ListService>()("ListService", {
             return yield* invalid("name", "an item needs a name")
           }
           if (patch.tagIds !== undefined) yield* requireTags(viewer, patch.tagIds)
+          // Shared means co-edit; un-sharing is the owner's alone (ADR-0011).
           if (patch.visibility === "private" && current.ownerId !== viewer.userId) {
             return yield* invalid("visibility", "only the item owner can make it private")
           }
+          const parent = yield* loadList(viewer, current.listId)
+          const visibility = patch.visibility === undefined
+            ? current.visibility
+            : yield* itemVisibility(parent, patch.visibility)
           const next = new ListItem({
             ...current,
             name: patch.name?.trim() ?? current.name,
             order: patch.order ?? current.order,
             color: patch.color !== undefined ? patch.color : current.color,
             tagIds: patch.tagIds ?? current.tagIds,
-            visibility: patch.visibility ?? current.visibility,
+            visibility,
             version: current.version + 1,
             updatedAt: now
           })

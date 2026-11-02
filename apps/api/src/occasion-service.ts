@@ -32,6 +32,7 @@ import {
   isOccasionOccurrence,
   localDateStartInstant,
   nextOccasionOccurrence,
+  resolveCreateVisibility,
   uuidV7
 } from "@tali/domain"
 import type {
@@ -454,7 +455,7 @@ export class OccasionService extends Context.Service<OccasionService>()("Occasio
           preparationTaskId: null,
           ownerId: viewer.userId,
           householdId: viewer.householdId,
-          visibility: (input.visibility ?? "shared") as Visibility,
+          visibility: resolveCreateVisibility("occasion", input.visibility),
           color: input.color ?? null,
           createdAt: now,
           updatedAt: now,
@@ -492,6 +493,7 @@ export class OccasionService extends Context.Service<OccasionService>()("Occasio
       })
 
     const patchOccasion = (
+      viewer: OccasionViewer,
       current: Occasion,
       patch: Schema.Schema.Type<typeof OccasionPatch>,
       now: string
@@ -499,6 +501,10 @@ export class OccasionService extends Context.Service<OccasionService>()("Occasio
       Effect.gen(function*() {
         if (patch.title !== undefined && patch.title.trim().length === 0) {
           return yield* invalid("title", "an occasion needs a title")
+        }
+        // Shared means co-edit; un-sharing is the owner's alone (ADR-0011).
+        if (patch.visibility === "private" && current.ownerId !== viewer.userId) {
+          return yield* invalid("visibility", "only the occasion owner can make it private")
         }
         if (patch.originDate !== undefined && !validLocalDate(patch.originDate)) {
           return yield* invalid("originDate", "the origin date must be a real calendar date")
@@ -547,7 +553,7 @@ export class OccasionService extends Context.Service<OccasionService>()("Occasio
 
         for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
           const current = yield* readOccasion(viewer, input.id, false)
-          const next = yield* patchOccasion(current, input.patch, now)
+          const next = yield* patchOccasion(viewer, current, input.patch, now)
           if (sameOccasion(current, next)) return current
           const applied = yield* commitOccasion({
             viewer,
@@ -669,7 +675,7 @@ export class OccasionService extends Context.Service<OccasionService>()("Occasio
             offsetMinutes: draft.advanceDays * 24 * 60,
             link: draft.link,
             timeZone: draft.timeZone,
-            visibility: source?.visibility ?? "shared"
+            visibility: resolveCreateVisibility("reminder", source?.visibility)
           })
           materialised.push(created)
         }

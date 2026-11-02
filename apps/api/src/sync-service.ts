@@ -2,6 +2,8 @@ import { Context, Data, DateTime, Effect, Layer, Option, Schema } from "effect"
 import type { Statement } from "effect/sql"
 import {
   type ChangeFeedEntry,
+  defaultVisibilityFor,
+  resolveInheritedVisibility,
   type SyncBootstrapResponse,
   type SyncEntityRow,
   type SyncEntityType,
@@ -9,7 +11,8 @@ import {
   SyncPushEntry,
   type SyncPushResponse,
   type SyncPushResult,
-  type Visibility
+  type Visibility,
+  visibilityPolicyOf
 } from "@tali/domain"
 import {
   entityKey,
@@ -209,8 +212,60 @@ const dependencyRank = (entityType: SyncEntityType): number => {
   }
 }
 
-const asVisibility = (value: unknown): Visibility =>
-  value === "private" ? "private" : "shared"
+const requestedVisibility = (value: unknown): Visibility | undefined =>
+  value === "private" || value === "shared" ? value : undefined
+
+/**
+ * The visibility a push stores, derived from the aggregate's policy (ADR-0011).
+ *
+ * `ownerOnly` and `household` always resolve to their fixed value — a legacy
+ * row's stored value cannot make a fixed aggregate mutable. Shareable and
+ * inherited rows keep the already-validated value, falling back to `fallback`.
+ */
+const resolvedVisibility = (
+  entityType: SyncEntityType,
+  data: Record<string, unknown>,
+  fallback: Visibility
+): Visibility => {
+  const policy = visibilityPolicyOf(entityType)
+  switch (policy._tag) {
+    case "ownerOnly":
+      return "private"
+    case "household":
+      return "shared"
+    case "shareable":
+    case "inherited":
+      return requestedVisibility(data.visibility) ?? fallback
+  }
+}
+
+/** A feed row's denormalized visibility; an unknown value follows the policy. */
+const feedVisibility = (entityType: SyncEntityType, value: unknown): Visibility =>
+  requestedVisibility(value) ?? defaultVisibilityFor(entityType)
+
+/**
+ * The effective visibility of a row another entry in this push may parent off.
+ * Fixed classes ignore the stored value for the same reason `resolvedVisibility`
+ * does; everything else prefers an explicit patch value, then the stored row,
+ * then the policy default.
+ */
+const incomingVisibility = (
+  entityType: SyncEntityType,
+  patch: Record<string, unknown>,
+  current: Visibility | undefined
+): Visibility => {
+  const requested = requestedVisibility(patch.visibility)
+  const policy = visibilityPolicyOf(entityType)
+  switch (policy._tag) {
+    case "ownerOnly":
+      return "private"
+    case "household":
+      return "shared"
+    case "shareable":
+    case "inherited":
+      return requested ?? current ?? defaultVisibilityFor(entityType)
+  }
+}
 
 const toRow = (state: SyncEntityState): SyncEntityRow => ({
   entityType: state.entityType,
@@ -355,13 +410,10 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
         for (const entry of input.entries) {
           if (entry.op !== "upsert") continue
           const current = states.get(entityKey(entry))
-          const patchVisibility = entry.patch.visibility
           incoming.set(entityKey(entry), {
             householdId: current?.householdId ?? input.householdId,
             ownerId: current?.ownerId ?? input.userId,
-            visibility: patchVisibility === "private" || patchVisibility === "shared"
-              ? patchVisibility
-              : current?.visibility ?? "shared",
+            visibility: incomingVisibility(entry.entityType, entry.patch, current?.visibility),
             deletedAt: current?.deletedAt ?? null
           })
         }
@@ -552,6 +604,40 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           const patch = sanitizePatch(definition, entry.patch, { allowCreatedAt: true })
           const updatePatch = sanitizePatch(definition, entry.patch, { allowCreatedAt: false })
 
+          // Only a `shareable` aggregate has a user-facing choice (ADR-0011).
+          // A patch that tries to set a fixed or exact-inherited visibility is
+          // rejected rather than silently ignored; `listItem` is the one
+          // inherited aggregate that may narrow, and its ceiling is resolved
+          // against the parent below.
+          const visibilityPolicy = visibilityPolicyOf(entry.entityType)
+          if (
+            entry.op !== "delete" &&
+            entry.patch.visibility !== undefined &&
+            visibilityPolicy._tag !== "shareable" &&
+            !(visibilityPolicy._tag === "inherited" && entry.entityType === "listItem")
+          ) {
+            reject(
+              entry,
+              "VisibilityFixed",
+              `Visibility is fixed by policy for "${entry.entityType}"`
+            )
+            continue
+          }
+
+          // Shared means co-edit; only the owner can un-share (ADR-0011). The
+          // service path enforces the same rule, and a push must not be a way
+          // around it.
+          if (
+            entry.op !== "delete" &&
+            entry.patch.visibility === "private" &&
+            current !== undefined &&
+            current.ownerId !== "" &&
+            current.ownerId !== input.userId
+          ) {
+            reject(entry, "VisibilityForbidden", "Only the row owner can make it private")
+            continue
+          }
+
           // A strict field that was sent with an invalid value is rejected
           // rather than dropped: silently substituting a default would record a
           // different day/status than the user chose (#63). Deletes are exempt:
@@ -585,27 +671,74 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
             // someone else all reject the entry instead of writing a row the
             // owner cannot see (#63).
             if (parent === undefined) {
-              reject(entry, "ParentNotFound", "The parent row does not exist")
-              continue
-            }
-            if (parent.householdId !== input.householdId) {
-              reject(entry, "ParentForbidden", "The parent row belongs to another household")
-              continue
-            }
-            if (parent.deletedAt !== null) {
-              reject(entry, "ParentDeleted", "The parent row is in the trash")
-              continue
-            }
-            if (parent.visibility === "private" && parent.ownerId !== input.userId) {
-              reject(entry, "ParentForbidden", "The parent row is private")
-              continue
-            }
-            if (parentRule.inheritVisibility) {
-              // The client sends the habit's visibility with a tap, but the
-              // server is the authority: forcing it keeps a private habit's log
-              // private even when the tap omits or flips it.
-              patch.visibility = parent.visibility
-              updatePatch.visibility = parent.visibility
+              // The legacy listItem wire shape may carry no `list_id`, or name
+              // a list the pre-read cannot see; such a row has no parent to
+              // inherit from and keeps its own resolved value. Every other
+              // parent link is required.
+              if (parentRule.optional !== true) {
+                reject(entry, "ParentNotFound", "The parent row does not exist")
+                continue
+              }
+            } else {
+              if (parent.householdId !== input.householdId) {
+                reject(entry, "ParentForbidden", "The parent row belongs to another household")
+                continue
+              }
+              if (parent.deletedAt !== null) {
+                reject(entry, "ParentDeleted", "The parent row is in the trash")
+                continue
+              }
+              if (parent.visibility === "private" && parent.ownerId !== input.userId) {
+                reject(entry, "ParentForbidden", "The parent row is private")
+                continue
+              }
+              if (parentRule.visibility === "copy") {
+                // Exact inheritance: the parent is the only authority, so a
+                // client value that differs is a change attempt.
+                if (
+                  entry.patch.visibility !== undefined &&
+                  entry.patch.visibility !== parent.visibility
+                ) {
+                  reject(
+                    entry,
+                    "VisibilityInherited",
+                    "Visibility is inherited from the parent row"
+                  )
+                  continue
+                }
+                patch.visibility = parent.visibility
+                updatePatch.visibility = parent.visibility
+              } else if (parent.visibility === "private") {
+                // Ceiling: a child of a private parent is private, always.
+                if (entry.patch.visibility === "shared") {
+                  reject(
+                    entry,
+                    "VisibilityInherited",
+                    "The child cannot be shared inside a private parent"
+                  )
+                  continue
+                }
+                patch.visibility = "private"
+                updatePatch.visibility = "private"
+              } else if (current === undefined) {
+                // Insert under a shared parent: inherit the parent unless the
+                // client asked for the (allowed) narrower private value.
+                const resolved = resolveInheritedVisibility(
+                  entry.entityType,
+                  parent.visibility,
+                  requestedVisibility(entry.patch.visibility)
+                )
+                if (resolved._tag === "refused") {
+                  reject(
+                    entry,
+                    "VisibilityInherited",
+                    "Visibility is inherited from the parent row"
+                  )
+                  continue
+                }
+                patch.visibility = resolved.visibility
+                updatePatch.visibility = resolved.visibility
+              }
             }
           }
 
@@ -621,7 +754,11 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
                 now,
                 clientUpdatedAt: asIso(entry.clientUpdatedAt)
               })
-              const visibility = asVisibility(raw.visibility)
+              const visibility = resolvedVisibility(
+                entry.entityType,
+                raw,
+                defaultVisibilityFor(entry.entityType)
+              )
               const state: SyncEntityState = {
                 entityType: entry.entityType,
                 entityId: entry.entityId,
@@ -660,7 +797,11 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
               continue
             }
             const data = inserted.value
-            const visibility = asVisibility(data.visibility)
+            const visibility = resolvedVisibility(
+              entry.entityType,
+              data,
+              defaultVisibilityFor(entry.entityType)
+            )
             const state: SyncEntityState = {
               entityType: entry.entityType,
               entityId: entry.entityId,
@@ -702,7 +843,7 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
               continue
             }
             const data = validated.value
-            const visibility = asVisibility(data.visibility ?? current.visibility)
+            const visibility = resolvedVisibility(entry.entityType, data, current.visibility)
             const state: SyncEntityState = {
               ...current,
               householdId: input.householdId,
@@ -737,7 +878,7 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
             continue
           }
           const data = validated.value
-          const visibility = asVisibility(data.visibility ?? current.visibility)
+          const visibility = resolvedVisibility(entry.entityType, data, current.visibility)
 
           if (sameData(data, current.data) && visibility === current.visibility) {
             plans.push({ kind: "nowrite", entry, tag: "conflict", state: current })
@@ -992,7 +1133,7 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           const visible = householdMatches &&
             (state === undefined
               // Hard-purged row: the feed entry still advances the cursor.
-              ? row.ownerId === input.userId || asVisibility(row.visibility) === "shared"
+              ? row.ownerId === input.userId || feedVisibility(row.entityType, row.visibility) === "shared"
               : state.ownerId === input.userId || state.visibility === "shared")
 
           if (visible) {
@@ -1004,7 +1145,7 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
               version: state?.version ?? row.version,
               updatedAt: state?.updatedAt ?? row.updatedAt,
               ownerId: state?.ownerId ?? row.ownerId,
-              visibility: state?.visibility ?? asVisibility(row.visibility)
+              visibility: state?.visibility ?? feedVisibility(row.entityType, row.visibility)
             })
             if (state !== undefined) items.push(toRow(state))
             continue

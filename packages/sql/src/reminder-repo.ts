@@ -555,10 +555,12 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
               readonly rTier: string
               readonly rLinkType: string
               readonly rLinkId: string | null
+              readonly rVisibility: string
             }>`
               SELECT ${sql.literal(dispatchColumns("d."))},
                      r.title AS rTitle, r.note AS rNote, r.kind AS rKind, r.tier AS rTier,
-                     r.link_type AS rLinkType, r.link_id AS rLinkId
+                     r.link_type AS rLinkType, r.link_id AS rLinkId,
+                     r.visibility AS rVisibility
               FROM reminder_dispatches d
               JOIN reminders r ON r.id = d.reminder_id
               WHERE d.user_id = ${input.userId}
@@ -573,10 +575,12 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
               readonly rTier: string
               readonly rLinkType: string
               readonly rLinkId: string | null
+              readonly rVisibility: string
             }>`
               SELECT ${sql.literal(dispatchColumns("d."))},
                      r.title AS rTitle, r.note AS rNote, r.kind AS rKind, r.tier AS rTier,
-                     r.link_type AS rLinkType, r.link_id AS rLinkId
+                     r.link_type AS rLinkType, r.link_id AS rLinkId,
+                     r.visibility AS rVisibility
               FROM reminder_dispatches d
               JOIN reminders r ON r.id = d.reminder_id
               WHERE d.user_id = ${input.userId}
@@ -595,6 +599,7 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
               kind: row.rKind as ReminderType,
               tier: row.rTier as ReminderTier,
               link: linkOf(row.rLinkType, row.rLinkId),
+              visibility: row.rVisibility === "private" ? "private" : "shared",
               state: input.history === true ? "history" : "inbox"
             })
           )

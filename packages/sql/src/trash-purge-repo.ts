@@ -99,7 +99,11 @@ const childrenOf = (
   definitions: ReadonlyArray<SyncEntityDefinition>,
   parent: SyncEntityDefinition
 ): ReadonlyArray<SyncEntityDefinition> =>
-  definitions.filter((definition) => definition.parent?.entityType === parent.entityType)
+  definitions.filter(
+    (definition) =>
+      definition.parent?.entityType === parent.entityType &&
+      definition.parent.cascade !== false
+  )
 
 export class TrashPurgeRepo extends Context.Service<TrashPurgeRepo>()("TrashPurgeRepo", {
   make: Effect.gen(function*() {
