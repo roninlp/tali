@@ -1,8 +1,8 @@
 import { Option } from 'effect'
 import {
   Command,
+  Mount,
   all,
-  change,
   click,
   expect,
   expectAll,
@@ -13,6 +13,8 @@ import {
   text,
 } from 'foldkit/scene'
 import { describe, test } from 'vitest'
+
+import { Listbox } from '@foldkit/ui'
 
 import * as Reminders from './reminders'
 import {
@@ -83,7 +85,7 @@ describe('reminders inbox', () => {
       expectAll(all.text('دارو')).toHaveCount(2),
       expect(text(formatReminderInstant('2026-10-20T08:00:00.000Z'))).toExist(),
       expectAll(
-        all.role('combobox', { name: 'مدت به تعویق انداختن' }),
+        all.role('button', { name: 'مدت به تعویق انداختن' }),
       ).toHaveCount(2),
     )
   })
@@ -131,14 +133,33 @@ describe('reminders inbox', () => {
       fetchGeneration: 1,
       items: [medicationItem()],
     })
-    const select = role('combobox', { name: 'مدت به تعویق انداختن' })
+    const snoozeButton = role('button', { name: 'مدت به تعویق انداختن' })
 
     scene(
       inboxScene(),
       given(model),
-      expect(select).toHaveValue('10'),
-      change(select, '30'),
-      expect(select).toHaveValue('30'),
+      expect(snoozeButton).toHaveText('10 دقیقه'),
+      click(snoozeButton),
+      Mount.resolve(
+        Listbox.AnchorListbox,
+        Listbox.Message.CompletedAnchorListbox(),
+      ),
+      Mount.resolve(
+        Listbox.PortalListboxBackdrop,
+        Listbox.Message.CompletedPortalListboxBackdrop(),
+      ),
+      Command.resolve(
+        Listbox.FocusItems,
+        Listbox.Message.CompletedFocusItems(),
+      ),
+      click(text('30 دقیقه')),
+      Command.resolve(
+        Listbox.FocusButton,
+        Listbox.Message.CompletedFocusButton(),
+      ),
+      Mount.expectEnded(Listbox.AnchorListbox),
+      Mount.expectEnded(Listbox.PortalListboxBackdrop),
+      expect(snoozeButton).toHaveText('30 دقیقه'),
       click(role('button', { name: 'بعداً' })),
       Command.expectExact(
         Reminders.RespondToReminder({
@@ -175,7 +196,7 @@ describe('reminders inbox', () => {
       expect(role('button', { name: 'انجام شد' })).toBeDisabled(),
       expect(role('button', { name: 'بعداً' })).toBeDisabled(),
       expect(role('button', { name: 'کنار گذاشتن' })).toBeDisabled(),
-      expect(role('combobox', { name: 'مدت به تعویق انداختن' })).toBeEnabled(),
+      expect(role('button', { name: 'مدت به تعویق انداختن' })).toBeEnabled(),
     )
   })
 })

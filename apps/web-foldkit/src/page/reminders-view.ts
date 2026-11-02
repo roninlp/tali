@@ -1,10 +1,13 @@
 import { Array, Option } from 'effect'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
+import { Listbox } from '@foldkit/ui'
+
 import type { ReminderInboxItem } from '../lib/reminders/api'
 import { buttonView } from '../ui/button'
-import { Message } from './reminders'
-import type { Model } from './reminders'
+import { listboxViewInputs } from '../ui/listbox'
+import { Message, SnoozeListbox, snoozeListboxFor } from './reminders'
+import type { Model, SnoozeOption } from './reminders'
 import {
   SNOOZE_CHOICES,
   criticalBadge,
@@ -102,20 +105,41 @@ const metadataView = (
   )
 }
 
-const snoozeSelectView = (model: Model, h: HtmlBuilder<Message>): Html =>
-  h.select(
+const SNOOZE_OPTIONS: ReadonlyArray<SnoozeOption> = Array.map(
+  SNOOZE_CHOICES,
+  minutes => ({ value: String(minutes), label: `${minutes} دقیقه` }),
+)
+
+const snoozeSelectView = (
+  model: Model,
+  item: ReminderInboxItem,
+  h: HtmlBuilder<Message>,
+): Html => {
+  const dispatchId = item.dispatch.id
+  const listbox = snoozeListboxFor(model, dispatchId)
+
+  return h.div(
+    [h.Class('grid gap-1.5')],
     [
-      h.AriaLabel('مدت به تعویق انداختن'),
-      h.Value(String(model.snoozeMinutes)),
-      h.Class('select select-bordered select-sm w-auto'),
-      h.OnChange(value =>
-        Message.ChangedSnoozeMinutes({ minutes: Number(value) }),
+      h.label(
+        [h.For(Listbox.buttonId(listbox.id)), h.Class('sr-only')],
+        ['مدت به تعویق انداختن'],
       ),
+      h.submodel({
+        slotId: listbox.id,
+        model: listbox,
+        view: SnoozeListbox.view,
+        viewInputs: listboxViewInputs({
+          items: SNOOZE_OPTIONS,
+          maybeSelectedValue: Option.some(String(model.snoozeMinutes)),
+          h,
+        }),
+        toParentMessage: message =>
+          Message.GotSnoozeListboxMessage({ dispatchId, message }),
+      }),
     ],
-    Array.map(SNOOZE_CHOICES, minutes =>
-      h.option([h.Value(String(minutes))], [`${minutes} دقیقه`]),
-    ),
   )
+}
 
 const inboxActionsView = (
   model: Model,
@@ -141,7 +165,7 @@ const inboxActionsView = (
         },
         h,
       ),
-      snoozeSelectView(model, h),
+      snoozeSelectView(model, item, h),
       buttonView(
         {
           type: 'button',

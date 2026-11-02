@@ -3,6 +3,8 @@ import { Command, Submodel, Subscription, Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
 
+import { Listbox } from '@foldkit/ui'
+
 import {
   ReminderActionMessage,
   flushQueuedReminderActions,
@@ -36,6 +38,16 @@ import { remindersPageView } from './reminders-view'
 
 // MODEL
 
+export type SnoozeOption = Readonly<{ value: string; label: string }>
+
+export const SnoozeListboxEntry = Schema.Struct({
+  dispatchId: Schema.String,
+  listbox: Listbox.Model,
+})
+export type SnoozeListboxEntry = typeof SnoozeListboxEntry.Type
+
+export const SnoozeListbox = Listbox.create<SnoozeOption, string>()
+
 export const Model = Schema.Struct({
   items: Schema.Array(ReminderInboxItem),
   isHistory: Schema.Boolean,
@@ -43,6 +55,7 @@ export const Model = Schema.Struct({
   maybeError: Schema.Option(Schema.String),
   maybeBusyDispatchId: Schema.Option(Schema.String),
   snoozeMinutes: Schema.Int,
+  snoozeListboxes: Schema.Array(SnoozeListboxEntry),
   fetchGeneration: Schema.Int,
 })
 export type Model = typeof Model.Type
@@ -55,6 +68,7 @@ export const initialModel = (): Model =>
     maybeError: Option.none(),
     maybeBusyDispatchId: Option.none(),
     snoozeMinutes: DEFAULT_SNOOZE_MINUTES,
+    snoozeListboxes: [],
     fetchGeneration: 0,
   })
 
@@ -65,6 +79,10 @@ export const Message = defineMessageUnion({
   ReceivedReminderAction: {},
   ClickedToggleHistory: {},
   ChangedSnoozeMinutes: { minutes: Schema.Int },
+  GotSnoozeListboxMessage: {
+    dispatchId: Schema.String,
+    message: Listbox.Message,
+  },
   ClickedRespond: {
     dispatchId: Schema.String,
     response: DispatchResponse,
@@ -177,6 +195,64 @@ export const init = (): Update.Return<Model, Message> => ({
 
 type UpdateReturn = Update.Return<Model, Message>
 
+const snoozeListboxId = (dispatchId: string): string =>
+  `reminder-snooze-${dispatchId}`
+
+/** The row's snooze picker, created closed the first time the row asks for it. */
+export const snoozeListboxFor = (
+  model: Model,
+  dispatchId: string,
+): Listbox.Model =>
+  Option.getOrElse(
+    Option.map(
+      Array.findFirst(
+        model.snoozeListboxes,
+        entry => entry.dispatchId === dispatchId,
+      ),
+      entry => entry.listbox,
+    ),
+    () => Listbox.init({ id: snoozeListboxId(dispatchId) }),
+  )
+
+const writeSnoozeListbox = (
+  model: Model,
+  dispatchId: string,
+  nextListbox: Listbox.Model,
+): Model => {
+  if (
+    Array.some(model.snoozeListboxes, entry => entry.dispatchId === dispatchId)
+  ) {
+    return modifyFields(model, {
+      snoozeListboxes: () =>
+        Array.map(model.snoozeListboxes, entry =>
+          entry.dispatchId === dispatchId
+            ? modifyFields(entry, { listbox: () => nextListbox })
+            : entry,
+        ),
+    })
+  }
+
+  return modifyFields(model, {
+    snoozeListboxes: () => [
+      ...model.snoozeListboxes,
+      SnoozeListboxEntry.make({ dispatchId, listbox: nextListbox }),
+    ],
+  })
+}
+
+const snoozeListboxOutMessage = (
+  handleUpdate: (model: Model, message: Message) => UpdateReturn,
+) =>
+  Listbox.OutMessage.match<Update.Step<Model, Message>>({
+    Selected:
+      ({ value }) =>
+      stepModel =>
+        handleUpdate(
+          stepModel,
+          Message.ChangedSnoozeMinutes({ minutes: Number(value) }),
+        ),
+  })
+
 const startRead = (model: Model, shouldDrain: boolean): UpdateReturn => {
   const generation = model.fetchGeneration + 1
   const history = model.isHistory
@@ -209,6 +285,10 @@ const withItems = (
       items: () => items,
       isLoading: () => false,
       maybeError: () => Option.none(),
+      snoozeListboxes: () =>
+        Array.filter(model.snoozeListboxes, entry =>
+          Array.some(items, item => item.dispatch.id === entry.dispatchId),
+        ),
     }),
   }
 }
@@ -230,8 +310,18 @@ const withFailure = (
   }
 }
 
-export const update = (model: Model, message: Message): UpdateReturn =>
-  Message.match<UpdateReturn>(message, {
+export const update = (model: Model, message: Message): UpdateReturn => {
+  const foldSnoozeListbox = Update.foldChildAt({
+    update: SnoozeListbox.update,
+    readAt: (listModel: Model, dispatchId: string) =>
+      Option.some(snoozeListboxFor(listModel, dispatchId)),
+    writeAt: writeSnoozeListbox,
+    toParentMessage: (dispatchId, message) =>
+      Message.GotSnoozeListboxMessage({ dispatchId, message }),
+    foldOutMessage: () => snoozeListboxOutMessage(update),
+  })
+
+  return Message.match<UpdateReturn>(message, {
     ChangedVisibility: ({ isVisible }) =>
       isVisible ? startRead(model, true) : { model },
 
@@ -249,6 +339,9 @@ export const update = (model: Model, message: Message): UpdateReturn =>
             model: modifyFields(model, { snoozeMinutes: () => minutes }),
           }
         : { model },
+
+    GotSnoozeListboxMessage: ({ dispatchId, message }) =>
+      foldSnoozeListbox(model, dispatchId, message),
 
     ClickedRespond: ({ dispatchId, response }) => {
       if (Option.isSome(model.maybeBusyDispatchId)) {
@@ -302,6 +395,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       }),
     }),
   })
+}
 
 /**
  * Entry capability the root folds instead of constructing a child Message. A
