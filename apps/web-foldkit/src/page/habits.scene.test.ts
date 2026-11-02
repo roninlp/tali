@@ -1,6 +1,8 @@
 import { Option } from 'effect'
+import { Animation, Dialog, Toast as UiToast } from '@foldkit/ui'
 import {
   Command,
+  Mount,
   click,
   expect,
   expectOutMessage,
@@ -205,17 +207,21 @@ describe('Habits screen', () => {
       setup(withWeekly()),
       given(habitsModel()),
       click(role('button', { name: 'حذف ورزش' })),
-      Command.expectExact(
-        Habits.ConfirmHabitDelete({ habitId: SECOND_HABIT_ID, title: 'ورزش' }),
+      Mount.resolve(
+        Dialog.AcquireResources,
+        Dialog.Message.SucceededAcquireResources(),
       ),
       Command.resolve(
-        Habits.ConfirmHabitDelete,
-        Habits.Message.CompletedConfirmHabitDelete({
-          habitId: SECOND_HABIT_ID,
-          title: 'ورزش',
-          isConfirmed: true,
-        }),
+        Dialog.ShowDialog,
+        Dialog.Message.SucceededShowDialog(),
       ),
+      expect(text('عادت «ورزش» حذف شود؟')).toExist(),
+      click(role('button', { name: 'حذف' })),
+      Command.resolve(
+        Dialog.CloseDialog,
+        Dialog.Message.CompletedCloseDialog(),
+      ),
+      Mount.expectEnded(Dialog.AcquireResources),
       Command.expectExact(
         Habits.DeleteHabit({ habitId: SECOND_HABIT_ID, title: 'ورزش' }),
       ),
@@ -229,36 +235,85 @@ describe('Habits screen', () => {
       expectOutMessage(Habits.OutMessage.WroteLocalData()),
       expect(text('«ورزش» حذف شد.')).toExist(),
       expect(role('button', { name: 'بازگردانی' })).toExist(),
-      Command.expectExact(
-        Habits.WaitBeforeDismissToast({
-          habitId: SECOND_HABIT_ID,
-          generation: 1,
+      Command.resolve(
+        Animation.WaitForPaint,
+        Animation.Message.CompletedWaitForPaint({ generation: 1 }),
+      ),
+      Command.resolve(
+        Animation.WaitForAnimationSettled,
+        Animation.Message.EndedAnimation({ generation: 1 }),
+      ),
+      Command.resolve(
+        UiToast.WaitBeforeDismissal,
+        UiToast.Message.CompletedWaitBeforeDismissal({
+          entryId: 'habits-toast-entry-0',
+          version: 0,
         }),
       ),
       Command.resolve(
-        Habits.WaitBeforeDismissToast,
-        Habits.Message.CompletedWaitBeforeDismissToast({
-          habitId: SECOND_HABIT_ID,
-          generation: 1,
-        }),
+        Animation.WaitForPaint,
+        Animation.Message.CompletedWaitForPaint({ generation: 2 }),
+      ),
+      Command.resolve(
+        Animation.WaitForAnimationSettled,
+        Animation.Message.EndedAnimation({ generation: 2 }),
       ),
       expect(text('«ورزش» حذف شد.')).toBeAbsent(),
     )
   })
 
   test('the undo toast restores the same row', () => {
-    const toasting = modifyFields(habitsModel(), {
-      maybeToast: () =>
-        Option.some({ habitId: SECOND_HABIT_ID, title: 'ورزش' }),
-      toastGeneration: () => 1,
-    })
-
     scene(
       setup(withWeekly()),
-      given(toasting),
+      given(habitsModel()),
+      click(role('button', { name: 'حذف ورزش' })),
+      Mount.resolve(
+        Dialog.AcquireResources,
+        Dialog.Message.SucceededAcquireResources(),
+      ),
+      Command.resolve(
+        Dialog.ShowDialog,
+        Dialog.Message.SucceededShowDialog(),
+      ),
+      click(role('button', { name: 'حذف' })),
+      Command.resolve(
+        Dialog.CloseDialog,
+        Dialog.Message.CompletedCloseDialog(),
+      ),
+      Mount.expectEnded(Dialog.AcquireResources),
+      Command.resolve(
+        Habits.DeleteHabit,
+        Habits.Message.CompletedDeleteHabit({
+          habitId: SECOND_HABIT_ID,
+          title: 'ورزش',
+        }),
+      ),
+      Command.resolve(
+        Animation.WaitForPaint,
+        Animation.Message.CompletedWaitForPaint({ generation: 1 }),
+      ),
+      Command.resolve(
+        Animation.WaitForAnimationSettled,
+        Animation.Message.EndedAnimation({ generation: 1 }),
+      ),
+      Command.resolve(
+        UiToast.WaitBeforeDismissal,
+        UiToast.Message.CompletedWaitBeforeDismissal({
+          entryId: 'habits-toast-entry-0',
+          version: 1,
+        }),
+      ),
       click(role('button', { name: 'بازگردانی' })),
-      Command.expectExact(
+      Command.expectHas(
         Habits.RestoreHabit({ habitId: SECOND_HABIT_ID, title: 'ورزش' }),
+      ),
+      Command.resolve(
+        Animation.WaitForPaint,
+        Animation.Message.CompletedWaitForPaint({ generation: 2 }),
+      ),
+      Command.resolve(
+        Animation.WaitForAnimationSettled,
+        Animation.Message.EndedAnimation({ generation: 2 }),
       ),
       Command.resolve(
         Habits.RestoreHabit,

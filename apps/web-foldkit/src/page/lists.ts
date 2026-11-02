@@ -1,9 +1,9 @@
-import { Array, Clock, Duration, Effect, Option, Schema } from 'effect'
-import { Listbox } from '@foldkit/ui'
+import { Array, Clock, Effect, Option, Schema } from 'effect'
 import { Command, Submodel, Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
 
+import { Dialog, Listbox } from '@foldkit/ui'
 import { uuidV7 } from '@tali/domain'
 import { ListId } from '@tali/domain'
 
@@ -37,6 +37,8 @@ import type { MirrorSnapshot } from '../mirror'
 import type { CheckedItemPlacement, DisplayFields } from '../preferences-model'
 import { LocalStoreResource } from '../sync/local-store'
 import type { LocalStoreService } from '../sync/local-store'
+import type { ConfirmSpec } from '../ui/confirm'
+import { Toast, ToastUndo } from '../ui/toast'
 import { listDetailView } from './list-view'
 import { listsIndexView } from './lists-view'
 
@@ -45,19 +47,13 @@ import { listsIndexView } from './lists-view'
  * `apps/web/src/components/lists/*` (ticket #39; FR-LIST-01/02/03).
  *
  * Both screens read the same mirror snapshot: the Model keeps their drafts,
- * busy flags, detail error, check toast and drag state, while the rows and the
- * pending keys arrive as update/view inputs. Every write goes through the
+ * busy flags, detail error, delete dialog and drag state, while the rows and
+ * the pending keys arrive as update/view inputs. Every write goes through the
  * local store first (mirror row + outbox entry in one transaction), then the
  * root asks sync to re-read the mirror. No list write uses RPC.
  */
 
 // MODEL
-
-export const ToastItem = Schema.Struct({
-  id: Schema.String,
-  name: Schema.String,
-})
-export type ToastItem = typeof ToastItem.Type
 
 export const sortOfValue = (value: string): ListSort =>
   value === 'alpha' || value === 'status' ? value : 'manual'
@@ -70,6 +66,13 @@ export const visibilityOfValue = (value: string): ListVisibility =>
 
 export const DeleteScope = Schema.Literals(['index', 'detail'])
 export type DeleteScope = typeof DeleteScope.Type
+
+export const PendingListDelete = Schema.Struct({
+  listId: Schema.String,
+  title: Schema.String,
+  scope: DeleteScope,
+})
+export type PendingListDelete = typeof PendingListDelete.Type
 
 export const MoveDirection = Schema.Literals(['up', 'down'])
 export type MoveDirection = typeof MoveDirection.Type
@@ -93,8 +96,9 @@ export const Model = Schema.Struct({
   isDeletingList: Schema.Boolean,
   isDetailLoading: Schema.Boolean,
   maybeDetailError: Schema.Option(Schema.String),
-  maybeToast: Schema.Option(ToastItem),
-  toastGeneration: Schema.Int,
+  maybePendingDelete: Schema.Option(PendingListDelete),
+  confirmDialog: Dialog.Model,
+  toast: Toast.Model,
   maybeDraggingId: Schema.Option(Schema.String),
   maybeDragOverId: Schema.Option(Schema.String),
   announcement: Schema.String,
@@ -105,8 +109,14 @@ export const Model = Schema.Struct({
 export type Model = typeof Model.Type
 
 export type SortOption = Readonly<{ value: ListSort; label: string }>
-export type PlacementOption = Readonly<{ value: CheckedPlacement; label: string }>
-export type VisibilityOption = Readonly<{ value: ListVisibility; label: string }>
+export type PlacementOption = Readonly<{
+  value: CheckedPlacement
+  label: string
+}>
+export type VisibilityOption = Readonly<{
+  value: ListVisibility
+  label: string
+}>
 
 export const SortListbox = Listbox.create<SortOption, string>()
 export const PlacementListbox = Listbox.create<PlacementOption, string>()
@@ -132,8 +142,9 @@ export const initialModel = (): Model =>
     isDeletingList: false,
     isDetailLoading: false,
     maybeDetailError: Option.none(),
-    maybeToast: Option.none(),
-    toastGeneration: 0,
+    maybePendingDelete: Option.none(),
+    confirmDialog: Dialog.init({ id: 'lists-delete-dialog' }),
+    toast: Toast.init({ id: 'lists-toast' }),
     maybeDraggingId: Option.none(),
     maybeDragOverId: Option.none(),
     announcement: '',
@@ -144,70 +155,80 @@ export const initialModel = (): Model =>
 
 // LISTBOX FOLDS
 
-type ListUpdate = (model: Model, message: Message, inputs: Inputs) => UpdateReturn
+type ListUpdate = (
+  model: Model,
+  message: Message,
+  inputs: Inputs,
+) => UpdateReturn
 
 const sortListboxOutMessage = (inputs: Inputs, handleUpdate: ListUpdate) =>
-  Listbox.OutMessage.match<Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>, Listbox.OutMessage<string>>(
-    {
-      Selected:
-        ({ value }) =>
-        stepModel =>
-          Option.match(stepModel.maybeListId, {
-            onNone: () => ({ model: stepModel }),
-            onSome: listId =>
-              handleUpdate(
-                stepModel,
-                Message.SelectedListSort({
-                  listId,
-                  sort: sortOfValue(value),
-                }),
-                inputs,
-              ),
-          }),
-    },
-  )
+  Listbox.OutMessage.match<
+    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
+    Listbox.OutMessage<string>
+  >({
+    Selected:
+      ({ value }) =>
+      stepModel =>
+        Option.match(stepModel.maybeListId, {
+          onNone: () => ({ model: stepModel }),
+          onSome: listId =>
+            handleUpdate(
+              stepModel,
+              Message.SelectedListSort({
+                listId,
+                sort: sortOfValue(value),
+              }),
+              inputs,
+            ),
+        }),
+  })
 
 const placementListboxOutMessage = (inputs: Inputs, handleUpdate: ListUpdate) =>
-  Listbox.OutMessage.match<Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>, Listbox.OutMessage<string>>(
-    {
-      Selected:
-        ({ value }) =>
-        stepModel =>
-          Option.match(stepModel.maybeListId, {
-            onNone: () => ({ model: stepModel }),
-            onSome: listId =>
-              handleUpdate(
-                stepModel,
-                Message.SelectedCheckedPlacement({
-                  listId,
-                  placement: placementOfValue(value),
-                }),
-                inputs,
-              ),
-          }),
-    },
-  )
+  Listbox.OutMessage.match<
+    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
+    Listbox.OutMessage<string>
+  >({
+    Selected:
+      ({ value }) =>
+      stepModel =>
+        Option.match(stepModel.maybeListId, {
+          onNone: () => ({ model: stepModel }),
+          onSome: listId =>
+            handleUpdate(
+              stepModel,
+              Message.SelectedCheckedPlacement({
+                listId,
+                placement: placementOfValue(value),
+              }),
+              inputs,
+            ),
+        }),
+  })
 
-const visibilityListboxOutMessage = (inputs: Inputs, handleUpdate: ListUpdate) =>
-  Listbox.OutMessage.match<Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>, Listbox.OutMessage<string>>(
-    {
-      Selected:
-        ({ value }) =>
-        stepModel =>
-          Option.match(stepModel.maybeListId, {
-            onNone: () => ({ model: stepModel }),
-            onSome: listId =>
-              handleUpdate(
-                stepModel,
-                Message.SelectedListVisibility({
-                  listId,
-                  visibility: visibilityOfValue(value),
-                }),
-                inputs,
-              ),
-          }),
-    },
-  )
+const visibilityListboxOutMessage = (
+  inputs: Inputs,
+  handleUpdate: ListUpdate,
+) =>
+  Listbox.OutMessage.match<
+    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
+    Listbox.OutMessage<string>
+  >({
+    Selected:
+      ({ value }) =>
+      stepModel =>
+        Option.match(stepModel.maybeListId, {
+          onNone: () => ({ model: stepModel }),
+          onSome: listId =>
+            handleUpdate(
+              stepModel,
+              Message.SelectedListVisibility({
+                listId,
+                visibility: visibilityOfValue(value),
+              }),
+              inputs,
+            ),
+        }),
+  })
 
 /** Everything the screens read from their siblings on each dispatch. */
 export type Inputs = Readonly<{
@@ -238,10 +259,8 @@ export const Message = defineMessageUnion({
     title: Schema.String,
     scope: DeleteScope,
   },
-  CompletedConfirmListDelete: {
-    listId: Schema.String,
-    isConfirmed: Schema.Boolean,
-  },
+  ConfirmedDeleteList: {},
+  GotConfirmDialogMessage: { message: Dialog.Message },
   CompletedDeleteList: { listId: Schema.String },
   FailedDeleteList: { message: Schema.String },
 
@@ -283,13 +302,10 @@ export const Message = defineMessageUnion({
     checked: Schema.Boolean,
   },
   FailedSetListItemChecked: { message: Schema.String },
-  ClickedUndoChecked: {},
+  ClickedUndoChecked: { entryId: Schema.String, undo: ToastUndo },
   CompletedUncheckListItem: { itemId: Schema.String, name: Schema.String },
   FailedUncheckListItem: { message: Schema.String },
-  CompletedWaitBeforeDismissToast: {
-    itemId: Schema.String,
-    generation: Schema.Int,
-  },
+  GotToastMessage: { message: Toast.Message },
   ClickedDeleteItem: { itemId: Schema.String, name: Schema.String },
   CompletedDeleteListItem: { itemId: Schema.String, name: Schema.String },
   FailedDeleteListItem: { message: Schema.String },
@@ -679,38 +695,6 @@ export const DeleteList = Command.define('DeleteList', {
     ),
 })
 
-export const ConfirmListDelete = Command.define('ConfirmListDelete', {
-  args: {
-    listId: Schema.String,
-    title: Schema.String,
-    scope: DeleteScope,
-  },
-  messages: [Message.CompletedConfirmListDelete],
-  execute: ({ listId, title, scope }) =>
-    Effect.sync(() => {
-      try {
-        return window.confirm(deleteQuestion(scope, title))
-      } catch {
-        return false
-      }
-    }).pipe(
-      Effect.map(isConfirmed =>
-        Message.CompletedConfirmListDelete({ listId, isConfirmed }),
-      ),
-    ),
-})
-
-export const WaitBeforeDismissToast = Command.define('WaitBeforeDismissToast', {
-  args: { itemId: Schema.String, generation: Schema.Int },
-  messages: [Message.CompletedWaitBeforeDismissToast],
-  execute: ({ itemId, generation }) =>
-    Effect.sleep(Duration.seconds(6)).pipe(
-      Effect.as(
-        Message.CompletedWaitBeforeDismissToast({ itemId, generation }),
-      ),
-    ),
-})
-
 // INIT
 
 export const init = (): Update.Return<Model, Message> => ({
@@ -725,6 +709,86 @@ type UpdateReturn = Update.ReturnWithOutMessage<
   OutMessage,
   LocalStoreService
 >
+
+const foldConfirmDialogOutMessage = Dialog.OutMessage.match<
+  Update.Step<Model, Message>
+>({
+  Opened: () => model => ({ model }),
+  Closed: () => stepModel => ({
+    model: modifyFields(stepModel, {
+      maybePendingDelete: () => Option.none(),
+    }),
+  }),
+})
+
+const foldConfirmDialog = Update.foldChild({
+  update: Dialog.update,
+  read: (model: Model) => Option.some(model.confirmDialog),
+  write: (model, nextDialog) =>
+    modifyFields(model, { confirmDialog: () => nextDialog }),
+  toParentMessage: message => Message.GotConfirmDialogMessage({ message }),
+  foldOutMessage: foldConfirmDialogOutMessage,
+})
+
+const foldConfirmDialogOpen = Update.foldChildStep({
+  update: Dialog.open,
+  read: (model: Model) => Option.some(model.confirmDialog),
+  write: (model, nextDialog) =>
+    modifyFields(model, { confirmDialog: () => nextDialog }),
+  toParentMessage: message => Message.GotConfirmDialogMessage({ message }),
+  foldOutMessage: foldConfirmDialogOutMessage,
+})
+
+const foldConfirmDialogClose = Update.foldChildStep({
+  update: Dialog.close,
+  read: (model: Model) => Option.some(model.confirmDialog),
+  write: (model, nextDialog) =>
+    modifyFields(model, { confirmDialog: () => nextDialog }),
+  toParentMessage: message => Message.GotConfirmDialogMessage({ message }),
+  foldOutMessage: foldConfirmDialogOutMessage,
+})
+
+const shownCheckedToastStep = (
+  itemId: string,
+  name: string,
+): Update.Step<Model, Message> =>
+  Update.foldChildStep({
+    update: toast =>
+      Toast.show(toast, {
+        payload: {
+          text: `تیک خورد: ${name}`,
+          maybeUndo: {
+            kind: 'uncheckItem',
+            id: itemId,
+            title: name,
+          },
+        },
+        variant: 'Success',
+      }),
+    read: (model: Model) => Option.some(model.toast),
+    write: (model, nextToast) =>
+      modifyFields(model, { toast: () => nextToast }),
+    toParentMessage: message => Message.GotToastMessage({ message }),
+    foldOutMessage: () => stepModel => ({ model: stepModel }),
+  })
+
+const dismissedToastStep = (entryId: string): Update.Step<Model, Message> =>
+  Update.foldChildStep({
+    update: toast => Toast.dismiss(toast, entryId),
+    read: (model: Model) => Option.some(model.toast),
+    write: (model, nextToast) =>
+      modifyFields(model, { toast: () => nextToast }),
+    toParentMessage: message => Message.GotToastMessage({ message }),
+    foldOutMessage: () => stepModel => ({ model: stepModel }),
+  })
+
+const foldToast = Update.foldChild({
+  update: Toast.update,
+  read: (model: Model) => Option.some(model.toast),
+  write: (model, nextToast) => modifyFields(model, { toast: () => nextToast }),
+  toParentMessage: message => Message.GotToastMessage({ message }),
+  foldOutMessage: () => stepModel => ({ model: stepModel }),
+})
 
 const currentList = (model: Model, inputs: Inputs): Option.Option<ListRow> =>
   Option.flatMap(model.maybeListId, listId =>
@@ -913,30 +977,39 @@ export const update = (
       }
     },
 
-    ClickedDeleteList: ({ listId, title, scope }) => ({
-      model,
-      commands: [ConfirmListDelete({ listId, title, scope })],
-    }),
-
-    CompletedConfirmListDelete: ({ listId, isConfirmed }) => {
-      if (!isConfirmed) {
-        return { model }
-      }
-
-      const itemIds = Array.map(
-        listItemsFor(inputs.mirror.listItems, listId),
-        item => item.id,
-      )
-
-      return {
-        model: modifyFields(model, {
-          isDeletingList: () => true,
-          maybeIndexError: () => Option.none(),
-          maybeDetailError: () => Option.none(),
+    ClickedDeleteList: ({ listId, title, scope }) =>
+      Update.combine(model, [
+        foldConfirmDialogOpen,
+        stepModel => ({
+          model: modifyFields(stepModel, {
+            maybePendingDelete: () =>
+              Option.some(PendingListDelete.make({ listId, title, scope })),
+          }),
         }),
-        commands: [DeleteList({ listId, itemIds })],
-      }
-    },
+      ]),
+
+    ConfirmedDeleteList: () =>
+      Option.match(model.maybePendingDelete, {
+        onNone: () => ({ model }),
+        onSome: pending => {
+          const itemIds = Array.map(
+            listItemsFor(inputs.mirror.listItems, pending.listId),
+            item => item.id,
+          )
+
+          return Update.combine(model, [
+            foldConfirmDialogClose,
+            stepModel => ({
+              model: modifyFields(stepModel, {
+                isDeletingList: () => true,
+                maybeIndexError: () => Option.none(),
+                maybeDetailError: () => Option.none(),
+              }),
+              commands: [DeleteList({ listId: pending.listId, itemIds })],
+            }),
+          ])
+        },
+      }),
 
     CompletedDeleteList: ({ listId }) => ({
       model: modifyFields(model, {
@@ -1154,14 +1227,17 @@ export const update = (
       }
     },
 
-    GotSortListboxMessage: ({ message }) =>
-      foldSortListbox(model, message),
+    GotSortListboxMessage: ({ message }) => foldSortListbox(model, message),
 
     GotPlacementListboxMessage: ({ message }) =>
       foldPlacementListbox(model, message),
 
     GotVisibilityListboxMessage: ({ message }) =>
       foldVisibilityListbox(model, message),
+
+    GotConfirmDialogMessage: ({ message }) => foldConfirmDialog(model, message),
+
+    GotToastMessage: ({ message }) => foldToast(model, message),
 
     UpdatedItemDraft: ({ value }) => ({
       model: modifyFields(model, { itemDraft: () => value }),
@@ -1237,28 +1313,21 @@ export const update = (
 
     CompletedSetListItemChecked: ({ itemId, name, checked }) =>
       checked
-        ? {
-            model: modifyFields(model, {
-              maybeDetailError: () => Option.none(),
-              maybeToast: () => Option.some({ id: itemId, name }),
-              toastGeneration: () => model.toastGeneration + 1,
-              announcement: () => `تیک خورد: ${name}`,
-            }),
-            commands: [
-              WaitBeforeDismissToast({
-                itemId,
-                generation: model.toastGeneration + 1,
+        ? Update.withOutMessage(
+            Update.combine(model, [
+              shownCheckedToastStep(itemId, name),
+              stepModel => ({
+                model: modifyFields(stepModel, {
+                  maybeDetailError: () => Option.none(),
+                  announcement: () => `تیک خورد: ${name}`,
+                }),
               }),
-            ],
-            outMessage: OutMessage.WroteLocalData(),
-          }
+            ]),
+            OutMessage.WroteLocalData(),
+          )
         : {
             model: modifyFields(model, {
               maybeDetailError: () => Option.none(),
-              maybeToast: () =>
-                Option.exists(model.maybeToast, toast => toast.id === itemId)
-                  ? Option.none()
-                  : model.maybeToast,
               announcement: () => `تیک برداشته شد: ${name}`,
             }),
             outMessage: OutMessage.WroteLocalData(),
@@ -1266,17 +1335,19 @@ export const update = (
 
     FailedSetListItemChecked: ({ message }) => withDetailError(model, message),
 
-    ClickedUndoChecked: () =>
-      Option.match(model.maybeToast, {
-        onNone: () => ({ model }),
-        onSome: toast => ({
-          model: modifyFields(model, {
-            maybeToast: () => Option.none(),
-            maybeDetailError: () => Option.none(),
+    ClickedUndoChecked: ({ entryId, undo }) =>
+      Update.withOutMessage(
+        Update.combine(model, [
+          dismissedToastStep(entryId),
+          stepModel => ({
+            model: modifyFields(stepModel, {
+              maybeDetailError: () => Option.none(),
+            }),
+            commands: [UncheckListItem({ itemId: undo.id, name: undo.title })],
           }),
-          commands: [UncheckListItem({ itemId: toast.id, name: toast.name })],
-        }),
-      }),
+        ]),
+        OutMessage.WroteLocalData(),
+      ),
 
     CompletedUncheckListItem: ({ name }) => ({
       model: modifyFields(model, {
@@ -1288,32 +1359,39 @@ export const update = (
 
     FailedUncheckListItem: ({ message }) => withDetailError(model, message),
 
-    CompletedWaitBeforeDismissToast: ({ itemId, generation }) => ({
-      model: modifyFields(model, {
-        maybeToast: () =>
-          generation === model.toastGeneration &&
-          Option.exists(model.maybeToast, toast => toast.id === itemId)
-            ? Option.none()
-            : model.maybeToast,
-      }),
-    }),
-
     ClickedDeleteItem: ({ itemId, name }) => ({
       model: modifyFields(model, { maybeDetailError: () => Option.none() }),
       commands: [DeleteListItem({ itemId, name })],
     }),
 
-    CompletedDeleteListItem: ({ itemId, name }) => ({
-      model: modifyFields(model, {
-        maybeDetailError: () => Option.none(),
-        maybeToast: () =>
-          Option.exists(model.maybeToast, toast => toast.id === itemId)
-            ? Option.none()
-            : model.maybeToast,
-        announcement: () => `مورد حذف شد: ${name}`,
-      }),
-      outMessage: OutMessage.WroteLocalData(),
-    }),
+    CompletedDeleteListItem: ({ itemId, name }) =>
+      Update.withOutMessage(
+        Update.combine(model, [
+          stepModel =>
+            Update.combine(stepModel, [
+              stepModel =>
+                Option.match(
+                  Array.findFirst(
+                    stepModel.toast.entries,
+                    entry =>
+                      entry.payload.maybeUndo?.kind === 'uncheckItem' &&
+                      entry.payload.maybeUndo.id === itemId,
+                  ),
+                  {
+                    onNone: () => ({ model: stepModel }),
+                    onSome: entry => dismissedToastStep(entry.id)(stepModel),
+                  },
+                ),
+              stepModel => ({
+                model: modifyFields(stepModel, {
+                  maybeDetailError: () => Option.none(),
+                  announcement: () => `مورد حذف شد: ${name}`,
+                }),
+              }),
+            ]),
+        ]),
+        OutMessage.WroteLocalData(),
+      ),
 
     FailedDeleteListItem: ({ message }) => withDetailError(model, message),
 
@@ -1438,8 +1516,9 @@ export const enteredDetail = (
     isDeletingList: () => false,
     isDetailLoading: () => true,
     maybeDetailError: () => Option.none(),
-    maybeToast: () => Option.none(),
-    toastGeneration: () => 0,
+    maybePendingDelete: () => Option.none(),
+    confirmDialog: () => Dialog.init({ id: 'lists-delete-dialog' }),
+    toast: () => Toast.init({ id: 'lists-toast' }),
     maybeDraggingId: () => Option.none(),
     maybeDragOverId: () => Option.none(),
     announcement: () => '',
@@ -1455,3 +1534,13 @@ export const indexView = Submodel.defineView<Model, Message, ViewInputs>(
 export const detailView = Submodel.defineView<Model, Message, ViewInputs>(
   (model, inputs, h) => listDetailView(model, inputs, h),
 )
+
+/** The shared confirm copy, resolved from the pending delete. */
+export const confirmSpec = (model: Model): Option.Option<ConfirmSpec> =>
+  Option.map(model.maybePendingDelete, pending => ({
+    title: 'حذف فهرست',
+    body: deleteQuestion(pending.scope, pending.title),
+    confirmLabel: 'حذف',
+    cancelLabel: 'انصراف',
+    isDanger: true,
+  }))

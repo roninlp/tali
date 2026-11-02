@@ -3,6 +3,7 @@ import { Command, Dom, Submodel, Subscription, Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
 
+import { Dialog } from '@foldkit/ui'
 import type { HabitEntryStatus } from '@tali/domain'
 import { uuidV7 } from '@tali/domain'
 import { HABIT_RESTORE_REFUSED } from '@tali/sync-client'
@@ -39,6 +40,8 @@ import type { MirrorSnapshot } from '../mirror'
 import type { DisplayFields } from '../preferences-model'
 import { LocalStoreResource } from '../sync/local-store'
 import type { LocalStoreService } from '../sync/local-store'
+import type { ConfirmSpec } from '../ui/confirm'
+import { Toast, ToastUndo } from '../ui/toast'
 import { habitsPageView } from './habits-view'
 
 /**
@@ -68,11 +71,11 @@ export const HeatState = Schema.Struct({
 })
 export type HeatState = typeof HeatState.Type
 
-export const HabitToast = Schema.Struct({
+export const PendingHabitDelete = Schema.Struct({
   habitId: Schema.String,
   title: Schema.String,
 })
-export type HabitToast = typeof HabitToast.Type
+export type PendingHabitDelete = typeof PendingHabitDelete.Type
 
 export const Model = Schema.Struct({
   now: Schema.Number,
@@ -92,8 +95,9 @@ export const Model = Schema.Struct({
   announcement: Schema.String,
   maybeBusyId: Schema.Option(Schema.String),
   maybeHeat: Schema.Option(HeatState),
-  maybeToast: Schema.Option(HabitToast),
-  toastGeneration: Schema.Int,
+  maybePendingDelete: Schema.Option(PendingHabitDelete),
+  confirmDialog: Dialog.Model,
+  toast: Toast.Model,
 })
 export type Model = typeof Model.Type
 
@@ -116,8 +120,9 @@ export const initialModel = (now: number): Model =>
     announcement: '',
     maybeBusyId: Option.none(),
     maybeHeat: Option.none(),
-    maybeToast: Option.none(),
-    toastGeneration: 0,
+    maybePendingDelete: Option.none(),
+    confirmDialog: Dialog.init({ id: 'habits-delete-dialog' }),
+    toast: Toast.init({ id: 'habits-toast' }),
   })
 
 /** Everything the screen reads from its siblings on each dispatch. */
@@ -156,14 +161,11 @@ export const Message = defineMessageUnion({
   CompletedUpdateHabit: { habitId: Schema.String, title: Schema.String },
   FailedUpdateHabit: { message: Schema.String },
   ClickedDeleteHabit: { habitId: Schema.String, title: Schema.String },
-  CompletedConfirmHabitDelete: {
-    habitId: Schema.String,
-    title: Schema.String,
-    isConfirmed: Schema.Boolean,
-  },
+  ConfirmedDeleteHabit: {},
+  GotConfirmDialogMessage: { message: Dialog.Message },
   CompletedDeleteHabit: { habitId: Schema.String, title: Schema.String },
   FailedDeleteHabit: { message: Schema.String },
-  ClickedUndoDelete: {},
+  ClickedUndoDelete: { entryId: Schema.String, undo: ToastUndo },
   CompletedRestoreHabit: { habitId: Schema.String, title: Schema.String },
   FailedRestoreHabit: { message: Schema.String },
   ClickedTapHabit: { habitId: Schema.String, title: Schema.String },
@@ -178,10 +180,7 @@ export const Message = defineMessageUnion({
   PressedPreviousHeatMonth: {},
   PressedNextHeatMonth: {},
   ClickedCurrentHeatMonth: {},
-  CompletedWaitBeforeDismissToast: {
-    habitId: Schema.String,
-    generation: Schema.Int,
-  },
+  GotToastMessage: { message: Toast.Message },
 })
 export type Message = typeof Message.Type
 
@@ -360,23 +359,6 @@ export const RestoreHabit = Command.define('RestoreHabit', {
     ),
 })
 
-export const ConfirmHabitDelete = Command.define('ConfirmHabitDelete', {
-  args: { habitId: Schema.String, title: Schema.String },
-  messages: [Message.CompletedConfirmHabitDelete],
-  execute: ({ habitId, title }) =>
-    Effect.sync(() => {
-      try {
-        return window.confirm(`عادت «${title}» حذف شود؟`)
-      } catch {
-        return false
-      }
-    }).pipe(
-      Effect.map(isConfirmed =>
-        Message.CompletedConfirmHabitDelete({ habitId, title, isConfirmed }),
-      ),
-    ),
-})
-
 export const TapHabit = Command.define('TapHabit', {
   args: {
     habitId: Schema.String,
@@ -408,17 +390,6 @@ export const TapHabit = Command.define('TapHabit', {
         Effect.succeed(
           Message.FailedTapHabit({ message: storeFailureMessage(error) }),
         ),
-      ),
-    ),
-})
-
-export const WaitBeforeDismissToast = Command.define('WaitBeforeDismissToast', {
-  args: { habitId: Schema.String, generation: Schema.Int },
-  messages: [Message.CompletedWaitBeforeDismissToast],
-  execute: ({ habitId, generation }) =>
-    Effect.sleep(Duration.seconds(8)).pipe(
-      Effect.as(
-        Message.CompletedWaitBeforeDismissToast({ habitId, generation }),
       ),
     ),
 })
@@ -527,6 +498,84 @@ const optionalText = (value: string): Option.Option<string> => {
 
   return trimmed === '' ? Option.none() : Option.some(trimmed)
 }
+
+// DIALOG AND TOAST FOLDS
+
+const foldConfirmDialogOutMessage = Dialog.OutMessage.match<
+  Update.Step<Model, Message>
+>({
+  Opened: () => model => ({ model }),
+  Closed: () => stepModel => ({
+    model: modifyFields(stepModel, {
+      maybePendingDelete: () => Option.none(),
+    }),
+  }),
+})
+
+const foldConfirmDialog = Update.foldChild({
+  update: Dialog.update,
+  read: (model: Model) => Option.some(model.confirmDialog),
+  write: (model, nextDialog) =>
+    modifyFields(model, { confirmDialog: () => nextDialog }),
+  toParentMessage: message => Message.GotConfirmDialogMessage({ message }),
+  foldOutMessage: foldConfirmDialogOutMessage,
+})
+
+const foldConfirmDialogOpen = Update.foldChildStep({
+  update: Dialog.open,
+  read: (model: Model) => Option.some(model.confirmDialog),
+  write: (model, nextDialog) =>
+    modifyFields(model, { confirmDialog: () => nextDialog }),
+  toParentMessage: message => Message.GotConfirmDialogMessage({ message }),
+  foldOutMessage: foldConfirmDialogOutMessage,
+})
+
+const foldConfirmDialogClose = Update.foldChildStep({
+  update: Dialog.close,
+  read: (model: Model) => Option.some(model.confirmDialog),
+  write: (model, nextDialog) =>
+    modifyFields(model, { confirmDialog: () => nextDialog }),
+  toParentMessage: message => Message.GotConfirmDialogMessage({ message }),
+  foldOutMessage: foldConfirmDialogOutMessage,
+})
+
+const shownDeletedToastStep = (
+  habitId: string,
+  title: string,
+): Update.Step<Model, Message> =>
+  Update.foldChildStep({
+    update: toast =>
+      Toast.show(toast, {
+        payload: {
+          text: `«${title}» حذف شد.`,
+          maybeUndo: { kind: 'restoreHabit', id: habitId, title },
+        },
+        variant: 'Info',
+      }),
+    read: (model: Model) => Option.some(model.toast),
+    write: (model, nextToast) =>
+      modifyFields(model, { toast: () => nextToast }),
+    toParentMessage: message => Message.GotToastMessage({ message }),
+    foldOutMessage: () => stepModel => ({ model: stepModel }),
+  })
+
+const dismissedToastStep = (entryId: string): Update.Step<Model, Message> =>
+  Update.foldChildStep({
+    update: toast => Toast.dismiss(toast, entryId),
+    read: (model: Model) => Option.some(model.toast),
+    write: (model, nextToast) =>
+      modifyFields(model, { toast: () => nextToast }),
+    toParentMessage: message => Message.GotToastMessage({ message }),
+    foldOutMessage: () => stepModel => ({ model: stepModel }),
+  })
+
+const foldToast = Update.foldChild({
+  update: Toast.update,
+  read: (model: Model) => Option.some(model.toast),
+  write: (model, nextToast) => modifyFields(model, { toast: () => nextToast }),
+  toParentMessage: message => Message.GotToastMessage({ message }),
+  foldOutMessage: () => stepModel => ({ model: stepModel }),
+})
 
 export const update = (
   model: Model,
@@ -681,42 +730,57 @@ export const update = (
         return { model }
       }
 
-      return {
-        model,
-        commands: [ConfirmHabitDelete({ habitId, title })],
-      }
+      return Update.combine(model, [
+        foldConfirmDialogOpen,
+        stepModel => ({
+          model: modifyFields(stepModel, {
+            maybePendingDelete: () =>
+              Option.some(PendingHabitDelete.make({ habitId, title })),
+          }),
+        }),
+      ])
     },
 
-    CompletedConfirmHabitDelete: ({ habitId, title, isConfirmed }) => {
-      if (!isConfirmed) {
-        return { model }
-      }
-
-      return {
-        model: modifyFields(model, { maybePageError: () => Option.none() }),
-        commands: [DeleteHabit({ habitId, title })],
-      }
-    },
+    ConfirmedDeleteHabit: () =>
+      Option.match(model.maybePendingDelete, {
+        onNone: () => ({ model }),
+        onSome: pending =>
+          Update.combine(model, [
+            foldConfirmDialogClose,
+            stepModel => ({
+              model: modifyFields(stepModel, {
+                maybePageError: () => Option.none(),
+              }),
+              commands: [
+                DeleteHabit({
+                  habitId: pending.habitId,
+                  title: pending.title,
+                }),
+              ],
+            }),
+          ]),
+      }),
 
     CompletedDeleteHabit: ({ habitId, title }) => {
-      const generation = model.toastGeneration + 1
       const cleared = Option.contains(model.maybeEditingId, habitId)
         ? resetForm(model)
         : model
 
-      return {
-        model: modifyFields(cleared, {
-          maybeHeat: () =>
-            Option.exists(model.maybeHeat, heat => heat.habitId === habitId)
-              ? Option.none()
-              : model.maybeHeat,
-          maybeToast: () => Option.some({ habitId, title }),
-          toastGeneration: () => generation,
-          announcement: () => `حذف شد: ${title}`,
-        }),
-        commands: [WaitBeforeDismissToast({ habitId, generation })],
-        outMessage: OutMessage.WroteLocalData(),
-      }
+      return Update.withOutMessage(
+        Update.combine(cleared, [
+          shownDeletedToastStep(habitId, title),
+          stepModel => ({
+            model: modifyFields(stepModel, {
+              maybeHeat: () =>
+                Option.exists(model.maybeHeat, heat => heat.habitId === habitId)
+                  ? Option.none()
+                  : model.maybeHeat,
+              announcement: () => `حذف شد: ${title}`,
+            }),
+          }),
+        ]),
+        OutMessage.WroteLocalData(),
+      )
     },
 
     FailedDeleteHabit: ({ message }) => ({
@@ -725,19 +789,19 @@ export const update = (
       }),
     }),
 
-    ClickedUndoDelete: () =>
-      Option.match(model.maybeToast, {
-        onNone: () => ({ model }),
-        onSome: toast => ({
-          model: modifyFields(model, {
-            maybeToast: () => Option.none(),
-            maybePageError: () => Option.none(),
+    ClickedUndoDelete: ({ entryId, undo }) =>
+      Update.withOutMessage(
+        Update.combine(model, [
+          dismissedToastStep(entryId),
+          stepModel => ({
+            model: modifyFields(stepModel, {
+              maybePageError: () => Option.none(),
+            }),
+            commands: [RestoreHabit({ habitId: undo.id, title: undo.title })],
           }),
-          commands: [
-            RestoreHabit({ habitId: toast.habitId, title: toast.title }),
-          ],
-        }),
-      }),
+        ]),
+        OutMessage.WroteLocalData(),
+      ),
 
     CompletedRestoreHabit: ({ title }) => ({
       model: modifyFields(model, {
@@ -825,15 +889,9 @@ export const update = (
       }),
     }),
 
-    CompletedWaitBeforeDismissToast: ({ habitId, generation }) => ({
-      model: modifyFields(model, {
-        maybeToast: () =>
-          generation === model.toastGeneration &&
-          Option.exists(model.maybeToast, toast => toast.habitId === habitId)
-            ? Option.none()
-            : model.maybeToast,
-      }),
-    }),
+    GotConfirmDialogMessage: ({ message }) => foldConfirmDialog(model, message),
+
+    GotToastMessage: ({ message }) => foldToast(model, message),
   })
 
 // ENTRY CAPABILITY
@@ -847,8 +905,9 @@ export const entered = (model: Model): CommandReturn => ({
     announcement: () => '',
     maybeBusyId: () => Option.none(),
     maybeHeat: () => Option.none(),
-    maybeToast: () => Option.none(),
-    toastGeneration: () => 0,
+    maybePendingDelete: () => Option.none(),
+    confirmDialog: () => Dialog.init({ id: 'habits-delete-dialog' }),
+    toast: () => Toast.init({ id: 'habits-toast' }),
   }),
 })
 
@@ -865,6 +924,18 @@ export const restoreRefusalMessage = (
           )
         : Option.none(),
   })
+
+// SPEC
+
+/** The delete confirm copy and the accept message, from the pending state. */
+export const confirmSpec = (model: Model): Option.Option<ConfirmSpec> =>
+  Option.map(model.maybePendingDelete, pending => ({
+    title: 'حذف عادت',
+    body: `عادت «${pending.title}» حذف شود؟`,
+    confirmLabel: 'حذف',
+    cancelLabel: 'انصراف',
+    isDanger: true,
+  }))
 
 // SUBSCRIPTION
 

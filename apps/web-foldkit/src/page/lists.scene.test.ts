@@ -1,5 +1,5 @@
 import { Option } from 'effect'
-import { Listbox } from '@foldkit/ui'
+import { Animation, Dialog, Listbox, Toast as UiToast } from '@foldkit/ui'
 import {
   Command,
   Mount,
@@ -161,20 +161,20 @@ describe('Lists index', () => {
       indexScene(Lists.initialModel()),
       given(Lists.initialModel()),
       click(role('button', { name: 'حذف فهرست خرید هفتگی' })),
-      Command.expectExact(
-        Lists.ConfirmListDelete({
-          listId: LIST_ID,
-          title: 'خرید هفتگی',
-          scope: 'index',
-        }),
+      Mount.resolve(
+        Dialog.AcquireResources,
+        Dialog.Message.SucceededAcquireResources(),
       ),
       Command.resolve(
-        Lists.ConfirmListDelete,
-        Lists.Message.CompletedConfirmListDelete({
-          listId: LIST_ID,
-          isConfirmed: false,
-        }),
+        Dialog.ShowDialog,
+        Dialog.Message.SucceededShowDialog(),
       ),
+      click(role('button', { name: 'انصراف' })),
+      Command.resolve(
+        Dialog.CloseDialog,
+        Dialog.Message.CompletedCloseDialog(),
+      ),
+      Mount.expectEnded(Dialog.AcquireResources),
     )
   })
 })
@@ -186,8 +186,8 @@ describe('List detail', () => {
       given(detailModel()),
       expect(label('عنوان فهرست')).toHaveValue('خرید هفتگی'),
       expect(text('۳ مورد · ۱ انجام‌شده')).toExist(),
-      expect(role('checkbox', { name: 'تیک زدن نان' })).toExist(),
-      expect(role('checkbox', { name: 'برداشتن تیک شیر' })).toExist(),
+      expect(role('checkbox', { name: 'نان' })).toExist(),
+      expect(role('checkbox', { name: 'شیر' })).toExist(),
       expect(nth(all.selector('.lists-item'), 0)).toContainText('نان'),
       expect(nth(all.selector('.lists-item'), 1)).toContainText('پنیر'),
       expect(nth(all.selector('.lists-item'), 2)).toContainText('شیر'),
@@ -220,7 +220,7 @@ describe('List detail', () => {
     scene(
       detailScene(detailModel(), withItems()),
       given(detailModel()),
-      click(role('checkbox', { name: 'تیک زدن نان' })),
+      click(role('checkbox', { name: 'نان' })),
       Command.expectExact(
         Lists.SetListItemChecked({
           itemId: ITEM_ID,
@@ -240,28 +240,71 @@ describe('List detail', () => {
       ),
       expect(text('تیک خورد: نان')).toExist(),
       Command.resolve(
-        Lists.WaitBeforeDismissToast,
-        Lists.Message.CompletedWaitBeforeDismissToast({
-          itemId: ITEM_ID,
-          generation: 1,
+        Animation.WaitForPaint,
+        Animation.Message.CompletedWaitForPaint({ generation: 1 }),
+      ),
+      Command.resolve(
+        Animation.WaitForAnimationSettled,
+        Animation.Message.EndedAnimation({ generation: 1 }),
+      ),
+      Command.resolve(
+        UiToast.WaitBeforeDismissal,
+        UiToast.Message.CompletedWaitBeforeDismissal({
+          entryId: 'lists-toast-entry-0',
+          version: 0,
         }),
+      ),
+      Command.resolve(
+        Animation.WaitForPaint,
+        Animation.Message.CompletedWaitForPaint({ generation: 2 }),
+      ),
+      Command.resolve(
+        Animation.WaitForAnimationSettled,
+        Animation.Message.EndedAnimation({ generation: 2 }),
       ),
       expect(text('تیک خورد: نان')).toBeAbsent(),
     )
   })
 
   test('the undo button restores the checked row', () => {
-    const model = modifyFields(detailModel(), {
-      maybeToast: () => Option.some({ id: ITEM_ID, name: 'نان' }),
-    })
-
     scene(
-      detailScene(model, withItems()),
-      given(model),
-      expect(text('تیک خورد: نان')).toExist(),
-      click(role('button', { name: 'بازگرداندن' })),
-      Command.expectExact(
+      detailScene(detailModel(), withItems()),
+      given(detailModel()),
+      click(role('checkbox', { name: 'نان' })),
+      Command.resolve(
+        Lists.SetListItemChecked,
+        Lists.Message.CompletedSetListItemChecked({
+          itemId: ITEM_ID,
+          name: 'نان',
+          checked: true,
+        }),
+      ),
+      Command.resolve(
+        Animation.WaitForPaint,
+        Animation.Message.CompletedWaitForPaint({ generation: 1 }),
+      ),
+      Command.resolve(
+        Animation.WaitForAnimationSettled,
+        Animation.Message.EndedAnimation({ generation: 1 }),
+      ),
+      Command.resolve(
+        UiToast.WaitBeforeDismissal,
+        UiToast.Message.CompletedWaitBeforeDismissal({
+          entryId: 'lists-toast-entry-0',
+          version: 1,
+        }),
+      ),
+      click(role('button', { name: 'بازگردانی' })),
+      Command.expectHas(
         Lists.UncheckListItem({ itemId: ITEM_ID, name: 'نان' }),
+      ),
+      Command.resolve(
+        Animation.WaitForPaint,
+        Animation.Message.CompletedWaitForPaint({ generation: 2 }),
+      ),
+      Command.resolve(
+        Animation.WaitForAnimationSettled,
+        Animation.Message.EndedAnimation({ generation: 2 }),
       ),
       Command.resolve(
         Lists.UncheckListItem,
@@ -271,6 +314,7 @@ describe('List detail', () => {
         }),
       ),
       expectOutMessage(Lists.OutMessage.WroteLocalData()),
+      expect(text('تیک خورد: نان')).toBeAbsent(),
     )
   })
 

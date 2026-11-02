@@ -1,4 +1,6 @@
 import { Option } from 'effect'
+import { Animation, Dialog, Toast as UiToast } from '@foldkit/ui'
+import { test as toastTest } from '@foldkit/ui/toast'
 import {
   Command,
   expectNoOutMessage,
@@ -14,6 +16,7 @@ import { describe, expect, test } from 'vitest'
 import { ListId } from '@tali/domain'
 
 import { COLOR_CHOICES, ICON_CHOICES } from '../lists-model'
+import { Toast } from '../ui/toast'
 import * as Lists from './lists'
 import type { Inputs, Model } from './lists'
 import {
@@ -164,19 +167,26 @@ describe('list deletion', () => {
           scope: 'index',
         }),
       ),
-      Command.expectExact(
-        Lists.ConfirmListDelete({
-          listId: LIST_ID,
-          title: 'خرید هفتگی',
-          scope: 'index',
-        }),
-      ),
+      model(next => {
+        expect(next.maybePendingDelete).toEqual(
+          Option.some(
+            Lists.PendingListDelete.make({
+              listId: LIST_ID,
+              title: 'خرید هفتگی',
+              scope: 'index',
+            }),
+          ),
+        )
+        expect(next.confirmDialog.isOpen).toBe(true)
+      }),
       Command.resolve(
-        Lists.ConfirmListDelete,
-        Lists.Message.CompletedConfirmListDelete({
-          listId: LIST_ID,
-          isConfirmed: true,
-        }),
+        Dialog.ShowDialog,
+        Dialog.Message.SucceededShowDialog(),
+      ),
+      message(Lists.Message.ConfirmedDeleteList()),
+      Command.resolve(
+        Dialog.CloseDialog,
+        Dialog.Message.CompletedCloseDialog(),
       ),
       Command.expectExact(
         Lists.DeleteList({
@@ -206,13 +216,35 @@ describe('list deletion', () => {
           scope: 'detail',
         }),
       ),
+      model(next => {
+        expect(next.maybePendingDelete).toEqual(
+          Option.some(
+            Lists.PendingListDelete.make({
+              listId: LIST_ID,
+              title: 'خرید هفتگی',
+              scope: 'detail',
+            }),
+          ),
+        )
+        expect(next.confirmDialog.isOpen).toBe(true)
+      }),
       Command.resolve(
-        Lists.ConfirmListDelete,
-        Lists.Message.CompletedConfirmListDelete({
-          listId: LIST_ID,
-          isConfirmed: false,
+        Dialog.ShowDialog,
+        Dialog.Message.SucceededShowDialog(),
+      ),
+      message(
+        Lists.Message.GotConfirmDialogMessage({
+          message: Dialog.Message.RequestedClose(),
         }),
       ),
+      Command.resolve(
+        Dialog.CloseDialog,
+        Dialog.Message.CompletedCloseDialog(),
+      ),
+      model(next => {
+        expect(next.maybePendingDelete).toEqual(Option.none())
+        expect(next.confirmDialog.isOpen).toBe(false)
+      }),
       Command.expectNone(),
     )
   })
@@ -543,23 +575,20 @@ describe('list items', () => {
         }),
       ),
       model(next => {
-        expect(next.maybeToast).toStrictEqual(
-          Option.some({ id: ITEM_ID, name: 'نان' }),
-        )
+        expect(next.toast.entries).toHaveLength(1)
+        expect(next.toast.entries[0]?.payload.text).toBe('تیک خورد: نان')
+        expect(
+          next.toast.entries[0]?.payload.maybeUndo,
+        ).toStrictEqual({
+          kind: 'uncheckItem',
+          id: ITEM_ID,
+          title: 'نان',
+        })
       }),
       expectOutMessage(Lists.OutMessage.WroteLocalData()),
-      Command.expectExact(
-        Lists.WaitBeforeDismissToast({ itemId: ITEM_ID, generation: 1 }),
-      ),
-      Command.resolve(
-        Lists.WaitBeforeDismissToast,
-        Lists.Message.CompletedWaitBeforeDismissToast({
-          itemId: ITEM_ID,
-          generation: 1,
-        }),
-      ),
+      toastTest.drainEntry({ entryId: 'lists-toast-entry-0' }),
       model(next => {
-        expect(next.maybeToast).toStrictEqual(Option.none())
+        expect(next.toast.entries).toHaveLength(0)
       }),
     )
   })
@@ -587,7 +616,7 @@ describe('list items', () => {
         }),
       ),
       model(next => {
-        expect(next.maybeToast).toStrictEqual(Option.none())
+        expect(next.toast.entries).toHaveLength(0)
       }),
       expectOutMessage(Lists.OutMessage.WroteLocalData()),
     )
@@ -596,15 +625,53 @@ describe('list items', () => {
   test('undo clears the toast immediately and forces the unchecked write', () => {
     story(
       defaultUpdate,
-      given(
-        modifyFields(openDetail(), {
-          maybeToast: () => Option.some({ id: ITEM_ID, name: 'نان' }),
+      given(openDetail()),
+      message(Lists.Message.ClickedToggleItem({ itemId: ITEM_ID })),
+      Command.resolve(
+        Lists.SetListItemChecked,
+        Lists.Message.CompletedSetListItemChecked({
+          itemId: ITEM_ID,
+          name: 'نان',
+          checked: true,
         }),
       ),
-      message(Lists.Message.ClickedUndoChecked()),
+      Command.resolve(
+        Animation.WaitForPaint,
+        Animation.Message.CompletedWaitForPaint({ generation: 1 }),
+      ),
+      Command.resolve(
+        Animation.WaitForAnimationSettled,
+        Animation.Message.EndedAnimation({ generation: 1 }),
+      ),
+      Command.resolve(
+        UiToast.WaitBeforeDismissal,
+        UiToast.Message.CompletedWaitBeforeDismissal({
+          entryId: 'lists-toast-entry-0',
+          version: 1,
+        }),
+      ),
+      message(
+        Lists.Message.ClickedUndoChecked({
+          entryId: 'lists-toast-entry-0',
+          undo: { kind: 'uncheckItem', id: ITEM_ID, title: 'نان' },
+        }),
+      ),
+      expectOutMessage(Lists.OutMessage.WroteLocalData()),
       model(next => {
-        expect(next.maybeToast).toStrictEqual(Option.none())
+        expect(
+          next.toast.entries.every(
+            entry => entry.animation.transitionState !== 'Idle',
+          ),
+        ).toBe(true)
       }),
+      Command.resolve(
+        Animation.WaitForPaint,
+        Animation.Message.CompletedWaitForPaint({ generation: 2 }),
+      ),
+      Command.resolve(
+        Animation.WaitForAnimationSettled,
+        Animation.Message.EndedAnimation({ generation: 2 }),
+      ),
       Command.expectExact(
         Lists.UncheckListItem({ itemId: ITEM_ID, name: 'نان' }),
       ),
@@ -615,16 +682,38 @@ describe('list items', () => {
           name: 'نان',
         }),
       ),
-      expectOutMessage(Lists.OutMessage.WroteLocalData()),
+      model(next => {
+        expect(next.toast.entries).toHaveLength(0)
+      }),
     )
   })
 
   test('deleting an item clears a toast that belongs to it', () => {
     story(
       defaultUpdate,
-      given(
-        modifyFields(openDetail(), {
-          maybeToast: () => Option.some({ id: ITEM_ID, name: 'نان' }),
+      given(openDetail()),
+      message(Lists.Message.ClickedToggleItem({ itemId: ITEM_ID })),
+      Command.resolve(
+        Lists.SetListItemChecked,
+        Lists.Message.CompletedSetListItemChecked({
+          itemId: ITEM_ID,
+          name: 'نان',
+          checked: true,
+        }),
+      ),
+      Command.resolve(
+        Animation.WaitForPaint,
+        Animation.Message.CompletedWaitForPaint({ generation: 1 }),
+      ),
+      Command.resolve(
+        Animation.WaitForAnimationSettled,
+        Animation.Message.EndedAnimation({ generation: 1 }),
+      ),
+      Command.resolve(
+        UiToast.WaitBeforeDismissal,
+        UiToast.Message.CompletedWaitBeforeDismissal({
+          entryId: 'lists-toast-entry-0',
+          version: 1,
         }),
       ),
       message(
@@ -640,10 +729,25 @@ describe('list items', () => {
           name: 'نان',
         }),
       ),
-      model(next => {
-        expect(next.maybeToast).toStrictEqual(Option.none())
-      }),
       expectOutMessage(Lists.OutMessage.WroteLocalData()),
+      model(next => {
+        expect(
+          next.toast.entries.every(
+            entry => entry.animation.transitionState !== 'Idle',
+          ),
+        ).toBe(true)
+      }),
+      Command.resolve(
+        Animation.WaitForPaint,
+        Animation.Message.CompletedWaitForPaint({ generation: 2 }),
+      ),
+      Command.resolve(
+        Animation.WaitForAnimationSettled,
+        Animation.Message.EndedAnimation({ generation: 2 }),
+      ),
+      model(next => {
+        expect(next.toast.entries).toHaveLength(0)
+      }),
     )
   })
 
@@ -807,7 +911,7 @@ describe('entry capabilities', () => {
       modifyFields(Lists.initialModel(), {
         itemDraft: () => 'نیمه‌کاره',
         maybeTitleDraft: () => Option.some('نیمه‌کاره'),
-        maybeToast: () => Option.some({ id: ITEM_ID, name: 'نان' }),
+        toast: () => Toast.init({ id: 'lists-toast' }),
         maybeDraggingId: () => Option.some(ITEM_ID),
         maybeDetailError: () => Option.some('خطا'),
       }),
@@ -817,7 +921,7 @@ describe('entry capabilities', () => {
     expect(entered.maybeListId).toStrictEqual(Option.some(listId))
     expect(entered.itemDraft).toBe('')
     expect(entered.maybeTitleDraft).toStrictEqual(Option.none())
-    expect(entered.maybeToast).toStrictEqual(Option.none())
+    expect(entered.toast.entries).toHaveLength(0)
     expect(entered.maybeDraggingId).toStrictEqual(Option.none())
     expect(entered.maybeDetailError).toStrictEqual(Option.none())
   })

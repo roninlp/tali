@@ -1,4 +1,6 @@
 import { Option } from 'effect'
+import { Animation, Dialog, Toast as UiToast } from '@foldkit/ui'
+import { test as toastTest } from '@foldkit/ui/toast'
 import {
   Command,
   expectNoOutMessage,
@@ -342,7 +344,7 @@ describe('habit edit', () => {
 })
 
 describe('habit delete and undo', () => {
-  test('delete asks the legacy confirmation first', () => {
+  test('delete asks the confirmation dialog first', () => {
     story(
       defaultUpdate,
       given(habitsModel()),
@@ -352,31 +354,58 @@ describe('habit delete and undo', () => {
           title: 'ورزش',
         }),
       ),
-      Command.expectExact(
-        Habits.ConfirmHabitDelete({ habitId: SECOND_HABIT_ID, title: 'ورزش' }),
-      ),
       Command.resolve(
-        Habits.ConfirmHabitDelete,
-        Habits.Message.CompletedConfirmHabitDelete({
-          habitId: SECOND_HABIT_ID,
-          title: 'ورزش',
-          isConfirmed: false,
+        Dialog.ShowDialog,
+        Dialog.Message.SucceededShowDialog(),
+      ),
+      model(next => {
+        expect(next.maybePendingDelete).toEqual(
+          Option.some(
+            Habits.PendingHabitDelete.make({
+              habitId: SECOND_HABIT_ID,
+              title: 'ورزش',
+            }),
+          ),
+        )
+        expect(next.confirmDialog.isOpen).toBe(true)
+      }),
+      message(
+        Habits.Message.GotConfirmDialogMessage({
+          message: Dialog.Message.RequestedClose(),
         }),
       ),
+      Command.resolve(
+        Dialog.CloseDialog,
+        Dialog.Message.CompletedCloseDialog(),
+      ),
+      model(next => {
+        expect(next.maybePendingDelete).toEqual(Option.none())
+        expect(next.confirmDialog.isOpen).toBe(false)
+      }),
       Command.expectNone(),
     )
   })
 
   test('a confirmed delete closes the heatmap and opens the undo toast', () => {
+    const pendingModel = modifyFields(withHeat(), {
+      maybePendingDelete: () =>
+        Option.some(
+          Habits.PendingHabitDelete.make({
+            habitId: SECOND_HABIT_ID,
+            title: 'ورزش',
+          }),
+        ),
+      confirmDialog: () =>
+        Dialog.boot({ id: 'habits-delete-dialog' }).model,
+    })
+
     story(
       defaultUpdate,
-      given(withHeat()),
-      message(
-        Habits.Message.CompletedConfirmHabitDelete({
-          habitId: SECOND_HABIT_ID,
-          title: 'ورزش',
-          isConfirmed: true,
-        }),
+      given(pendingModel),
+      message(Habits.Message.ConfirmedDeleteHabit()),
+      Command.resolve(
+        Dialog.CloseDialog,
+        Dialog.Message.CompletedCloseDialog(),
       ),
       Command.expectExact(
         Habits.DeleteHabit({ habitId: SECOND_HABIT_ID, title: 'ورزش' }),
@@ -390,28 +419,19 @@ describe('habit delete and undo', () => {
       ),
       model(next => {
         expect(next.maybeHeat).toStrictEqual(Option.none())
-        expect(next.maybeToast).toStrictEqual(
-          Option.some({ habitId: SECOND_HABIT_ID, title: 'ورزش' }),
-        )
-        expect(next.toastGeneration).toBe(1)
+        expect(next.toast.entries).toHaveLength(1)
+        expect(next.toast.entries[0]?.payload.text).toBe('«ورزش» حذف شد.')
+        expect(next.toast.entries[0]?.payload.maybeUndo).toStrictEqual({
+          kind: 'restoreHabit',
+          id: SECOND_HABIT_ID,
+          title: 'ورزش',
+        })
         expect(next.announcement).toBe('حذف شد: ورزش')
       }),
       expectOutMessage(Habits.OutMessage.WroteLocalData()),
-      Command.expectExact(
-        Habits.WaitBeforeDismissToast({
-          habitId: SECOND_HABIT_ID,
-          generation: 1,
-        }),
-      ),
-      Command.resolve(
-        Habits.WaitBeforeDismissToast,
-        Habits.Message.CompletedWaitBeforeDismissToast({
-          habitId: SECOND_HABIT_ID,
-          generation: 1,
-        }),
-      ),
+      toastTest.drainEntry({ entryId: 'habits-toast-entry-0' }),
       model(next => {
-        expect(next.maybeToast).toStrictEqual(Option.none())
+        expect(next.toast.entries).toHaveLength(0)
       }),
     )
   })
@@ -419,20 +439,61 @@ describe('habit delete and undo', () => {
   test('undo restores the same row and announces it', () => {
     story(
       defaultUpdate,
-      given(
-        modifyFields(habitsModel(), {
-          maybeToast: () =>
-            Option.some({ habitId: SECOND_HABIT_ID, title: 'ورزش' }),
-          toastGeneration: () => 1,
+      given(habitsModel()),
+      message(
+        Habits.Message.ClickedDeleteHabit({
+          habitId: SECOND_HABIT_ID,
+          title: 'ورزش',
         }),
       ),
-      message(Habits.Message.ClickedUndoDelete()),
+      Command.resolve(
+        Dialog.ShowDialog,
+        Dialog.Message.SucceededShowDialog(),
+      ),
+      message(Habits.Message.ConfirmedDeleteHabit()),
+      Command.resolve(
+        Dialog.CloseDialog,
+        Dialog.Message.CompletedCloseDialog(),
+      ),
+      Command.resolve(
+        Habits.DeleteHabit,
+        Habits.Message.CompletedDeleteHabit({
+          habitId: SECOND_HABIT_ID,
+          title: 'ورزش',
+        }),
+      ),
+      Command.resolve(
+        Animation.WaitForPaint,
+        Animation.Message.CompletedWaitForPaint({ generation: 1 }),
+      ),
+      Command.resolve(
+        Animation.WaitForAnimationSettled,
+        Animation.Message.EndedAnimation({ generation: 1 }),
+      ),
+      Command.resolve(
+        UiToast.WaitBeforeDismissal,
+        UiToast.Message.CompletedWaitBeforeDismissal({
+          entryId: 'habits-toast-entry-0',
+          version: 1,
+        }),
+      ),
+      message(
+        Habits.Message.ClickedUndoDelete({
+          entryId: 'habits-toast-entry-0',
+          undo: { kind: 'restoreHabit', id: SECOND_HABIT_ID, title: 'ورزش' },
+        }),
+      ),
+      Command.resolve(
+        Animation.WaitForPaint,
+        Animation.Message.CompletedWaitForPaint({ generation: 2 }),
+      ),
+      Command.resolve(
+        Animation.WaitForAnimationSettled,
+        Animation.Message.EndedAnimation({ generation: 2 }),
+      ),
       Command.expectExact(
         Habits.RestoreHabit({ habitId: SECOND_HABIT_ID, title: 'ورزش' }),
       ),
-      model(next => {
-        expect(next.maybeToast).toStrictEqual(Option.none())
-      }),
       Command.resolve(
         Habits.RestoreHabit,
         Habits.Message.CompletedRestoreHabit({
@@ -441,6 +502,7 @@ describe('habit delete and undo', () => {
         }),
       ),
       model(next => {
+        expect(next.toast.entries).toHaveLength(0)
         expect(next.announcement).toBe('بازگردانی شد: ورزش')
       }),
       expectOutMessage(Habits.OutMessage.WroteLocalData()),
@@ -450,13 +512,58 @@ describe('habit delete and undo', () => {
   test('a failed restore explains itself', () => {
     story(
       defaultUpdate,
-      given(
-        modifyFields(habitsModel(), {
-          maybeToast: () =>
-            Option.some({ habitId: SECOND_HABIT_ID, title: 'ورزش' }),
+      given(habitsModel()),
+      message(
+        Habits.Message.ClickedDeleteHabit({
+          habitId: SECOND_HABIT_ID,
+          title: 'ورزش',
         }),
       ),
-      message(Habits.Message.ClickedUndoDelete()),
+      Command.resolve(
+        Dialog.ShowDialog,
+        Dialog.Message.SucceededShowDialog(),
+      ),
+      message(Habits.Message.ConfirmedDeleteHabit()),
+      Command.resolve(
+        Dialog.CloseDialog,
+        Dialog.Message.CompletedCloseDialog(),
+      ),
+      Command.resolve(
+        Habits.DeleteHabit,
+        Habits.Message.CompletedDeleteHabit({
+          habitId: SECOND_HABIT_ID,
+          title: 'ورزش',
+        }),
+      ),
+      Command.resolve(
+        Animation.WaitForPaint,
+        Animation.Message.CompletedWaitForPaint({ generation: 1 }),
+      ),
+      Command.resolve(
+        Animation.WaitForAnimationSettled,
+        Animation.Message.EndedAnimation({ generation: 1 }),
+      ),
+      Command.resolve(
+        UiToast.WaitBeforeDismissal,
+        UiToast.Message.CompletedWaitBeforeDismissal({
+          entryId: 'habits-toast-entry-0',
+          version: 1,
+        }),
+      ),
+      message(
+        Habits.Message.ClickedUndoDelete({
+          entryId: 'habits-toast-entry-0',
+          undo: { kind: 'restoreHabit', id: SECOND_HABIT_ID, title: 'ورزش' },
+        }),
+      ),
+      Command.resolve(
+        Animation.WaitForPaint,
+        Animation.Message.CompletedWaitForPaint({ generation: 2 }),
+      ),
+      Command.resolve(
+        Animation.WaitForAnimationSettled,
+        Animation.Message.EndedAnimation({ generation: 2 }),
+      ),
       Command.resolve(
         Habits.RestoreHabit,
         Habits.Message.FailedRestoreHabit({ message: 'حذف قطعی شده است' }),
@@ -465,39 +572,6 @@ describe('habit delete and undo', () => {
         expect(next.maybePageError).toStrictEqual(
           Option.some('حذف قطعی شده است'),
         )
-      }),
-    )
-  })
-
-  test('a toast only dismisses for its own generation', () => {
-    story(
-      defaultUpdate,
-      given(
-        modifyFields(habitsModel(), {
-          maybeToast: () =>
-            Option.some({ habitId: SECOND_HABIT_ID, title: 'ورزش' }),
-          toastGeneration: () => 2,
-        }),
-      ),
-      message(
-        Habits.Message.CompletedWaitBeforeDismissToast({
-          habitId: SECOND_HABIT_ID,
-          generation: 1,
-        }),
-      ),
-      model(next => {
-        expect(next.maybeToast).toStrictEqual(
-          Option.some({ habitId: SECOND_HABIT_ID, title: 'ورزش' }),
-        )
-      }),
-      message(
-        Habits.Message.CompletedWaitBeforeDismissToast({
-          habitId: SECOND_HABIT_ID,
-          generation: 2,
-        }),
-      ),
-      model(next => {
-        expect(next.maybeToast).toStrictEqual(Option.none())
       }),
     )
   })

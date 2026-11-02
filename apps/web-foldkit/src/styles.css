@@ -716,6 +716,55 @@ input[type='search']::-webkit-search-cancel-button {
     color: var(--color-base-content);
   }
 
+  .toast-undo {
+    min-height: 2rem;
+    padding: 0 0.9rem;
+    border-radius: 999px;
+    border: 1px solid
+      color-mix(in oklch, var(--color-base-content) 25%, transparent);
+    background: transparent;
+    color: var(--color-base-content);
+    font: inherit;
+    font-size: 0.8rem;
+    line-height: 1;
+    cursor: pointer;
+    flex: none;
+    align-self: center;
+  }
+
+  .toast-undo:hover {
+    background: color-mix(in oklch, var(--color-base-content) 8%, transparent);
+  }
+
+  /* The Checkbox helper renders a `role=checkbox` button; this class draws its
+     box so form rows keep the native checkbox silhouette. */
+  .form-check {
+    inline-size: 1rem;
+    block-size: 1rem;
+    flex: none;
+    padding: 0;
+    border: 1px solid var(--color-base-300);
+    border-radius: 0.3rem;
+    background: var(--color-base-100);
+    color: transparent;
+    font-size: 0.75rem;
+    line-height: 1;
+    display: inline-grid;
+    place-items: center;
+    cursor: pointer;
+  }
+
+  .form-check[data-checked] {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: var(--color-primary-content);
+  }
+
+  .form-check[data-checked]::before {
+    content: '✓';
+    color: inherit;
+  }
+
   .segmented {
     display: inline-grid;
     grid-auto-flow: column;
@@ -1958,57 +2007,6 @@ input[type='search']::-webkit-search-cancel-button {
   flex: 1;
 }
 
-.lists-toast {
-  position: fixed;
-  inset-inline: 12px;
-  bottom: 84px;
-  margin-inline: auto;
-  max-width: 420px;
-  z-index: 40;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px 10px 14px;
-  border-radius: var(--radius-box);
-  background: var(--color-neutral);
-  color: var(--color-neutral-content);
-  box-shadow: 0 12px 32px oklch(0% 0 0 / 0.25);
-  animation: lists-toast-in 180ms ease-out;
-}
-
-.lists-toast p {
-  margin: 0;
-  font-size: 0.86rem;
-  line-height: 1.7;
-  overflow-wrap: anywhere;
-}
-
-.lists-toast button {
-  font-family: inherit;
-  font-size: 0.82rem;
-  min-height: 36px;
-  padding: 4px 14px;
-  border-radius: 999px;
-  border: 1px solid
-    color-mix(in oklch, var(--color-neutral-content) 40%, transparent);
-  background: transparent;
-  color: var(--color-neutral-content);
-  cursor: pointer;
-  flex: none;
-}
-
-@keyframes lists-toast-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 .lists-empty {
   margin: 0;
   color: color-mix(in oklch, var(--color-base-content) 55%, transparent);
@@ -2121,17 +2119,12 @@ input[type='search']::-webkit-search-cancel-button {
   .lists-controls {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-
-  .lists-toast {
-    bottom: 16px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .lists-item-name,
   .lists-item-name::after,
-  .lists-check,
-  .lists-toast {
+  .lists-check {
     transition: none !important;
     animation: none !important;
   }
@@ -3816,50 +3809,12 @@ button.tasks-tag {
   line-height: 1.7;
 }
 
-.habits-toast {
-  position: fixed;
-  inset-block-end: 84px;
-  inset-inline: 12px;
-  margin: 0 auto;
-  max-width: 420px;
-  background: var(--color-neutral);
-  color: var(--color-neutral-content);
-  border-radius: var(--radius-box);
-  padding: 8px 12px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  z-index: 20;
-  font-size: 0.82rem;
-  box-shadow: 0 12px 32px oklch(0% 0 0 / 0.25);
-}
-
-.habits-toast button {
-  min-height: 32px;
-  padding: 2px 12px;
-  border-radius: 999px;
-  border: 1px solid
-    color-mix(in oklch, var(--color-neutral-content) 40%, transparent);
-  background: transparent;
-  color: var(--color-neutral-content);
-  font-family: inherit;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-
 .habits-sr {
   position: absolute;
   inline-size: 1px;
   block-size: 1px;
   overflow: hidden;
   clip-path: inset(50%);
-}
-
-@media (min-width: 640px) {
-  .habits-toast {
-    inset-block-end: 20px;
-  }
 }
 
 /* ── Notes ─────────────────────────────────────────────────────────────── */

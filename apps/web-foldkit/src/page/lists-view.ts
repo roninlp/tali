@@ -1,6 +1,7 @@
 import { Array } from 'effect'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
+import { Checkbox } from '@foldkit/ui'
 import { localizeDigits } from '@tali/domain'
 
 import {
@@ -13,8 +14,10 @@ import {
 } from '../lists-model'
 import { listPath } from '../route'
 import { buttonView } from '../ui/button'
+import { confirmDialogView } from '../ui/confirm'
 import { formErrorView } from '../ui/field'
-import { Message } from './lists'
+import { toastStackView } from '../ui/toast'
+import { Message, confirmSpec } from './lists'
 import type { Model, ViewInputs } from './lists'
 
 /**
@@ -216,22 +219,22 @@ const createSectionView = (model: Model, h: HtmlBuilder<Message>): Html =>
               ),
             ],
           ),
-          h.label(
-            [h.Class('flex items-center gap-2 text-sm')],
-            [
-              h.input([
-                h.Type('checkbox'),
-                h.Class('checkbox checkbox-primary checkbox-sm'),
-                h.AriaLabel('فقط خودم ببینم (خصوصی)'),
-                h.Checked(model.indexVisibility === 'private'),
-                h.OnClick(
-                  Message.ToggledIndexVisibility({
-                    isPrivate: model.indexVisibility !== 'private',
-                  }),
+          Checkbox.view(
+            {
+              id: 'lists-private-check',
+              isChecked: model.indexVisibility === 'private',
+              onToggle: isChecked =>
+                Message.ToggledIndexVisibility({ isPrivate: isChecked }),
+              toView: attributes =>
+                h.div(
+                  [h.Class('flex items-center gap-2 text-sm')],
+                  [
+                    h.button([...attributes.checkbox, h.Class('form-check')]),
+                    h.span([...attributes.label], ['فقط خودم ببینم (خصوصی)']),
+                  ],
                 ),
-              ]),
-              'فقط خودم ببینم (خصوصی)',
-            ],
+            },
+            h,
           ),
           formErrorView(model.maybeIndexError, h),
           h.div(
@@ -375,6 +378,25 @@ export const listsIndexView = (
           ),
           createSectionView(model, h),
           allListsSectionView(inputs, h),
+          confirmDialogView(
+            {
+              model: model.confirmDialog,
+              toParentMessage: message =>
+                Message.GotConfirmDialogMessage({ message }),
+              onConfirm: Message.ConfirmedDeleteList(),
+              spec: confirmSpec(model),
+            },
+            h,
+          ),
+          toastStackView(
+            {
+              model: model.toast,
+              toParentMessage: message => Message.GotToastMessage({ message }),
+              toUndoMessage: (entryId, undo) =>
+                Message.ClickedUndoChecked({ entryId, undo }),
+            },
+            h,
+          ),
         ],
       ),
     ],

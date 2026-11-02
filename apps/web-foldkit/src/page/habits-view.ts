@@ -21,7 +21,14 @@ import {
   habitToday,
   pendingHabitIds,
 } from '../habits-model'
-import { Message, iconChoicesFor, restoreRefusalMessage } from './habits'
+import { confirmDialogView } from '../ui/confirm'
+import { toastStackView } from '../ui/toast'
+import {
+  Message,
+  confirmSpec,
+  iconChoicesFor,
+  restoreRefusalMessage,
+} from './habits'
 import type { Model, ViewInputs } from './habits'
 import { habitHeatmapView } from './habits-heatmap-view'
 
@@ -665,21 +672,27 @@ const listSectionView = (
   )
 }
 
-const toastView = (model: Model, h: HtmlBuilder<Message>): Html =>
-  Option.match(model.maybeToast, {
-    onNone: () => h.empty,
-    onSome: toast =>
-      h.div(
-        [h.Class('habits-toast'), h.Role('status')],
-        [
-          h.span([], [`«${toast.title}» حذف شد.`]),
-          h.button(
-            [h.Type('button'), h.OnClick(Message.ClickedUndoDelete())],
-            ['بازگردانی'],
-          ),
-        ],
-      ),
-  })
+const habitsConfirmDialogView = (model: Model, h: HtmlBuilder<Message>): Html =>
+  confirmDialogView(
+    {
+      model: model.confirmDialog,
+      toParentMessage: message => Message.GotConfirmDialogMessage({ message }),
+      onConfirm: Message.ConfirmedDeleteHabit(),
+      spec: confirmSpec(model),
+    },
+    h,
+  )
+
+const habitsToastView = (model: Model, h: HtmlBuilder<Message>): Html =>
+  toastStackView(
+    {
+      model: model.toast,
+      toParentMessage: message => Message.GotToastMessage({ message }),
+      toUndoMessage: (entryId, undo) =>
+        Message.ClickedUndoDelete({ entryId, undo }),
+    },
+    h,
+  )
 
 export const habitsPageView = (
   model: Model,
@@ -730,7 +743,8 @@ export const habitsPageView = (
             [h.Class('habits-sr'), h.Role('status'), h.AriaLive('polite')],
             [model.announcement],
           ),
-          toastView(model, h),
+          habitsToastView(model, h),
+          habitsConfirmDialogView(model, h),
         ],
       ),
     ],

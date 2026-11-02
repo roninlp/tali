@@ -1,4 +1,5 @@
 import { Option } from 'effect'
+import { Dialog } from '@foldkit/ui'
 import { UrlRequest } from 'foldkit/navigation'
 import { Command, given, message, model, story } from 'foldkit/story'
 import { modifyFields } from 'foldkit/struct'
@@ -280,11 +281,17 @@ describe('lists navigation', () => {
         }),
       ),
       Command.resolve(
-        Lists.ConfirmListDelete,
-        Lists.Message.CompletedConfirmListDelete({
-          listId: LIST_ID,
-          isConfirmed: true,
+        Dialog.ShowDialog,
+        Dialog.Message.SucceededShowDialog(),
+      ),
+      message(
+        Message.GotListsMessage({
+          message: Lists.Message.ConfirmedDeleteList(),
         }),
+      ),
+      Command.resolve(
+        Dialog.CloseDialog,
+        Dialog.Message.CompletedCloseDialog(),
       ),
       Command.expectHas(Lists.DeleteList({ listId: LIST_ID, itemIds: [] })),
       Command.resolve(

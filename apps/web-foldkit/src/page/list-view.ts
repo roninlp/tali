@@ -1,6 +1,7 @@
 import { Array, Option } from 'effect'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
+import { Checkbox, Listbox } from '@foldkit/ui'
 import { localizeDigits } from '@tali/domain'
 
 import {
@@ -14,15 +15,17 @@ import {
   writtenByOther,
 } from '../lists-model'
 import { listsRouter } from '../route'
-import { Listbox } from '@foldkit/ui'
 import { buttonView } from '../ui/button'
+import { confirmDialogView } from '../ui/confirm'
 import { formErrorView } from '../ui/field'
 import { listboxViewInputs } from '../ui/listbox'
+import { toastStackView } from '../ui/toast'
 import {
   Message,
   PlacementListbox,
   SortListbox,
   VisibilityListbox,
+  confirmSpec,
 } from './lists'
 import type {
   Model,
@@ -326,108 +329,116 @@ const itemRowView = (
   const isDragging = Option.contains(model.maybeDraggingId, item.id)
   const isDragOver = Option.contains(model.maybeDragOverId, item.id)
 
-  return h.keyed('li')(
-    item.id,
-    [
-      h.Class('lists-item'),
-      h.DataAttribute('done', item.done ? 'true' : 'false'),
-      h.DataAttribute('dragging', isDragging ? 'true' : 'false'),
-      h.DataAttribute('over', isDragOver ? 'true' : 'false'),
-      h.Draggable(isManual),
-      h.OnDragStart(Message.StartedDraggingItem({ itemId: item.id })),
-      h.OnDragOver(Message.EnteredDragTarget({ itemId: item.id })),
-      h.OnDragLeave(Message.LeftDragTarget({ itemId: item.id })),
-      h.OnDrop(Message.DroppedOnItem({ itemId: item.id })),
-      h.OnDragEnd(Message.EndedDragItem()),
-    ],
-    [
-      h.button(
-        [
-          h.Type('button'),
-          h.Class('lists-check'),
-          h.Role('checkbox'),
-          h.AriaChecked(item.done),
-          h.AriaLabel(`${item.done ? 'برداشتن تیک' : 'تیک زدن'} ${item.name}`),
-          h.Disabled(!canToggle),
-          h.OnClick(Message.ClickedToggleItem({ itemId: item.id })),
-        ],
-        [item.done ? '✓' : ''],
-      ),
-      h.div(
-        [h.Class('lists-item-body')],
-        [
-          h.span([h.Class('lists-item-name')], [item.name]),
-          h.div(
-            [h.Class('lists-item-meta')],
-            [
-              isItemPending
-                ? h.span([h.Class('text-warning')], ['در انتظار ارسال'])
-                : h.empty,
-              item.done ? h.span([], ['انجام‌شده']) : h.empty,
-              item.hasSyncError
-                ? h.span([h.Class('text-error')], ['خطا در همگام‌سازی'])
-                : h.empty,
-              writtenByOther(item.lastWriterId, maybeUserId, item.version)
-                ? h.span([], [UPDATED_BY_OTHER_LABEL])
-                : h.empty,
-            ],
-          ),
-        ],
-      ),
-      h.div(
-        [h.Class('lists-item-actions')],
-        [
-          ...(isManual
-            ? [
+  return Checkbox.view(
+    {
+      id: `lists-check-${item.id}`,
+      isChecked: item.done,
+      onToggle: () => Message.ClickedToggleItem({ itemId: item.id }),
+      toView: attributes =>
+        h.keyed('li')(
+          item.id,
+          [
+            h.Class('lists-item'),
+            h.DataAttribute('done', item.done ? 'true' : 'false'),
+            h.DataAttribute('dragging', isDragging ? 'true' : 'false'),
+            h.DataAttribute('over', isDragOver ? 'true' : 'false'),
+            h.Draggable(isManual),
+            h.OnDragStart(Message.StartedDraggingItem({ itemId: item.id })),
+            h.OnDragOver(Message.EnteredDragTarget({ itemId: item.id })),
+            h.OnDragLeave(Message.LeftDragTarget({ itemId: item.id })),
+            h.OnDrop(Message.DroppedOnItem({ itemId: item.id })),
+            h.OnDragEnd(Message.EndedDragItem()),
+          ],
+          [
+            h.button(
+              [
+                ...attributes.checkbox,
+                h.Class('lists-check'),
+                h.Disabled(!canToggle),
+              ],
+              [item.done ? '✓' : ''],
+            ),
+            h.div(
+              [h.Class('lists-item-body')],
+              [
+                h.span(
+                  [...attributes.label, h.Class('lists-item-name')],
+                  [item.name],
+                ),
+                h.div(
+                  [h.Class('lists-item-meta')],
+                  [
+                    isItemPending
+                      ? h.span([h.Class('text-warning')], ['در انتظار ارسال'])
+                      : h.empty,
+                    item.done ? h.span([], ['انجام‌شده']) : h.empty,
+                    item.hasSyncError
+                      ? h.span([h.Class('text-error')], ['خطا در همگام‌سازی'])
+                      : h.empty,
+                    writtenByOther(item.lastWriterId, maybeUserId, item.version)
+                      ? h.span([], [UPDATED_BY_OTHER_LABEL])
+                      : h.empty,
+                  ],
+                ),
+              ],
+            ),
+            h.div(
+              [h.Class('lists-item-actions')],
+              [
+                ...(isManual
+                  ? [
+                      h.button(
+                        [
+                          h.Type('button'),
+                          h.Class('lists-mini'),
+                          h.AriaLabel(`جابه‌جایی ${item.name} به بالا`),
+                          h.Title('بالا'),
+                          h.OnClick(
+                            Message.ClickedMoveItem({
+                              itemId: item.id,
+                              direction: 'up',
+                            }),
+                          ),
+                        ],
+                        ['↑'],
+                      ),
+                      h.button(
+                        [
+                          h.Type('button'),
+                          h.Class('lists-mini'),
+                          h.AriaLabel(`جابه‌جایی ${item.name} به پایین`),
+                          h.Title('پایین'),
+                          h.OnClick(
+                            Message.ClickedMoveItem({
+                              itemId: item.id,
+                              direction: 'down',
+                            }),
+                          ),
+                        ],
+                        ['↓'],
+                      ),
+                    ]
+                  : []),
                 h.button(
                   [
                     h.Type('button'),
-                    h.Class('lists-mini'),
-                    h.AriaLabel(`جابه‌جایی ${item.name} به بالا`),
-                    h.Title('بالا'),
+                    h.Class('lists-danger'),
+                    h.AriaLabel(`حذف ${item.name}`),
                     h.OnClick(
-                      Message.ClickedMoveItem({
+                      Message.ClickedDeleteItem({
                         itemId: item.id,
-                        direction: 'up',
+                        name: item.name,
                       }),
                     ),
                   ],
-                  ['↑'],
+                  ['حذف'],
                 ),
-                h.button(
-                  [
-                    h.Type('button'),
-                    h.Class('lists-mini'),
-                    h.AriaLabel(`جابه‌جایی ${item.name} به پایین`),
-                    h.Title('پایین'),
-                    h.OnClick(
-                      Message.ClickedMoveItem({
-                        itemId: item.id,
-                        direction: 'down',
-                      }),
-                    ),
-                  ],
-                  ['↓'],
-                ),
-              ]
-            : []),
-          h.button(
-            [
-              h.Type('button'),
-              h.Class('lists-danger'),
-              h.AriaLabel(`حذف ${item.name}`),
-              h.OnClick(
-                Message.ClickedDeleteItem({
-                  itemId: item.id,
-                  name: item.name,
-                }),
-              ),
-            ],
-            ['حذف'],
-          ),
-        ],
-      ),
-    ],
+              ],
+            ),
+          ],
+        ),
+    },
+    h,
   )
 }
 
@@ -480,20 +491,15 @@ const itemsView = (
 }
 
 const toastView = (model: Model, h: HtmlBuilder<Message>): Html =>
-  Option.match(model.maybeToast, {
-    onNone: () => h.empty,
-    onSome: toast =>
-      h.div(
-        [h.Class('lists-toast'), h.Role('status'), h.AriaLive('polite')],
-        [
-          h.p([], [`تیک خورد: ${toast.name}`]),
-          h.button(
-            [h.Type('button'), h.OnClick(Message.ClickedUndoChecked())],
-            ['بازگرداندن'],
-          ),
-        ],
-      ),
-  })
+  toastStackView(
+    {
+      model: model.toast,
+      toParentMessage: message => Message.GotToastMessage({ message }),
+      toUndoMessage: (entryId, undo) =>
+        Message.ClickedUndoChecked({ entryId, undo }),
+    },
+    h,
+  )
 
 const detailBodyView = (
   model: Model,
@@ -555,6 +561,16 @@ export const listDetailView = (
                 onNone: () => missingView(h),
                 onSome: list => detailBodyView(model, inputs, list, h),
               }),
+          confirmDialogView(
+            {
+              model: model.confirmDialog,
+              toParentMessage: message =>
+                Message.GotConfirmDialogMessage({ message }),
+              onConfirm: Message.ConfirmedDeleteList(),
+              spec: confirmSpec(model),
+            },
+            h,
+          ),
           toastView(model, h),
         ],
       ),
