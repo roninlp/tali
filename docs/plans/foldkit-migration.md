@@ -460,3 +460,9 @@ The calendar's occurrence mutation therefore treats a missing id as "wait for
 the next sync pull"; a production build decodes the complete rows. The
 `HttpError` seen while iterating on this was caused by a dev-server restart
 aborting an in-flight RPC, not by the deployed path.
+
+The deployed Worker also heals clients that kept the Solid app's shell across
+the cutover: the shell entry points are `no-store`, and a request for a
+previously-deployed (now removed) `/assets/*` hash returns a tiny
+cache-clearing module that unregisters the old service worker, clears Cache
+Storage, and reloads into the current app.

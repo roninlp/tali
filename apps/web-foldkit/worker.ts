@@ -24,6 +24,36 @@ interface Env {
 }
 
 const API_PREFIX = '/api'
+const ASSETS_PREFIX = '/assets/'
+
+/**
+ * Served when a client asks for an asset that the current deployment no longer
+ * has. A browser (or installed PWA) that kept the previous index.html asks for
+ * the previous asset hashes; the asset layer answers a missing path with the
+ * SPA shell as `text/html`, which the browser refuses to execute and leaves a
+ * blank page. This tiny module clears the stale caches/service worker once, then
+ * reloads into the current shell. The attempt counter prevents a reload loop.
+ */
+const RECOVERY_MODULE = `;(async () => {
+  const key = 'tali:asset-heal'
+  const attempts = Number(sessionStorage.getItem(key) || '0')
+  if (attempts >= 2) return
+  sessionStorage.setItem(key, String(attempts + 1))
+  try {
+    if ('caches' in self) {
+      const keys = await caches.keys()
+      await Promise.all(keys.map(name => caches.delete(name)))
+    }
+  } catch {}
+  try {
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations()
+      await Promise.all(registrations.map(registration => registration.unregister()))
+    }
+  } catch {}
+  location.reload()
+})()
+`
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -38,6 +68,25 @@ export default {
       // Passing the original request as the init keeps method, headers, body
       // and the caller's `cf` metadata; only the URL changes.
       return env.API.fetch(new Request(target, request))
+    }
+
+    if (url.pathname.startsWith(ASSETS_PREFIX)) {
+      const response = await env.ASSETS.fetch(request)
+      const contentType = response.headers.get('content-type') ?? ''
+
+      // A missing asset falls back to the SPA shell. Hand the old bundle a
+      // module that heals the cache instead of letting the browser execute
+      // HTML as JavaScript.
+      if (response.ok && contentType.includes('text/html')) {
+        return new Response(RECOVERY_MODULE, {
+          headers: {
+            'content-type': 'text/javascript; charset=utf-8',
+            'cache-control': 'no-store',
+          },
+        })
+      }
+
+      return response
     }
 
     return env.ASSETS.fetch(request)

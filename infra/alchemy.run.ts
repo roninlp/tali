@@ -227,13 +227,22 @@ export default Alchemy.Stack(
       },
       assets: {
         notFoundHandling: "single-page-application",
-        runWorkerFirst: ["/api/*"],
+        // `/api/*` reaches the service binding. `/assets/*` is worker-first
+        // only to detect a stale client asking for a removed hash: the asset
+        // layer answers it with the SPA shell, and the Worker turns that into a
+        // cache-clearing module instead of a blank page.
+        runWorkerFirst: ["/api/*", "/assets/*"],
         // Vite hashes /assets/* filenames, so a copy is immutable for a year.
-        // Only that prefix is cached: index.html (and the SPA fallback) must revalidate.
-        // This prop owns the site's `_headers` rules (it wins over a `_headers`
-        // file), so add future rules here rather than in public/.
+        // The shell entry points and the service worker must never be cached:
+        // a client that kept the previous deployment's index.html asks for old
+        // asset hashes, and the Worker's asset fallback turns that into a
+        // cache-clearing module instead of a blank page. Add future rules here
+        // rather than in public/.
         headers:
-          "/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n"
+          "/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n" +
+          "/\n  Cache-Control: no-store\n" +
+          "/index.html\n  Cache-Control: no-store\n" +
+          "/sw.js\n  Cache-Control: no-store\n"
       },
       env: {
         ...(isDev ? {} : { VITE_API_URL: "/api" }),
