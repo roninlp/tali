@@ -1,4 +1,5 @@
 import { Array, Clock, Duration, Effect, Option, Schema } from 'effect'
+import { Listbox } from '@foldkit/ui'
 import { Command, Submodel, Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
@@ -58,6 +59,15 @@ export const ToastItem = Schema.Struct({
 })
 export type ToastItem = typeof ToastItem.Type
 
+export const sortOfValue = (value: string): ListSort =>
+  value === 'alpha' || value === 'status' ? value : 'manual'
+
+export const placementOfValue = (value: string): CheckedPlacement =>
+  value === 'inPlace' ? 'inPlace' : 'bottom'
+
+export const visibilityOfValue = (value: string): ListVisibility =>
+  value === 'private' ? 'private' : 'shared'
+
 export const DeleteScope = Schema.Literals(['index', 'detail'])
 export type DeleteScope = typeof DeleteScope.Type
 
@@ -88,8 +98,19 @@ export const Model = Schema.Struct({
   maybeDraggingId: Schema.Option(Schema.String),
   maybeDragOverId: Schema.Option(Schema.String),
   announcement: Schema.String,
+  sortListbox: Listbox.Model,
+  placementListbox: Listbox.Model,
+  visibilityListbox: Listbox.Model,
 })
 export type Model = typeof Model.Type
+
+export type SortOption = Readonly<{ value: ListSort; label: string }>
+export type PlacementOption = Readonly<{ value: CheckedPlacement; label: string }>
+export type VisibilityOption = Readonly<{ value: ListVisibility; label: string }>
+
+export const SortListbox = Listbox.create<SortOption, string>()
+export const PlacementListbox = Listbox.create<PlacementOption, string>()
+export const VisibilityListbox = Listbox.create<VisibilityOption, string>()
 
 export const initialModel = (): Model =>
   Model.make({
@@ -116,7 +137,77 @@ export const initialModel = (): Model =>
     maybeDraggingId: Option.none(),
     maybeDragOverId: Option.none(),
     announcement: '',
+    sortListbox: Listbox.init({ id: 'list-sort-listbox' }),
+    placementListbox: Listbox.init({ id: 'list-placement-listbox' }),
+    visibilityListbox: Listbox.init({ id: 'list-visibility-listbox' }),
   })
+
+// LISTBOX FOLDS
+
+type ListUpdate = (model: Model, message: Message, inputs: Inputs) => UpdateReturn
+
+const sortListboxOutMessage = (inputs: Inputs, handleUpdate: ListUpdate) =>
+  Listbox.OutMessage.match<Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>, Listbox.OutMessage<string>>(
+    {
+      Selected:
+        ({ value }) =>
+        stepModel =>
+          Option.match(stepModel.maybeListId, {
+            onNone: () => ({ model: stepModel }),
+            onSome: listId =>
+              handleUpdate(
+                stepModel,
+                Message.SelectedListSort({
+                  listId,
+                  sort: sortOfValue(value),
+                }),
+                inputs,
+              ),
+          }),
+    },
+  )
+
+const placementListboxOutMessage = (inputs: Inputs, handleUpdate: ListUpdate) =>
+  Listbox.OutMessage.match<Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>, Listbox.OutMessage<string>>(
+    {
+      Selected:
+        ({ value }) =>
+        stepModel =>
+          Option.match(stepModel.maybeListId, {
+            onNone: () => ({ model: stepModel }),
+            onSome: listId =>
+              handleUpdate(
+                stepModel,
+                Message.SelectedCheckedPlacement({
+                  listId,
+                  placement: placementOfValue(value),
+                }),
+                inputs,
+              ),
+          }),
+    },
+  )
+
+const visibilityListboxOutMessage = (inputs: Inputs, handleUpdate: ListUpdate) =>
+  Listbox.OutMessage.match<Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>, Listbox.OutMessage<string>>(
+    {
+      Selected:
+        ({ value }) =>
+        stepModel =>
+          Option.match(stepModel.maybeListId, {
+            onNone: () => ({ model: stepModel }),
+            onSome: listId =>
+              handleUpdate(
+                stepModel,
+                Message.SelectedListVisibility({
+                  listId,
+                  visibility: visibilityOfValue(value),
+                }),
+                inputs,
+              ),
+          }),
+    },
+  )
 
 /** Everything the screens read from their siblings on each dispatch. */
 export type Inputs = Readonly<{
@@ -155,6 +246,9 @@ export const Message = defineMessageUnion({
   FailedDeleteList: { message: Schema.String },
 
   UpdatedTitleDraft: { value: Schema.String },
+  GotSortListboxMessage: { message: Listbox.Message },
+  GotPlacementListboxMessage: { message: Listbox.Message },
+  GotVisibilityListboxMessage: { message: Listbox.Message },
   BlurredTitleInput: {},
   SubmittedRenameList: {},
   CompletedRenameList: { listId: Schema.String, title: Schema.String },
@@ -727,8 +821,36 @@ export const update = (
   model: Model,
   message: Message,
   inputs: Inputs,
-): UpdateReturn =>
-  Message.match<UpdateReturn>(message, {
+): UpdateReturn => {
+  const foldSortListbox = Update.foldChild({
+    update: SortListbox.update,
+    read: (listModel: Model) => Option.some(listModel.sortListbox),
+    write: (listModel: Model, nextListbox: Listbox.Model) =>
+      modifyFields(listModel, { sortListbox: () => nextListbox }),
+    toParentMessage: message => Message.GotSortListboxMessage({ message }),
+    foldOutMessage: sortListboxOutMessage(inputs, update),
+  })
+
+  const foldPlacementListbox = Update.foldChild({
+    update: PlacementListbox.update,
+    read: (listModel: Model) => Option.some(listModel.placementListbox),
+    write: (listModel: Model, nextListbox: Listbox.Model) =>
+      modifyFields(listModel, { placementListbox: () => nextListbox }),
+    toParentMessage: message => Message.GotPlacementListboxMessage({ message }),
+    foldOutMessage: placementListboxOutMessage(inputs, update),
+  })
+
+  const foldVisibilityListbox = Update.foldChild({
+    update: VisibilityListbox.update,
+    read: (listModel: Model) => Option.some(listModel.visibilityListbox),
+    write: (listModel: Model, nextListbox: Listbox.Model) =>
+      modifyFields(listModel, { visibilityListbox: () => nextListbox }),
+    toParentMessage: message =>
+      Message.GotVisibilityListboxMessage({ message }),
+    foldOutMessage: visibilityListboxOutMessage(inputs, update),
+  })
+
+  return Message.match<UpdateReturn>(message, {
     UpdatedIndexTitle: ({ value }) => ({
       model: modifyFields(model, { indexTitle: () => value }),
     }),
@@ -1032,6 +1154,15 @@ export const update = (
       }
     },
 
+    GotSortListboxMessage: ({ message }) =>
+      foldSortListbox(model, message),
+
+    GotPlacementListboxMessage: ({ message }) =>
+      foldPlacementListbox(model, message),
+
+    GotVisibilityListboxMessage: ({ message }) =>
+      foldVisibilityListbox(model, message),
+
     UpdatedItemDraft: ({ value }) => ({
       model: modifyFields(model, { itemDraft: () => value }),
     }),
@@ -1236,6 +1367,7 @@ export const update = (
       }),
     }),
   })
+}
 
 // ENTRY CAPABILITIES
 

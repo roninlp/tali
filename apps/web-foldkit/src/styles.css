@@ -1,31 +1,31 @@
 /*
  * Tali design system entry.
  *
- * Tailwind CSS v4 + daisyUI v5. The app is RTL and Persian; all layout uses
- * logical properties (`ms`/`me`, `ps`/`pe`, `start`/`end`) so the RTL document
- * needs no physical left/right overrides.
+ * Tailwind CSS v4 supplies the layout utilities. Every colour and radius
+ * token it uses is declared in the `@theme` block below; utilities such as
+ * `bg-base-100` compile to `var(--color-base-100)` references, so the dark
+ * `[data-theme='talidark']` override on <html> recolours them at cascade
+ * time. The chosen theme is applied as `data-theme` on <html>.
  *
- * Themes: `tali` (light) and `talidark` (dark) are the house themes, wired to
- * the brand palette. A handful of daisyUI themes ship for the picker in
- * /settings; the chosen theme is applied as `data-theme` on <html>.
+ * The component classes further down (`btn`, `badge`, `spinner`, `notice`,
+ * the Foldkit UI shells) are owned here and hand-written; interactive
+ * behaviour and ARIA come from `@foldkit/ui` components rendered through
+ * their `toView` callbacks.
  *
- * Ported from `apps/web/src/app.css` and `packages/ui/src/base.css`.
+ * The app is RTL and Persian; all layout uses logical properties
+ * (`ms`/`me`, `ps`/`pe`, `start`/`end`) so the RTL document needs no physical
+ * left/right overrides.
+ *
+ * Ported from `apps/web/src/app.css`.
  */
 
 @import 'tailwindcss';
-@plugin "daisyui" {
-  themes:
-    light, dark, cupcake, emerald, corporate, nord, sunset, dracula, night,
-    lofi, pastel, caramellatte, winter, dim;
-  logs: false;
-}
 
-/* ── House light theme ─────────────────────────────────────────────────── */
-@plugin "daisyui/theme" {
-  name: 'tali';
-  default: true;
-  prefersdark: false;
-  color-scheme: light;
+/* ── House tokens (light defaults) ─────────────────────────────────────── */
+@theme {
+  --font-sans:
+    'Vazirmatn', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
   --color-base-100: #ffffff;
   --color-base-200: #f6f7fb;
   --color-base-300: #e6e9f1;
@@ -46,21 +46,14 @@
   --color-warning-content: #ffffff;
   --color-error: #be123c;
   --color-error-content: #ffffff;
+
   --radius-selector: 0.5rem;
   --radius-field: 0.625rem;
   --radius-box: 0.875rem;
-  --size-selector: 0.25rem;
-  --size-field: 0.25rem;
-  --border: 1px;
-  --depth: 0;
-  --noise: 0;
 }
 
 /* ── House dark theme ──────────────────────────────────────────────────── */
-@plugin "daisyui/theme" {
-  name: 'talidark';
-  default: false;
-  prefersdark: true;
+[data-theme='talidark'] {
   color-scheme: dark;
   --color-base-100: #171c27;
   --color-base-200: #10141d;
@@ -82,19 +75,11 @@
   --color-warning-content: #2a1c02;
   --color-error: #ff8ba3;
   --color-error-content: #2c0710;
-  --radius-selector: 0.5rem;
-  --radius-field: 0.625rem;
-  --radius-box: 0.875rem;
-  --size-selector: 0.25rem;
-  --size-field: 0.25rem;
-  --border: 1px;
-  --depth: 0;
-  --noise: 0;
 }
 
-@theme {
-  --font-sans:
-    'Vazirmatn', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+/* Hairline width the component CSS reads; not a Tailwind namespace token. */
+:root {
+  --border: 1px;
 }
 
 /* Self-hosted Persian font. The file ships with the app so the deployed bundle
@@ -187,8 +172,7 @@ body {
   cursor: not-allowed;
 }
 
-/* One visible focus ring for every interactive element. daisyUI paints its
- * own for inputs; this covers links, custom buttons and cards. */
+/* One visible focus ring for every interactive element. */
 :focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
@@ -218,13 +202,604 @@ input[type='search']::-webkit-search-cancel-button {
   }
 }
 
+/* ── Owned components ──────────────────────────────────────────────────── */
+/*
+ * Hand-written component classes used by the `src/ui/` Foldkit UI wrappers.
+ * They sit in the `components` layer so Tailwind utilities can still override
+ * individual properties at the call site.
+ */
+
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    gap: 0.45rem;
+    min-inline-size: 2.5rem;
+    min-block-size: 2.5rem;
+    padding: 0 0.95rem;
+    border: 0 solid transparent;
+    border-radius: var(--radius-field);
+    background: transparent;
+    color: var(--color-base-content);
+    font-family: inherit;
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1;
+    text-decoration: none;
+    cursor: pointer;
+    transition:
+      opacity 120ms ease-out,
+      transform 100ms ease-out,
+      border-color 120ms ease-out,
+      background-color 120ms ease-out,
+      color 120ms ease-out;
+  }
+
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .btn:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  .btn-primary {
+    background: var(--color-primary);
+    color: var(--color-primary-content);
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .btn-secondary {
+    background: var(--color-secondary);
+    color: var(--color-secondary-content);
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .btn-accent {
+    background: var(--color-accent);
+    color: var(--color-accent-content);
+  }
+
+  .btn-accent:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .btn-neutral {
+    background: var(--color-neutral);
+    color: var(--color-neutral-content);
+  }
+
+  .btn-neutral:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .btn-error {
+    background: var(--color-error);
+    color: var(--color-error-content);
+  }
+
+  .btn-error:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .btn-success {
+    background: var(--color-success);
+    color: var(--color-success-content);
+  }
+
+  .btn-success:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .btn-ghost {
+    color: inherit;
+  }
+
+  .btn-ghost:hover:not(:disabled) {
+    background: color-mix(in oklch, var(--color-base-content) 7%, transparent);
+  }
+
+  .btn-outline {
+    border-color: var(--color-base-300);
+    color: inherit;
+  }
+
+  .btn-outline:hover:not(:disabled) {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    background: color-mix(in oklch, var(--color-primary) 8%, transparent);
+  }
+
+  .btn-soft {
+    background: color-mix(in oklch, var(--color-primary) 12%, transparent);
+    color: var(--color-primary);
+  }
+
+  .btn-soft:hover:not(:disabled) {
+    background: color-mix(in oklch, var(--color-primary) 20%, transparent);
+  }
+
+  .btn-lg {
+    min-inline-size: 3rem;
+    min-block-size: 3rem;
+    padding: 0 1.25rem;
+    font-size: 1rem;
+  }
+
+  .btn-sm {
+    min-inline-size: 2rem;
+    min-block-size: 2rem;
+    padding: 0 0.75rem;
+    font-size: 0.8rem;
+  }
+
+  .btn-xs {
+    min-inline-size: 1.5rem;
+    min-block-size: 1.5rem;
+    padding: 0 0.5rem;
+    font-size: 0.75rem;
+    gap: 0.3rem;
+  }
+
+  .btn-square {
+    padding: 0;
+  }
+
+  .btn-circle {
+    padding: 0;
+    border-radius: 999px;
+  }
+
+  @keyframes spinner-rotate {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .spinner {
+    display: inline-block;
+    flex: none;
+    inline-size: 1rem;
+    block-size: 1rem;
+    border: 2px solid
+      color-mix(in oklch, currentColor 25%, transparent);
+    border-top-color: currentColor;
+    border-radius: 999px;
+    animation: spinner-rotate 700ms linear infinite;
+  }
+
+  .spinner-xs {
+    inline-size: 0.75rem;
+    block-size: 0.75rem;
+    border-width: 1.5px;
+  }
+
+  .spinner-sm {
+    inline-size: 1rem;
+    block-size: 1rem;
+  }
+
+  .spinner-lg {
+    inline-size: 1.75rem;
+    block-size: 1.75rem;
+    border-width: 3px;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex: none;
+    min-block-size: 1.5rem;
+    padding: 0 0.6rem;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--color-base-content) 7%, transparent);
+    color: color-mix(in oklch, var(--color-base-content) 70%, transparent);
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1.9;
+    white-space: nowrap;
+  }
+
+  .badge-sm {
+    min-block-size: 1.25rem;
+    padding: 0 0.45rem;
+    font-size: 0.68rem;
+  }
+
+  .badge-lg {
+    min-block-size: 1.75rem;
+    padding: 0 0.75rem;
+    font-size: 0.8rem;
+  }
+
+  .badge-primary {
+    background: color-mix(in oklch, var(--color-primary) 12%, transparent);
+    color: var(--color-primary);
+  }
+
+  .badge-secondary {
+    background: color-mix(in oklch, var(--color-secondary) 12%, transparent);
+    color: var(--color-secondary);
+  }
+
+  .badge-success {
+    background: color-mix(in oklch, var(--color-success) 14%, transparent);
+    color: var(--color-success);
+  }
+
+  .badge-warning {
+    background: color-mix(in oklch, var(--color-warning) 14%, transparent);
+    color: var(--color-warning);
+  }
+
+  .badge-error {
+    background: color-mix(in oklch, var(--color-error) 12%, transparent);
+    color: var(--color-error);
+  }
+
+  .badge-ghost {
+    background: color-mix(in oklch, var(--color-base-content) 8%, transparent);
+    color: color-mix(in oklch, var(--color-base-content) 60%, transparent);
+  }
+
+  .notice {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border: 1px solid var(--color-base-300);
+    border-radius: var(--radius-field);
+    padding: 0 0.85rem;
+    color: var(--color-base-content);
+    font-size: 0.85rem;
+  }
+
+  .notice-error {
+    border-color: color-mix(in oklch, var(--color-error) 35%, transparent);
+    background: color-mix(in oklch, var(--color-error) 10%, transparent);
+    color: var(--color-error);
+  }
+
+  .notice-success {
+    border-color: color-mix(in oklch, var(--color-success) 35%, transparent);
+    background: color-mix(in oklch, var(--color-success) 10%, transparent);
+    color: var(--color-success);
+  }
+
+  .notice-warning {
+    border-color: color-mix(in oklch, var(--color-warning) 35%, transparent);
+    background: color-mix(in oklch, var(--color-warning) 10%, transparent);
+    color: var(--color-warning);
+  }
+
+  /* Floating panel shell shared by Listbox, Menu, and Popover panels. */
+  .float-card {
+    border: 1px solid var(--color-base-300);
+    border-radius: var(--radius-box);
+    background: var(--color-base-100);
+    box-shadow: 0 12px 32px oklch(0% 0 0 / 0.18);
+    overflow: clip;
+    z-index: 50;
+    outline: none;
+  }
+
+  .menu-option {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.65rem;
+    border: 0;
+    border-radius: 0.5rem;
+    background: transparent;
+    color: var(--color-base-content);
+    font-family: inherit;
+    font-size: 0.85rem;
+    line-height: 1.7;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .menu-option[data-active='true'] {
+    background: color-mix(in oklch, var(--color-primary) 10%, transparent);
+    color: var(--color-primary);
+  }
+
+  .menu-option:disabled,
+  .menu-option[data-disabled='true'] {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .menu-heading {
+    padding: 0.5rem 0.65rem 0.25rem;
+    color: color-mix(in oklch, var(--color-base-content) 50%, transparent);
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+
+  .menu-separator {
+    border: 0;
+    border-top: 1px solid var(--color-base-300);
+    margin: 0.25rem 0.5rem;
+  }
+
+  .listbox-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-height: 2.2rem;
+    padding: 0.25rem 0.7rem;
+    border: 1px solid var(--color-base-300);
+    border-radius: var(--radius-field);
+    background: var(--color-base-100);
+    color: var(--color-base-content);
+    font-family: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+    overflow: hidden;
+  }
+
+  .listbox-trigger:hover:not(:disabled) {
+    border-color: var(--color-primary);
+  }
+
+  .listbox-trigger:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .listbox-item {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.65rem;
+    border: 0;
+    background: transparent;
+    color: var(--color-base-content);
+    font-family: inherit;
+    font-size: 0.85rem;
+    line-height: 1.7;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .listbox-item[data-active='true'] {
+    background: color-mix(in oklch, var(--color-primary) 10%, transparent);
+  }
+
+  .listbox-item[data-selected='true'] {
+    color: var(--color-primary);
+    font-weight: 600;
+  }
+
+  .listbox-heading {
+    padding: 0.5rem 0.65rem 0.25rem;
+    color: color-mix(in oklch, var(--color-base-content) 50%, transparent);
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+
+  .listbox-empty {
+    padding: 0.75rem 0.65rem;
+    color: color-mix(in oklch, var(--color-base-content) 50%, transparent);
+    font-size: 0.8rem;
+  }
+
+  .float-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+  }
+
+  .app-confirm {
+    inline-size: 22rem;
+    max-inline-size: calc(100vw - 2rem);
+    padding: 1.1rem 1.25rem;
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .app-modal {
+    position: fixed;
+    inset: 0;
+    margin: auto;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    overflow: visible;
+  }
+
+  .app-modal:not([open]) {
+    display: none;
+  }
+
+  .app-modal[open] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+
+  .app-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: oklch(0% 0 0 / 0.45);
+    touch-action: none;
+  }
+
+  .app-confirm-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+  }
+
+  .app-confirm-body {
+    margin: 0;
+    color: color-mix(in oklch, var(--color-base-content) 70%, transparent);
+    font-size: 0.85rem;
+    line-height: 1.8;
+    overflow-wrap: anywhere;
+  }
+
+  .app-confirm-actions {
+    display: flex;
+    justify-content: flex-start;
+    gap: 0.5rem;
+  }
+
+  .toast-entry {
+    position: relative;
+    inline-size: 20rem;
+    max-inline-size: calc(100vw - 2rem);
+    padding: 0.75rem 0.85rem;
+    padding-inline-end: 2.25rem;
+    border: 1px solid var(--color-base-300);
+    border-radius: var(--radius-box);
+    background: var(--color-base-100);
+    color: var(--color-base-content);
+    font-size: 0.86rem;
+    line-height: 1.7;
+    box-shadow: 0 12px 32px oklch(0% 0 0 / 0.25);
+    overflow-wrap: anywhere;
+  }
+
+  .toast-entry[data-variant='Success'] {
+    border-color: color-mix(in oklch, var(--color-success) 45%, transparent);
+  }
+
+  .toast-entry[data-variant='Warning'] {
+    border-color: color-mix(in oklch, var(--color-warning) 45%, transparent);
+  }
+
+  .toast-entry[data-variant='Error'] {
+    border-color: color-mix(in oklch, var(--color-error) 45%, transparent);
+  }
+
+  .toast-dismiss {
+    position: absolute;
+    inset-inline-end: 0.5rem;
+    top: 0.5rem;
+    display: grid;
+    place-items: center;
+    inline-size: 1.5rem;
+    block-size: 1.5rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0.5rem;
+    background: transparent;
+    color: color-mix(in oklch, var(--color-base-content) 55%, transparent);
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .toast-dismiss:hover {
+    background: color-mix(in oklch, var(--color-base-content) 8%, transparent);
+    color: var(--color-base-content);
+  }
+
+  .segmented {
+    display: inline-grid;
+    grid-auto-flow: column;
+    gap: 0.2rem;
+    padding: 0.2rem;
+    border: 1px solid var(--color-base-300);
+    border-radius: 999px;
+    background: var(--color-base-200);
+  }
+
+  .segmented-option {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    min-height: 2rem;
+    padding: 0 0.85rem;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: color-mix(in oklch, var(--color-base-content) 60%, transparent);
+    font-family: inherit;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+
+  .segmented-option[data-checked='true'] {
+    background: var(--color-base-100);
+    color: var(--color-primary);
+    font-weight: 600;
+    box-shadow: 0 1px 2px oklch(0% 0 0 / 0.08);
+  }
+
+  .field-input {
+    display: block;
+    min-inline-size: 0;
+    inline-size: 100%;
+    min-height: 2.75rem;
+    padding: 0.25rem 0.7rem;
+    border: 1px solid var(--color-base-300);
+    border-radius: var(--radius-field);
+    background: var(--color-base-100);
+    color: var(--color-base-content);
+    font-family: inherit;
+    font-size: 1rem;
+    line-height: 1.9;
+  }
+
+  .field-input::placeholder {
+    color: color-mix(in oklch, var(--color-base-content) 40%, transparent);
+  }
+
+  .field-input:focus-visible {
+    border-color: var(--color-primary);
+    outline: none;
+    box-shadow: 0 0 0 3px
+      color-mix(in oklch, var(--color-primary) 18%, transparent);
+  }
+
+  .field-input:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .field-input[data-invalid='true'] {
+    border-color: var(--color-error);
+  }
+
+  textarea.field-input {
+    min-height: 5.5rem;
+    padding-block: 0.55rem;
+    line-height: 1.85;
+    resize: vertical;
+  }
+}
+
+
 /* ── Today ─────────────────────────────────────────────────────────────── */
 /*
  * A dense daily workbench: one panel per section, a compact side rail
  * (next-up / at-a-glance / week), a minute-accurate time strip for timed
  * tasks, and a keyboard-first task list. Ported from
  * `apps/web/src/components/today/ui.tsx`; colours resolve from the active
- * daisyUI theme and layout uses logical properties only.
+ * theme and layout uses logical properties only.
  */
 
 .today-root {
@@ -1083,7 +1658,7 @@ input[type='search']::-webkit-search-cancel-button {
 /*
  * `/lists` index cards and the detail checklist. Ported from
  * `apps/web/src/components/lists/ui.tsx`; colours resolve from the active
- * daisyUI theme, layout uses logical properties only, and the strike-through /
+ * theme, layout uses logical properties only, and the strike-through /
  * toast motion respects `prefers-reduced-motion`.
  */
 
@@ -1815,7 +2390,7 @@ input[type='search']::-webkit-search-cancel-button {
  * The three-board task workspace, ported from
  * `apps/web/src/components/tasks/ui.tsx`. A sticky desktop filter sidebar
  * becomes a collapsible sheet on phones, and drag is only an accelerator over
- * the always-visible move buttons. Colours resolve from the active daisyUI
+ * the always-visible move buttons. Colours resolve from the active
  * theme; layout uses logical properties only.
  */
 
@@ -2773,7 +3348,7 @@ button.tasks-tag {
  * shared lane/tap/badge rules above stay in place for the Today habits lane;
  * these add the one form, the habit cards, the monthly heatmap and the undo
  * toast. Logical properties only, and every colour resolves from the active
- * daisyUI theme.
+ * theme.
  */
 
 .habits-root {

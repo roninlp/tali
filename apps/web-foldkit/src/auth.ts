@@ -1,4 +1,5 @@
 import { Effect, Option, Schema } from 'effect'
+import { Menu } from '@foldkit/ui'
 import { Command, Submodel, Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
 import { defineTaggedUnion } from 'foldkit/schema'
@@ -7,9 +8,14 @@ import { modifyFields } from 'foldkit/struct'
 import { AuthFailure, authApi } from './lib/auth-api'
 import { authErrorMessage } from './lib/auth-copy'
 import { cacheSession, clearCachedSession } from './lib/session-cache'
-import { settingsRouter } from './route'
 import { Session } from './session'
-import { accountMenuView } from './ui/account-menu'
+import {
+  ACCOUNT_MENU_ID,
+  type AccountItem,
+  AccountMenu,
+  accountMenuView,
+} from './ui/account-menu'
+import { Toast, toastStackView } from './ui/toast'
 import { bootView as bootSplashView } from './ui/boot'
 
 // MODEL
@@ -31,6 +37,8 @@ export const Model = Schema.Struct({
   restoreAttempt: Schema.Int,
   isSigningOut: Schema.Boolean,
   maybeSignOutFailure: Schema.Option(AuthFailure),
+  menu: Menu.Model,
+  toast: Toast.Model,
 })
 export type Model = typeof Model.Type
 
@@ -39,12 +47,15 @@ export type Model = typeof Model.Type
 export const OutMessage = defineMessageUnion({
   RestoredSession: { session: Session },
   SignedOut: {},
+  SelectedSettings: {},
 })
 export type OutMessage = typeof OutMessage.Type
 
 export const Message = defineMessageUnion({
   ClickedRetryRestore: {},
   ClickedSignOut: {},
+  GotAccountMenuMessage: { message: Menu.Message },
+  GotToastMessage: { message: Toast.Message },
   SucceededRestoreSession: { attempt: Schema.Int, session: Session },
   FailedRestoreSession: { attempt: Schema.Int, failure: AuthFailure },
   SucceededSignOut: {},
@@ -121,6 +132,8 @@ export const init = (
     restoreAttempt: 1,
     isSigningOut: false,
     maybeSignOutFailure: Option.none(),
+    menu: Menu.init({ id: ACCOUNT_MENU_ID }),
+    toast: Toast.init({ id: 'auth-toast' }),
   })
 
   return {
@@ -184,6 +197,64 @@ export const maybeSession = (model: Model): Option.Option<Session> =>
 
 type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage>
 
+const startSignOut = (model: Model): UpdateReturn => {
+  if (model.isSigningOut) {
+    return { model }
+  }
+
+  return {
+    model: modifyFields(model, {
+      isSigningOut: () => true,
+      maybeSignOutFailure: () => Option.none(),
+    }),
+    commands: [SignOut()],
+  }
+}
+
+const foldAccountMenuOutMessage = Menu.OutMessage.match<
+  Update.StepWithOutMessage<Model, Message, OutMessage>,
+  Menu.OutMessage<AccountItem>
+>({
+  Selected:
+    ({ value }) =>
+    stepModel =>
+      value === 'signout'
+        ? startSignOut(stepModel)
+        : { model: stepModel, outMessage: OutMessage.SelectedSettings() },
+})
+
+const foldAccountMenu = Update.foldChild({
+  update: AccountMenu.update,
+  read: (model: Model) => Option.some(model.menu),
+  write: (model, nextMenu) => modifyFields(model, { menu: () => nextMenu }),
+  toParentMessage: message => Message.GotAccountMenuMessage({ message }),
+  foldOutMessage: foldAccountMenuOutMessage,
+})
+
+const foldToastOutMessage = Toast.OutMessage.match<Update.Step<Model, Message>>({
+  DismissedToast: () => model => ({ model }),
+})
+
+const foldToast = Update.foldChild({
+  update: Toast.update,
+  read: (model: Model) => Option.some(model.toast),
+  write: (model, nextToast) =>
+    modifyFields(model, { toast: () => nextToast }),
+  toParentMessage: message => Message.GotToastMessage({ message }),
+  foldOutMessage: foldToastOutMessage,
+})
+
+const shownToastStep = (body: string): Update.Step<Model, Message> =>
+  Update.foldChildStep({
+    update: toast =>
+      Toast.show(toast, { payload: { text: body }, variant: 'Error' }),
+    read: (model: Model) => Option.some(model.toast),
+    write: (model, nextToast) =>
+      modifyFields(model, { toast: () => nextToast }),
+    toParentMessage: message => Message.GotToastMessage({ message }),
+    foldOutMessage: () => stepModel => ({ model: stepModel }),
+  })
+
 const clearSession = (model: Model): UpdateReturn => ({
   model: modifyFields(model, {
     status: () => SessionStatus.SignedOut(),
@@ -204,16 +275,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         }),
       ),
 
-    ClickedSignOut: () =>
-      model.isSigningOut
-        ? { model }
-        : {
-            model: modifyFields(model, {
-              isSigningOut: () => true,
-              maybeSignOutFailure: () => Option.none(),
-            }),
-            commands: [SignOut()],
-          },
+    ClickedSignOut: () => startSignOut(model),
 
     SucceededRestoreSession: ({ attempt, session }) => {
       if (attempt !== model.restoreAttempt) {
@@ -268,13 +330,20 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         return clearSession(model)
       }
 
-      return {
-        model: modifyFields(model, {
+      const failingSignOut: Update.Step<Model, Message> = stepModel => ({
+        model: modifyFields(stepModel, {
           isSigningOut: () => false,
           maybeSignOutFailure: () => Option.some(failure),
         }),
-      }
+      })
+
+      return Update.combine(model, [shownToastStep(authErrorMessage(failure.code)), failingSignOut])
     },
+
+    GotAccountMenuMessage: ({ message }) =>
+      foldAccountMenu(model, message),
+
+    GotToastMessage: ({ message }) => foldToast(model, message),
 
     CompletedCacheSession: () => ({ model }),
     CompletedClearCachedSession: () => ({ model }),
@@ -286,17 +355,28 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
   Option.match(maybeSession(model), {
     onNone: () => h.empty,
     onSome: session =>
-      accountMenuView(
-        {
-          displayName: session.user.displayName,
-          isSigningOut: model.isSigningOut,
-          maybeError: Option.map(model.maybeSignOutFailure, failure =>
-            authErrorMessage(failure.code),
+      h.div(
+        [h.Class('flex flex-col items-start gap-2')],
+        [
+          accountMenuView(
+            {
+              menu: model.menu,
+              displayName: session.user.displayName,
+              isSigningOut: model.isSigningOut,
+              toParentMessage: message =>
+                Message.GotAccountMenuMessage({ message }),
+            },
+            h,
           ),
-          onSignOut: Message.ClickedSignOut(),
-          settingsHref: settingsRouter(),
-        },
-        h,
+          toastStackView(
+            {
+              model: model.toast,
+              toParentMessage: message =>
+                Message.GotToastMessage({ message }),
+            },
+            h,
+          ),
+        ],
       ),
   }),
 )

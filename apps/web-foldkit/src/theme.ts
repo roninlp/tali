@@ -1,28 +1,29 @@
 import { Array, Effect, Option, Schema } from 'effect'
 import { Command, Dom, Submodel, Subscription, Update } from 'foldkit'
-import type { Html, HtmlBuilder } from 'foldkit/html'
+import type { Html } from 'foldkit/html'
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
 
-import { classNames } from './ui/class-names'
-import { checkIcon, monitorIcon, moonIcon, sunIcon } from './ui/icons'
+import { RadioGroup } from '@foldkit/ui'
+
+import { buttonView } from './ui/button'
+import { monitorIcon, moonIcon, sunIcon } from './ui/icons'
 
 /**
- * Theme + colour-mode store, ported from `apps/web/src/lib/theme.tsx`.
+ * Theme + colour-mode store, built on the Foldkit UI `RadioGroup`.
  *
  * Two independent pieces of state:
- * - `theme`: a concrete daisyUI theme id, or `"auto"` for the house light/dark
- *   pair. Picking a theme from the gallery is a device choice.
+ * - `theme`: the house light or dark id, or `"auto"` to follow `mode`.
  * - `mode`: light / dark / system, used when `theme` is `"auto"` — and
  *   mirrored back into the theme when the user toggles the sun/moon button.
  *
- * The resolved theme is written to `data-theme` on <html>; daisyUI themes then
- * drive every colour in the app. The choice is device-local (localStorage):
- * a phone in the kitchen and a laptop on the desk can run different themes
- * without fighting over a server preference.
+ * The resolved theme is written to `data-theme` on <html>; the owned token
+ * block in `styles.css` then drives every colour in the app. The choice is
+ * device-local (localStorage): a phone in the kitchen and a laptop on the
+ * desk can run different themes without fighting over a server preference.
  *
- * `public/theme-boot.js` applies the saved theme before first paint. The Model
- * starts from the same storage values, so the first render agrees with what
+ * `public/theme-boot.js` applies the saved theme before first paint. The
+ * Model starts from the same values, so the first render agrees with what
  * the document already shows instead of flashing the house light palette.
  */
 
@@ -31,50 +32,22 @@ import { checkIcon, monitorIcon, moonIcon, sunIcon } from './ui/icons'
 export const HOUSE_LIGHT = 'tali'
 export const HOUSE_DARK = 'talidark'
 
-export const ThemeId = Schema.Literals([
-  'tali',
-  'talidark',
-  'cupcake',
-  'emerald',
-  'corporate',
-  'nord',
-  'lofi',
-  'pastel',
-  'caramellatte',
-  'winter',
-  'sunset',
-  'dracula',
-  'night',
-  'dim',
-])
+export const ThemeId = Schema.Literals([HOUSE_LIGHT, HOUSE_DARK])
 export type ThemeId = typeof ThemeId.Type
 
 export const ThemeMode = Schema.Literals(['light', 'dark', 'system'])
 export type ThemeMode = typeof ThemeMode.Type
 
-export const ThemeChoice = Schema.Literals([
-  'auto',
-  'tali',
-  'talidark',
-  'cupcake',
-  'emerald',
-  'corporate',
-  'nord',
-  'lofi',
-  'pastel',
-  'caramellatte',
-  'winter',
-  'sunset',
-  'dracula',
-  'night',
-  'dim',
-])
+export const ThemeChoice = Schema.Literals(['auto', HOUSE_LIGHT, HOUSE_DARK])
 export type ThemeChoice = typeof ThemeChoice.Type
+
+export const ModePicker = RadioGroup.create<ThemeMode>()
 
 export const Model = Schema.Struct({
   theme: ThemeChoice,
   mode: ThemeMode,
   isSystemDark: Schema.Boolean,
+  modePicker: RadioGroup.Model,
 })
 export type Model = typeof Model.Type
 
@@ -86,7 +59,7 @@ export interface ThemeInfo {
   readonly swatch: Readonly<[string, string, string]>
 }
 
-/** Curated gallery: the house themes first, then a spread of daisyUI themes. */
+/** The house pair: the only two paint jobs the app ships. */
 const HOUSE_LIGHT_INFO: ThemeInfo = {
   id: HOUSE_LIGHT,
   label: 'تالی روشن',
@@ -104,109 +77,35 @@ const HOUSE_DARK_INFO: ThemeInfo = {
 export const THEMES: ReadonlyArray<ThemeInfo> = [
   HOUSE_LIGHT_INFO,
   HOUSE_DARK_INFO,
-  {
-    id: 'cupcake',
-    label: 'کاپ‌کیک',
-    dark: false,
-    swatch: ['#65c3c8', '#ef9fbc', '#faf7f5'],
-  },
-  {
-    id: 'emerald',
-    label: 'زمرد',
-    dark: false,
-    swatch: ['#66cc8a', '#377cfb', '#ffffff'],
-  },
-  {
-    id: 'corporate',
-    label: 'اداری',
-    dark: false,
-    swatch: ['#4b6bfb', '#7b92b2', '#ffffff'],
-  },
-  {
-    id: 'nord',
-    label: 'نورد',
-    dark: false,
-    swatch: ['#5e81ac', '#88c0d0', '#eceff4'],
-  },
-  {
-    id: 'lofi',
-    label: 'لوفای',
-    dark: false,
-    swatch: ['#0d0d0d', '#1d4ed8', '#ffffff'],
-  },
-  {
-    id: 'pastel',
-    label: 'پاستل',
-    dark: false,
-    swatch: ['#d1c1d7', '#f6cbd1', '#ffffff'],
-  },
-  {
-    id: 'caramellatte',
-    label: 'کارامل',
-    dark: false,
-    swatch: ['#c8a27a', '#7c5a3c', '#fdf8f2'],
-  },
-  {
-    id: 'winter',
-    label: 'زمستان',
-    dark: false,
-    swatch: ['#0069ff', '#6b7a90', '#ffffff'],
-  },
-  {
-    id: 'sunset',
-    label: 'غروب',
-    dark: true,
-    swatch: ['#ff865b', '#fd6f9c', '#121c22'],
-  },
-  {
-    id: 'dracula',
-    label: 'دراکولا',
-    dark: true,
-    swatch: ['#ff79c6', '#bd93f9', '#282a36'],
-  },
-  {
-    id: 'night',
-    label: 'شب',
-    dark: true,
-    swatch: ['#38bdf8', '#818cf8', '#0f172a'],
-  },
-  {
-    id: 'dim',
-    label: 'تاریک',
-    dark: true,
-    swatch: ['#9be9d5', '#a3b8ff', '#242933'],
-  },
 ]
 
 const THEME_KEY = 'tali.theme'
 const MODE_KEY = 'tali.mode'
 
-export const isThemeId = (value: string): value is ThemeId =>
-  Array.some(THEMES, theme => theme.id === value)
-
 const parseThemeChoice = (value: string | undefined): ThemeChoice => {
-  if (value === 'auto') {
-    return 'auto'
+  if (value === HOUSE_LIGHT) {
+    return HOUSE_LIGHT
   }
 
-  return value !== undefined && isThemeId(value) ? value : 'auto'
+  if (value === HOUSE_DARK) {
+    return HOUSE_DARK
+  }
+
+  return 'auto'
 }
 
 const parseThemeMode = (value: string | undefined): ThemeMode =>
   value === 'light' || value === 'dark' || value === 'system' ? value : 'system'
 
 const themeInfoOf = (id: ThemeId): ThemeInfo =>
-  Option.match(
-    Array.findFirst(THEMES, theme => theme.id === id),
-    {
-      onNone: () => HOUSE_LIGHT_INFO,
-      onSome: info => info,
-    },
-  )
+  Option.match(Array.findFirst(THEMES, theme => theme.id === id), {
+    onNone: () => HOUSE_LIGHT_INFO,
+    onSome: info => info,
+  })
 
 const isDarkTheme = (id: ThemeId): boolean => themeInfoOf(id).dark
 
-/** The daisyUI theme the document should carry for the current choice. */
+/** The id the document should carry for the current choice. */
 export const resolvedTheme = (model: Model): ThemeId =>
   model.theme === 'auto'
     ? model.mode === 'system'
@@ -250,6 +149,7 @@ export const Message = defineMessageUnion({
   SelectedMode: { mode: ThemeMode },
   ChangedSystemDark: { isDark: Schema.Boolean },
   ClickedThemeToggle: {},
+  GotModePickerMessage: { message: RadioGroup.Message },
   CompletedApplyTheme: {},
   CompletedPersistTheme: {},
 })
@@ -268,6 +168,7 @@ export const init = (options: InitOptions): Update.Return<Model, Message> => {
     theme: parseThemeChoice(Option.getOrUndefined(options.maybeSavedTheme)),
     mode: parseThemeMode(Option.getOrUndefined(options.maybeSavedMode)),
     isSystemDark: options.isSystemDark,
+    modePicker: RadioGroup.init({ id: 'theme-mode-picker' }),
   })
 
   return {
@@ -324,7 +225,33 @@ export const PersistTheme = Command.define('PersistTheme', {
 
 // UPDATE
 
-export const update = (model: Model, message: Message) =>
+type ThemeUpdate = (model: Model, message: Message) => Update.Return<Model, Message>
+
+const foldModePickerOutMessage = (handleUpdate: ThemeUpdate) =>
+  RadioGroup.OutMessage.match<
+    Update.Step<Model, Message>,
+    RadioGroup.OutMessage<ThemeMode>
+  >({
+    Selected:
+      ({ value }) =>
+      stepModel =>
+        handleUpdate(stepModel, Message.SelectedMode({ mode: value })),
+  })
+
+const foldModePicker = (handleUpdate: ThemeUpdate) =>
+  Update.foldChild({
+    update: ModePicker.update,
+    read: (model: Model) => Option.some(model.modePicker),
+    write: (model: Model, nextModePicker: RadioGroup.Model) =>
+      modifyFields(model, { modePicker: () => nextModePicker }),
+    toParentMessage: message => Message.GotModePickerMessage({ message }),
+    foldOutMessage: foldModePickerOutMessage(handleUpdate),
+  })
+
+export const update = (
+  model: Model,
+  message: Message,
+): Update.Return<Model, Message> =>
   Message.match<Update.Return<Model, Message>>(message, {
     SelectedTheme: ({ id }) => {
       const mode: ThemeMode = isDarkTheme(id) ? 'dark' : 'light'
@@ -385,6 +312,9 @@ export const update = (model: Model, message: Message) =>
       }
     },
 
+    GotModePickerMessage: ({ message }) =>
+      foldModePicker(update)(model, message),
+
     CompletedApplyTheme: () => ({ model }),
     CompletedPersistTheme: () => ({ model }),
   })
@@ -412,117 +342,50 @@ const MODES: ReadonlyArray<{
   { value: 'system', label: 'سیستم', icon: monitorIcon },
 ]
 
+const MODE_LABEL: Readonly<Record<ThemeMode, string>> = {
+  light: 'روشن',
+  dark: 'تیره',
+  system: 'سیستم',
+}
+
 const toggleLabel = (model: Model): string =>
   isDarkTheme(resolvedTheme(model)) ? 'حالت روشن' : 'حالت تیره'
 
 export const view = Submodel.defineView<Model, Message>((model, h) => {
-  const label = toggleLabel(model)
+  const isDark = isDarkTheme(resolvedTheme(model))
 
-  return h.button(
-    [
-      h.Type('button'),
-      h.AriaLabel(label),
-      h.Title(label),
-      h.Class('btn btn-ghost btn-sm btn-circle'),
-      h.OnClick(Message.ClickedThemeToggle()),
-    ],
-    [
-      isDarkTheme(resolvedTheme(model))
-        ? sunIcon('size-5')
-        : moonIcon('size-5'),
-    ],
+  return buttonView(
+    {
+      variant: 'ghost',
+      size: 'sm',
+      isCircle: true,
+      children: [isDark ? sunIcon('size-5') : moonIcon('size-5')],
+      ariaLabel: toggleLabel(model),
+      title: toggleLabel(model),
+      onClick: Message.ClickedThemeToggle(),
+    },
+    h,
   )
 })
 
-const modeButtonView = (
-  model: Model,
-  entry: (typeof MODES)[number],
-  h: HtmlBuilder<Message>,
-): Html => {
-  const isSelected = model.mode === entry.value
+export const pickerView = Submodel.defineView<Model, Message>((model, h) => {
+  const options: ReadonlyArray<ThemeMode> = ['light', 'dark', 'system']
 
-  return h.button(
-    [
-      h.Type('button'),
-      h.AriaPressed(isSelected ? 'true' : 'false'),
-      h.Class(
-        classNames(
-          'btn join-item gap-1.5',
-          isSelected ? 'btn-primary' : 'btn-outline',
+  const segmentedView = (render: RadioGroup.RenderInfo<ThemeMode>): Html =>
+    h.div(
+      [...render.group, h.Class('segmented grid w-full max-w-md')],
+      Array.map(render.options, option =>
+        h.button(
+          [...option.option, h.Class('segmented-option')],
+          Option.match(Array.findFirst(MODES, mode => mode.value === option.value), {
+            onNone: () => [MODE_LABEL[option.value]],
+            onSome: mode => [mode.icon('size-4'), mode.label],
+          }),
         ),
       ),
-      h.OnClick(Message.SelectedMode({ mode: entry.value })),
-    ],
-    [entry.icon('size-4'), entry.label],
-  )
-}
+    )
 
-const galleryButtonView = (
-  model: Model,
-  info: ThemeInfo,
-  h: HtmlBuilder<Message>,
-): Html => {
-  const isSelected =
-    model.theme === info.id ||
-    (model.theme === 'auto' && resolvedTheme(model) === info.id)
-
-  return h.button(
-    [
-      h.Type('button'),
-      h.AriaPressed(isSelected ? 'true' : 'false'),
-      h.AriaLabel(`پوسته ${info.label}`),
-      h.Class(
-        classNames(
-          'grid gap-2 rounded-box border bg-base-100 p-2 text-start',
-          isSelected
-            ? 'border-2 border-primary shadow-sm'
-            : 'border-base-300 hover:border-primary/50',
-        ),
-      ),
-      h.OnClick(Message.SelectedTheme({ id: info.id })),
-    ],
-    [
-      h.span(
-        [
-          h.AriaHidden(true),
-          h.Class(
-            'flex h-12 overflow-hidden rounded-lg border border-base-300',
-          ),
-        ],
-        [
-          h.span([h.Class('flex-1'), h.Style({ background: info.swatch[0] })]),
-          h.span([h.Class('flex-1'), h.Style({ background: info.swatch[1] })]),
-          h.span([h.Class('w-1/3'), h.Style({ background: info.swatch[2] })]),
-        ],
-      ),
-      h.span(
-        [h.Class('flex items-center justify-between gap-1')],
-        [
-          h.span(
-            [h.Class('truncate text-[0.82rem] font-medium')],
-            [info.label],
-          ),
-          isSelected
-            ? h.span(
-                [
-                  h.Class(
-                    'grid size-5 place-items-center rounded-full bg-primary text-primary-content',
-                  ),
-                ],
-                [checkIcon('size-3')],
-              )
-            : h.span(
-                [h.Class('text-[0.62rem] text-base-content/40')],
-                [info.dark ? 'تیره' : 'روشن'],
-              ),
-        ],
-      ),
-    ],
-  )
-}
-
-export const pickerView = Submodel.defineView<Model, Message>((model, h) =>
-  h.section(
+  return h.section(
     [
       h.AriaLabelledBy('theme-picker-title'),
       h.Class('panel grid gap-4 p-4 sm:p-5'),
@@ -533,28 +396,29 @@ export const pickerView = Submodel.defineView<Model, Message>((model, h) =>
         [
           h.h2(
             [h.Id('theme-picker-title'), h.Class('m-0 text-lg font-bold')],
-            ['ظاهر و پوسته'],
+            ['ظاهر'],
           ),
           h.p(
             [h.Class('m-0 text-sm leading-7 text-base-content/55')],
             [
-              'حالت روشن/تیره و پوسته‌ی دلخواه را انتخاب کنید. این انتخاب فقط روی همین دستگاه ذخیره می‌شود.',
+              'حالت روشن، تیره یا سیستم را انتخاب کنید. این انتخاب فقط روی همین دستگاه ذخیره می‌شود.',
             ],
           ),
         ],
       ),
-      h.div(
-        [
-          h.Role('group'),
-          h.AriaLabel('حالت روشن یا تیره'),
-          h.Class('join grid w-full max-w-md grid-cols-3'),
-        ],
-        Array.map(MODES, entry => modeButtonView(model, entry, h)),
-      ),
-      h.div(
-        [h.Class('grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4')],
-        Array.map(THEMES, info => galleryButtonView(model, info, h)),
-      ),
+      h.submodel({
+        slotId: model.modePicker.id,
+        model: model.modePicker,
+        view: ModePicker.view,
+        viewInputs: {
+          options,
+          selectedValue: Option.some(model.mode),
+          ariaLabel: 'حالت روشن یا تیره',
+          toView: segmentedView,
+        },
+        toParentMessage: message => Message.GotModePickerMessage({ message }),
+      }),
     ],
-  ),
-)
+  )
+})
+

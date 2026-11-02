@@ -10,7 +10,7 @@ import { AuthFailure, authApi } from './lib/auth-api'
 import { authErrorMessage } from './lib/auth-copy'
 import { deriveLoginKey, passwordProblem } from './lib/login-key'
 import { buttonView } from './ui/button'
-import { fieldView, formErrorView, textInputView } from './ui/field'
+import { formErrorView, textInputView } from './ui/field'
 
 /**
  * The Settings password form Submodel, ported from
@@ -270,67 +270,43 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
           ),
         ],
       ),
-      fieldView(
+      textInputView(
         {
           id: 'settings-current',
           label: 'گذرواژه‌ی فعلی',
-          children: [
-            textInputView(
-              {
-                id: 'settings-current',
-                type: 'password',
-                name: 'currentPassword',
-                autoComplete: 'current-password',
-                value: model.currentPassword,
-                isDisabled: model.isSubmitting,
-                onInput: value => Message.UpdatedCurrentPassword({ value }),
-              },
-              h,
-            ),
-          ],
+          type: 'password',
+          name: 'currentPassword',
+          autoComplete: 'current-password',
+          value: model.currentPassword,
+          isDisabled: model.isSubmitting,
+          onInput: value => Message.UpdatedCurrentPassword({ value }),
         },
         h,
       ),
-      fieldView(
+      textInputView(
         {
           id: 'settings-new',
           label: 'گذرواژه‌ی تازه',
           hint: 'حداقل ۱۲ نویسه',
-          children: [
-            textInputView(
-              {
-                id: 'settings-new',
-                type: 'password',
-                name: 'newPassword',
-                autoComplete: 'new-password',
-                value: model.newPassword,
-                isDisabled: model.isSubmitting,
-                onInput: value => Message.UpdatedNewPassword({ value }),
-              },
-              h,
-            ),
-          ],
+          type: 'password',
+          name: 'newPassword',
+          autoComplete: 'new-password',
+          value: model.newPassword,
+          isDisabled: model.isSubmitting,
+          onInput: value => Message.UpdatedNewPassword({ value }),
         },
         h,
       ),
-      fieldView(
+      textInputView(
         {
           id: 'settings-confirm',
           label: 'تکرار گذرواژه‌ی تازه',
-          children: [
-            textInputView(
-              {
-                id: 'settings-confirm',
-                type: 'password',
-                name: 'confirmPassword',
-                autoComplete: 'new-password',
-                value: model.confirmPassword,
-                isDisabled: model.isSubmitting,
-                onInput: value => Message.UpdatedConfirmPassword({ value }),
-              },
-              h,
-            ),
-          ],
+          type: 'password',
+          name: 'confirmPassword',
+          autoComplete: 'new-password',
+          value: model.confirmPassword,
+          isDisabled: model.isSubmitting,
+          onInput: value => Message.UpdatedConfirmPassword({ value }),
         },
         h,
       ),

@@ -1,4 +1,5 @@
-import { Effect, Match, Option, Schema } from 'effect'
+import { Array, Effect, Match, Option, Schema } from 'effect'
+import { Popover } from '@foldkit/ui'
 import {
   Command,
   ManagedResource,
@@ -39,6 +40,7 @@ import {
   listsRouter,
   notePath,
   notesRouter,
+  settingsRouter,
   todayRouter,
   urlToAppRoute,
 } from './route'
@@ -47,7 +49,7 @@ import * as Settings from './settings'
 import * as Shell from './shell'
 import * as Sync from './sync'
 import * as Theme from './theme'
-import { searchIcon } from './ui/icons'
+import { listsIcon, searchIcon } from './ui/icons'
 
 // MODEL
 
@@ -69,6 +71,7 @@ export const Model = Schema.Struct({
   calendar: Calendar.Model,
   reminders: Reminders.Model,
   settings: Settings.Model,
+  morePopover: Popover.Model,
 })
 export type Model = typeof Model.Type
 
@@ -110,6 +113,7 @@ export const Message = defineMessageUnion({
   GotCalendarMessage: { message: Calendar.Message },
   GotRemindersMessage: { message: Reminders.Message },
   GotSettingsMessage: { message: Settings.Message },
+  GotMorePopoverMessage: { message: Popover.Message },
 })
 export type Message = typeof Message.Type
 
@@ -180,6 +184,7 @@ export const init: Runtime.RoutingApplicationInit<
     calendar: calendarInit.model,
     reminders: remindersInit.model,
     settings: Settings.initialModel(),
+    morePopover: Popover.init({ id: 'mobile-more-menu' }),
   })
   const guarded = enforceGuard(model, route)
   const entered = enterRoute(
@@ -483,10 +488,39 @@ const resetForms = (model: Model): Model =>
 
 const foldTheme: Update.Fold<Model, Message, Theme.Message> = Update.foldChild({
   update: Theme.update,
-  read: model => Option.some(model.theme),
-  write: (model, nextTheme) => modifyFields(model, { theme: () => nextTheme }),
-  toParentMessage: message => Message.GotThemeMessage({ message }),
+  read: (model: Model) => Option.some(model.theme),
+  write: (model: Model, nextTheme: Theme.Model) =>
+    modifyFields(model, { theme: () => nextTheme }),
+  toParentMessage: (message: Theme.Message) =>
+    Message.GotThemeMessage({ message }),
 })
+
+const foldMorePopoverOutMessage =
+  Popover.OutMessage.match<Update.Step<Model, Message>>({
+    Opened: () => stepModel => ({ model: stepModel }),
+    Closed: () => stepModel => ({ model: stepModel }),
+  })
+
+const foldMorePopover = Update.foldChild({
+  update: Popover.update,
+  read: (model: Model) => Option.some(model.morePopover),
+  write: (model: Model, nextPopover: Popover.Model) =>
+    modifyFields(model, { morePopover: () => nextPopover }),
+  toParentMessage: message => Message.GotMorePopoverMessage({ message }),
+  foldOutMessage: foldMorePopoverOutMessage,
+})
+
+const closeMorePopover = (model: Model): UpdateReturn => {
+  const closed = Popover.close(model.morePopover)
+
+  return {
+    model: modifyFields(model, { morePopover: () => closed.model }),
+    commands: Command.mapMessages(
+      closed.commands,
+      message => Message.GotMorePopoverMessage({ message }),
+    ),
+  }
+}
 
 const foldAuthOutMessage = Auth.OutMessage.match<
   Update.Step<Model, Message, Sync.LocalStoreService>
@@ -498,6 +532,10 @@ const foldAuthOutMessage = Auth.OutMessage.match<
   },
   SignedOut: () => stepModel =>
     enforceGuardWithSessionUser(resetForms(stepModel), stepModel.route),
+  SelectedSettings: () => stepModel => ({
+    model: stepModel,
+    commands: [NavigateInternal({ url: settingsRouter() })],
+  }),
 })
 
 const foldAuth = Update.foldChild({
@@ -1447,10 +1485,17 @@ export const update = (model: Model, message: Message) =>
 
     ClickedLink: ({ request }) =>
       UrlRequest.match<UpdateReturn>(request, {
-        Internal: ({ url }) => ({
-          model,
-          commands: [NavigateInternal({ url: urlToString(url) })],
-        }),
+        Internal: ({ url }) => {
+          const closed = closeMorePopover(model)
+
+          return {
+            model: closed.model,
+            commands: [
+              ...(closed.commands ?? []),
+              NavigateInternal({ url: urlToString(url) }),
+            ],
+          }
+        },
         External: ({ href }) => ({
           model,
           commands: [LoadExternal({ href })],
@@ -1477,6 +1522,7 @@ export const update = (model: Model, message: Message) =>
     GotCalendarMessage: ({ message }) => foldCalendarMessage(model, message),
     GotRemindersMessage: ({ message }) => foldReminders(model, message),
     GotSettingsMessage: ({ message }) => foldSettingsMessage(model, message),
+    GotMorePopoverMessage: ({ message }) => foldMorePopover(model, message),
   })
 
 // VIEW
@@ -1820,6 +1866,7 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): Html =>
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
   const copy = pageCopy(model.route)
+  const maybeActiveSection = Shell.sectionForRoute(model.route)
   const themeToggle = h.submodel({
     slotId: 'theme-toggle',
     model: model.theme,
@@ -1845,15 +1892,33 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
     slotId: 'account-menu',
     model: model.auth,
     view: Auth.view,
-    toParentMessage: message => Message.GotAuthMessage({ message }),
+    toParentMessage: toAuthMessage,
   })
   const authBoot = () =>
     h.submodel({
       slotId: 'auth-boot',
       model: model.auth,
       view: Auth.bootView,
-      toParentMessage: message => Message.GotAuthMessage({ message }),
+      toParentMessage: toAuthMessage,
     })
+  const moreMenu = h.submodel({
+    slotId: model.morePopover.id,
+    model: model.morePopover,
+    view: Popover.view,
+    viewInputs: {
+      anchor: { placement: 'top-end', gap: 8, padding: 8 },
+      ariaLabel: 'بخش‌های بیشتر',
+      toView: render =>
+        moreMenuView(
+          {
+            render,
+            maybeActiveSection,
+          },
+          h,
+        ),
+    },
+    toParentMessage: message => Message.GotMorePopoverMessage({ message }),
+  })
   const actions = h.div(
     [h.Class('flex items-center gap-1')],
     [syncStatus, themeToggle, accountMenu],
@@ -1881,8 +1946,9 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
           {
             actions,
             content: guard.content,
-            maybeActiveSection: Shell.sectionForRoute(model.route),
+            maybeActiveSection,
             maybeDisplayName,
+            moreMenu,
           },
           h,
         )
@@ -1895,6 +1961,57 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
     body,
   }
 }
+
+const moreMenuView = (
+  config: Readonly<{
+    render: Popover.RenderInfo
+    maybeActiveSection: Option.Option<Shell.AppSection>
+  }>,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.div(
+    [h.Class('relative w-full')],
+    [
+      h.button(
+        [
+          ...config.render.button,
+          h.Class(
+            'flex w-full cursor-pointer flex-col items-center gap-0.5 py-2 text-[0.68rem] font-medium text-base-content/55',
+          ),
+        ],
+        [
+          h.span(
+            [h.Class('grid size-8 place-items-center rounded-xl')],
+            [listsIcon('size-5')],
+          ),
+          'بیشتر',
+        ],
+      ),
+      config.render.isVisible
+        ? h.div(
+            [...config.render.panel],
+            [
+              h.nav(
+                [
+                  h.AriaLabel('بخش‌های بیشتر'),
+                  h.Class('float-card w-44 p-1.5'),
+                ],
+                Array.map(MORE_SECTIONS, section =>
+                  Shell.morePanelLinkView(section, config.maybeActiveSection, h),
+                ),
+              ),
+            ],
+          )
+        : h.empty,
+    ],
+  )
+
+const MORE_SECTIONS: ReadonlyArray<Shell.AppSection> = [
+  'Habits',
+  'Lists',
+  'Reminders',
+  'Settings',
+]
 
 // SUBSCRIPTION
 

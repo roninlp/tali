@@ -1,5 +1,7 @@
+import { Popover } from '@foldkit/ui'
 import {
   Command,
+  Mount,
   click,
   expect,
   given,
@@ -108,7 +110,7 @@ describe('route placeholders', () => {
       { update, view },
       given(modelAt(AppRoute.Settings())),
       expect(role('heading', { name: 'تنظیمات' })).toExist(),
-      expect(role('heading', { name: 'ظاهر و پوسته' })).toExist(),
+      expect(role('heading', { name: 'ظاهر' })).toExist(),
       expect(role('heading', { name: 'نمایش' })).toExist(),
       expect(role('heading', { name: 'گذرواژه' })).toExist(),
       expect(role('heading', { name: 'وضعیت اعلان‌ها' })).toExist(),
@@ -183,10 +185,16 @@ describe('navigation', () => {
     )
   })
 
-  test('the mobile more menu links the secondary sections', () => {
+  test('the mobile more menu opens a popover with the secondary sections', () => {
     scene(
       { update, view },
       given(modelAt(AppRoute.Habits())),
+      expect(within(mobileNav(), role('link', { name: 'عادت‌ها' }))).toBeAbsent(),
+      click(within(mobileNav(), role('button', { name: 'بخش‌های بیشتر' }))),
+      Mount.resolve(
+        Popover.AnchorPopover,
+        Popover.Message.CompletedAnchorPopover(),
+      ),
       expect(within(mobileNav(), role('link', { name: 'عادت‌ها' }))).toHaveAttr(
         'aria-current',
         'page',

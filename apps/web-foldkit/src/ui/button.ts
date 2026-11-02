@@ -1,3 +1,4 @@
+import { Button } from '@foldkit/ui'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
 import { classNames } from './class-names'
@@ -5,13 +6,13 @@ import { classNames } from './class-names'
 type Child = Html | string
 
 /**
- * The shared button primitive.
+ * The shared button primitive, built on the Foldkit UI `Button` helper.
  *
- * The house button styles come from the design tokens in `styles.css`; this
- * wrapper only picks the variants and classes. Screens render it with the
- * Foldkit builder, so it takes attributes and children instead of JSX props.
- * Colours come from the active daisyUI theme; the button carries none of its
- * own.
+ * The helper supplies the ARIA attributes and the disabled/autofocus wiring;
+ * this wrapper owns the variant classes and the spinner, so screens keep
+ * rendering it with the Foldkit builder through `attributes.button`. Colours
+ * come from the owned `.btn` rules in `styles.css`; the button carries none of
+ * its own.
  */
 
 export type ButtonVariant =
@@ -53,9 +54,12 @@ export type ButtonConfig<Message> = Readonly<{
   size?: ButtonSize
   /** Square icon-only button; pair it with `ariaLabel`. */
   isSquare?: boolean
+  /** Round icon-only button; pair it with `ariaLabel`. */
+  isCircle?: boolean
   /** Shows a spinner and makes the button inert while the action runs. */
   isLoading?: boolean
   isDisabled?: boolean
+  isAutofocus?: boolean
   type?: 'button' | 'submit' | 'reset'
   ariaLabel?: string
   title?: string
@@ -70,34 +74,38 @@ export const buttonView = <Message>(
 
   const children: ReadonlyArray<Child> =
     config.isLoading === true
-      ? [
-          h.span([h.Class('loading loading-spinner loading-xs')]),
-          ...config.children,
-        ]
+      ? [h.span([h.Class('spinner spinner-xs')]), ...config.children]
       : config.children
 
-  return h.button(
-    [
-      h.Type(config.type ?? 'button'),
-      h.Class(
-        classNames(
-          'btn',
-          VARIANT_CLASS[config.variant ?? 'primary'],
-          SIZE_CLASS[config.size ?? 'md'],
-          config.isSquare === true ? 'btn-square' : undefined,
-          config.class,
+  return Button.view<Message>({
+    type: config.type ?? 'button',
+    ...(isInactive || config.onClick === undefined
+      ? {}
+      : { onClick: config.onClick }),
+    ...(isInactive ? { isDisabled: true } : {}),
+    ...(config.isAutofocus === true ? { isAutofocus: true } : {}),
+      toView: (attributes: Button.ButtonAttributes<Message>) =>
+        h.button(
+          [
+            ...attributes.button,
+            ...(config.ariaLabel === undefined
+              ? []
+              : [h.AriaLabel(config.ariaLabel)]),
+            ...(config.title === undefined ? [] : [h.Title(config.title)]),
+            h.Class(
+              classNames(
+                'btn',
+                VARIANT_CLASS[config.variant ?? 'primary'],
+                SIZE_CLASS[config.size ?? 'md'],
+                config.isSquare === true ? 'btn-square' : undefined,
+                config.isCircle === true ? 'btn-circle' : undefined,
+                config.isLoading === true ? undefined : config.class,
+              ),
+            ),
+          ],
+          children,
         ),
-      ),
-      ...(isInactive ? [h.Disabled(true)] : []),
-      ...(config.isLoading === true ? [h.AriaBusy(true)] : []),
-      ...(config.ariaLabel === undefined
-        ? []
-        : [h.AriaLabel(config.ariaLabel)]),
-      ...(config.title === undefined ? [] : [h.Title(config.title)]),
-      ...(config.onClick === undefined || isInactive
-        ? []
-        : [h.OnClick(config.onClick)]),
-    ],
-    children,
+    },
+    h,
   )
 }

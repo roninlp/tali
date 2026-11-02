@@ -1,4 +1,6 @@
+import { Nav } from '@foldkit/ui'
 import { Array, Option } from 'effect'
+import { inertHtml as ih } from 'foldkit/html'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
 import {
@@ -27,10 +29,10 @@ import {
 /**
  * The app chrome shared by every signed-in screen.
  *
- * Desktop shows the full section menu in the sticky header; phones get a fixed
- * bottom tab bar with the four primary destinations plus a "more" menu, the
- * pattern the legacy header uses. Both mark the active section with
- * `aria-current="page"`.
+ * Both navigation landmarks are built on the Foldkit UI `Nav` helper, which
+ * marks the current destination with `aria-current="page"`; the markup and
+ * classes stay local. Phones get a fixed bottom tab bar with the four primary
+ * destinations plus the "more" popover rendered by the application shell.
  */
 
 export type AppSection =
@@ -119,17 +121,6 @@ const MOBILE_PRIMARY_SECTIONS: ReadonlyArray<AppSection> = [
   'Notes',
 ]
 
-const MOBILE_MORE_SECTIONS: ReadonlyArray<AppSection> = [
-  'Habits',
-  'Lists',
-  'Reminders',
-  'Settings',
-]
-
-const navItems = (
-  sections: ReadonlyArray<AppSection>,
-): ReadonlyArray<NavItem> => Array.map(sections, section => NAV_ITEMS[section])
-
 export const sectionForRoute = (route: AppRoute): Option.Option<AppSection> =>
   AppRoute.match<Option.Option<AppSection>>(route, {
     Home: () => Option.none(),
@@ -180,43 +171,46 @@ const brandView = <Message>(h: HtmlBuilder<Message>): Html =>
     ],
   )
 
-const desktopLinkView = <Message>(
-  item: NavItem,
-  maybeActiveSection: Option.Option<AppSection>,
-  h: HtmlBuilder<Message>,
-): Html => {
-  const isActive = isActiveSection(maybeActiveSection, item.section)
-
-  return h.a(
-    [
-      h.Href(item.href),
-      h.Class(
-        classNames(
-          'gap-1.5 rounded-lg px-2.5 text-[0.82rem] font-medium',
-          isActive ? 'bg-primary/10 text-primary' : undefined,
-        ),
+const desktopNavView = (maybeActiveSection: Option.Option<AppSection>): Html =>
+  Nav.view({
+    items: DESKTOP_SECTIONS,
+    ariaLabel: 'بخش‌های تالی',
+    toHref: section => NAV_ITEMS[section].href,
+    isItemCurrent: section => isActiveSection(maybeActiveSection, section),
+    toView: render =>
+      ih.nav(
+        [...render.nav, ih.Class('mx-auto hidden md:block')],
+        [
+          ih.ul(
+            [ih.Class('flex items-center gap-0.5')],
+            Array.map(render.items, item =>
+              ih.li(
+                [],
+                [
+                  ih.a(
+                    [
+                      ...item.link,
+                      ih.Class(
+                        classNames(
+                          'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[0.82rem] font-medium transition-colors hover:bg-base-content/5',
+                          item.isCurrent
+                            ? 'bg-primary/10 text-primary'
+                            : 'text-base-content/70',
+                        ),
+                      ),
+                    ],
+                    [
+                      NAV_ITEMS[item.value].icon('size-4'),
+                      NAV_ITEMS[item.value].label,
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
-      ...(isActive ? [h.AriaCurrent('page')] : []),
-    ],
-    [item.icon('size-4'), item.label],
-  )
-}
-
-const desktopNavView = <Message>(
-  maybeActiveSection: Option.Option<AppSection>,
-  h: HtmlBuilder<Message>,
-): Html =>
-  h.nav(
-    [h.AriaLabel('بخش‌های تالی'), h.Class('mx-auto hidden md:block')],
-    [
-      h.ul(
-        [h.Class('menu menu-horizontal gap-0.5 px-0')],
-        Array.map(navItems(DESKTOP_SECTIONS), item =>
-          h.li([], [desktopLinkView(item, maybeActiveSection, h)]),
-        ),
-      ),
-    ],
-  )
+  })
 
 const mobileLinkView = <Message>(
   item: NavItem,
@@ -260,25 +254,34 @@ const mobileMoreLinkView = <Message>(
 ): Html => {
   const isActive = isActiveSection(maybeActiveSection, item.section)
 
-  return h.li(
-    [],
+  return h.a(
     [
-      h.a(
-        [
-          h.Href(item.href),
-          h.Class(
-            classNames(isActive ? 'bg-primary/10 text-primary' : undefined),
-          ),
-          ...(isActive ? [h.AriaCurrent('page')] : []),
-        ],
-        [item.icon('size-4'), item.label],
+      h.Href(item.href),
+      h.Class(
+        classNames(
+          'flex items-center gap-2 rounded-lg px-3 py-2 text-sm',
+          isActive
+            ? 'bg-primary/10 text-primary'
+            : 'text-base-content/80 hover:bg-base-content/5',
+        ),
       ),
+      ...(isActive ? [h.AriaCurrent('page')] : []),
     ],
+    [item.icon('size-4'), item.label],
   )
 }
 
-const mobileNavView = <Message>(
+export const morePanelLinkView = <Message>(
+  section: AppSection,
   maybeActiveSection: Option.Option<AppSection>,
+  h: HtmlBuilder<Message>,
+): Html => mobileMoreLinkView(NAV_ITEMS[section], maybeActiveSection, h)
+
+const mobileNavView = <Message>(
+  config: Readonly<{
+    maybeActiveSection: Option.Option<AppSection>
+    moreMenu: Html
+  }>,
   h: HtmlBuilder<Message>,
 ): Html =>
   h.nav(
@@ -292,48 +295,17 @@ const mobileNavView = <Message>(
       h.ul(
         [h.Class('mx-auto grid max-w-lg grid-cols-5')],
         [
-          ...Array.map(navItems(MOBILE_PRIMARY_SECTIONS), item =>
-            h.li([], [mobileLinkView(item, maybeActiveSection, h)]),
+          ...Array.map(configNavItems(), item =>
+            h.li([], [mobileLinkView(item, config.maybeActiveSection, h)]),
           ),
-          h.li(
-            [],
-            [
-              h.details(
-                [h.Class('dropdown dropdown-top dropdown-end w-full')],
-                [
-                  h.summary(
-                    [
-                      h.AriaLabel('بخش‌های بیشتر'),
-                      h.Class(
-                        'flex cursor-pointer list-none flex-col items-center gap-0.5 py-2 text-[0.68rem] font-medium text-base-content/55 [&::-webkit-details-marker]:hidden',
-                      ),
-                    ],
-                    [
-                      h.span(
-                        [h.Class('grid size-8 place-items-center rounded-xl')],
-                        [listsIcon('size-5')],
-                      ),
-                      'بیشتر',
-                    ],
-                  ),
-                  h.ul(
-                    [
-                      h.Class(
-                        'menu dropdown-content z-50 mb-2 w-44 rounded-box border border-base-300 bg-base-100 p-2 shadow-lg',
-                      ),
-                    ],
-                    Array.map(navItems(MOBILE_MORE_SECTIONS), item =>
-                      mobileMoreLinkView(item, maybeActiveSection, h),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+          h.li([h.Class('w-full')], [config.moreMenu]),
         ],
       ),
     ],
   )
+
+const configNavItems = (): ReadonlyArray<NavItem> =>
+  Array.map(MOBILE_PRIMARY_SECTIONS, section => NAV_ITEMS[section])
 
 export type ShellConfig = Readonly<{
   /** Header actions, rendered at the inline-end of the top bar. */
@@ -344,6 +316,8 @@ export type ShellConfig = Readonly<{
   maybeActiveSection: Option.Option<AppSection>
   /** The signed-in user's name, shown beside the brand on wide screens. */
   maybeDisplayName: Option.Option<string>
+  /** The mobile "more" popover element, rendered in the last tab slot. */
+  moreMenu: Html
 }>
 
 export const view = <Message>(
@@ -380,7 +354,7 @@ export const view = <Message>(
                     [displayName],
                   ),
               }),
-              desktopNavView(config.maybeActiveSection, h),
+              desktopNavView(config.maybeActiveSection),
               h.div(
                 [h.Class('ms-auto flex items-center gap-1 md:ms-0')],
                 [config.actions],
@@ -390,7 +364,13 @@ export const view = <Message>(
         ],
       ),
       h.main([], [config.content]),
-      mobileNavView(config.maybeActiveSection, h),
+      mobileNavView(
+        {
+          maybeActiveSection: config.maybeActiveSection,
+          moreMenu: config.moreMenu,
+        },
+        h,
+      ),
     ],
   )
 

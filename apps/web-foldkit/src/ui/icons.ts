@@ -144,6 +144,9 @@ export const monitorIcon = (className: string): Html =>
 export const checkIcon = (className: string): Html =>
   strokeIcon(className, [ih.path([...roundCaps(), ih.D('m5 12 4.5 4.5L19 7')])])
 
+export const chevronDownIcon = (className: string): Html =>
+  strokeIcon(className, [ih.path([...roundCaps(), ih.D('m6 9 6 6 6-6')])])
+
 export const plusIcon = (className: string): Html =>
   strokeIcon(className, [ih.path([...roundCaps(), ih.D('M12 5v14M5 12h14')])])
 

@@ -1,4 +1,5 @@
 import { Effect, Option, Schema } from 'effect'
+import { Listbox } from '@foldkit/ui'
 import { Command, Submodel, Update } from 'foldkit'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 import { defineMessageUnion } from 'foldkit/message'
@@ -28,12 +29,8 @@ import {
 } from './preferences-model'
 import type { Session } from './session'
 import { buttonView } from './ui/button'
-import {
-  fieldView,
-  formErrorView,
-  selectInputView,
-  textInputView,
-} from './ui/field'
+import { formErrorView, textInputView } from './ui/field'
+import { listboxViewInputs } from './ui/listbox'
 
 /**
  * The client preferences Submodel, ported from
@@ -54,6 +51,18 @@ import {
 
 // MODEL
 
+/** One native-select pick option: the value the server stores + its Persian label. */
+export type SelectOption<Value extends string = string> = Readonly<{
+  value: Value
+  label: string
+}>
+
+export const WeekStartListbox = Listbox.create<
+  SelectOption<WeekStart>,
+  string
+>()
+export const DigitsListbox = Listbox.create<SelectOption<Digits>, string>()
+
 /** Only used while signed out, where route guards never read preferences. */
 export const SIGNED_OUT_USER_ID = '00000000-0000-4000-8000-000000000000'
 
@@ -68,6 +77,8 @@ export const Model = Schema.Struct({
   isSaving: Schema.Boolean,
   hasSaved: Schema.Boolean,
   maybeError: Schema.Option(Schema.String),
+  weekStartListbox: Listbox.Model,
+  digitsListbox: Listbox.Model,
 })
 export type Model = typeof Model.Type
 
@@ -131,6 +142,8 @@ const initialModel = (
     isSaving: false,
     hasSaved: false,
     maybeError: Option.none(),
+    weekStartListbox: Listbox.init({ id: 'settings-week-start-listbox' }),
+    digitsListbox: Listbox.init({ id: 'settings-digits-listbox' }),
   })
 }
 
@@ -196,6 +209,8 @@ export const Message = defineMessageUnion({
   UpdatedTimeZoneDraft: { value: Schema.String },
   UpdatedWeekStartDraft: { value: WeekStart },
   UpdatedDigitsDraft: { value: Digits },
+  GotWeekStartListboxMessage: { message: Listbox.Message },
+  GotDigitsListboxMessage: { message: Listbox.Message },
   SubmittedDisplayPreferences: {},
   ClickedRefreshPreferences: {},
   CompletedCachePreferences: {},
@@ -347,6 +362,44 @@ const isIanaTimeZone = (value: string): boolean => {
 const invalidTimeZoneMessage =
   'منطقه‌ی زمانی معتبر نیست؛ مثل Asia/Tehran وارد کنید.'
 
+const foldWeekStartListboxOutMessage = Listbox.OutMessage.match<
+  Update.Step<Model, Message>,
+  Listbox.OutMessage<string>
+>({
+  Selected:
+    ({ value }) =>
+    stepModel =>
+      update(stepModel, Message.UpdatedWeekStartDraft({ value: weekStartOf(value) })),
+})
+
+const foldDigitsListboxOutMessage = Listbox.OutMessage.match<
+  Update.Step<Model, Message>,
+  Listbox.OutMessage<string>
+>({
+  Selected:
+    ({ value }) =>
+    stepModel =>
+      update(stepModel, Message.UpdatedDigitsDraft({ value: digitsOf(value) })),
+})
+
+const foldWeekStartListbox = Update.foldChild({
+  update: WeekStartListbox.update,
+  read: (model: Model) => Option.some(model.weekStartListbox),
+  write: (model: Model, nextListbox: Listbox.Model) =>
+    modifyFields(model, { weekStartListbox: () => nextListbox }),
+  toParentMessage: message => Message.GotWeekStartListboxMessage({ message }),
+  foldOutMessage: foldWeekStartListboxOutMessage,
+})
+
+const foldDigitsListbox = Update.foldChild({
+  update: DigitsListbox.update,
+  read: (model: Model) => Option.some(model.digitsListbox),
+  write: (model: Model, nextListbox: Listbox.Model) =>
+    modifyFields(model, { digitsListbox: () => nextListbox }),
+  toParentMessage: message => Message.GotDigitsListboxMessage({ message }),
+  foldOutMessage: foldDigitsListboxOutMessage,
+})
+
 export const update = (model: Model, message: Message): UpdateReturn =>
   Message.match<UpdateReturn>(message, {
     CompletedReadCachedPreferences: ({ userId, maybePreferences }) => {
@@ -404,6 +457,12 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         }),
       }
     },
+
+    GotWeekStartListboxMessage: ({ message }) =>
+      foldWeekStartListbox(model, message),
+
+    GotDigitsListboxMessage: ({ message }) =>
+      foldDigitsListbox(model, message),
 
     SucceededSavePreferences: ({ userId, preferences }) => {
       const cache = CachePreferences({ preferences })
@@ -591,32 +650,29 @@ const successView = (model: Model, h: HtmlBuilder<Message>): Html =>
     : h.empty
 
 const timeZoneFieldView = (model: Model, h: HtmlBuilder<Message>): Html =>
-  fieldView(
-    {
-      id: 'settings-timezone',
-      label: 'منطقه‌ی زمانی (IANA)',
-      hint: 'مثل Asia/Tehran',
-      children: [
-        textInputView(
-          {
-            id: 'settings-timezone',
-            name: 'timeZone',
-            dir: 'ltr',
-            autoComplete: 'off',
-            listId: 'settings-timezone-options',
-            value: model.draft.timeZone,
-            isDisabled: model.isSaving,
-            onInput: value => Message.UpdatedTimeZoneDraft({ value }),
-          },
-          h,
-        ),
-        h.datalist(
-          [h.Id('settings-timezone-options')],
-          TIME_ZONE_SUGGESTIONS.map(zone => h.option([h.Value(zone)])),
-        ),
-      ],
-    },
-    h,
+  h.div(
+    [h.Class('grid gap-1.5')],
+    [
+      textInputView(
+        {
+          id: 'settings-timezone',
+          label: 'منطقه‌ی زمانی (IANA)',
+          hint: 'مثل Asia/Tehran',
+          name: 'timeZone',
+          dir: 'ltr',
+          autoComplete: 'off',
+          listId: 'settings-timezone-options',
+          value: model.draft.timeZone,
+          isDisabled: model.isSaving,
+          onInput: value => Message.UpdatedTimeZoneDraft({ value }),
+        },
+        h,
+      ),
+      h.datalist(
+        [h.Id('settings-timezone-options')],
+        TIME_ZONE_SUGGESTIONS.map(zone => h.option([h.Value(zone)])),
+      ),
+    ],
   )
 
 export const settingsView = Submodel.defineView<Model, Message>((model, h) => {
@@ -664,49 +720,55 @@ export const settingsView = Submodel.defineView<Model, Message>((model, h) => {
         ],
         [
           timeZoneFieldView(model, h),
-          fieldView(
-            {
-              id: 'settings-week-start',
-              label: 'شروع هفته',
-              children: [
-                selectInputView(
-                  {
-                    id: 'settings-week-start',
-                    name: 'weekStart',
-                    value: model.draft.weekStart,
-                    options: WEEK_START_OPTIONS,
-                    isDisabled: model.isSaving,
-                    onChange: value =>
-                      Message.UpdatedWeekStartDraft({
-                        value: weekStartOf(value),
-                      }),
-                  },
+          h.div(
+            [h.Class('grid gap-1.5')],
+            [
+              h.label(
+                [
+                  h.For(Listbox.buttonId(model.weekStartListbox.id)),
+                  h.Class('text-sm font-medium text-base-content/70'),
+                ],
+                ['شروع هفته'],
+              ),
+              h.submodel({
+                slotId: model.weekStartListbox.id,
+                model: model.weekStartListbox,
+                view: WeekStartListbox.view,
+                viewInputs: listboxViewInputs({
+                  items: WEEK_START_OPTIONS,
+                  maybeSelectedValue: Option.some(model.draft.weekStart),
+                  isDisabled: model.isSaving,
                   h,
-                ),
-              ],
-            },
-            h,
+                }),
+                toParentMessage: message =>
+                  Message.GotWeekStartListboxMessage({ message }),
+              }),
+            ],
           ),
-          fieldView(
-            {
-              id: 'settings-digits',
-              label: 'شکل اعداد',
-              children: [
-                selectInputView(
-                  {
-                    id: 'settings-digits',
-                    name: 'digits',
-                    value: model.draft.digits,
-                    options: DIGITS_OPTIONS,
-                    isDisabled: model.isSaving,
-                    onChange: value =>
-                      Message.UpdatedDigitsDraft({ value: digitsOf(value) }),
-                  },
+          h.div(
+            [h.Class('grid gap-1.5')],
+            [
+              h.label(
+                [
+                  h.For(Listbox.buttonId(model.digitsListbox.id)),
+                  h.Class('text-sm font-medium text-base-content/70'),
+                ],
+                ['شکل اعداد'],
+              ),
+              h.submodel({
+                slotId: model.digitsListbox.id,
+                model: model.digitsListbox,
+                view: DigitsListbox.view,
+                viewInputs: listboxViewInputs({
+                  items: DIGITS_OPTIONS,
+                  maybeSelectedValue: Option.some(model.draft.digits),
+                  isDisabled: model.isSaving,
                   h,
-                ),
-              ],
-            },
-            h,
+                }),
+                toParentMessage: message =>
+                  Message.GotDigitsListboxMessage({ message }),
+              }),
+            ],
           ),
           formErrorView(model.maybeError, h),
           successView(model, h),

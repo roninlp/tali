@@ -12,7 +12,7 @@ import { registerRouter } from '../route'
 import { Session } from '../session'
 import { authCardView, authFooterLinkView } from '../ui/auth-card'
 import { buttonView } from '../ui/button'
-import { fieldView, formErrorView, textInputView } from '../ui/field'
+import { formErrorView, textInputView } from '../ui/field'
 
 // MODEL
 
@@ -158,46 +158,30 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
         h.form(
           [h.Class('grid gap-3.5'), h.OnSubmit(Message.SubmittedForm())],
           [
-            fieldView(
+            textInputView(
               {
                 id: 'login-email',
                 label: 'ایمیل',
-                children: [
-                  textInputView(
-                    {
-                      id: 'login-email',
-                      type: 'email',
-                      name: 'email',
-                      autoComplete: 'email',
-                      dir: 'ltr',
-                      value: model.email,
-                      isDisabled: model.isSubmitting,
-                      onInput: value => Message.UpdatedEmail({ value }),
-                    },
-                    h,
-                  ),
-                ],
+                type: 'email',
+                name: 'email',
+                autoComplete: 'email',
+                dir: 'ltr',
+                value: model.email,
+                isDisabled: model.isSubmitting,
+                onInput: value => Message.UpdatedEmail({ value }),
               },
               h,
             ),
-            fieldView(
+            textInputView(
               {
                 id: 'login-password',
                 label: 'گذرواژه',
-                children: [
-                  textInputView(
-                    {
-                      id: 'login-password',
-                      type: 'password',
-                      name: 'password',
-                      autoComplete: 'current-password',
-                      value: model.password,
-                      isDisabled: model.isSubmitting,
-                      onInput: value => Message.UpdatedPassword({ value }),
-                    },
-                    h,
-                  ),
-                ],
+                type: 'password',
+                name: 'password',
+                autoComplete: 'current-password',
+                value: model.password,
+                isDisabled: model.isSubmitting,
+                onInput: value => Message.UpdatedPassword({ value }),
               },
               h,
             ),

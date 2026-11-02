@@ -188,9 +188,6 @@ catalogs:
     '@types/node':
       specifier: ^26.6.5
       version: 26.6.5
-    daisyui:
-      specifier: ^5.7.50
-      version: 5.7.50
     effect:
       specifier: ~4.1.0
       version: 4.1.0
@@ -309,9 +306,6 @@ importers:
       '@tailwindcss/vite':
         specifier: 'catalog:'
         version: 4.3.3(vite@8.3.5(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
-      daisyui:
-        specifier: 'catalog:'
-        version: 5.7.50
       fake-indexeddb:
         specifier: 'catalog:'
         version: 6.2.6
@@ -2418,9 +2412,6 @@ packages:
   cssstyle@4.6.0:
     resolution: {integrity: sha512-2z+rWdzbbSZv6/rhtvzvqeZQHrBaqgogqt85sqFNbabZOuFbCVFb8kPeEtZjiKkbrm395irpNKiYeFeLiQnFPg==}
     engines: {node: '>=18'}
-
-  daisyui@5.7.50:
-    resolution: {integrity: sha512-+/LRqnTCoc7s/bJEKKwtJSwzeXCVdAmRdNmZeZzgHCaQ9PJyl7j+2V2U32GQDMyD+VDkP9e/+JGoC72Y1hLk7w==}
 
   data-urls@5.0.0:
     resolution: {integrity: sha512-ZYP5VBHshaDAiVZxjbRVcFJpc+4xGgT0bK3vzy1HLN8jTO975HEbuYzZJcHoQEY5K1a0z8YayJkyVETa08eNTg==}
@@ -5073,8 +5064,6 @@ snapshots:
       '@asamuzakjp/css-color': 3.2.0
       rrweb-cssom: 0.8.0
     optional: true
-
-  daisyui@5.7.50: {}
 
   data-urls@5.0.0:
     dependencies:

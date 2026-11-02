@@ -1,8 +1,9 @@
 import { Option } from 'effect'
+import { Listbox } from '@foldkit/ui'
 import {
   Command,
+  Mount,
   all,
-  change,
   click,
   expect,
   expectOutMessage,
@@ -300,12 +301,27 @@ describe('List detail', () => {
     )
   })
 
-  test('the sort and placement selects write their fields', () => {
+  test('the sort and placement pickers write their fields', () => {
     scene(
       detailScene(detailModel(), withItems()),
       given(detailModel()),
-      expect(label('مرتب‌سازی')).toHaveValue('manual'),
-      change(label('مرتب‌سازی'), 'alpha'),
+      click(role('button', { name: 'مرتب‌سازی' })),
+      Mount.resolve(
+        Listbox.AnchorListbox,
+        Listbox.Message.CompletedAnchorListbox(),
+      ),
+      Mount.resolve(
+        Listbox.PortalListboxBackdrop,
+        Listbox.Message.CompletedPortalListboxBackdrop(),
+      ),
+      Command.resolve(Listbox.FocusItems, Listbox.Message.CompletedFocusItems()),
+      click(text('الفبا')),
+      Command.resolve(
+        Listbox.FocusButton,
+        Listbox.Message.CompletedFocusButton(),
+      ),
+      Mount.expectEnded(Listbox.AnchorListbox),
+      Mount.expectEnded(Listbox.PortalListboxBackdrop),
       Command.expectExact(
         Lists.SetListSort({ listId: LIST_ID, sort: 'alpha', revision: 1 }),
       ),
@@ -313,7 +329,23 @@ describe('List detail', () => {
         Lists.SetListSort,
         Lists.Message.CompletedSetListSort({ listId: LIST_ID }),
       ),
-      change(label('جای موارد تیک‌خورده'), 'inPlace'),
+      click(role('button', { name: 'جای موارد تیک‌خورده' })),
+      Mount.resolve(
+        Listbox.AnchorListbox,
+        Listbox.Message.CompletedAnchorListbox(),
+      ),
+      Mount.resolve(
+        Listbox.PortalListboxBackdrop,
+        Listbox.Message.CompletedPortalListboxBackdrop(),
+      ),
+      Command.resolve(Listbox.FocusItems, Listbox.Message.CompletedFocusItems()),
+      click(text('همان‌جا')),
+      Command.resolve(
+        Listbox.FocusButton,
+        Listbox.Message.CompletedFocusButton(),
+      ),
+      Mount.expectEnded(Listbox.AnchorListbox),
+      Mount.expectEnded(Listbox.PortalListboxBackdrop),
       Command.expectExact(
         Lists.SetCheckedPlacement({
           listId: LIST_ID,
@@ -328,14 +360,14 @@ describe('List detail', () => {
     )
   })
 
-  test('the visibility select is disabled for a non-owner', () => {
+  test('the visibility picker is disabled for a non-owner', () => {
     scene(
       detailScene(detailModel(), {
         ...withItems(),
         maybeUserId: Option.some('someone-else'),
       }),
       given(detailModel()),
-      expect(label('دسترسی')).toBeDisabled(),
+      expect(role('button', { name: 'دسترسی' })).toBeDisabled(),
     )
   })
 

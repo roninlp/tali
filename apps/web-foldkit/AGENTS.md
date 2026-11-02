@@ -128,11 +128,18 @@ subtree_prompted: true
   boots from a clean install with no `node_modules` shim. The Foldkit app was
   unaffected. Drop the patch once a published alchemy release includes the fix;
   see `../../infra/README.md`.
-- **Styling.** `src/styles.css` is the Tali entry: Tailwind v4 + daisyUI, the
-  `tali`/`talidark` themes, and the shared utilities. Vazirmatn ships in
-  `src/fonts/` with its OFL licence and Vite fingerprints it on build. The
-  theme toggle and the settings gallery are device-local and restore from
-  `public/theme-boot.js` before first paint.
+- **Styling.** `src/styles.css` is the Tali entry: Tailwind v4 only, with the
+  house light/dark tokens declared in its `@theme` block and overridden under
+  `[data-theme='talidark']` (utilities compile to `var()` references, so
+  runtime theme switching works). Interactive behaviour and ARIA come from
+  `@foldkit/ui` components (`Button`, `Input`, `Listbox`, `Menu`, `Popover`,
+  `Dialog`, `Toast`, `RadioGroup`, `Nav`) rendered through their `toView`
+  callbacks; the component classes those callbacks use (`btn`, `badge`,
+  `spinner`, `notice`, …) live in the owned `@layer components` section of
+  `styles.css`. Vazirmatn ships in `src/fonts/` with its OFL licence and Vite
+  fingerprints it on build. The theme toggle is device-local and restores
+  from `public/theme-boot.js`, which accepts only the two house theme ids,
+  before first paint.
 - **Migration record.** The completed Phase 2 slices and acceptance criteria
   live in `../../docs/plans/foldkit-migration.md`. Keep this file's notes
   project-specific.

@@ -7,7 +7,11 @@ import type { Digits, TaskBucketBounds } from '@tali/domain'
 import type { ProjectRow, TagRow, TaskRow } from '../mirror'
 import { taskKey } from '../mirror'
 import { buttonView } from '../ui/button'
-import { fieldView, selectInputView } from '../ui/field'
+import {
+  selectInputView,
+  textAreaFieldView,
+  textInputView,
+} from '../ui/field'
 import { Message } from './tasks'
 import type {
   Model,
@@ -774,100 +778,68 @@ const filterPanelView = (
           ),
         ],
       ),
-      fieldView(
+      selectInputView(
         {
           id: 'tasks-filter-priority',
           label: 'اولویت',
-          children: [
-            selectInputView(
-              {
-                id: 'tasks-filter-priority',
-                value: model.settings.filters.priority,
-                options: Array.map(PRIORITY_OPTIONS, option => ({
-                  value: option.value,
-                  label: option.label,
-                })),
-                onChange: value =>
-                  Message.SelectedPriorityFilter({
-                    priority: priorityFilterOf(value),
-                  }),
-              },
-              h,
-            ),
-          ],
+          value: model.settings.filters.priority,
+          options: Array.map(PRIORITY_OPTIONS, option => ({
+            value: option.value,
+            label: option.label,
+          })),
+          onChange: value =>
+            Message.SelectedPriorityFilter({
+              priority: priorityFilterOf(value),
+            }),
         },
         h,
       ),
-      fieldView(
+      selectInputView(
         {
           id: 'tasks-filter-status',
           label: 'وضعیت',
-          children: [
-            selectInputView(
-              {
-                id: 'tasks-filter-status',
-                value: model.settings.filters.status,
-                options: Array.map(STATUS_OPTIONS, option => ({
-                  value: option.value,
-                  label: option.label,
-                })),
-                onChange: value =>
-                  Message.SelectedStatusFilter({
-                    status: statusFilterOf(value),
-                  }),
-              },
-              h,
-            ),
-          ],
+          value: model.settings.filters.status,
+          options: Array.map(STATUS_OPTIONS, option => ({
+            value: option.value,
+            label: option.label,
+          })),
+          onChange: value =>
+            Message.SelectedStatusFilter({
+              status: statusFilterOf(value),
+            }),
         },
         h,
       ),
-      fieldView(
+      selectInputView(
         {
           id: 'tasks-filter-date',
           label: 'زمان',
-          children: [
-            selectInputView(
-              {
-                id: 'tasks-filter-date',
-                value: model.settings.filters.date,
-                options: Array.map(DATE_OPTIONS, option => ({
-                  value: option.value,
-                  label: option.label,
-                })),
-                onChange: value =>
-                  Message.SelectedDateFilter({ date: dateFilterOf(value) }),
-              },
-              h,
-            ),
-          ],
+          value: model.settings.filters.date,
+          options: Array.map(DATE_OPTIONS, option => ({
+            value: option.value,
+            label: option.label,
+          })),
+          onChange: value =>
+            Message.SelectedDateFilter({ date: dateFilterOf(value) }),
         },
         h,
       ),
       h.div(
         [h.Class('tasks-sort-row')],
         [
-          fieldView(
+          selectInputView(
             {
               id: 'tasks-filter-sort',
               label: 'مرتب‌سازی',
-              children: [
-                selectInputView(
-                  {
-                    id: 'tasks-filter-sort',
-                    value: model.settings.sort.by,
-                    options: Array.map(TASK_SORT_FIELDS, field => ({
-                      value: field,
-                      label: SORT_FIELD_LABELS[field],
-                    })),
-                    onChange: value =>
-                      Message.SelectedSortField({
-                        by: sortFieldOf(value),
-                      }),
-                  },
-                  h,
-                ),
-              ],
+              value: model.settings.sort.by,
+              options: Array.map(TASK_SORT_FIELDS, field => ({
+                value: field,
+                label: SORT_FIELD_LABELS[field],
+              })),
+              onChange: value =>
+                Message.SelectedSortField({
+                  by: sortFieldOf(value),
+                }),
             },
             h,
           ),
@@ -942,139 +914,96 @@ const editorView = (
   return h.div(
     [h.Id(editorId), h.Class('tasks-editor')],
     [
-      fieldView(
+      textInputView(
         {
           id: `task-${task.id}-title`,
           label: 'عنوان',
-          children: [
-            h.input([
-              h.Id(`task-${task.id}-title`),
-              h.Type('text'),
-              h.Class('tasks-input'),
-              h.Value(editor.title),
-              h.OnInput(value =>
-                Message.UpdatedTaskTitle({ taskId: task.id, value }),
-              ),
-            ]),
-          ],
+          value: editor.title,
+          class: 'tasks-input',
+          onInput: value =>
+            Message.UpdatedTaskTitle({ taskId: task.id, value }),
         },
         h,
       ),
-      fieldView(
+      textAreaFieldView(
         {
           id: `task-${task.id}-description`,
           label: 'توضیح',
-          children: [
-            h.textarea([
-              h.Id(`task-${task.id}-description`),
-              h.Class('tasks-input'),
-              h.Rows(3),
-              h.Value(editor.description),
-              h.OnInput(value =>
-                Message.UpdatedTaskDescription({ taskId: task.id, value }),
-              ),
-            ]),
-          ],
+          value: editor.description,
+          rows: 3,
+          class: 'tasks-input',
+          onInput: value =>
+            Message.UpdatedTaskDescription({ taskId: task.id, value }),
         },
         h,
       ),
       h.div(
         [h.Class('tasks-editor-grid')],
         [
-          fieldView(
+          textInputView(
             {
               id: `task-${task.id}-due`,
               label: 'موعد',
-              children: [
-                h.input([
-                  h.Id(`task-${task.id}-due`),
-                  h.Type('date'),
-                  h.Class('tasks-input'),
-                  h.Value(editor.dueDate),
-                  h.OnInput(value =>
-                    Message.UpdatedTaskDueDate({ taskId: task.id, value }),
-                  ),
-                ]),
-              ],
+              type: 'date',
+              value: editor.dueDate,
+              class: 'tasks-input',
+              onInput: value =>
+                Message.UpdatedTaskDueDate({ taskId: task.id, value }),
             },
             h,
           ),
-          fieldView(
+          selectInputView(
             {
               id: `task-${task.id}-priority`,
               label: 'اولویت',
-              children: [
-                selectInputView(
-                  {
-                    id: `task-${task.id}-priority`,
-                    value: task.priority,
-                    options: Array.map(PRIORITY_CHOICES, choice => ({
-                      value: choice.value,
-                      label: choice.label,
-                    })),
-                    onChange: value =>
-                      Message.SelectedTaskPriority({
-                        taskId: task.id,
-                        priority: priorityOf(value),
-                      }),
-                  },
-                  h,
-                ),
-              ],
+              value: task.priority,
+              options: Array.map(PRIORITY_CHOICES, choice => ({
+                value: choice.value,
+                label: choice.label,
+              })),
+              onChange: value =>
+                Message.SelectedTaskPriority({
+                  taskId: task.id,
+                  priority: priorityOf(value),
+                }),
             },
             h,
           ),
-          fieldView(
+          selectInputView(
             {
               id: `task-${task.id}-status`,
               label: 'وضعیت',
-              children: [
-                selectInputView(
-                  {
-                    id: `task-${task.id}-status`,
-                    value: task.status === 'doing' ? 'doing' : 'todo',
-                    options: [
-                      { value: 'todo', label: STATUS_LABELS.todo },
-                      { value: 'doing', label: STATUS_LABELS.doing },
-                    ],
-                    onChange: value =>
-                      Message.SelectedTaskStatus({
-                        taskId: task.id,
-                        status: value === 'doing' ? 'doing' : 'todo',
-                      }),
-                  },
-                  h,
-                ),
+              value: task.status === 'doing' ? 'doing' : 'todo',
+              options: [
+                { value: 'todo', label: STATUS_LABELS.todo },
+                { value: 'doing', label: STATUS_LABELS.doing },
               ],
+              onChange: value =>
+                Message.SelectedTaskStatus({
+                  taskId: task.id,
+                  status: value === 'doing' ? 'doing' : 'todo',
+                }),
             },
             h,
           ),
-          fieldView(
+          selectInputView(
             {
               id: `task-${task.id}-project`,
               label: 'پروژه',
-              children: [
-                selectInputView(
-                  {
-                    id: `task-${task.id}-project`,
-                    value: task.projectId ?? '',
-                    options: [
-                      { value: '', label: 'بدون پروژه' },
-                      ...Array.map(inputs.mirror.projects, project => ({
-                        value: project.id,
-                        label: project.title,
-                      })),
-                    ],
-                    onChange: value =>
-                      Message.SelectedTaskProject({
-                        taskId: task.id,
-                        maybeProjectId:
-                          value === '' ? Option.none() : Option.some(value),
-                      }),
-                  },
-                  h,
-                ),
+              value: task.projectId ?? '',
+              options: [
+                { value: '', label: 'بدون پروژه' },
+                ...Array.map(inputs.mirror.projects, project => ({
+                  value: project.id,
+                  label: project.title,
+                })),
               ],
+              onChange: value =>
+                Message.SelectedTaskProject({
+                  taskId: task.id,
+                  maybeProjectId:
+                    value === '' ? Option.none() : Option.some(value),
+                }),
             },
             h,
           ),

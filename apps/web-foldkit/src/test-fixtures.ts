@@ -1,3 +1,4 @@
+import { Listbox, Menu, Popover, RadioGroup } from '@foldkit/ui'
 import { Option } from 'effect'
 
 import * as Auth from './auth'
@@ -21,6 +22,7 @@ import { Session } from './session'
 import * as Settings from './settings'
 import * as Sync from './sync'
 import * as Theme from './theme'
+import { Toast } from './ui/toast'
 
 export const USER_ID = '0192f0a0-0000-7000-8000-000000000001'
 export const HOUSEHOLD_ID = '0192f0a0-0000-7000-8000-000000000002'
@@ -68,6 +70,8 @@ export const authModel = (status: Auth.SessionStatus): Auth.Model =>
     restoreAttempt: 1,
     isSigningOut: false,
     maybeSignOutFailure: Option.none(),
+    menu: Menu.init({ id: 'account-menu' }),
+    toast: Toast.init({ id: 'auth-toast' }),
   })
 
 export const syncModel = (
@@ -112,6 +116,8 @@ export const preferencesModel = (
     isSaving: false,
     hasSaved: false,
     maybeError: Option.none(),
+    weekStartListbox: Listbox.init({ id: 'settings-week-start-listbox' }),
+    digitsListbox: Listbox.init({ id: 'settings-digits-listbox' }),
     ...overrides,
   })
 
@@ -140,6 +146,7 @@ export const modelAt = (
       theme,
       mode,
       isSystemDark,
+      modePicker: RadioGroup.init({ id: 'theme-mode-picker' }),
     }),
     auth: authModel(status),
     login: Login.initialModel(),
@@ -177,4 +184,5 @@ export const modelAt = (
     calendar: Calendar.initialModel(TODAY_NOW),
     reminders: Reminders.initialModel(),
     settings: Settings.initialModel(),
+    morePopover: Popover.init({ id: 'mobile-more-menu' }),
   })

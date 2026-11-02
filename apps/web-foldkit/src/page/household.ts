@@ -11,7 +11,7 @@ import { AuthFailure, authApi } from '../lib/auth-api'
 import { authErrorMessage } from '../lib/auth-copy'
 import { authCardView } from '../ui/auth-card'
 import { buttonView } from '../ui/button'
-import { fieldView, formErrorView, textInputView } from '../ui/field'
+import { formErrorView, textInputView } from '../ui/field'
 
 // MODEL
 
@@ -314,22 +314,14 @@ const createFormView = (model: Model, h: HtmlBuilder<Message>): Html =>
     [h.Class('grid gap-3'), h.OnSubmit(Message.SubmittedCreateHousehold())],
     [
       h.h2([h.Class('m-0 text-lg font-bold')], ['ساختن خانه']),
-      fieldView(
+      textInputView(
         {
           id: 'household-name',
           label: 'نام خانه',
-          children: [
-            textInputView(
-              {
-                id: 'household-name',
-                name: 'householdName',
-                value: model.create.name,
-                isDisabled: model.create.isSubmitting,
-                onInput: value => Message.UpdatedHouseholdName({ value }),
-              },
-              h,
-            ),
-          ],
+          name: 'householdName',
+          value: model.create.name,
+          isDisabled: model.create.isSubmitting,
+          onInput: value => Message.UpdatedHouseholdName({ value }),
         },
         h,
       ),
@@ -352,24 +344,16 @@ const joinFormView = (model: Model, h: HtmlBuilder<Message>): Html =>
     [h.Class('grid gap-3'), h.OnSubmit(Message.SubmittedJoinHousehold())],
     [
       h.h2([h.Class('m-0 text-lg font-bold')], ['پیوستن به خانه']),
-      fieldView(
+      textInputView(
         {
           id: 'household-invite',
           label: 'کد دعوت',
-          children: [
-            textInputView(
-              {
-                id: 'household-invite',
-                name: 'inviteCode',
-                dir: 'ltr',
-                autoComplete: 'off',
-                value: model.join.inviteCode,
-                isDisabled: model.join.isSubmitting,
-                onInput: value => Message.UpdatedInviteCode({ value }),
-              },
-              h,
-            ),
-          ],
+          name: 'inviteCode',
+          dir: 'ltr',
+          autoComplete: 'off',
+          value: model.join.inviteCode,
+          isDisabled: model.join.isSubmitting,
+          onInput: value => Message.UpdatedInviteCode({ value }),
         },
         h,
       ),

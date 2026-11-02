@@ -3,7 +3,7 @@ import type { HtmlBuilder } from 'foldkit/html'
 import { expect, given, role, scene, text } from 'foldkit/scene'
 import { describe, test } from 'vitest'
 
-import { fieldView, formErrorView, textInputView } from './field'
+import { formErrorView, textInputView } from './field'
 
 type Model = Readonly<{ maybeError: Option.Option<string> }>
 
@@ -20,22 +20,14 @@ const view = (model: Model, h: HtmlBuilder<Message>) =>
   h.div(
     [],
     [
-      fieldView(
+      textInputView(
         {
           id: 'email',
           label: 'ایمیل',
           hint: 'نشانی ورود شما',
-          children: [
-            textInputView(
-              {
-                id: 'email',
-                type: 'email',
-                value: '',
-                onInput: updatedEmail,
-              },
-              h,
-            ),
-          ],
+          type: 'email',
+          value: '',
+          onInput: updatedEmail,
         },
         h,
       ),

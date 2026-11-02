@@ -26,7 +26,7 @@ export const bootView = <Message>(
       ),
     ],
     [
-      h.span([h.Class('loading loading-spinner loading-lg text-primary')]),
+      h.span([h.Class('spinner spinner-lg text-primary')]),
       h.p([h.Class('m-0 text-sm')], [config.message]),
       Option.match(config.maybeRetry, {
         onNone: () => h.empty,

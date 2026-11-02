@@ -1,4 +1,5 @@
 import { Option } from 'effect'
+import { test as toastTest } from '@foldkit/ui/toast'
 import {
   Command,
   expectNoOutMessage,
@@ -212,9 +213,9 @@ describe('sign out', () => {
         expect(model.maybeSignOutFailure).toStrictEqual(
           Option.some(networkFailure),
         )
+        expect(model.toast.entries[0]?.payload.text).toContain('ارتباط')
       }),
-      Command.expectNone(),
-      expectNoOutMessage(),
+      toastTest.drainEntry({ entryId: 'auth-toast-entry-0' }),
     )
   })
 

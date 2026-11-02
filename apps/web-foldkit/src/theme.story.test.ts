@@ -5,6 +5,7 @@ import { expect, test } from 'vitest'
 import { Message, update } from './main'
 import { AppRoute } from './route'
 import { modelAt } from './test-fixtures'
+import { RadioGroup } from '@foldkit/ui'
 import * as Theme from './theme'
 
 const givenTheme = (
@@ -61,7 +62,7 @@ test('the toggle switches the house dark theme back to light', () => {
 test('a mode choice returns to the house pair and persists the mode', () => {
   story(
     update,
-    given(modelAt(AppRoute.Today(), undefined, 'dracula')),
+    given(modelAt(AppRoute.Today(), undefined, 'talidark', 'dark')),
     message(selectedMode('system')),
     model(next => {
       expect(next.theme.theme).toBe('auto')
@@ -74,22 +75,22 @@ test('a mode choice returns to the house pair and persists the mode', () => {
   )
 })
 
-test('a gallery pick records its own light/dark nature', () => {
+test('an explicit house pick records its light/dark nature', () => {
   story(
     update,
     givenTheme('tali'),
     message(
       Message.GotThemeMessage({
-        message: Theme.Message.SelectedTheme({ id: 'night' }),
+        message: Theme.Message.SelectedTheme({ id: 'talidark' }),
       }),
     ),
     model(next => {
-      expect(next.theme.theme).toBe('night')
+      expect(next.theme.theme).toBe('talidark')
       expect(next.theme.mode).toBe('dark')
     }),
-    Command.expectHas(Theme.PersistTheme({ theme: 'night', mode: 'dark' })),
+    Command.expectHas(Theme.PersistTheme({ theme: 'talidark', mode: 'dark' })),
     Command.resolve(Theme.PersistTheme, Theme.Message.CompletedPersistTheme()),
-    Command.expectHas(Theme.ApplyTheme({ resolved: 'night' })),
+    Command.expectHas(Theme.ApplyTheme({ resolved: 'talidark' })),
     Command.resolve(Theme.ApplyTheme, Theme.Message.CompletedApplyTheme()),
   )
 })
@@ -108,7 +109,7 @@ test('an operating-system switch repaints only the automatic theme', () => {
 
   story(
     update,
-    givenTheme('night', 'dark'),
+    givenTheme('talidark', 'dark'),
     message(changedSystemDark(false)),
     model(next => {
       expect(next.theme.isSystemDark).toBe(false)
@@ -117,16 +118,24 @@ test('an operating-system switch repaints only the automatic theme', () => {
   )
 })
 
-test('init restores a saved theme and applies it after the boot script', () => {
-  const init = Theme.init({
+test('init restores a saved theme and ignores foreign ids', () => {
+  const restored = Theme.init({
+    maybeSavedTheme: Option.some('talidark'),
+    maybeSavedMode: Option.some('dark'),
+    isSystemDark: false,
+  })
+
+  expect(restored.model.theme).toBe('talidark')
+  expect(restored.model.mode).toBe('dark')
+  expect(restored.commands).toBeDefined()
+
+  const foreign = Theme.init({
     maybeSavedTheme: Option.some('dim'),
     maybeSavedMode: Option.some('dark'),
     isSystemDark: false,
   })
 
-  expect(init.model.theme).toBe('dim')
-  expect(init.model.mode).toBe('dark')
-  expect(init.commands).toBeDefined()
+  expect(foreign.model.theme).toBe('auto')
 })
 
 test('resolvedTheme follows the saved choice and the light/dark pair', () => {
@@ -134,17 +143,28 @@ test('resolvedTheme follows the saved choice and the light/dark pair', () => {
     theme: 'auto',
     mode: 'system',
     isSystemDark: true,
+    modePicker: RadioGroup.init({ id: 'theme-mode-picker' }),
   })
 
   expect(Theme.resolvedTheme(automatic)).toBe('talidark')
   expect(
     Theme.resolvedTheme(
-      Theme.Model.make({ theme: 'auto', mode: 'light', isSystemDark: true }),
+      Theme.Model.make({
+        theme: 'auto',
+        mode: 'light',
+        isSystemDark: true,
+        modePicker: RadioGroup.init({ id: 'theme-mode-picker' }),
+      }),
     ),
   ).toBe('tali')
   expect(
     Theme.resolvedTheme(
-      Theme.Model.make({ theme: 'cupcake', mode: 'dark', isSystemDark: true }),
+      Theme.Model.make({
+        theme: 'talidark',
+        mode: 'dark',
+        isSystemDark: true,
+        modePicker: RadioGroup.init({ id: 'theme-mode-picker' }),
+      }),
     ),
-  ).toBe('cupcake')
+  ).toBe('talidark')
 })

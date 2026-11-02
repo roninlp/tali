@@ -1,47 +1,28 @@
-import { Option } from 'effect'
+import { Input, Textarea, Select as UiSelect } from '@foldkit/ui'
+import { Array, Option } from 'effect'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
 import { classNames } from './class-names'
 
-type Child = Html | string
-
 /**
- * Form primitives built on daisyUI's field components, ported from
- * `apps/web/src/components/form.tsx`. They carry no colour of their own, so
- * every surface, border and focus ring follows the active theme.
+ * Form primitives built on the Foldkit UI `Input` and `Textarea` helpers,
+ * ported from the old daisyUI-based wrappers. The helpers carry the ARIA
+ * label/description linking and the input attributes; this wrapper owns the
+ * layout (label above, hint below) and the owned `field-input` classes. They
+ * carry no colour of their own, so every surface, border and focus ring
+ * follows the active theme.
  */
 
-export type FieldConfig = Readonly<{
-  id: string
-  label: string
-  children: ReadonlyArray<Child>
-  hint?: string
-  class?: string
-}>
-
-export const fieldView = <Message>(
-  config: FieldConfig,
-  h: HtmlBuilder<Message>,
-): Html =>
-  h.div(
-    [h.Class(classNames('grid gap-1.5', config.class))],
-    [
-      h.label(
-        [h.For(config.id), h.Class('text-sm font-medium text-base-content/70')],
-        [config.label],
-      ),
-      ...config.children,
-      ...(config.hint === undefined
-        ? []
-        : [h.span([h.Class('text-xs text-base-content/50')], [config.hint])]),
-    ],
-  )
+const LABEL_CLASS = 'text-sm font-medium text-base-content/70'
+const HINT_CLASS = 'text-xs text-base-content/50'
 
 export type TextInputConfig<Message> = Readonly<{
   id: string
+  label: string
   value: string
   onInput: (value: string) => Message
-  type?: 'text' | 'email' | 'password' | 'search' | 'tel' | 'url'
+  hint?: string
+  type?: 'text' | 'email' | 'password' | 'search' | 'tel' | 'url' | 'date'
   name?: string
   autoComplete?: string
   dir?: 'ltr' | 'rtl' | 'auto'
@@ -50,43 +31,142 @@ export type TextInputConfig<Message> = Readonly<{
   listId?: string
   isDisabled?: boolean
   isRequired?: boolean
+  isInvalid?: boolean
   class?: string
 }>
 
 export const textInputView = <Message>(
   config: TextInputConfig<Message>,
   h: HtmlBuilder<Message>,
-): Html =>
-  h.input([
-    h.Id(config.id),
-    h.Type(config.type ?? 'text'),
-    h.Value(config.value),
-    // 16px keeps iOS from zooming the page when the field takes focus.
-    h.Style({ 'min-height': '2.75rem', 'font-size': '1rem' }),
-    h.Class(classNames('input w-full', config.class)),
-    ...(config.name === undefined ? [] : [h.Name(config.name)]),
-    ...(config.autoComplete === undefined
-      ? []
-      : [h.Autocomplete(config.autoComplete)]),
-    ...(config.dir === undefined ? [] : [h.Dir(config.dir)]),
-    ...(config.placeholder === undefined
-      ? []
-      : [h.Placeholder(config.placeholder)]),
-    ...(config.listId === undefined ? [] : [h.List(config.listId)]),
-    ...(config.isDisabled === true ? [h.Disabled(true)] : []),
-    ...(config.isRequired === true ? [h.Required(true)] : []),
-    h.OnInput(config.onInput),
-  ])
+): Html => {
+  const hasHint = config.hint !== undefined
+
+  return Input.view(
+    {
+      id: config.id,
+      value: config.value,
+      ...(config.onInput === undefined
+        ? {}
+        : { onInput: config.onInput }),
+      type: config.type ?? 'text',
+      ...(config.placeholder === undefined
+        ? {}
+        : { placeholder: config.placeholder }),
+      ...(config.name === undefined ? {} : { name: config.name }),
+      ...(config.isDisabled === true ? { isDisabled: true } : {}),
+      ...(config.isInvalid === true ? { isInvalid: true } : {}),
+      ...(hasHint ? { hasDescription: true } : {}),
+      toView: attributes =>
+        h.div(
+          [h.Class(classNames('grid gap-1.5', config.class))],
+          [
+            h.label(
+              [...attributes.label, h.Class(LABEL_CLASS)],
+              [config.label],
+            ),
+            h.input([
+              ...attributes.input,
+              // 16px keeps iOS from zooming the page when the field takes focus.
+              h.Class(classNames('field-input min-h-[2.75rem] text-base')),
+              ...(config.autoComplete === undefined
+                ? []
+                : [h.Autocomplete(config.autoComplete)]),
+              ...(config.dir === undefined ? [] : [h.Dir(config.dir)]),
+              ...(config.listId === undefined
+                ? []
+                : [h.List(config.listId)]),
+              ...(config.isRequired === true ? [h.Required(true)] : []),
+            ]),
+            ...(hasHint
+              ? [
+                  h.span(
+                    [...attributes.description, h.Class(HINT_CLASS)],
+                    [config.hint],
+                  ),
+                ]
+              : []),
+          ],
+        ),
+    },
+    h,
+  )
+}
+
+export type TextAreaConfig<Message> = Readonly<{
+  id: string
+  label: string
+  value: string
+  onInput: (value: string) => Message
+  hint?: string
+  name?: string
+  rows?: number
+  placeholder?: string
+  isDisabled?: boolean
+  isInvalid?: boolean
+  spellcheck?: boolean
+  class?: string
+}>
+
+export const textAreaFieldView = <Message>(
+  config: TextAreaConfig<Message>,
+  h: HtmlBuilder<Message>,
+): Html => {
+  const hasHint = config.hint !== undefined
+
+  return Textarea.view(
+    {
+      id: config.id,
+      value: config.value,
+      ...(config.onInput === undefined ? {} : { onInput: config.onInput }),
+      rows: config.rows ?? 4,
+      ...(config.placeholder === undefined
+        ? {}
+        : { placeholder: config.placeholder }),
+      ...(config.name === undefined ? {} : { name: config.name }),
+      ...(config.isDisabled === true ? { isDisabled: true } : {}),
+      ...(config.isInvalid === true ? { isInvalid: true } : {}),
+      ...(hasHint ? { hasDescription: true } : {}),
+      toView: attributes =>
+        h.div(
+          [h.Class(classNames('grid gap-1.5', config.class))],
+          [
+            h.label(
+              [...attributes.label, h.Class(LABEL_CLASS)],
+              [config.label],
+            ),
+            h.textarea([
+              ...attributes.textarea,
+              h.Class(classNames('field-input')),
+              ...(config.spellcheck === undefined
+                ? []
+                : [h.Spellcheck(config.spellcheck)]),
+            ]),
+            ...(hasHint
+              ? [
+                  h.span(
+                    [...attributes.description, h.Class(HINT_CLASS)],
+                    [config.hint],
+                  ),
+                ]
+              : []),
+          ],
+        ),
+    },
+    h,
+  )
+}
 
 export type SelectOption = Readonly<{ value: string; label: string }>
 
 export type SelectInputConfig<Message> = Readonly<{
   id: string
+  label: string
   value: string
   options: ReadonlyArray<SelectOption>
   onChange: (value: string) => Message
   name?: string
   isDisabled?: boolean
+  isInvalid?: boolean
   class?: string
 }>
 
@@ -94,18 +174,35 @@ export const selectInputView = <Message>(
   config: SelectInputConfig<Message>,
   h: HtmlBuilder<Message>,
 ): Html =>
-  h.select(
-    [
-      h.Id(config.id),
-      h.Value(config.value),
-      h.Class(classNames('select w-full', config.class)),
-      ...(config.name === undefined ? [] : [h.Name(config.name)]),
-      ...(config.isDisabled === true ? [h.Disabled(true)] : []),
-      h.OnChange(config.onChange),
-    ],
-    config.options.map(option =>
-      h.option([h.Value(option.value)], [option.label]),
-    ),
+  UiSelect.view(
+    {
+      id: config.id,
+      value: config.value,
+      onChange: config.onChange,
+      ...(config.name === undefined ? {} : { name: config.name }),
+      ...(config.isDisabled === true ? { isDisabled: true } : {}),
+      ...(config.isInvalid === true ? { isInvalid: true } : {}),
+      toView: attributes =>
+        h.div(
+          [h.Class(classNames('grid gap-1.5', config.class))],
+          [
+            h.label(
+              [...attributes.label, h.Class(LABEL_CLASS)],
+              [config.label],
+            ),
+            h.select(
+              [...attributes.select, h.Class('field-input min-h-[2.2rem] text-[0.85rem]')],
+              Array.map(config.options, option =>
+                h.option(
+                  [h.Key(option.value), h.Value(option.value)],
+                  [option.label],
+                ),
+              ),
+            ),
+          ],
+        ),
+    },
+    h,
   )
 
 export const formErrorView = <Message>(
@@ -116,12 +213,7 @@ export const formErrorView = <Message>(
     onNone: () => h.empty,
     onSome: message =>
       h.div(
-        [
-          h.Role('alert'),
-          h.Class(
-            'alert alert-error items-start gap-2 py-2.5 text-sm leading-7',
-          ),
-        ],
+        [h.Role('alert'), h.Class('notice notice-error text-sm leading-7')],
         [h.span([], [message])],
       ),
   })

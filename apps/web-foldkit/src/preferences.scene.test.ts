@@ -46,8 +46,8 @@ describe('display preferences panel', () => {
       expect(role('heading', { name: 'نمایش' })).toExist(),
       expect(text('همگام با سرور')).toExist(),
       expect(label('منطقه‌ی زمانی (IANA)')).toHaveValue('Europe/Berlin'),
-      expect(label('شروع هفته')).toHaveValue('monday'),
-      expect(label('شکل اعداد')).toHaveValue('latin'),
+      expect(text('دوشنبه')).toExist(),
+      expect(text('لاتین (123)')).toExist(),
     )
   })
 

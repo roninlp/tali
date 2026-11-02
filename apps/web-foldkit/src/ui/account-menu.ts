@@ -1,81 +1,82 @@
-import { Option } from 'effect'
-import type { Html, HtmlBuilder } from 'foldkit/html'
+import { Menu } from '@foldkit/ui'
+import { type Html, type HtmlBuilder, childAttributes } from 'foldkit/html'
 
-import { formErrorView } from './field'
+import { classNames } from './class-names'
 import { logoutIcon, settingsIcon, userIcon } from './icons'
 
 /**
- * The header account menu, ported from `apps/web/src/components/app-header.tsx`.
- *
- * The disclosure is browser-owned (`<details>`), so no Model state tracks
- * whether it is open. Sign-out progress and failure come from the auth Model.
+ * The header account menu, ported from the old `<details>` dropdown and
+ * rebuilt on the Foldkit UI `Menu` submodel. The menu owns open state,
+ * typeahead, and keyboard navigation; `auth.ts` owns the `Menu.Model` and
+ * folds `Selected` into its sign-out and navigation messages.
  */
 
-export type AccountMenuConfig<Message> = Readonly<{
-  displayName: string
-  isSigningOut: boolean
-  maybeError: Option.Option<string>
-  onSignOut: Message
-  settingsHref: string
-}>
+export type AccountItem = 'settings' | 'signout'
+
+export const AccountMenu = Menu.create<AccountItem>()
+
+const ITEMS: ReadonlyArray<AccountItem> = ['settings', 'signout']
+
+export const ACCOUNT_MENU_ID = 'account-menu'
+
+const MENU_ANCHOR = {
+  placement: 'bottom-end' as const,
+  gap: 4,
+  padding: 8,
+}
+
+const accountItemLabel = (item: AccountItem, isSigningOut: boolean): string =>
+  item === 'settings' ? 'تنظیمات' : isSigningOut ? 'در حال خروج…' : 'خروج'
+
+const accountItemIcon = (item: AccountItem): (className: string) => Html =>
+  item === 'settings' ? settingsIcon : logoutIcon
 
 export const accountMenuView = <Message>(
-  config: AccountMenuConfig<Message>,
+  config: Readonly<{
+    menu: Menu.Model
+    displayName: string
+    isSigningOut: boolean
+    toParentMessage: (message: Menu.Message) => Message
+  }>,
   h: HtmlBuilder<Message>,
 ): Html =>
-  h.details(
-    [h.Class('dropdown dropdown-end')],
-    [
-      h.summary(
-        [
-          h.Class('btn btn-ghost btn-circle btn-sm'),
-          h.AriaLabel('حساب کاربری'),
-          h.Title('حساب کاربری'),
-        ],
-        [userIcon('size-5')],
-      ),
-      h.ul(
-        [
-          h.Class(
-            'menu dropdown-content z-50 mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-2 shadow-lg',
-          ),
-        ],
-        [
-          h.li(
-            [h.Class('menu-title')],
-            [h.span([h.Class('truncate')], [config.displayName])],
-          ),
-          h.li(
-            [],
-            [
-              h.a(
-                [h.Href(config.settingsHref)],
-                [settingsIcon('size-4'), 'تنظیمات'],
+  h.submodel({
+    slotId: config.menu.id,
+    model: config.menu,
+    view: AccountMenu.view,
+    viewInputs: {
+      anchor: MENU_ANCHOR,
+      items: ITEMS,
+      itemToConfig: (item, context) => ({
+        className: 'menu-option',
+        content: h.span(
+          [
+            h.Class(
+              classNames(
+                'flex items-center gap-2',
+                context.isDisabled ? 'opacity-50' : undefined,
               ),
-            ],
-          ),
-          h.li(
-            [],
-            [
-              h.button(
-                [
-                  h.Type('button'),
-                  h.Disabled(config.isSigningOut),
-                  h.OnClick(config.onSignOut),
-                ],
-                [
-                  logoutIcon('size-4'),
-                  config.isSigningOut ? 'در حال خروج…' : 'خروج',
-                ],
-              ),
-            ],
-          ),
-          Option.match(config.maybeError, {
-            onNone: () => h.empty,
-            onSome: message =>
-              h.li([h.Class('p-1')], [formErrorView(Option.some(message), h)]),
-          }),
-        ],
-      ),
-    ],
-  )
+            ),
+          ],
+          [accountItemIcon(item)('size-4'), accountItemLabel(item, config.isSigningOut)],
+        ),
+      }),
+      isItemDisabled: _item => config.isSigningOut,
+      itemGroupKey: () => 'account',
+      groupToHeading: () => ({
+        className: 'menu-heading',
+        content: h.span([h.Class('truncate')], [config.displayName]),
+      }),
+      buttonContent: userIcon('size-5'),
+      buttonClassName: 'btn btn-ghost btn-sm btn-circle',
+      buttonAttributes: childAttributes([
+        h.AriaLabel('حساب کاربری'),
+        h.Title('حساب کاربری'),
+      ]),
+      itemsClassName: 'float-card w-56 p-1 mt-2',
+      itemsScrollClassName: 'max-h-72 overflow-auto py-1',
+      backdropAttributes: childAttributes([h.Class('float-backdrop')]),
+      attributes: childAttributes([h.Class('relative')]),
+    },
+    toParentMessage: config.toParentMessage,
+  })

@@ -4,11 +4,8 @@ import type { Html, HtmlBuilder } from 'foldkit/html'
 import { localizeDigits } from '@tali/domain'
 
 import {
-  type CheckedPlacement,
   type ListItemRow,
   type ListRow,
-  type ListSort,
-  type ListVisibility,
   UPDATED_BY_OTHER_LABEL,
   buildListItemsView,
   findListRow,
@@ -17,10 +14,23 @@ import {
   writtenByOther,
 } from '../lists-model'
 import { listsRouter } from '../route'
+import { Listbox } from '@foldkit/ui'
 import { buttonView } from '../ui/button'
-import { fieldView, formErrorView, selectInputView } from '../ui/field'
-import { Message } from './lists'
-import type { Model, ViewInputs } from './lists'
+import { formErrorView } from '../ui/field'
+import { listboxViewInputs } from '../ui/listbox'
+import {
+  Message,
+  PlacementListbox,
+  SortListbox,
+  VisibilityListbox,
+} from './lists'
+import type {
+  Model,
+  PlacementOption,
+  SortOption,
+  ViewInputs,
+  VisibilityOption,
+} from './lists'
 
 /**
  * `/lists/[id]` detail view, ported from
@@ -32,14 +42,21 @@ import type { Model, ViewInputs } from './lists'
  * and pointer each have a path. All writes are local-first.
  */
 
-const sortOfValue = (value: string): ListSort =>
-  value === 'alpha' || value === 'status' ? value : 'manual'
+const SORT_OPTIONS: ReadonlyArray<SortOption> = [
+  { value: 'manual', label: 'دستی' },
+  { value: 'alpha', label: 'الفبا' },
+  { value: 'status', label: 'وضعیت' },
+]
 
-const placementOfValue = (value: string): CheckedPlacement =>
-  value === 'inPlace' ? 'inPlace' : 'bottom'
+const PLACEMENT_OPTIONS: ReadonlyArray<PlacementOption> = [
+  { value: 'bottom', label: 'انتهای فهرست' },
+  { value: 'inPlace', label: 'همان‌جا' },
+]
 
-const visibilityOfValue = (value: string): ListVisibility =>
-  value === 'private' ? 'private' : 'shared'
+const VISIBILITY_OPTIONS: ReadonlyArray<VisibilityOption> = [
+  { value: 'shared', label: 'مشترک با خانه' },
+  { value: 'private', label: 'فقط خودم' },
+]
 
 const backLinkView = (h: HtmlBuilder<Message>): Html =>
   h.a([h.Class('lists-back'), h.Href(listsRouter())], ['→ همه‌ی فهرست‌ها'])
@@ -163,85 +180,78 @@ const headerView = (
           h.div(
             [h.Class('lists-controls')],
             [
-              fieldView(
-                {
-                  id: 'list-sort-select',
-                  label: 'مرتب‌سازی',
-                  children: [
-                    selectInputView(
-                      {
-                        id: 'list-sort-select',
-                        value: sortValue,
-                        class: 'select-bordered select-sm',
-                        options: [
-                          { value: 'manual', label: 'دستی' },
-                          { value: 'alpha', label: 'الفبا' },
-                          { value: 'status', label: 'وضعیت' },
-                        ],
-                        onChange: value =>
-                          Message.SelectedListSort({
-                            listId: list.id,
-                            sort: sortOfValue(value),
-                          }),
-                      },
+              h.div(
+                [h.Class('grid gap-1.5')],
+                [
+                  h.label(
+                    [
+                      h.For(Listbox.buttonId(model.sortListbox.id)),
+                      h.Class('text-sm font-medium text-base-content/70'),
+                    ],
+                    ['مرتب‌سازی'],
+                  ),
+                  h.submodel({
+                    slotId: model.sortListbox.id,
+                    model: model.sortListbox,
+                    view: SortListbox.view,
+                    viewInputs: listboxViewInputs({
+                      items: SORT_OPTIONS,
+                      maybeSelectedValue: Option.some(sortValue),
                       h,
-                    ),
-                  ],
-                },
-                h,
+                    }),
+                    toParentMessage: message =>
+                      Message.GotSortListboxMessage({ message }),
+                  }),
+                ],
               ),
-              fieldView(
-                {
-                  id: 'list-placement-select',
-                  label: 'جای موارد تیک‌خورده',
-                  children: [
-                    selectInputView(
-                      {
-                        id: 'list-placement-select',
-                        value: placementValue,
-                        class: 'select-bordered select-sm',
-                        options: [
-                          { value: 'bottom', label: 'انتهای فهرست' },
-                          { value: 'inPlace', label: 'همان‌جا' },
-                        ],
-                        onChange: value =>
-                          Message.SelectedCheckedPlacement({
-                            listId: list.id,
-                            placement: placementOfValue(value),
-                          }),
-                      },
+              h.div(
+                [h.Class('grid gap-1.5')],
+                [
+                  h.label(
+                    [
+                      h.For(Listbox.buttonId(model.placementListbox.id)),
+                      h.Class('text-sm font-medium text-base-content/70'),
+                    ],
+                    ['جای موارد تیک‌خورده'],
+                  ),
+                  h.submodel({
+                    slotId: model.placementListbox.id,
+                    model: model.placementListbox,
+                    view: PlacementListbox.view,
+                    viewInputs: listboxViewInputs({
+                      items: PLACEMENT_OPTIONS,
+                      maybeSelectedValue: Option.some(placementValue),
                       h,
-                    ),
-                  ],
-                },
-                h,
+                    }),
+                    toParentMessage: message =>
+                      Message.GotPlacementListboxMessage({ message }),
+                  }),
+                ],
               ),
-              fieldView(
-                {
-                  id: 'list-visibility-select',
-                  label: 'دسترسی',
-                  children: [
-                    selectInputView(
-                      {
-                        id: 'list-visibility-select',
-                        value: visibilityValue,
-                        class: 'select-bordered select-sm',
-                        isDisabled: !isOwner,
-                        options: [
-                          { value: 'shared', label: 'مشترک با خانه' },
-                          { value: 'private', label: 'فقط خودم' },
-                        ],
-                        onChange: value =>
-                          Message.SelectedListVisibility({
-                            listId: list.id,
-                            visibility: visibilityOfValue(value),
-                          }),
-                      },
+              h.div(
+                [h.Class('grid gap-1.5')],
+                [
+                  h.label(
+                    [
+                      h.For(Listbox.buttonId(model.visibilityListbox.id)),
+                      h.Class('text-sm font-medium text-base-content/70'),
+                    ],
+                    ['دسترسی'],
+                  ),
+                  h.submodel({
+                    slotId: model.visibilityListbox.id,
+                    model: model.visibilityListbox,
+                    view: VisibilityListbox.view,
+                    viewInputs: listboxViewInputs({
+                      items: VISIBILITY_OPTIONS,
+                      maybeSelectedValue: Option.some(visibilityValue),
+                      isDisabled: !isOwner,
                       h,
-                    ),
-                  ],
-                },
-                h,
+                    }),
+                    toParentMessage: message =>
+                      Message.GotVisibilityListboxMessage({ message }),
+                  }),
+                ],
               ),
             ],
           ),
