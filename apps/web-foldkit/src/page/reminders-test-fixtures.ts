@@ -39,6 +39,7 @@ export const inboxItem = (
   kind: 'medication',
   tier: 'critical',
   link: { _tag: 'none' },
+  visibility: 'private',
   state: 'inbox',
   ...overrides,
 })

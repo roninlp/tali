@@ -2,6 +2,7 @@ import { Array, Option } from 'effect'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
 import type { ReminderInboxItem } from '../lib/reminders/api'
+import { shareActionOf } from '../lib/visibility-writes'
 import { buttonView } from '../ui/button'
 import { Message } from './reminders'
 import type { Model } from './reminders'
@@ -128,6 +129,20 @@ const inboxActionsView = (
   return h.div(
     [h.Class('flex flex-wrap items-center gap-1.5')],
     [
+      buttonView(
+        {
+          type: 'button',
+          variant: 'ghost',
+          size: 'sm',
+          isDisabled: isBusy,
+          children: [shareActionOf(item.visibility).label],
+          onClick: Message.ClickedToggleReminderVisibility({
+            reminderId: item.reminderId,
+            visibility: item.visibility === 'shared' ? 'private' : 'shared',
+          }),
+        },
+        h,
+      ),
       buttonView(
         {
           type: 'button',

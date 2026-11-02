@@ -22,6 +22,7 @@ import {
   pendingHabitIds,
 } from '../habits-model'
 import { Message, iconChoicesFor, restoreRefusalMessage } from './habits'
+import { shareActionOf } from '../lib/visibility-writes'
 import type { Model, ViewInputs } from './habits'
 import { habitHeatmapView } from './habits-heatmap-view'
 
@@ -574,6 +575,27 @@ const habitCardView = (
             ],
             ['نقشهٔ ماه'],
           ),
+          ...(Option.contains(inputs.maybeUserId, habit.ownerId)
+            ? [
+                h.button(
+                  [
+                    h.Type('button'),
+                    h.Class('habit-action'),
+                    h.AriaLabel(
+                      habit.visibility === 'shared'
+                        ? `خصوصی کردن ${habit.title}`
+                        : `اشتراک ${habit.title} با خانه`,
+                    ),
+                    h.OnClick(
+                      Message.ClickedToggleHabitVisibility({
+                        habitId: habit.id,
+                      }),
+                    ),
+                  ],
+                  [shareActionOf(habit.visibility).label],
+                ),
+              ]
+            : []),
           h.button(
             [
               h.Type('button'),

@@ -35,6 +35,7 @@ import {
   restoreHabitInMirror,
   updateHabitInMirror,
 } from '../lib/habit-writes'
+import { setVisibilityInMirror } from '../lib/visibility-writes'
 import type { MirrorSnapshot } from '../mirror'
 import type { DisplayFields } from '../preferences-model'
 import { LocalStoreResource } from '../sync/local-store'
@@ -129,6 +130,7 @@ export type Inputs = Readonly<{
   mirror: MirrorSnapshot
   pendingKeys: ReadonlyArray<string>
   maybeSyncError: Option.Option<string>
+  maybeUserId: Option.Option<string>
 }>
 
 export type ViewInputs = Inputs
@@ -155,6 +157,12 @@ export const Message = defineMessageUnion({
   ClickedCancelEdit: {},
   CompletedUpdateHabit: { habitId: Schema.String, title: Schema.String },
   FailedUpdateHabit: { message: Schema.String },
+  ClickedToggleHabitVisibility: { habitId: Schema.String },
+  CompletedSetHabitVisibility: {
+    habitId: Schema.String,
+    visibility: Schema.Literals(['private', 'shared']),
+  },
+  FailedSetHabitVisibility: { message: Schema.String },
   ClickedDeleteHabit: { habitId: Schema.String, title: Schema.String },
   CompletedConfirmHabitDelete: {
     habitId: Schema.String,
@@ -332,6 +340,38 @@ export const DeleteHabit = Command.define('DeleteHabit', {
       Effect.catch(error =>
         Effect.succeed(
           Message.FailedDeleteHabit({ message: storeFailureMessage(error) }),
+        ),
+      ),
+    ),
+})
+
+export const SetHabitVisibility = Command.define('SetHabitVisibility', {
+  args: {
+    habitId: Schema.String,
+    visibility: Schema.Literals(['private', 'shared']),
+  },
+  messages: [
+    Message.CompletedSetHabitVisibility,
+    Message.FailedSetHabitVisibility,
+  ],
+  execute: ({ habitId, visibility }) =>
+    Effect.gen(function* () {
+      const store = yield* LocalStoreResource.get
+      const now = yield* currentIso
+
+      yield* Effect.tryPromise({
+        try: () =>
+          setVisibilityInMirror(store, 'habit', habitId, visibility, now),
+        catch: storeFailureMessage,
+      })
+
+      return Message.CompletedSetHabitVisibility({ habitId, visibility })
+    }).pipe(
+      Effect.catch(error =>
+        Effect.succeed(
+          Message.FailedSetHabitVisibility({
+            message: storeFailureMessage(error),
+          }),
         ),
       ),
     ),
@@ -673,6 +713,42 @@ export const update = (
       model: modifyFields(model, {
         isSaving: () => false,
         maybeFormError: () => Option.some(message),
+      }),
+    }),
+
+    ClickedToggleHabitVisibility: ({ habitId }) =>
+      Option.match(findHabit(inputs, habitId), {
+        onNone: () => ({ model }),
+        onSome: habit =>
+          Option.contains(inputs.maybeUserId, habit.ownerId)
+            ? {
+                model: modifyFields(model, {
+                  maybePageError: () => Option.none(),
+                }),
+                commands: [
+                  SetHabitVisibility({
+                    habitId,
+                    visibility:
+                      habit.visibility === 'shared' ? 'private' : 'shared',
+                  }),
+                ],
+              }
+            : { model },
+      }),
+
+    CompletedSetHabitVisibility: ({ visibility }) => ({
+      model: modifyFields(model, {
+        announcement: () =>
+          visibility === 'shared'
+            ? 'عادت با خانه به اشتراک گذاشته شد'
+            : 'عادت خصوصی شد',
+      }),
+      outMessage: OutMessage.WroteLocalData(),
+    }),
+
+    FailedSetHabitVisibility: ({ message }) => ({
+      model: modifyFields(model, {
+        maybePageError: () => Option.some(message),
       }),
     }),
 

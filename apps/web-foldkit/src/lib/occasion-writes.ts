@@ -4,6 +4,7 @@ import {
   JALALI_MONTHS,
   type OccasionOccurrence,
   type OccasionSource,
+  defaultVisibilityFor,
   formatJalaliDate,
   localizeDigits,
   nextOccasionOccurrence,
@@ -39,6 +40,7 @@ export const OccasionRow = Schema.Struct({
   advanceReminderDays: Schema.NullOr(Schema.Int),
   preparationTaskId: Schema.NullOr(Schema.String),
   color: Schema.NullOr(Schema.String),
+  ownerId: Schema.NullOr(Schema.String),
   visibility: Schema.Literals(['private', 'shared']),
   createdAt: Schema.String,
   updatedAt: Schema.String,
@@ -78,7 +80,11 @@ export const toOccasionRow = (record: MirrorRecord): OccasionRow =>
     advanceReminderDays: asNullableInt(record.data.advanceReminderDays),
     preparationTaskId: asNullableString(record.data.preparationTaskId),
     color: asNullableString(record.data.color),
-    visibility: record.data.visibility === 'private' ? 'private' : 'shared',
+    ownerId: asNullableString(record.data.ownerId),
+    visibility:
+      record.data.visibility === 'private' || record.data.visibility === 'shared'
+        ? record.data.visibility
+        : defaultVisibilityFor('occasion'),
     createdAt:
       typeof record.data.createdAt === 'string'
         ? record.data.createdAt
@@ -139,6 +145,7 @@ export const createOccasionInMirror = async (
     patch: {
       id,
       type: 'occasion',
+      ownerId: store.userId,
       title,
       originDate: draft.originDate,
       timeZone: draft.timeZone,
@@ -146,7 +153,7 @@ export const createOccasionInMirror = async (
       advanceReminderDays: draft.advanceReminderDays,
       preparationTaskId: null,
       color: null,
-      visibility: 'shared',
+      visibility: defaultVisibilityFor('occasion'),
       createdAt: now,
     },
     now,

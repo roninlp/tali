@@ -1,5 +1,7 @@
 import { Schema } from "effect"
 
+import { defaultVisibilityFor } from "@tali/domain"
+
 import type { LocalStore, MirrorRecord } from "./local-store/types"
 
 /**
@@ -88,7 +90,7 @@ export const taskCreatePatch = (
     projectId: draft.projectId,
     tagIds: [...draft.tagIds],
     color: null,
-    visibility: "shared",
+    visibility: defaultVisibilityFor("task"),
     createdAt: now
   }
 }

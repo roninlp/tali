@@ -14,6 +14,7 @@ import {
   LocalDate,
   OccasionId,
   UserId,
+  defaultVisibilityFor,
   eventAnchorDate,
   isEventOccurrence,
   localDateTimeInstant,
@@ -178,7 +179,10 @@ export const toEventRow = (record: MirrorRecord): EventRow =>
     occasionId: asString(record.data.occasionId),
     ownerId: asString(record.data.ownerId),
     householdId: asString(record.data.householdId),
-    visibility: record.data.visibility === 'private' ? 'private' : 'shared',
+    visibility:
+      record.data.visibility === 'private' || record.data.visibility === 'shared'
+        ? record.data.visibility
+        : defaultVisibilityFor('event'),
     createdAt: asString(record.data.createdAt) ?? record.updatedAt,
     updatedAt: record.updatedAt,
     version: record.version,
@@ -335,6 +339,7 @@ export const createEventInMirror = async (
     patch: {
       id,
       type: 'event',
+      ownerId: store.userId,
       title,
       description: null,
       location: null,
@@ -346,7 +351,7 @@ export const createEventInMirror = async (
       exceptions: [],
       occasionId: null,
       color: null,
-      visibility: 'shared',
+      visibility: defaultVisibilityFor('event'),
       createdAt: now,
     },
     now,

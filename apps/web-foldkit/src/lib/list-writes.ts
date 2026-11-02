@@ -1,5 +1,6 @@
 import { Array } from 'effect'
 
+import { defaultVisibilityFor } from '@tali/domain'
 import type { LocalStore } from '@tali/sync-client'
 
 import {
@@ -63,7 +64,7 @@ export const createListInMirror = async (
       icon: draft.icon ?? null,
       sort: draft.sort ?? 'manual',
       checkedPlacement: draft.checkedPlacement ?? 'bottom',
-      visibility: draft.visibility ?? 'shared',
+      visibility: draft.visibility ?? defaultVisibilityFor('list'),
       createdAt: now,
     },
     now,
@@ -229,7 +230,7 @@ const itemPatch = (
     checkedAt: null,
     color: draft.color ?? null,
     tagIds: [...(draft.tagIds ?? [])],
-    visibility: draft.visibility ?? 'shared',
+    visibility: draft.visibility ?? defaultVisibilityFor('listItem'),
     ownerId,
     createdAt: now,
   }

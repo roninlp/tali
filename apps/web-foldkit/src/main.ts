@@ -334,6 +334,10 @@ const habitsInputs = (model: Model): Habits.Inputs => ({
   mirror: model.sync.mirror,
   pendingKeys: model.sync.pendingKeys,
   maybeSyncError: model.sync.maybeError,
+  maybeUserId: Option.map(
+    Auth.maybeSession(model.auth),
+    session => session.user.id,
+  ),
 })
 
 /** The Settings password form needs only the signed-in email to derive keys. */
@@ -1167,12 +1171,19 @@ const foldCalendarMessage = (
 ): UpdateReturn =>
   foldCalendar(model, { message, inputs: calendarInputs(model) })
 
+const foldRemindersOutMessage = Reminders.OutMessage.match<
+  Update.Step<Model, Message, Sync.LocalStoreService>
+>({
+  WroteLocalData: () => stepModel => foldSyncRefresh(stepModel),
+})
+
 const foldReminders = Update.foldChild({
   update: Reminders.update,
   read: (model: Model) => Option.some(model.reminders),
   write: (model: Model, nextReminders: Reminders.Model) =>
     modifyFields(model, { reminders: () => nextReminders }),
   toParentMessage: toRemindersMessage,
+  foldOutMessage: foldRemindersOutMessage,
 })
 
 const foldRemindersEntered = Update.foldChildStep({
@@ -1181,6 +1192,7 @@ const foldRemindersEntered = Update.foldChildStep({
   write: (model: Model, nextReminders: Reminders.Model) =>
     modifyFields(model, { reminders: () => nextReminders }),
   toParentMessage: toRemindersMessage,
+  foldOutMessage: foldRemindersOutMessage,
 })
 
 type SettingsFoldInput = Readonly<{

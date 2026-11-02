@@ -61,6 +61,7 @@ export const HabitRow = Schema.Struct({
   startedOn: Schema.String,
   reminderTime: Schema.NullOr(Schema.String),
   timeZone: Schema.String,
+  ownerId: Schema.NullOr(Schema.String),
   visibility: Schema.Literals(['private', 'shared']),
   createdAt: Schema.String,
   updatedAt: Schema.String,
@@ -213,6 +214,8 @@ export const toHabitRow = (record: MirrorRecord): HabitRow => {
     startedOn,
     reminderTime: asString(record.data.reminderTime),
     timeZone,
+    ownerId:
+      typeof record.data.ownerId === 'string' ? record.data.ownerId : null,
     visibility: record.data.visibility === 'private' ? 'private' : 'shared',
     createdAt,
     updatedAt: record.updatedAt,
