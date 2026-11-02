@@ -1,6 +1,7 @@
 import { Array, Option } from 'effect'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
+import { Checkbox } from '@foldkit/ui'
 import { localizeDigits } from '@tali/domain'
 
 import type { HabitRow } from '../habits-model'
@@ -185,69 +186,77 @@ const taskRowView = (
   const bounds = boundsFor(view.timeZone, model.now)
   const overdue = isOverdue(task, bounds)
 
-  return h.keyed('li')(
-    task.id,
-    [
-      h.Id(`today-task-${task.id}`),
-      h.Class('today-row'),
-      h.DataAttribute('overdue', overdue ? 'true' : 'false'),
-      h.DataAttribute(
-        'cursor',
-        model.cursorActive && model.cursor === index ? 'true' : 'false',
-      ),
-    ],
-    [
-      h.button([
-        h.Type('button'),
-        h.Role('checkbox'),
-        h.AriaChecked(false),
-        h.AriaLabel(`انجام ${task.title}`),
-        h.Class('today-check'),
-        h.Disabled(!inputs.isStoreReady),
-        h.OnClick(
-          Message.ClickedCompleteTask({ taskId: task.id, title: task.title }),
-        ),
-      ]),
-      h.div(
-        [h.Class('today-row-main')],
-        [
-          h.a(
-            [h.Class('today-row-title'), h.Href(taskAnchorPath(task.id))],
-            [task.title],
-          ),
-          h.p(
-            [h.Class('today-row-meta')],
-            [
-              `${overdue ? 'عقب‌افتاده · ' : ''}${
-                task.dueAt !== null
-                  ? `${timeLabel(task.dueAt, view.timeZone, inputs.display.digits)} · `
-                  : ''
-              }${dueLabel(task, bounds, inputs.display.digits)}`,
-            ],
-          ),
-        ],
-      ),
-      h.div(
-        [h.Class('today-actions')],
-        [
-          h.button(
-            [
-              h.Type('button'),
-              h.Class('today-action'),
-              h.AriaLabel(`فردا کردن ${task.title}`),
+  return Checkbox.view(
+    {
+      id: `today-check-${task.id}`,
+      isChecked: false,
+      onToggle: () =>
+        Message.ClickedCompleteTask({ taskId: task.id, title: task.title }),
+      toView: attributes =>
+        h.keyed('li')(
+          task.id,
+          [
+            h.Id(`today-task-${task.id}`),
+            h.Class('today-row'),
+            h.DataAttribute('overdue', overdue ? 'true' : 'false'),
+            h.DataAttribute(
+              'cursor',
+              model.cursorActive && model.cursor === index ? 'true' : 'false',
+            ),
+          ],
+          [
+            h.span(
+              [...attributes.label, h.Class('sr-only')],
+              [`انجام ${task.title}`],
+            ),
+            h.button([
+              ...attributes.checkbox,
+              h.Class('today-check'),
               h.Disabled(!inputs.isStoreReady),
-              h.OnClick(
-                Message.ClickedMoveToTomorrow({
-                  taskId: task.id,
-                  title: task.title,
-                }),
-              ),
-            ],
-            ['فردا'],
-          ),
-        ],
-      ),
-    ],
+            ]),
+            h.div(
+              [h.Class('today-row-main')],
+              [
+                h.a(
+                  [h.Class('today-row-title'), h.Href(taskAnchorPath(task.id))],
+                  [task.title],
+                ),
+                h.p(
+                  [h.Class('today-row-meta')],
+                  [
+                    `${overdue ? 'عقب‌افتاده · ' : ''}${
+                      task.dueAt !== null
+                        ? `${timeLabel(task.dueAt, view.timeZone, inputs.display.digits)} · `
+                        : ''
+                    }${dueLabel(task, bounds, inputs.display.digits)}`,
+                  ],
+                ),
+              ],
+            ),
+            h.div(
+              [h.Class('today-actions')],
+              [
+                h.button(
+                  [
+                    h.Type('button'),
+                    h.Class('today-action'),
+                    h.AriaLabel(`فردا کردن ${task.title}`),
+                    h.Disabled(!inputs.isStoreReady),
+                    h.OnClick(
+                      Message.ClickedMoveToTomorrow({
+                        taskId: task.id,
+                        title: task.title,
+                      }),
+                    ),
+                  ],
+                  ['فردا'],
+                ),
+              ],
+            ),
+          ],
+        ),
+    },
+    h,
   )
 }
 
