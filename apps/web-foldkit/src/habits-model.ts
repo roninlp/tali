@@ -2,6 +2,7 @@ import { Array, Match, Option, Order, Schema } from 'effect'
 
 import {
   DEFAULT_TIME_ZONE,
+  defaultVisibilityFor,
   formatJalaliDate,
   habitStreak,
   jalaliDate,
@@ -61,6 +62,7 @@ export const HabitRow = Schema.Struct({
   startedOn: Schema.String,
   reminderTime: Schema.NullOr(Schema.String),
   timeZone: Schema.String,
+  ownerId: Schema.NullOr(Schema.String),
   visibility: Schema.Literals(['private', 'shared']),
   createdAt: Schema.String,
   updatedAt: Schema.String,
@@ -213,7 +215,12 @@ export const toHabitRow = (record: MirrorRecord): HabitRow => {
     startedOn,
     reminderTime: asString(record.data.reminderTime),
     timeZone,
-    visibility: record.data.visibility === 'private' ? 'private' : 'shared',
+    ownerId:
+      typeof record.data.ownerId === 'string' ? record.data.ownerId : null,
+    visibility:
+      record.data.visibility === 'private' || record.data.visibility === 'shared'
+        ? record.data.visibility
+        : defaultVisibilityFor('habit'),
     createdAt,
     updatedAt: record.updatedAt,
     version: record.version,

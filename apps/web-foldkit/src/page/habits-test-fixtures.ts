@@ -37,6 +37,7 @@ export const habitRow = (overrides: Partial<HabitRow> = {}): HabitRow =>
     startedOn: '2026-10-01',
     reminderTime: null,
     timeZone: 'Asia/Tehran',
+    ownerId: null,
     visibility: 'shared',
     createdAt: '2026-10-01T08:00:00.000Z',
     updatedAt: '2026-10-01T08:00:00.000Z',
@@ -98,6 +99,7 @@ export const habitsInputs = (overrides: Partial<Inputs> = {}): Inputs => ({
   mirror: mirrorWith(),
   pendingKeys: [],
   maybeSyncError: Option.none(),
+  maybeUserId: Option.none(),
   ...overrides,
 })
 

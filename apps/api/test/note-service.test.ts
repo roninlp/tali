@@ -140,7 +140,7 @@ describe("NoteService round-trip", () => {
 
     // Quick create: no title, no body, one click.
     const created = await h.svc((svc) =>
-      svc.create(viewer(), { id, clientMutationId: "n-create" }, NOW)
+      svc.create(viewer(), { id, clientMutationId: "n-create", visibility: "shared" }, NOW)
     )
     expect(created).toMatchObject({
       id,
@@ -285,7 +285,7 @@ describe("NoteService round-trip", () => {
     await h.svc((svc) =>
       svc.create(
         viewer(),
-        { id: sharedId, clientMutationId: "v-shared", title: "مشترک", body: doc("مشترک") },
+        { id: sharedId, clientMutationId: "v-shared", title: "مشترک", body: doc("مشترک"), visibility: "shared" },
         NOW
       )
     )
@@ -449,7 +449,7 @@ describe("NoteService round-trip", () => {
     await h.svc((svc) =>
       svc.create(
         viewer(),
-        { id: sharedPinned, clientMutationId: "s-pin", title: "مشترک", isPinned: true },
+        { id: sharedPinned, clientMutationId: "s-pin", title: "مشترک", isPinned: true, visibility: "shared" },
         NOW
       )
     )
@@ -469,7 +469,7 @@ describe("NoteService round-trip", () => {
     await h.svc((svc) =>
       svc.create(
         viewer(),
-        { id: sharedTrashed, clientMutationId: "s-trash", title: "مشترک حذف‌شده" },
+        { id: sharedTrashed, clientMutationId: "s-trash", title: "مشترک حذف‌شده", visibility: "shared" },
         NOW
       )
     )
@@ -576,5 +576,44 @@ describe("NoteService round-trip", () => {
         .pipe(Effect.flip)
     )
     expect(reused._tag).toBe("NoteValidationError")
+  })
+})
+
+describe("note visibility policy (ADR-0011)", () => {
+  it("defaults new notes to private and lets only the owner share them", async () => {
+    const h = makeHarness()
+    const id = uuidV7() as NoteId
+
+    const created = await h.svc((svc) =>
+      svc.create(viewer(), { id, clientMutationId: "v-create", title: "خصوصی" }, NOW)
+    )
+    expect(created.visibility).toBe("private")
+
+    // A private note is not even readable by the partner.
+    const partnerRead = await h
+      .svc((svc) => svc.get(viewer({ userId: USER_B }), id))
+      .catch((cause: unknown) => cause)
+    expect(partnerRead).toMatchObject({ _tag: "NoteForbidden", reason: "private" })
+
+    const ownerShare = await h.svc((svc) =>
+      svc.update(
+        viewer(),
+        { id, clientMutationId: "v-owner", patch: { visibility: "shared" } },
+        NOW
+      )
+    )
+    expect(ownerShare.visibility).toBe("shared")
+
+    // Un-sharing a shared note is the owner's alone.
+    const partnerUnshare = await h
+      .svc((svc) =>
+        svc.update(
+          viewer({ userId: USER_B }),
+          { id, clientMutationId: "v-partner-2", patch: { visibility: "private" } },
+          NOW
+        )
+      )
+      .catch((cause: unknown) => cause)
+    expect(partnerUnshare).toMatchObject({ _tag: "NoteValidationError" })
   })
 })

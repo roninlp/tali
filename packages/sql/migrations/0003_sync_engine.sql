@@ -10,6 +10,8 @@
 -- filter and conflict resolver need. Defaults keep pre-sync rows harmless.
 ALTER TABLE list_items ADD COLUMN household_id TEXT;
 ALTER TABLE list_items ADD COLUMN owner_id TEXT NOT NULL DEFAULT '';
+-- Items inherit the parent list (ADR-0011); this fallback is only for the
+-- legacy scaffold writer, which has no household/parent context.
 ALTER TABLE list_items ADD COLUMN visibility TEXT NOT NULL DEFAULT 'shared';
 
 CREATE INDEX IF NOT EXISTS idx_list_items_household ON list_items (household_id);

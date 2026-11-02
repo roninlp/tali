@@ -15,6 +15,7 @@ import {
   undoTaskInMirror,
   updateTaskInMirror,
 } from '../lib/task-writes'
+import { setVisibilityInMirror } from '../lib/visibility-writes'
 import type { MirrorSnapshot, TaskRow } from '../mirror'
 import type { DisplayFields } from '../preferences-model'
 import { LocalStoreResource } from '../sync/local-store'
@@ -249,6 +250,12 @@ export const Message = defineMessageUnion({
   },
   ToggledTaskTag: { taskId: Schema.String, tagId: Schema.String },
   ClickedCloseTaskEditor: { taskId: Schema.String },
+  ClickedToggleTaskVisibility: { taskId: Schema.String },
+  CompletedSetTaskVisibility: {
+    taskId: Schema.String,
+    visibility: Schema.Literals(['private', 'shared']),
+  },
+  FailedSetTaskVisibility: { message: Schema.String },
   CompletedSaveTaskFields: { taskId: Schema.String, generation: Schema.Int },
   FailedSaveTaskFields: {
     taskId: Schema.String,
@@ -451,6 +458,37 @@ export const CreateTag = Command.define('CreateTag', {
         Effect.succeed(
           Message.FailedCreateTag({
             source,
+            message: storeFailureMessage(error),
+          }),
+        ),
+      ),
+    ),
+})
+
+export const SetTaskVisibility = Command.define('SetTaskVisibility', {
+  args: {
+    taskId: Schema.String,
+    visibility: Schema.Literals(['private', 'shared']),
+  },
+  messages: [
+    Message.CompletedSetTaskVisibility,
+    Message.FailedSetTaskVisibility,
+  ],
+  execute: ({ taskId, visibility }) =>
+    Effect.gen(function* () {
+      const store = yield* LocalStoreResource.get
+      const now = yield* currentIso
+
+      yield* Effect.tryPromise({
+        try: () => setVisibilityInMirror(store, 'task', taskId, visibility, now),
+        catch: storeFailureMessage,
+      })
+
+      return Message.CompletedSetTaskVisibility({ taskId, visibility })
+    }).pipe(
+      Effect.catch(error =>
+        Effect.succeed(
+          Message.FailedSetTaskVisibility({
             message: storeFailureMessage(error),
           }),
         ),
@@ -1355,6 +1393,43 @@ export const update = (
 
     ClickedCloseTaskEditor: ({ taskId }) => ({
       model: removeEditor(model, taskId),
+    }),
+
+    ClickedToggleTaskVisibility: ({ taskId }) => {
+      const task = findTask(inputs, taskId)
+
+      if (
+        task === undefined ||
+        !Option.exists(model.maybeUserId, userId => userId === task.ownerId)
+      ) {
+        return { model }
+      }
+
+      return {
+        model: withoutError(model),
+        commands: [
+          SetTaskVisibility({
+            taskId,
+            visibility: task.visibility === 'shared' ? 'private' : 'shared',
+          }),
+        ],
+      }
+    },
+
+    CompletedSetTaskVisibility: ({ visibility }) => ({
+      model: modifyFields(model, {
+        announcement: () =>
+          visibility === 'shared'
+            ? 'کار با خانه به اشتراک گذاشته شد'
+            : 'کار خصوصی شد',
+      }),
+      outMessage: OutMessage.WroteLocalData(),
+    }),
+
+    FailedSetTaskVisibility: ({ message }) => ({
+      model: modifyFields(model, {
+        maybeError: () => Option.some(message),
+      }),
     }),
 
     CompletedSaveTaskFields: ({ taskId, generation }) => {

@@ -331,7 +331,9 @@ describe("advance reminder materialisation (#60 wiring)", () => {
   it("creates the reminder at occurrence − offset, 09:00 local, exactly once", async () => {
     const h = makeHarness()
     const id = uuidV7() as OccasionId
-    await h.svc((svc) => svc.create(viewer(), createInput({ id }) as never, NOW))
+    await h.svc((svc) =>
+      svc.create(viewer(), createInput({ id, visibility: "shared" }) as never, NOW)
+    )
 
     const window = { from: "2026-03-20", to: "2026-03-31" } as never
     const first = await h.svc((svc) => svc.materialiseReminders(viewer(), window))
@@ -366,7 +368,9 @@ describe("advance reminder materialisation (#60 wiring)", () => {
   it("syncs the materialised occasion reminder to the partner", async () => {
     const h = makeHarness()
     const id = uuidV7() as OccasionId
-    await h.svc((svc) => svc.create(viewer(), createInput({ id }) as never, NOW))
+    await h.svc((svc) =>
+      svc.create(viewer(), createInput({ id, visibility: "shared" }) as never, NOW)
+    )
     const created = await h.svc((svc) =>
       svc.materialiseReminders(viewer(), { from: "2026-03-20", to: "2026-03-31" } as never)
     )
@@ -517,5 +521,34 @@ describe("occasion sync", () => {
     )
     expect(deleted.results[0]?._tag).toBe("applied")
     expect(h.occasionRow(id)?.deleted_at).not.toBeNull()
+  })
+})
+
+describe("occasion visibility policy (ADR-0011)", () => {
+  it("defaults new occasions to private and lets only the owner un-share", async () => {
+    const h = makeHarness()
+    const created = await h.svc((svc) =>
+      svc.create(viewer(), createInput({ id: uuidV7() }) as never, NOW)
+    )
+    expect(created.visibility).toBe("private")
+
+    await h.svc((svc) =>
+      svc.update(
+        viewer(),
+        { id: created.id, clientMutationId: "v-share", patch: { visibility: "shared" } },
+        NOW
+      )
+    )
+
+    const partnerFlip = await h
+      .svc((svc) =>
+        svc.update(
+          viewer({ userId: USER_B }),
+          { id: created.id, clientMutationId: "v-partner", patch: { visibility: "private" } },
+          NOW
+        )
+      )
+      .catch((cause: unknown) => cause)
+    expect(partnerFlip).toMatchObject({ _tag: "OccasionValidationError" })
   })
 })

@@ -551,3 +551,126 @@ describe("reorder replay and delete", () => {
     ).toBe(false)
   })
 })
+
+describe("list visibility policy (ADR-0011)", () => {
+  it("defaults a new list to shared", async () => {
+    const h = makeHarness()
+    const list = await h.svc((svc) =>
+      svc.create(
+        viewer(),
+        { id: uuidV7() as ListId, clientMutationId: "v-default", title: "پیش‌فرض" },
+        NOW
+      )
+    )
+    expect(list.visibility).toBe("shared")
+  })
+
+  it("inherits an item's visibility from its list and refuses to widen it", async () => {
+    const h = makeHarness()
+    const privateList = await h.svc((svc) =>
+      svc.create(
+        viewer(),
+        {
+          id: uuidV7() as ListId,
+          clientMutationId: "v-private-list",
+          title: "خصوصی",
+          visibility: "private"
+        },
+        NOW
+      )
+    )
+
+    const item = await h.svc((svc) =>
+      svc.createItem(
+        viewer(),
+        {
+          clientMutationId: "v-private-item",
+          listId: privateList.id,
+          name: "نان",
+          // The create schema has no visibility; a caller that sends one as a
+          // raw value still cannot widen the item.
+          visibility: "shared"
+        } as never,
+        NOW
+      )
+    )
+    expect(item.visibility).toBe("private")
+
+    const widen = await h
+      .svc((svc) =>
+        svc.updateItem(
+          viewer(),
+          {
+            id: item.id,
+            clientMutationId: "v-widen",
+            patch: { visibility: "shared" }
+          },
+          NOW
+        )
+      )
+      .catch((cause: unknown) => cause)
+    expect(widen).toMatchObject({ _tag: "ListValidationError" })
+
+    const sharedList = await createSharedList(h, "مشترک")
+    const narrow = await h.svc((svc) =>
+      svc.createItem(
+        viewer(),
+        { clientMutationId: "v-narrow", listId: sharedList.id, name: "خصوصی من" },
+        NOW
+      )
+    )
+    expect(narrow.visibility).toBe("shared")
+
+    const makeNarrow = await h.svc((svc) =>
+      svc.updateItem(
+        viewer(),
+        {
+          id: narrow.id,
+          clientMutationId: "v-narrow-update",
+          patch: { visibility: "private" }
+        },
+        NOW
+      )
+    )
+    expect(makeNarrow.visibility).toBe("private")
+  })
+
+  it("converges a legacy shared item to private on a no-visibility write", async () => {
+    const h = makeHarness()
+    const list = await createSharedList(h, "مشترک")
+    const item = await h.svc((svc) =>
+      svc.createItem(
+        viewer(),
+        { clientMutationId: "v-legacy-item", listId: list.id, name: "قدیمی" },
+        NOW
+      )
+    )
+
+    // Simulate a row written before the list was flipped to private.
+    h.db.prepare("UPDATE lists SET visibility = 'private' WHERE id = ?").run(list.id)
+    h.db.prepare("UPDATE list_items SET visibility = 'shared' WHERE id = ?").run(item.id)
+
+    const edited = await h.svc((svc) =>
+      svc.updateItem(
+        viewer(),
+        {
+          id: item.id,
+          clientMutationId: "v-legacy-edit",
+          patch: { name: "تازه" }
+        },
+        NOW
+      )
+    )
+    expect(edited.visibility).toBe("private")
+
+    h.db.prepare("UPDATE list_items SET visibility = 'shared' WHERE id = ?").run(item.id)
+    const checked = await h.svc((svc) =>
+      svc.setItemChecked(
+        viewer(),
+        { id: item.id, clientMutationId: "v-legacy-check", checked: true },
+        NOW
+      )
+    )
+    expect(checked.visibility).toBe("private")
+  })
+})

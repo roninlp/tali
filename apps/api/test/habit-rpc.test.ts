@@ -151,7 +151,7 @@ describe("Habit RPC round-trip", () => {
       frequency: { _tag: "weekdays", days: [1, 3, 5] },
       reminderTime: "07:30",
       timeZone: "Asia/Tehran",
-      visibility: "shared",
+      visibility: "private",
       version: 1
     })
     expect(result.listed.map((habit) => habit.id)).toEqual([id])

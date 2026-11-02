@@ -1,5 +1,7 @@
 import { Schema } from "effect"
 
+import { defaultVisibilityFor } from "@tali/domain"
+
 import type { LocalStore, MirrorRecord } from "./local-store/types"
 
 /**
@@ -88,7 +90,7 @@ export const taskCreatePatch = (
     projectId: draft.projectId,
     tagIds: [...draft.tagIds],
     color: null,
-    visibility: "shared",
+    visibility: defaultVisibilityFor("task"),
     createdAt: now
   }
 }
@@ -107,7 +109,9 @@ export const createTaskInMirror = async (
     entityType: "task",
     entityId: id,
     op: "upsert",
-    patch: taskCreatePatch(draft, id, now),
+    // The owner is known offline so the editor can offer Share/Unshare before
+    // the first ack; the server still stamps the authoritative owner.
+    patch: { ...taskCreatePatch(draft, id, now), ownerId: store.userId },
     now
   })
   return id

@@ -61,6 +61,7 @@ export const ReminderInboxItem = Schema.Struct({
   tier: ReminderTier,
   /** The response target; the inbox never renders it, so it stays opaque. */
   link: Schema.optional(Schema.Unknown),
+  visibility: Schema.Literals(['private', 'shared']),
   state: Schema.Literals(['inbox', 'history']),
 })
 export type ReminderInboxItem = typeof ReminderInboxItem.Type

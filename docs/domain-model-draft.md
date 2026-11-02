@@ -72,8 +72,8 @@ Every syncable, user-facing entity shares the same field set so **sync, trash, a
 | `id` | branded UUID v7 string | client-generated (offline-first) |
 | `type` | `ItemType` | discriminator for cross-entity sync/trash payloads |
 | `title` | `string` | required everywhere except ListItem (items have a `name`) |
-| `ownerId` | `UserId` | the author; not the same as `visibility` |
-| `visibility` | `Visibility` | `private` (owner only) or `shared` (both household members) |
+| `ownerId` | `UserId` | the author; the one who may un-share a row |
+| `visibility` | `Visibility` | **resolved, not user-facing by default**: `private` (owner only) or `shared` (both members). Derived from the aggregate's [visibility policy](adr/0011-per-aggregate-visibility-policy.md); only `shareable` aggregates take a user choice |
 | `status` | *per-entity enum* | Task → `TaskStatus`; ListItem → done flag; Note → lifecycle; HabitEntry → its own status. This is the one common field whose *type* is entity-specific. |
 | `tags` | `TagId[]` (denormalized) + join table | see open decision #3 |
 | `color` | `string \| null` | CSS color / accent token |
@@ -94,7 +94,8 @@ const commonItemFields = {
   type: ItemType,
   title: Schema.String,
   ownerId: UserId,
-  visibility: Visibility,
+  // No `visibility` here: each model declares the resolved field itself, and
+  // the value comes from the aggregate's policy (ADR-0011).
   color: Schema.NullOr(Schema.String),
   createdAt: Model.DateTimeInsertFromDate,
   updatedAt: Model.DateTimeUpdateFromDate,
@@ -202,7 +203,7 @@ export class HabitEntry extends Model.Class<HabitEntry>("HabitEntry")({
   habitId: HabitId,
   ownerId: UserId,                         // denormalized for per-user filtering
   householdId: HouseholdId,                // denormalized for the sync pull filter
-  visibility: Visibility,                  // inherited from the habit at write time
+  visibility: Visibility,                  // inherited from the habit at write time; pull/bootstrap re-check the parent
   localDate: Schema.DateFromString,        // local date (owner's timezone); backdating window ≤ 7 days
   timeZone: Schema.String,                 // IANA, so "date" is unambiguous
   status: HabitEntryStatus,
@@ -486,7 +487,7 @@ export class List extends Model.Class<List>("List")({
   title: Schema.String,
   description: Schema.NullOr(Schema.String),
   ownerId: UserId,
-  visibility: Visibility,                  // "shared" is the common case (live two-person)
+  visibility: Visibility,                  // resolved from the shareable policy; lists default to shared
   color: Schema.NullOr(Schema.String),
   icon: Schema.NullOr(Schema.String),
   sort: ListItemSort,                      // default "manual"
@@ -578,6 +579,7 @@ Each is phrased as a crisp question with a recommendation. **These are the real 
 
 9. **Visibility — simple `private|shared` enum vs a per-member ACL table?**
    *Recommendation:* **simple enum.** Two known users in one household; every read is either owner-only or both. An ACL table is premature until a third member exists.
+   *Resolved by [ADR-0011](adr/0011-per-aggregate-visibility-policy.md):* the enum stays, but it is not a free choice on every aggregate. Visibility is a four-class per-aggregate policy (`ownerOnly`, `household`, `inherited`, `shareable`); only shareable aggregates take a user value, and `shared` means co-edit with un-sharing reserved to the owner.
 
 10. **Timezone for all-day items — stored per-item, or always inherited from owner's profile?**
     *Recommendation:* **stored per-item** (default = owner's profile tz at creation). A shared all-day event ("anniversary dinner") should not silently shift days when the *other* member views it in a different tz; but the *author's* intent day must survive. This is subtle — flagging explicitly.

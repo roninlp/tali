@@ -37,6 +37,8 @@ export const ServerTask = Schema.Struct({
   createdAt: Schema.optional(Schema.String),
   updatedAt: Schema.optional(Schema.String),
   version: Schema.optional(Schema.Int),
+  ownerId: Schema.optional(Schema.String),
+  visibility: Schema.optional(Schema.Literals(['private', 'shared'])),
 })
 export type ServerTask = typeof ServerTask.Type
 

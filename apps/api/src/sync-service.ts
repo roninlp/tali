@@ -2,6 +2,8 @@ import { Context, Data, DateTime, Effect, Layer, Option, Schema } from "effect"
 import type { Statement } from "effect/sql"
 import {
   type ChangeFeedEntry,
+  defaultVisibilityFor,
+  resolveInheritedVisibility,
   type SyncBootstrapResponse,
   type SyncEntityRow,
   type SyncEntityType,
@@ -9,13 +11,15 @@ import {
   SyncPushEntry,
   type SyncPushResponse,
   type SyncPushResult,
-  type Visibility
+  type Visibility,
+  visibilityPolicyOf
 } from "@tali/domain"
 import {
   entityKey,
   SyncRepo,
   SyncRepoLive,
   type AppliedMutation,
+  type EntityRef,
   type FeedRow,
   type SyncEntityDefinition,
   type SyncEntityMeta,
@@ -209,8 +213,60 @@ const dependencyRank = (entityType: SyncEntityType): number => {
   }
 }
 
-const asVisibility = (value: unknown): Visibility =>
-  value === "private" ? "private" : "shared"
+const requestedVisibility = (value: unknown): Visibility | undefined =>
+  value === "private" || value === "shared" ? value : undefined
+
+/**
+ * The visibility a push stores, derived from the aggregate's policy (ADR-0011).
+ *
+ * `ownerOnly` and `household` always resolve to their fixed value — a legacy
+ * row's stored value cannot make a fixed aggregate mutable. Shareable and
+ * inherited rows keep the already-validated value, falling back to `fallback`.
+ */
+const resolvedVisibility = (
+  entityType: SyncEntityType,
+  data: Record<string, unknown>,
+  fallback: Visibility
+): Visibility => {
+  const policy = visibilityPolicyOf(entityType)
+  switch (policy._tag) {
+    case "ownerOnly":
+      return "private"
+    case "household":
+      return "shared"
+    case "shareable":
+    case "inherited":
+      return requestedVisibility(data.visibility) ?? fallback
+  }
+}
+
+/** A feed row's denormalized visibility; an unknown value follows the policy. */
+const feedVisibility = (entityType: SyncEntityType, value: unknown): Visibility =>
+  requestedVisibility(value) ?? defaultVisibilityFor(entityType)
+
+/**
+ * The effective visibility of a row another entry in this push may parent off.
+ * Fixed classes ignore the stored value for the same reason `resolvedVisibility`
+ * does; everything else prefers an explicit patch value, then the stored row,
+ * then the policy default.
+ */
+const incomingVisibility = (
+  entityType: SyncEntityType,
+  patch: Record<string, unknown>,
+  current: Visibility | undefined
+): Visibility => {
+  const requested = requestedVisibility(patch.visibility)
+  const policy = visibilityPolicyOf(entityType)
+  switch (policy._tag) {
+    case "ownerOnly":
+      return "private"
+    case "household":
+      return "shared"
+    case "shareable":
+    case "inherited":
+      return requested ?? current ?? defaultVisibilityFor(entityType)
+  }
+}
 
 const toRow = (state: SyncEntityState): SyncEntityRow => ({
   entityType: state.entityType,
@@ -220,6 +276,56 @@ const toRow = (state: SyncEntityState): SyncEntityRow => ({
   deletedAt: state.deletedAt,
   data: state.data
 })
+
+/** The two aggregates whose visibility is owned by a parent row. */
+const isInheritedChild = (entityType: SyncEntityType): boolean =>
+  entityType === "listItem" || entityType === "habitEntry"
+
+/** The parent reference carried in a hydrated child row. */
+const inheritedParentRef = (row: {
+  readonly entityType: SyncEntityType
+  readonly data: Record<string, unknown>
+}): EntityRef | undefined => {
+  const field = row.entityType === "listItem"
+    ? "listId"
+    : row.entityType === "habitEntry"
+    ? "habitId"
+    : undefined
+  if (field === undefined) return undefined
+  const value = row.data[field]
+  return typeof value === "string" && value !== ""
+    ? {
+      entityType: row.entityType === "listItem" ? "list" : "habit",
+      entityId: value
+    }
+    : undefined
+}
+
+/**
+ * A child is only deliverable while its parent is visible to the same viewer
+ * (ADR-0011). The parent's *current* visibility is what matters: the child's
+ * denormalized column is a write-time snapshot and goes stale when a habit or
+ * list is flipped to private. A trashed parent is deliberately still
+ * considered visible here so restoring it does not lose the child rows; the
+ * parent's own tombstone already hides the list/habit from the UI.
+ */
+const parentAllowsChild = (
+  parent: Pick<SyncEntityState, "householdId" | "ownerId" | "visibility">,
+  viewer: { readonly householdId: string; readonly userId: string }
+): boolean =>
+  parent.householdId === viewer.householdId &&
+  !(parent.visibility === "private" && parent.ownerId !== viewer.userId)
+
+/**
+ * A legacy listItem may have **no** list id — the pre-Slice-2 scaffold shape.
+ * It has no parent to inherit from, so it keeps its own wire visibility. The
+ * push guard forces a client-supplied orphan visibility private; an omitted one
+ * stays the legacy shared default. A list id that names no row is dangling
+ * (hard-purged parent), not legacy, and is never delivered. Habit entries have
+ * no legacy shape and are never deliverable without their habit.
+ */
+const orphanChildIsDeliverable = (entityType: SyncEntityType): boolean =>
+  entityType === "listItem"
 
 const sameData = (
   a: Record<string, unknown>,
@@ -318,21 +424,35 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
         const now = new Date().toISOString()
 
         /**
+         * The parent a row will point at **after** this entry. A patch that
+         * changes `listId`/`habitId` must be checked against the new parent,
+         * not the old one; only an absent parent field falls back to the stored
+         * row.
+         */
+        const effectiveParentId = (entry: PushEntry): string | undefined => {
+          const rule = entityTypeOf(entry.entityType)?.parent
+          if (rule === undefined) return undefined
+          if (Object.prototype.hasOwnProperty.call(entry.patch, rule.field)) {
+            const value = entry.patch[rule.field]
+            return typeof value === "string" ? value : undefined
+          }
+          // A prior entry in this same push may already have moved the row, so
+          // prefer the planned state over the DB pre-read.
+          const current = planned.get(entityKey(entry)) ?? states.get(entityKey(entry))
+          const value = current?.data[rule.field]
+          return typeof value === "string" ? value : undefined
+        }
+
+        /**
          * Parent rows named by this push, whether or not they are also being
          * written here. The entry pre-read only fetches the entry's own row, so
          * a parent reference needs its own scoped lookup.
          */
         const parentRefs = input.entries.flatMap((entry) => {
+          if (entry.op === "delete") return []
           const rule = entityTypeOf(entry.entityType)?.parent
           if (rule === undefined) return []
-          const current = states.get(entityKey(entry))
-          const fromRow = current?.data[rule.field]
-          const fromPatch = entry.patch[rule.field]
-          const parentId = typeof fromRow === "string"
-            ? fromRow
-            : typeof fromPatch === "string"
-            ? fromPatch
-            : undefined
+          const parentId = effectiveParentId(entry)
           return parentId === undefined
             ? []
             : [{ entityType: rule.entityType, entityId: parentId }]
@@ -353,16 +473,18 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           Pick<SyncEntityState, "householdId" | "ownerId" | "visibility" | "deletedAt">
         >()
         for (const entry of input.entries) {
-          if (entry.op !== "upsert") continue
           const current = states.get(entityKey(entry))
-          const patchVisibility = entry.patch.visibility
           incoming.set(entityKey(entry), {
             householdId: current?.householdId ?? input.householdId,
             ownerId: current?.ownerId ?? input.userId,
-            visibility: patchVisibility === "private" || patchVisibility === "shared"
-              ? patchVisibility
-              : current?.visibility ?? "shared",
-            deletedAt: current?.deletedAt ?? null
+            visibility: entry.op === "delete"
+              ? current?.visibility ?? defaultVisibilityFor(entry.entityType)
+              : incomingVisibility(entry.entityType, entry.patch, current?.visibility),
+            // A delete in this push is a tombstone for the child's parent
+            // lookup even when the delete entry appears later in the wire.
+            deletedAt: entry.op === "delete"
+              ? current?.deletedAt ?? now
+              : current?.deletedAt ?? null
           })
         }
 
@@ -552,6 +674,40 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           const patch = sanitizePatch(definition, entry.patch, { allowCreatedAt: true })
           const updatePatch = sanitizePatch(definition, entry.patch, { allowCreatedAt: false })
 
+          // Only a `shareable` aggregate has a user-facing choice (ADR-0011).
+          // A patch that tries to set a fixed or exact-inherited visibility is
+          // rejected rather than silently ignored; `listItem` is the one
+          // inherited aggregate that may narrow, and its ceiling is resolved
+          // against the parent below.
+          const visibilityPolicy = visibilityPolicyOf(entry.entityType)
+          if (
+            entry.op !== "delete" &&
+            entry.patch.visibility !== undefined &&
+            visibilityPolicy._tag !== "shareable" &&
+            !(visibilityPolicy._tag === "inherited" && entry.entityType === "listItem")
+          ) {
+            reject(
+              entry,
+              "VisibilityFixed",
+              `Visibility is fixed by policy for "${entry.entityType}"`
+            )
+            continue
+          }
+
+          // Shared means co-edit; only the owner can un-share (ADR-0011). The
+          // service path enforces the same rule, and a push must not be a way
+          // around it.
+          if (
+            entry.op !== "delete" &&
+            entry.patch.visibility === "private" &&
+            current !== undefined &&
+            current.ownerId !== "" &&
+            current.ownerId !== input.userId
+          ) {
+            reject(entry, "VisibilityForbidden", "Only the row owner can make it private")
+            continue
+          }
+
           // A strict field that was sent with an invalid value is rejected
           // rather than dropped: silently substituting a default would record a
           // different day/status than the user chose (#63). Deletes are exempt:
@@ -569,43 +725,116 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
 
           const parentRule = definition.parent
           if (parentRule !== undefined && entry.op !== "delete") {
-            const parentId = typeof current?.data[parentRule.field] === "string"
-              ? String(current.data[parentRule.field])
-              : typeof patch[parentRule.field] === "string"
-              ? String(patch[parentRule.field])
-              : undefined
-            const parent = parentId === undefined
+            const parentId = effectiveParentId(entry)
+            const parentKey = parentId === undefined
               ? undefined
-              : parentStates.get(
-                entityKey({ entityType: parentRule.entityType, entityId: parentId })
-              ) ??
-                incoming.get(entityKey({ entityType: parentRule.entityType, entityId: parentId }))
-            // A child never outlives or out-shares its parent: a missing row,
-            // another household, a trashed parent or a private parent owned by
-            // someone else all reject the entry instead of writing a row the
-            // owner cannot see (#63).
+              : entityKey({ entityType: parentRule.entityType, entityId: parentId })
+            // Resolve the **post-push** parent first: `planned` holds a parent
+            // already written in this batch, `incoming` the proposed state of
+            // one later in the wire (upsert or delete). The DB pre-read is only
+            // the fallback, so a list/habit flipped private in the same push
+            // cannot leave its child shared.
+            const parent = parentKey === undefined
+              ? undefined
+              : planned.get(parentKey) ??
+                incoming.get(parentKey) ??
+                parentStates.get(parentKey)
+            // A child never outlives or out-shares its parent: a missing
+            // required row, another household, a trashed parent or a private
+            // parent owned by someone else all reject the entry instead of
+            // writing a row the owner cannot see (#63). The legacy no-list-id
+            // listItem is the one optional shape (see below).
             if (parent === undefined) {
-              reject(entry, "ParentNotFound", "The parent row does not exist")
-              continue
-            }
-            if (parent.householdId !== input.householdId) {
-              reject(entry, "ParentForbidden", "The parent row belongs to another household")
-              continue
-            }
-            if (parent.deletedAt !== null) {
-              reject(entry, "ParentDeleted", "The parent row is in the trash")
-              continue
-            }
-            if (parent.visibility === "private" && parent.ownerId !== input.userId) {
-              reject(entry, "ParentForbidden", "The parent row is private")
-              continue
-            }
-            if (parentRule.inheritVisibility) {
-              // The client sends the habit's visibility with a tap, but the
-              // server is the authority: forcing it keeps a private habit's log
-              // private even when the tap omits or flips it.
-              patch.visibility = parent.visibility
-              updatePatch.visibility = parent.visibility
+              // The legacy listItem wire shape may carry no `list_id`; such a
+              // row has no parent to inherit from. It is a legacy compatibility
+              // carve-out, not a shareable row: a client-supplied visibility is
+              // forced private (owner-only) so a missing parent can never widen
+              // the item, and an omitted visibility keeps the legacy shared
+              // default. Every other parent link is required.
+              if (parentRule.optional !== true) {
+                reject(entry, "ParentNotFound", "The parent row does not exist")
+                continue
+              }
+              const currentParentId = typeof current?.data[parentRule.field] === "string"
+                ? String(current.data[parentRule.field])
+                : undefined
+              const patchNamesParent = Object.prototype.hasOwnProperty.call(
+                entry.patch,
+                parentRule.field
+              )
+              // Only the true legacy no-id shape (no parent now, and the patch
+              // does not try to set/clear one) may pass. A named-but-missing
+              // parent, an explicit clear, or an already-dangling row is a
+              // missing parent, not a visibility choice.
+              const legacyNoParent = !patchNamesParent && currentParentId === undefined
+              if (!legacyNoParent) {
+                reject(entry, "ParentNotFound", "The parent row does not exist")
+                continue
+              }
+              if (entry.patch.visibility !== undefined) {
+                patch.visibility = "private"
+                updatePatch.visibility = "private"
+              }
+            } else {
+              if (parent.householdId !== input.householdId) {
+                reject(entry, "ParentForbidden", "The parent row belongs to another household")
+                continue
+              }
+              if (parent.deletedAt !== null) {
+                reject(entry, "ParentDeleted", "The parent row is in the trash")
+                continue
+              }
+              if (parent.visibility === "private" && parent.ownerId !== input.userId) {
+                reject(entry, "ParentForbidden", "The parent row is private")
+                continue
+              }
+              if (parentRule.visibility === "copy") {
+                // Exact inheritance: the parent is the only authority, so a
+                // client value that differs is a change attempt.
+                if (
+                  entry.patch.visibility !== undefined &&
+                  entry.patch.visibility !== parent.visibility
+                ) {
+                  reject(
+                    entry,
+                    "VisibilityInherited",
+                    "Visibility is inherited from the parent row"
+                  )
+                  continue
+                }
+                patch.visibility = parent.visibility
+                updatePatch.visibility = parent.visibility
+              } else if (parent.visibility === "private") {
+                // Ceiling: a child of a private parent is private, always.
+                if (entry.patch.visibility === "shared") {
+                  reject(
+                    entry,
+                    "VisibilityInherited",
+                    "The child cannot be shared inside a private parent"
+                  )
+                  continue
+                }
+                patch.visibility = "private"
+                updatePatch.visibility = "private"
+              } else if (current === undefined) {
+                // Insert under a shared parent: inherit the parent unless the
+                // client asked for the (allowed) narrower private value.
+                const resolved = resolveInheritedVisibility(
+                  entry.entityType,
+                  parent.visibility,
+                  requestedVisibility(entry.patch.visibility)
+                )
+                if (resolved._tag === "refused") {
+                  reject(
+                    entry,
+                    "VisibilityInherited",
+                    "Visibility is inherited from the parent row"
+                  )
+                  continue
+                }
+                patch.visibility = resolved.visibility
+                updatePatch.visibility = resolved.visibility
+              }
             }
           }
 
@@ -621,7 +850,11 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
                 now,
                 clientUpdatedAt: asIso(entry.clientUpdatedAt)
               })
-              const visibility = asVisibility(raw.visibility)
+              const visibility = resolvedVisibility(
+                entry.entityType,
+                raw,
+                defaultVisibilityFor(entry.entityType)
+              )
               const state: SyncEntityState = {
                 entityType: entry.entityType,
                 entityId: entry.entityId,
@@ -660,7 +893,11 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
               continue
             }
             const data = inserted.value
-            const visibility = asVisibility(data.visibility)
+            const visibility = resolvedVisibility(
+              entry.entityType,
+              data,
+              defaultVisibilityFor(entry.entityType)
+            )
             const state: SyncEntityState = {
               entityType: entry.entityType,
               entityId: entry.entityId,
@@ -702,7 +939,7 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
               continue
             }
             const data = validated.value
-            const visibility = asVisibility(data.visibility ?? current.visibility)
+            const visibility = resolvedVisibility(entry.entityType, data, current.visibility)
             const state: SyncEntityState = {
               ...current,
               householdId: input.householdId,
@@ -737,7 +974,7 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
             continue
           }
           const data = validated.value
-          const visibility = asVisibility(data.visibility ?? current.visibility)
+          const visibility = resolvedVisibility(entry.entityType, data, current.visibility)
 
           if (sameData(data, current.data) && visibility === current.visibility) {
             plans.push({ kind: "nowrite", entry, tag: "conflict", state: current })
@@ -981,19 +1218,65 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           entityType: row.entityType,
           entityId: row.entityId
         }))).pipe(Effect.orDie)
+
+        // The child rows in this page may name a parent that is not itself on
+        // the page. Read those parents now so the child's *current* visibility
+        // decides delivery, not the write-time column on the child.
+        const inheritedParentRefs = page.flatMap((row) => {
+          const state = states.get(entityKey(row))
+          const ref = state === undefined ? undefined : inheritedParentRef(state)
+          return ref === undefined ? [] : [ref]
+        })
+        const inheritedParentStates = inheritedParentRefs.length === 0
+          ? new Map<string, SyncEntityState>()
+          : yield* repo.findEntities(inheritedParentRefs).pipe(Effect.orDie)
+
         const entries: Array<ChangeFeedEntry> = []
         const items: Array<SyncEntityRow> = []
         const removed: Array<{ entityType: SyncEntityType; entityId: string }> = []
         const removedKeys = new Set<string>()
+        const addRemoved = (ref: EntityRef) => {
+          const key = entityKey(ref)
+          if (removedKeys.has(key)) return
+          removedKeys.add(key)
+          removed.push({ entityType: ref.entityType, entityId: ref.entityId })
+        }
+        const parentsToCascade: Array<EntityRef> = []
 
         for (const row of page) {
           const state = states.get(entityKey(row))
           const householdMatches = state === undefined || state.householdId === input.householdId
-          const visible = householdMatches &&
+          const ownVisible = householdMatches &&
             (state === undefined
               // Hard-purged row: the feed entry still advances the cursor.
-              ? row.ownerId === input.userId || asVisibility(row.visibility) === "shared"
+              ? row.ownerId === input.userId || feedVisibility(row.entityType, row.visibility) === "shared"
               : state.ownerId === input.userId || state.visibility === "shared")
+
+          // An inherited child is deliverable only while its parent is visible
+          // to this member *now*. The child's own visibility is a write-time
+          // snapshot; a habit/list flip to private must take the child with it.
+          const parentRef = state === undefined ? undefined : inheritedParentRef(state)
+          const parent = parentRef === undefined
+            ? undefined
+            : states.get(entityKey(parentRef)) ?? inheritedParentStates.get(entityKey(parentRef))
+          const inheritedVisible = !isInheritedChild(row.entityType)
+            ? true
+            : parentRef === undefined
+            ? orphanChildIsDeliverable(row.entityType)
+            : parent === undefined
+            ? false
+            : parentAllowsChild(parent, input)
+          const visible = ownVisible && inheritedVisible
+
+          // A list/habit that becomes invisible (private to the other member,
+          // or hard-purged) must remove its children from the partner's mirror
+          // even when those children have no new feed rows of their own.
+          if (
+            (row.entityType === "list" || row.entityType === "habit") &&
+            (state === undefined || !ownVisible)
+          ) {
+            parentsToCascade.push({ entityType: row.entityType, entityId: row.entityId })
+          }
 
           if (visible) {
             entries.push({
@@ -1004,19 +1287,25 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
               version: state?.version ?? row.version,
               updatedAt: state?.updatedAt ?? row.updatedAt,
               ownerId: state?.ownerId ?? row.ownerId,
-              visibility: state?.visibility ?? asVisibility(row.visibility)
+              visibility: state?.visibility ?? feedVisibility(row.entityType, row.visibility)
             })
             if (state !== undefined) items.push(toRow(state))
+            else {
+              // The row itself was hard-purged: the feed entry only advances
+              // the cursor, but a mirror that still holds it must drop it.
+              addRemoved(row)
+            }
             continue
           }
 
           // DP-9: a spouse's visibility flip must reach this mirror as a
           // removal. It is not a delete and queues no mutation.
-          const key = entityKey(row)
-          if (!removedKeys.has(key)) {
-            removedKeys.add(key)
-            removed.push({ entityType: row.entityType, entityId: row.entityId })
-          }
+          addRemoved(row)
+        }
+
+        if (parentsToCascade.length > 0) {
+          const children = yield* repo.findChildIds(parentsToCascade).pipe(Effect.orDie)
+          for (const child of children) addRemoved(child)
         }
 
         return { entries, items, removed, nextCursor, hasMore, resetRequired: false }
@@ -1044,8 +1333,35 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
         }).pipe(Effect.orDie)
         const hasMore = refs.length > limit
         const page = hasMore ? refs.slice(0, limit) : refs
-        const items = yield* repo.bootstrapEntities(page).pipe(Effect.orDie)
-        return { items, nextOffset: offset + items.length, hasMore, cursor }
+        const hydrated = yield* repo.bootstrapEntities(page).pipe(Effect.orDie)
+
+        // Parent-gate inherited children exactly like `/sync/pull`: a fresh
+        // mirror must not be seeded with a shared item/entry whose list/habit
+        // is private to this member (or already hard-purged).
+        const inheritedParentRefs = hydrated.flatMap((item) => {
+          const ref = inheritedParentRef(item)
+          return ref === undefined ? [] : [ref]
+        })
+        const inheritedParentStates = inheritedParentRefs.length === 0
+          ? new Map<string, SyncEntityState>()
+          : yield* repo.findEntities(inheritedParentRefs).pipe(Effect.orDie)
+        const items = hydrated.filter((item) => {
+          if (!isInheritedChild(item.entityType)) return true
+          const parentRef = inheritedParentRef(item)
+          if (parentRef === undefined) {
+            // Legacy listItem with no list id: keep its wire visibility.
+            return orphanChildIsDeliverable(item.entityType)
+          }
+          const parent = inheritedParentStates.get(entityKey(parentRef))
+          // A list id that names no row is not the legacy no-id shape: the
+          // child is dangling (hard-purged parent) and must not seed a mirror.
+          if (parent === undefined) return false
+          return parentAllowsChild(parent, input)
+        })
+
+        // `nextOffset` advances over the refs consumed, not the visible rows,
+        // so a filtered page can never make the client re-read or skip a ref.
+        return { items, nextOffset: offset + page.length, hasMore, cursor }
       })
 
     return { pull, bootstrap, push } as const

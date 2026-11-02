@@ -109,6 +109,7 @@ export const occasionRow = (
     advanceReminderDays: 7,
     preparationTaskId: null,
     color: null,
+    ownerId: null,
     visibility: 'shared',
     createdAt: '2026-10-01T08:00:00.000Z',
     updatedAt: '2026-10-01T08:00:00.000Z',

@@ -28,6 +28,8 @@ import {
  */
 export class ListItem extends Model.Class<ListItem>("ListItem")({
   ...commonItemFields("listItem", ListItemId),
+  /** Inherited from the parent list, at most narrower (ADR-0011). */
+  visibility: Visibility,
   listId: ListId,
   name: Schema.String.check(Schema.isMinLength(1)),
   done: Schema.Boolean,
@@ -44,7 +46,6 @@ export const ListItemCreate = Schema.Struct({
   name: Schema.String.check(Schema.isMinLength(1)),
   order: Schema.optional(Schema.Int),
   color: Schema.optional(Schema.NullOr(Schema.String)),
-  tagIds: Schema.optional(TagIds),
-  visibility: Schema.optional(Visibility)
+  tagIds: Schema.optional(TagIds)
 })
 export type ListItemCreate = Schema.Schema.Type<typeof ListItemCreate>

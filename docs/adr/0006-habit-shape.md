@@ -71,10 +71,11 @@ Three shape questions had to be answered before that plumbing could exist:
   No title, no colour, no versioned document — just `habitId`, `localDate`,
   `timeZone`, `status`, plus `ownerId`/`householdId`/`visibility` denormalized
   so `/sync/pull` filters them without a join. The sync engine resolves the
-  entry's habit before writing and **forces the entry's visibility to the
-  habit's**, refusing an entry whose habit is missing, trashed, private to
-  another member or in another household, so a private habit's log stays private
-  even when a client omits or flips the field.
+  entry's habit before writing and **copies the habit's visibility**, refusing
+  an entry whose habit is missing, trashed, private to another member or in
+  another household. A patch that carries a different visibility is rejected
+  (`VisibilityFixed`), and `/sync/pull`/`/sync/bootstrap` re-check the habit's
+  current visibility so a later flip to private takes the log with it.
 - **Delete is a soft delete with an undo path.** `DeleteHabit` stamps a
   `deletedAt` tombstone and records a `delete` op on the feed; `RestoreHabit`
   clears the same row, so the undo toast (#66) returns the identical habit —

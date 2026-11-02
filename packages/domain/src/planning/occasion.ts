@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import { Model } from "effect/schema"
+import { Visibility } from "../common.js"
 import { commonItemFields, LocalDate, OccasionId, TaskId, TimeZone } from "./common.js"
 
 /**
@@ -47,6 +48,8 @@ import { commonItemFields, LocalDate, OccasionId, TaskId, TimeZone } from "./com
  */
 export class Occasion extends Model.Class<Occasion>("Occasion")({
   ...commonItemFields("occasion", OccasionId),
+  /** Resolved from the occasion's `shareable` policy (ADR-0011); default `private`. */
+  visibility: Visibility,
   /**
    * The occasion's name ("تولد مامان"). The model checks the shape only; the
    * service enforces a non-empty title, because a delete-only sync push

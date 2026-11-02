@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS reminders (
   note            TEXT,
   owner_id        TEXT NOT NULL,
   household_id    TEXT NOT NULL,
-  visibility      TEXT NOT NULL DEFAULT 'shared',
+  -- Shareable, default private (ADR-0011).
+  visibility      TEXT NOT NULL DEFAULT 'private',
   color           TEXT,
   -- medication / exercise / chore / general
   kind            TEXT NOT NULL DEFAULT 'general',

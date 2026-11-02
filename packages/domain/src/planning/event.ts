@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import { Model } from "effect/schema"
+import { Visibility } from "../common.js"
 import { RecurrenceRule } from "../recurrence.js"
 import {
   commonItemFields,
@@ -118,6 +119,8 @@ export type EventException = Schema.Schema.Type<typeof EventException>
 
 export class Event extends Model.Class<Event>("Event")({
   ...commonItemFields("event", EventId),
+  /** Resolved from the event's `shareable` policy (ADR-0011). */
+  visibility: Visibility,
   /**
    * The event's name. The model only checks the *shape* (a string): the
    * service enforces a non-empty title, because a tombstone row inserted by a

@@ -1,4 +1,4 @@
-import { Array, Effect, Option, Queue, Schema, Stream } from 'effect'
+import { Array, Clock, Effect, Option, Queue, Schema, Stream } from 'effect'
 import { Command, Submodel, Subscription, Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
@@ -20,6 +20,8 @@ import {
   isSnoozePreset,
   reminderFailureCopy,
 } from './reminders-model'
+import { setVisibilityInMirror } from '../lib/visibility-writes'
+import { LocalStoreResource } from '../sync/local-store'
 import { remindersPageView } from './reminders-view'
 
 /**
@@ -65,6 +67,15 @@ export const Message = defineMessageUnion({
   ReceivedReminderAction: {},
   ClickedToggleHistory: {},
   ChangedSnoozeMinutes: { minutes: Schema.Int },
+  ClickedToggleReminderVisibility: {
+    reminderId: Schema.String,
+    visibility: Schema.Literals(['private', 'shared']),
+  },
+  CompletedSetReminderVisibility: {
+    reminderId: Schema.String,
+    visibility: Schema.Literals(['private', 'shared']),
+  },
+  FailedSetReminderVisibility: { message: Schema.String },
   ClickedRespond: {
     dispatchId: Schema.String,
     response: DispatchResponse,
@@ -139,6 +150,54 @@ export const DrainQueueAndFetchInbox = Command.define(
   },
 )
 
+export const SetReminderVisibility = Command.define(
+  'SetReminderVisibility',
+  {
+    args: {
+      reminderId: Schema.String,
+      visibility: Schema.Literals(['private', 'shared']),
+    },
+    messages: [
+      Message.CompletedSetReminderVisibility,
+      Message.FailedSetReminderVisibility,
+    ],
+    execute: ({ reminderId, visibility }) =>
+      Effect.gen(function* () {
+        const store = yield* LocalStoreResource.get
+        const now = yield* Clock.currentTimeMillis
+
+        yield* Effect.tryPromise({
+          try: () =>
+            setVisibilityInMirror(
+              store,
+              'reminder',
+              reminderId,
+              visibility,
+              new Date(now).toISOString(),
+            ),
+          catch: (cause) =>
+            cause instanceof Error ? cause.message : 'ذخیره در حافظه‌ی محلی ناموفق بود',
+        })
+
+        return Message.CompletedSetReminderVisibility({
+          reminderId,
+          visibility,
+        })
+      }).pipe(
+        Effect.catch(error =>
+          Effect.succeed(
+            Message.FailedSetReminderVisibility({
+              message:
+                typeof error === 'string'
+                  ? error
+                  : 'ذخیره در حافظه‌ی محلی ناموفق بود',
+            }),
+          ),
+        ),
+      ),
+  },
+)
+
 export const RespondToReminder = Command.define('RespondToReminder', {
   args: {
     dispatchId: Schema.String,
@@ -175,7 +234,17 @@ export const init = (): Update.Return<Model, Message> => ({
 
 // UPDATE
 
-type UpdateReturn = Update.Return<Model, Message>
+export const OutMessage = defineMessageUnion({
+  WroteLocalData: {},
+})
+export type OutMessage = typeof OutMessage.Type
+
+type UpdateReturn = Update.ReturnWithOutMessage<
+  Model,
+  Message,
+  OutMessage,
+  import('../sync/local-store').LocalStoreService
+>
 
 const startRead = (model: Model, shouldDrain: boolean): UpdateReturn => {
   const generation = model.fetchGeneration + 1
@@ -249,6 +318,29 @@ export const update = (model: Model, message: Message): UpdateReturn =>
             model: modifyFields(model, { snoozeMinutes: () => minutes }),
           }
         : { model },
+
+    ClickedToggleReminderVisibility: ({ reminderId, visibility }) => ({
+      model: modifyFields(model, { maybeError: () => Option.none() }),
+      commands: [SetReminderVisibility({ reminderId, visibility })],
+    }),
+
+    CompletedSetReminderVisibility: ({ reminderId, visibility }) => ({
+      model: modifyFields(model, {
+        items: () =>
+          Array.map(model.items, item =>
+            item.reminderId === reminderId
+              ? { ...item, visibility }
+              : item,
+          ),
+      }),
+      outMessage: OutMessage.WroteLocalData(),
+    }),
+
+    FailedSetReminderVisibility: ({ message }) => ({
+      model: modifyFields(model, {
+        maybeError: () => Option.some(message),
+      }),
+    }),
 
     ClickedRespond: ({ dispatchId, response }) => {
       if (Option.isSome(model.maybeBusyDispatchId)) {

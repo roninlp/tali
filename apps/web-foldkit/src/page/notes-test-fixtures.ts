@@ -120,6 +120,8 @@ const loadedBase = (): Model =>
     text: 'قرص می‌روم و دارو می‌خورم',
     savedTitle: 'خرید دارو',
     savedText: 'قرص می‌روم و دارو می‌خورم',
+    visibility: 'private',
+    isOwner: true,
     baseVersion: 1,
   })
 

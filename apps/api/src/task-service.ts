@@ -35,9 +35,9 @@ import {
   TaskValidationError,
   type UserId,
   localDateStartInstant,
+  resolveCreateVisibility,
   successorTask,
-  uuidV7,
-  type Visibility
+  uuidV7
 } from "@tali/domain"
 import {
   ProjectRepo,
@@ -693,6 +693,11 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       now: string
     ): Effect.Effect<Task, TaskServiceError> =>
       Effect.gen(function*() {
+        // Shared means co-edit; un-sharing is the owner's alone (ADR-0011). A
+        // partner must not be able to lock the author out of their own row.
+        if (patch.visibility === "private" && current.ownerId !== viewer.userId) {
+          return yield* invalid("visibility", "only the task owner can make it private")
+        }
         let dueAt = current.dueAt
         let dueDate = current.dueDate
         if (patch.dueAt !== undefined && patch.dueAt !== null) {
@@ -858,7 +863,7 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
           description: input.description ?? null,
           ownerId: viewer.userId,
           householdId: viewer.householdId,
-          visibility: (input.visibility ?? "shared") as Visibility,
+          visibility: resolveCreateVisibility("task", input.visibility),
           color: input.color ?? null,
           status,
           priority: (input.priority ?? "medium") as Priority,
@@ -1253,7 +1258,7 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
           title: input.title,
           ownerId: viewer.userId,
           householdId: viewer.householdId,
-          visibility: (input.visibility ?? "shared") as Visibility,
+          visibility: resolveCreateVisibility("project"),
           color: input.color ?? null,
           createdAt: now,
           updatedAt: now,
@@ -1342,7 +1347,7 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
           name: input.name,
           ownerId: viewer.userId,
           householdId: viewer.householdId,
-          visibility: (input.visibility ?? "shared") as Visibility,
+          visibility: resolveCreateVisibility("tag"),
           color: input.color ?? null,
           createdAt: now,
           updatedAt: now,

@@ -121,7 +121,7 @@ describe("HabitService", () => {
       frequency: weekdays,
       reminderTime: "07:30",
       timeZone: TZ,
-      visibility: "shared",
+      visibility: "private",
       version: 1,
       deletedAt: null
     })
@@ -145,7 +145,7 @@ describe("HabitService", () => {
     expect(ledger).toEqual([{ entityType: "habit", entityId: id }])
   })
 
-  it("defaults the zone to the viewer's and the visibility to shared", async () => {
+  it("defaults the zone to the viewer's and the visibility to private", async () => {
     const h = makeHarness()
 
     const created = await h.svc((svc) =>
@@ -157,7 +157,7 @@ describe("HabitService", () => {
     )
 
     expect(created.timeZone).toBe("Europe/Berlin")
-    expect(created.visibility).toBe("shared")
+    expect(created.visibility).toBe("private")
     expect(created.description).toBeNull()
     expect(created.icon).toBeNull()
     expect(created.reminderTime).toBeNull()
@@ -469,7 +469,13 @@ describe("HabitService", () => {
     await h.svc((svc) =>
       svc.create(
         viewer({ userId: USER_B }),
-        { clientMutationId: "m-shared-habit", id: shared, title: "عادت مشترک", frequency: daily },
+        {
+          clientMutationId: "m-shared-habit",
+          id: shared,
+          title: "عادت مشترک",
+          frequency: daily,
+          visibility: "shared"
+        },
         NOW
       )
     )

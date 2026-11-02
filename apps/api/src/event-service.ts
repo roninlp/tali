@@ -35,6 +35,7 @@ import {
   splitEventSeries,
   trashEvent,
   truncateEventSeries,
+  resolveCreateVisibility,
   uuidV7
 } from "@tali/domain"
 import type { EventOccurrence, EventOccurrenceChange } from "@tali/domain"
@@ -483,7 +484,7 @@ export class EventService extends Context.Service<EventService>()("EventService"
           occasionId: input.occasionId ?? null,
           ownerId: viewer.userId,
           householdId: viewer.householdId,
-          visibility: (input.visibility ?? "shared") as Visibility,
+          visibility: resolveCreateVisibility("event", input.visibility),
           color: input.color ?? null,
           createdAt: now,
           updatedAt: now,
@@ -509,6 +510,7 @@ export class EventService extends Context.Service<EventService>()("EventService"
 
     /** Apply a patch to a row. The timing is replaced as one unit. */
     const patchEvent = (
+      viewer: EventViewer,
       current: Event,
       patch: Schema.Schema.Type<typeof EventPatch>,
       now: string
@@ -516,6 +518,10 @@ export class EventService extends Context.Service<EventService>()("EventService"
       Effect.gen(function*() {
         if (patch.title !== undefined && patch.title.trim().length === 0) {
           return yield* invalid("title", "an event needs a title")
+        }
+        // Shared means co-edit; un-sharing is the owner's alone (ADR-0011).
+        if (patch.visibility === "private" && current.ownerId !== viewer.userId) {
+          return yield* invalid("visibility", "only the event owner can make it private")
         }
         const timing = patch.timing === undefined
           ? current.timing
@@ -576,7 +582,7 @@ export class EventService extends Context.Service<EventService>()("EventService"
 
         for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
           const current = yield* readEvent(viewer, input.id, false)
-          const next = yield* patchEvent(current, input.patch, now)
+          const next = yield* patchEvent(viewer, current, input.patch, now)
           if (sameEvent(current, next)) return current
           const applied = yield* commitEvent({
             viewer,

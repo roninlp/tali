@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS occasions (
   title                 TEXT NOT NULL DEFAULT '',
   owner_id              TEXT NOT NULL,
   household_id          TEXT NOT NULL,
-  visibility            TEXT NOT NULL DEFAULT 'shared',
+  -- Shareable, default private (ADR-0011).
+  visibility            TEXT NOT NULL DEFAULT 'private',
   color                 TEXT,
   -- The origin local date and the zone it is read in.
   origin_date           TEXT NOT NULL,

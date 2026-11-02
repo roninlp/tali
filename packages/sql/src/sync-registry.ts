@@ -19,11 +19,15 @@ import {
   reminderFireAt,
   type ReminderType,
   reminderTierFor,
+  defaultVisibilityFor,
+  resolveCreateVisibility,
   successorTask,
   Tag,
   Task,
   type SyncEntityType,
-  type Visibility
+  type Visibility,
+  type VisibilityAggregate,
+  visibilityPolicyOf
 } from "@tali/domain"
 
 /**
@@ -231,8 +235,28 @@ export interface SyncParentRule {
   readonly field: string
   /** Physical column holding the parent id (the purge uses SQL, not patches). */
   readonly column: string
-  /** Copy the parent's visibility onto the child on every write. */
-  readonly inheritVisibility: boolean
+  /**
+   * How the child's visibility follows the parent (ADR-0011):
+   *
+   * - `copy` — exactly the parent's value on every write (a habit entry).
+   * - `ceiling` — a private parent forces private; a shared parent lets the
+   *   child stay narrower (a private item inside a shared list).
+   */
+  readonly visibility: "copy" | "ceiling"
+  /**
+   * Whether a missing parent id is acceptable. Default `false` (required).
+   * Only the legacy `listItem` wire shape that never had a list id may omit
+   * it; an explicit/dangling parent id is rejected. An explicit visibility on
+   * such a legacy orphan is forced `private` (owner-only); an omitted one
+   * keeps the old shared default.
+   */
+  readonly optional?: boolean
+  /**
+   * Whether purging the parent also removes its children (default `true`).
+   * `listItem` opts out: items carry their own tombstones and are purged by
+   * their own definition, not as a hard cascade.
+   */
+  readonly cascade?: boolean
 }
 
 /** Input to an aggregate's `purge` hook (ticket #85). */
@@ -287,7 +311,29 @@ const encodeJsonOrNull = (value: unknown): string | null =>
 const asBit = (value: unknown): boolean => value === true || value === 1
 const asText = (value: unknown): string | null =>
   typeof value === "string" ? value : null
-const asVisibility = (value: unknown): Visibility => (value === "private" ? "private" : "shared")
+const isVisibility = (value: unknown): value is Visibility =>
+  value === "private" || value === "shared"
+
+/**
+ * A row's stored visibility. Writes always supply one; this is the read-side
+ * fallback, and it falls back to the aggregate's policy default rather than
+ * silently biasing every unknown value to `shared`.
+ */
+const storedVisibility = (aggregate: VisibilityAggregate, value: unknown): Visibility =>
+  isVisibility(value) ? value : defaultVisibilityFor(aggregate)
+
+/**
+ * The visibility an insert writes.
+ *
+ * Fixed classes ignore whatever the patch carries (the schema edge rejects it
+ * anyway); shareable classes honour the user's choice; an inherited child uses
+ * the parent value the sync engine resolved before `defaults` ran, falling back
+ * to the policy default only for a delete-only tombstone with no parent.
+ */
+const createdVisibility = (aggregate: VisibilityAggregate, value: unknown): Visibility =>
+  visibilityPolicyOf(aggregate)._tag === "inherited"
+    ? (isVisibility(value) ? value : defaultVisibilityFor(aggregate))
+    : resolveCreateVisibility(aggregate, isVisibility(value) ? value : undefined)
 const parseJson = (value: unknown): unknown => {
   if (typeof value !== "string") return value ?? null
   try {
@@ -562,7 +608,7 @@ const taskCodec = withSchema<Task>(Task, (row) => ({
   completedAt: asText(row.completedAt),
   ownerId: encodeText(row.ownerId),
   householdId: encodeText(row.householdId),
-  visibility: asVisibility(row.visibility),
+  visibility: storedVisibility("task", row.visibility),
   createdAt: encodeText(row.createdAt)
 }))
 
@@ -683,7 +729,7 @@ const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     completedAt: null,
     ownerId: context.userId,
     householdId: context.householdId,
-    visibility: asVisibility(patch.visibility),
+    visibility: createdVisibility("task", patch.visibility),
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
   }),
   merge: (input) => {
@@ -806,7 +852,7 @@ const projectCodec = withSchema<Project>(Project, (row) => ({
   title: encodeText(row.title),
   ownerId: encodeText(row.ownerId),
   householdId: encodeText(row.householdId),
-  visibility: asVisibility(row.visibility),
+  visibility: storedVisibility("project", row.visibility),
   color: asText(row.color),
   createdAt: encodeText(row.createdAt)
 }))
@@ -819,9 +865,10 @@ const projectDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   softDeleteColumn: "deleted_at",
   writable: new Map([
     ["title", isString],
-    ["color", isNullableString],
-    ["visibility", isOneOf("private", "shared")]
+    ["color", isNullableString]
   ]),
+  // Household visibility is fixed (ADR-0011): a patch that tries to choose one
+  // is rejected by the sync service's policy guard before this definition runs.
   purge: purgeProjectReferences(sql),
   ...projectCodec,
   defaults: (patch, context) => ({
@@ -830,7 +877,7 @@ const projectDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     title: encodeText(patch.title),
     ownerId: context.userId,
     householdId: context.householdId,
-    visibility: asVisibility(patch.visibility),
+    visibility: createdVisibility("project", patch.visibility),
     color: asText(patch.color),
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
   }),
@@ -869,7 +916,7 @@ const tagCodec = withSchema<Tag>(Tag, (row) => ({
   name: encodeText(row.name),
   ownerId: encodeText(row.ownerId),
   householdId: encodeText(row.householdId),
-  visibility: asVisibility(row.visibility),
+  visibility: storedVisibility("tag", row.visibility),
   color: asText(row.color),
   createdAt: encodeText(row.createdAt)
 }))
@@ -882,8 +929,7 @@ const tagDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   softDeleteColumn: "deleted_at",
   writable: new Map([
     ["name", isString],
-    ["color", isNullableString],
-    ["visibility", isOneOf("private", "shared")]
+    ["color", isNullableString]
   ]),
   purge: (input) => [
     ...purgeTagReferences(sql)(input),
@@ -903,7 +949,7 @@ const tagDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     name: encodeText(patch.name),
     ownerId: context.userId,
     householdId: context.householdId,
-    visibility: asVisibility(patch.visibility),
+    visibility: createdVisibility("tag", patch.visibility),
     color: asText(patch.color),
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
   }),
@@ -946,7 +992,7 @@ const listSchemaCodec = withSchema<List>(List, (row) => ({
   description: asText(row.description),
   ownerId: encodeText(row.ownerId),
   householdId: encodeText(row.householdId),
-  visibility: asVisibility(row.visibility),
+  visibility: storedVisibility("list", row.visibility),
   color: asText(row.color),
   icon: asText(row.icon),
   sort: encodeText(row.sort),
@@ -997,7 +1043,7 @@ const listDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     description: asText(patch.description),
     ownerId: context.userId,
     householdId: context.householdId,
-    visibility: asVisibility(patch.visibility),
+    visibility: createdVisibility("list", patch.visibility),
     color: asText(patch.color),
     icon: asText(patch.icon),
     sort: encodeText(patch.sort) || "manual",
@@ -1116,7 +1162,7 @@ const listItemNormalize = (row: SyncRawRow): Record<string, unknown> =>
     tagIds: asStringArray(row.tagIds),
     lastWriterId: asText(row.lastWriterId),
     ownerId: encodeText(row.ownerId),
-    visibility: asVisibility(row.visibility),
+    visibility: storedVisibility("listItem", row.visibility),
     createdAt: encodeText(row.createdAt)
   })
 
@@ -1149,6 +1195,18 @@ const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
     ]),
     // Checklist done-wins: "I ticked it" beats "I renamed it" (§6.3).
     completion: LIST_ITEM_COMPLETION,
+    // Items inherit the list's visibility but may be narrower (ADR-0011). The
+    // legacy wire shape may omit `listId`, so the parent link is optional;
+    // when it is absent the sync service forces the item private (owner-only)
+    // rather than letting a missing parent choose a visibility.
+    parent: {
+      entityType: "list",
+      field: "listId",
+      column: "list_id",
+      visibility: "ceiling",
+      optional: true,
+      cascade: false
+    },
     purge: purgeItemTagJoins(sql, "listItem", "list_items"),
     defaults: (patch, context) => {
       const raw = normalizeListItemPatch(patch)
@@ -1167,7 +1225,7 @@ const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
         tagIds: Array.isArray(raw.tagIds) ? raw.tagIds : [],
         lastWriterId: context.userId,
         ownerId: context.userId,
-        visibility: asVisibility(raw.visibility),
+        visibility: createdVisibility("listItem", raw.visibility),
         createdAt: asText(raw.createdAt) ?? context.clientUpdatedAt
       })
     },
@@ -1243,7 +1301,7 @@ const noteCodec = withSchema<Note>(Note, (row) => ({
   plainText: encodeText(row.plainText),
   ownerId: encodeText(row.ownerId),
   householdId: encodeText(row.householdId),
-  visibility: asVisibility(row.visibility),
+  visibility: storedVisibility("note", row.visibility),
   color: asText(row.color),
   isPinned: asBit(row.isPinned),
   isArchived: asBit(row.isArchived),
@@ -1280,7 +1338,7 @@ const noteDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     plainText: encodeText(patch.plainText),
     ownerId: context.userId,
     householdId: context.householdId,
-    visibility: asVisibility(patch.visibility),
+    visibility: createdVisibility("note", patch.visibility),
     color: asText(patch.color),
     isPinned: patch.isPinned === true,
     isArchived: patch.isArchived === true,
@@ -1430,7 +1488,7 @@ const eventCodec = withSchema<Event>(Event, (row) => ({
   occasionId: asText(row.occasionId),
   ownerId: encodeText(row.ownerId),
   householdId: encodeText(row.householdId),
-  visibility: asVisibility(row.visibility),
+  visibility: storedVisibility("event", row.visibility),
   color: asText(row.color),
   createdAt: encodeText(row.createdAt)
 }))
@@ -1511,7 +1569,7 @@ const eventDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     occasionId: asText(patch.occasionId),
     ownerId: context.userId,
     householdId: context.householdId,
-    visibility: asVisibility(patch.visibility),
+    visibility: createdVisibility("event", patch.visibility),
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
   }),
   /**
@@ -1598,7 +1656,7 @@ const habitCodec = withSchema<Habit>(Habit, (row) => {
     icon: asText(row.icon),
     ownerId: encodeText(row.ownerId),
     householdId: encodeText(row.householdId),
-    visibility: asVisibility(row.visibility),
+    visibility: storedVisibility("habit", row.visibility),
     color: asText(row.color),
     startedOn: encodeText(row.startedOn),
     frequency: parseJson(row.frequency) ?? { _tag: "daily" },
@@ -1659,7 +1717,7 @@ const habitDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
       icon: asText(patch.icon),
       ownerId: context.userId,
       householdId: context.householdId,
-      visibility: asVisibility(patch.visibility),
+      visibility: createdVisibility("habit", patch.visibility),
       color: asText(patch.color),
       startedOn,
       frequency,
@@ -1758,7 +1816,7 @@ const habitEntryCodec = withSchema<HabitEntry>(HabitEntry, (row) => ({
   habitId: encodeText(row.habitId),
   ownerId: encodeText(row.ownerId),
   householdId: encodeText(row.householdId),
-  visibility: asVisibility(row.visibility),
+  visibility: storedVisibility("habitEntry", row.visibility),
   localDate: encodeText(row.localDate),
   timeZone: encodeText(row.timeZone) || "UTC",
   status: encodeText(row.status) || "done",
@@ -1771,8 +1829,7 @@ const HABIT_ENTRY_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
   ["habitId", isString],
   ["localDate", isLocalDate],
   ["timeZone", isString],
-  ["status", isOneOf("done", "partial", "missed")],
-  ["visibility", isOneOf("private", "shared")]
+  ["status", isOneOf("done", "partial", "missed")]
 ])
 
 const habitEntryDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
@@ -1786,8 +1843,12 @@ const habitEntryDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition =>
     entityType: "habit",
     field: "habitId",
     column: "habit_id",
-    inheritVisibility: true
+    // A logged day is exactly as visible as its habit (ADR-0011).
+    visibility: "copy"
   },
+  // `visibility` is exact inheritance (ADR-0011): the client cannot set it;
+  // the sync service's policy guard rejects a patch that carries one before
+  // this definition runs.
   strict: ["habitId", "localDate", "status"],
   ...habitEntryCodec,
   defaults: (patch, context) => {
@@ -1797,7 +1858,7 @@ const habitEntryDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition =>
       habitId: encodeText(patch.habitId) || null,
       ownerId: context.userId,
       householdId: context.householdId,
-      visibility: asVisibility(patch.visibility),
+      visibility: createdVisibility("habitEntry", patch.visibility),
       // The day the tap logged: the client sends it, so a backdated or
       // timezone-crossing tap is explicit. A delete-only push carries none, so
       // fall back to the local date of the write instant (never a throw: a bad
@@ -1935,7 +1996,7 @@ const reminderCodec = withSchema<Reminder>(Reminder, (row) => ({
   timeZone: encodeText(row.timeZone) || "UTC",
   ownerId: encodeText(row.ownerId),
   householdId: encodeText(row.householdId),
-  visibility: asVisibility(row.visibility),
+  visibility: storedVisibility("reminder", row.visibility),
   color: asText(row.color),
   createdAt: encodeText(row.createdAt)
 }))
@@ -2009,7 +2070,7 @@ const reminderDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => (
       timeZone,
       ownerId: context.userId,
       householdId: context.householdId,
-      visibility: asVisibility(patch.visibility),
+      visibility: createdVisibility("reminder", patch.visibility),
       createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
     }
   },
@@ -2115,7 +2176,7 @@ const occasionCodec = withSchema<Occasion>(Occasion, (row) => ({
   preparationTaskId: asText(row.preparationTaskId),
   ownerId: encodeText(row.ownerId),
   householdId: encodeText(row.householdId),
-  visibility: asVisibility(row.visibility),
+  visibility: storedVisibility("occasion", row.visibility),
   color: asText(row.color),
   createdAt: encodeText(row.createdAt)
 }))
@@ -2161,7 +2222,7 @@ const occasionDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => (
     preparationTaskId: asText(patch.preparationTaskId),
     ownerId: context.userId,
     householdId: context.householdId,
-    visibility: asVisibility(patch.visibility),
+    visibility: createdVisibility("occasion", patch.visibility),
     color: asText(patch.color),
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
   }),

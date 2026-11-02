@@ -1017,3 +1017,41 @@ describe("ReminderService — claim (the #61 sweep seam)", () => {
     })
   })
 })
+
+describe("reminder visibility policy (ADR-0011)", () => {
+  it("defaults new reminders to private and lets only the owner un-share", async () => {
+    const h = makeHarness()
+    const created = await h.svc((svc) =>
+      svc.create(
+        viewer(),
+        {
+          clientMutationId: "v-create",
+          title: "دارو",
+          kind: "medication",
+          repeat: { _tag: "daily", time: "08:00" }
+        },
+        NOW
+      )
+    )
+    expect(created.visibility).toBe("private")
+
+    await h.svc((svc) =>
+      svc.update(
+        viewer(),
+        { id: created.id, clientMutationId: "v-share", patch: { visibility: "shared" } },
+        NOW
+      )
+    )
+
+    const partnerFlip = await h
+      .svc((svc) =>
+        svc.update(
+          viewer({ userId: USER_B }),
+          { id: created.id, clientMutationId: "v-partner", patch: { visibility: "private" } },
+          NOW
+        )
+      )
+      .catch((cause: unknown) => cause)
+    expect(partnerFlip).toMatchObject({ _tag: "ReminderValidationError" })
+  })
+})

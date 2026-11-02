@@ -6,6 +6,7 @@
  * conventions reused here.
  */
 export * from "./common"
+export * from "../visibility"
 export * from "./buckets"
 export * from "./task"
 export * from "./task-recurrence"

@@ -232,8 +232,7 @@ export const ProjectCreateInput = Schema.Struct({
   id: Schema.optional(ProjectId),
   clientMutationId: Schema.String,
   title: Schema.String.check(Schema.isMinLength(1)),
-  color: Schema.optional(Schema.NullOr(Schema.String)),
-  visibility: Schema.optional(Visibility)
+  color: Schema.optional(Schema.NullOr(Schema.String))
 })
 export type ProjectCreateInput = Schema.Schema.Type<typeof ProjectCreateInput>
 
@@ -248,8 +247,7 @@ export const TagCreateInput = Schema.Struct({
   id: Schema.optional(TagId),
   clientMutationId: Schema.String,
   name: Schema.String.check(Schema.isMinLength(1)),
-  color: Schema.optional(Schema.NullOr(Schema.String)),
-  visibility: Schema.optional(Visibility)
+  color: Schema.optional(Schema.NullOr(Schema.String))
 })
 export type TagCreateInput = Schema.Schema.Type<typeof TagCreateInput>
 

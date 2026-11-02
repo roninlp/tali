@@ -35,6 +35,8 @@ import {
  */
 export class Task extends Model.Class<Task>("Task")({
   ...commonItemFields("task", TaskId),
+  /** Resolved from the task's `shareable` policy (ADR-0011), never client-invented. */
+  visibility: Visibility,
   title: Schema.String.check(Schema.isMinLength(1)),
   description: Schema.NullOr(Schema.String),
   status: TaskStatus,

@@ -708,3 +708,65 @@ describe("TaskService write path and sync", () => {
     expect(page.entries.filter((entry) => entry.entityId === id)).toHaveLength(5)
   })
 })
+
+describe("task visibility policy (ADR-0011)", () => {
+  it("defaults new tasks to shared and lets only the owner un-share", async () => {
+    const h = makeHarness()
+    const id = uuidV7() as TaskId
+
+    const created = await h.svc((svc) =>
+      svc.create(viewer(), { clientMutationId: "v-create", id, title: "مشترک" }, NOW)
+    )
+    expect(created.visibility).toBe("shared")
+
+    const partnerFlip = await h
+      .svc((svc) =>
+        svc.update(
+          viewer({ userId: USER_B }),
+          { id, clientMutationId: "v-partner", patch: { visibility: "private" } },
+          NOW
+        )
+      )
+      .catch((cause: unknown) => cause)
+    expect(partnerFlip).toMatchObject({ _tag: "TaskValidationError" })
+
+    const ownerFlip = await h.svc((svc) =>
+      svc.update(
+        viewer(),
+        { id, clientMutationId: "v-owner", patch: { visibility: "private" } },
+        NOW
+      )
+    )
+    expect(ownerFlip.visibility).toBe("private")
+  })
+
+  it("resolves projects and tags through the household class with no override", async () => {
+    const h = makeHarness()
+    const project = await h.svc((svc) =>
+      svc.createProject(
+        viewer(),
+        {
+          clientMutationId: "v-project",
+          title: "خانه",
+          // A raw caller cannot override the household class.
+          visibility: "private"
+        } as never,
+        NOW
+      )
+    )
+    const tag = await h.svc((svc) =>
+      svc.createTag(
+        viewer(),
+        {
+          clientMutationId: "v-tag",
+          name: "کار",
+          visibility: "private"
+        } as never,
+        NOW
+      )
+    )
+
+    expect(project.visibility).toBe("shared")
+    expect(tag.visibility).toBe("shared")
+  })
+})

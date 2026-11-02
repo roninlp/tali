@@ -53,6 +53,7 @@ describe('fetchReminderInbox', () => {
             kind: 'medication',
             tier: 'critical',
             link: { _tag: 'none' },
+            visibility: 'private',
             state: 'inbox',
           },
         ],

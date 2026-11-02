@@ -171,7 +171,9 @@ CREATE TABLE IF NOT EXISTS notes (
   plain_text   TEXT NOT NULL DEFAULT '',
   owner_id     TEXT NOT NULL,
   household_id TEXT NOT NULL,
-  visibility   TEXT NOT NULL DEFAULT 'shared',
+  -- Shareable, default private (ADR-0011). Every writer supplies the resolved
+  -- value; the default is the policy default for a fresh database.
+  visibility   TEXT NOT NULL DEFAULT 'private',
   is_pinned    INTEGER NOT NULL DEFAULT 0,
   is_archived  INTEGER NOT NULL DEFAULT 0,
   tag_ids      TEXT NOT NULL DEFAULT '[]',

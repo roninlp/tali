@@ -290,4 +290,28 @@ describe('reminders history', () => {
       expect(nth(all.role('button', { name: 'انجام شد' }), 1)).toBeDisabled(),
     )
   })
+
+  test('the inbox offers share/unshare for the reminder', () => {
+    const item = medicationItem()
+
+    scene(
+      inboxScene(),
+      given(remindersModel({ items: [item] })),
+      expect(role('button', { name: 'اشتراک با خانه' })).toExist(),
+      click(role('button', { name: 'اشتراک با خانه' })),
+      Command.expectExact(
+        Reminders.SetReminderVisibility({
+          reminderId: item.reminderId,
+          visibility: 'shared',
+        }),
+      ),
+      Command.resolve(
+        Reminders.SetReminderVisibility,
+        Reminders.Message.CompletedSetReminderVisibility({
+          reminderId: item.reminderId,
+          visibility: 'shared',
+        }),
+      ),
+    )
+  })
 })

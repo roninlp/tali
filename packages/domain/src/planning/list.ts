@@ -16,6 +16,8 @@ import {
  */
 export class List extends Model.Class<List>("List")({
   ...commonItemFields("list", ListId),
+  /** Resolved from the list's `shareable` policy (ADR-0011). */
+  visibility: Visibility,
   title: Schema.String.check(Schema.isMinLength(1)),
   description: Schema.NullOr(Schema.String),
   icon: Schema.NullOr(Schema.String),

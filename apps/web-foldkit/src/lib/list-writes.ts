@@ -1,5 +1,6 @@
 import { Array } from 'effect'
 
+import { defaultVisibilityFor } from '@tali/domain'
 import type { LocalStore } from '@tali/sync-client'
 
 import {
@@ -63,7 +64,7 @@ export const createListInMirror = async (
       icon: draft.icon ?? null,
       sort: draft.sort ?? 'manual',
       checkedPlacement: draft.checkedPlacement ?? 'bottom',
-      visibility: draft.visibility ?? 'shared',
+      visibility: draft.visibility ?? defaultVisibilityFor('list'),
       createdAt: now,
     },
     now,
@@ -203,7 +204,6 @@ export interface ListItemDraft {
   readonly order: number
   readonly color?: string | null
   readonly tagIds?: ReadonlyArray<string>
-  readonly visibility?: ListVisibility
 }
 
 const itemPatch = (
@@ -229,7 +229,9 @@ const itemPatch = (
     checkedAt: null,
     color: draft.color ?? null,
     tagIds: [...(draft.tagIds ?? [])],
-    visibility: draft.visibility ?? 'shared',
+    // The list item inherits its list. Do not send a visibility from the
+    // client's possibly-stale copy of the parent: the server resolves it, and
+    // an explicit `shared` under a now-private list would be rejected.
     ownerId,
     createdAt: now,
   }
