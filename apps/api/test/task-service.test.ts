@@ -743,14 +743,30 @@ describe("task visibility policy (ADR-0011)", () => {
   it("resolves projects and tags through the household class with no override", async () => {
     const h = makeHarness()
     const project = await h.svc((svc) =>
-      svc.createProject(viewer(), { clientMutationId: "v-project", title: "خانه" }, NOW)
+      svc.createProject(
+        viewer(),
+        {
+          clientMutationId: "v-project",
+          title: "خانه",
+          // A raw caller cannot override the household class.
+          visibility: "private"
+        } as never,
+        NOW
+      )
     )
     const tag = await h.svc((svc) =>
-      svc.createTag(viewer(), { clientMutationId: "v-tag", name: "کار" }, NOW)
+      svc.createTag(
+        viewer(),
+        {
+          clientMutationId: "v-tag",
+          name: "کار",
+          visibility: "private"
+        } as never,
+        NOW
+      )
     )
 
     expect(project.visibility).toBe("shared")
     expect(tag.visibility).toBe("shared")
-    expect(project).not.toHaveProperty("inputVisibility")
   })
 })

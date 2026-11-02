@@ -447,7 +447,6 @@ describe('list items', () => {
           listId: LIST_ID,
           name: 'نان',
           order: 2,
-          visibility: 'shared',
         }),
       ),
       Command.resolve(

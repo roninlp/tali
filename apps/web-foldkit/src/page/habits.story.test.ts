@@ -12,6 +12,7 @@ import { modifyFields } from 'foldkit/struct'
 import { describe, expect, test } from 'vitest'
 
 import { HABIT_COLORS, HABIT_ICONS } from '../habits-model'
+import { USER_ID } from '../test-fixtures'
 import * as Habits from './habits'
 import type { Inputs, Model } from './habits'
 import {
@@ -704,6 +705,64 @@ describe('habit window and heatmap', () => {
           }),
         )
       }),
+    )
+  })
+})
+
+describe('habit visibility', () => {
+  const ownerHabit = habitRow({
+    id: HABIT_ID,
+    ownerId: USER_ID,
+    visibility: 'private',
+  })
+
+  const ownerUpdate = update(
+    habitsInputs({
+      mirror: mirrorWith([ownerHabit], []),
+      maybeUserId: Option.some(USER_ID),
+    }),
+  )
+
+  test('the owner shares a private habit', () => {
+    story(
+      ownerUpdate,
+      given(habitsModel()),
+      message(
+        Habits.Message.ClickedToggleHabitVisibility({ habitId: HABIT_ID }),
+      ),
+      Command.expectExact(
+        Habits.SetHabitVisibility({
+          habitId: HABIT_ID,
+          visibility: 'shared',
+        }),
+      ),
+      Command.resolve(
+        Habits.SetHabitVisibility,
+        Habits.Message.CompletedSetHabitVisibility({
+          habitId: HABIT_ID,
+          visibility: 'shared',
+        }),
+      ),
+      expectOutMessage(Habits.OutMessage.WroteLocalData()),
+      model(next => {
+        expect(next.announcement).toBe('عادت با خانه به اشتراک گذاشته شد')
+      }),
+    )
+  })
+
+  test('a non-owner gets no share command', () => {
+    story(
+      update(
+        habitsInputs({
+          mirror: mirrorWith([ownerHabit], []),
+          maybeUserId: Option.some('another-user'),
+        }),
+      ),
+      given(habitsModel()),
+      message(
+        Habits.Message.ClickedToggleHabitVisibility({ habitId: HABIT_ID }),
+      ),
+      Command.expectNone(),
     )
   })
 })

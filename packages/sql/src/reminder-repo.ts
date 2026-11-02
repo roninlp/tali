@@ -1,6 +1,7 @@
 import { Context, Effect, Layer, Option } from "effect"
 import { SqlClient, Statement } from "effect/sql"
 import {
+  defaultVisibilityFor,
   type DispatchResponse,
   type HouseholdId,
   type PushOutcome,
@@ -599,7 +600,9 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
               kind: row.rKind as ReminderType,
               tier: row.rTier as ReminderTier,
               link: linkOf(row.rLinkType, row.rLinkId),
-              visibility: row.rVisibility === "private" ? "private" : "shared",
+              visibility: row.rVisibility === "private" || row.rVisibility === "shared"
+                ? row.rVisibility
+                : defaultVisibilityFor("reminder"),
               state: input.history === true ? "history" : "inbox"
             })
           )

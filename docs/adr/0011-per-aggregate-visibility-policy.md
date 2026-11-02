@@ -74,11 +74,21 @@ the value is derived from the policy, never taken from an arbitrary payload.
   the services.
 - **Inherited writes read the parent.** A habit entry copies its habit exactly.
   A list item inherits the list and may only be narrower: a private item in a
-  shared list is allowed, a shared item in a private list is refused. A missing,
-  trashed, foreign or private-to-another-member parent refuses the write.
+  shared list is allowed, a shared item in a private list is refused. A
+  trashed, foreign or private-to-another-member parent refuses the write. The
+  pre-Slice-2 list-item wire shape with **no** list id is a legacy carve-out:
+  it stays readable, but any client-supplied visibility is forced `private`
+  (owner-only) and an omitted visibility keeps the legacy shared default. A
+  list id that names no row is dangling (hard-purged parent), is refused on
+  write, and is never delivered.
 - **The sync registry derives the same value.** Fixed classes ignore any
   stored value on the write and resolve from the policy; inherited classes are
   resolved by the engine before the row is written.
+- **Inherited reads resolve the parent now.** `/sync/pull` and `/sync/bootstrap`
+  check the parent's _current_ visibility, not the child's write-time column.
+  A parent that becomes private (or is hard-purged) also emits removals for its
+  existing children, so the partner's mirror drops the items/entries even when
+  the children have no new feed rows of their own.
 - **A fixed or exact-inherited visibility cannot be changed by a push.**
   A patch that carries `visibility` on an owner-only, household or exact-inherit
   aggregate is rejected (`VisibilityFixed` / `VisibilityInherited`) rather than
@@ -88,10 +98,10 @@ the value is derived from the policy, never taken from an arbitrary payload.
 
 `shared` means the other household member may read and edit the row. The
 partner must not be able to lock the author out of their own row, so flipping a
-row to `private` is an owner-only action on every shareable aggregate: lists,
-list items and habits already enforced this, and tasks, events, notes,
-reminders and occasions now do the same (service and sync push). Any member may
-share a row back.
+row to `private` is an owner-only action on every shareable aggregate: lists
+and habits already enforced this, list items narrowed the same way, and tasks,
+events, notes, reminders and occasions now do the same (service and sync push).
+Any member may share a row back.
 
 ### What "private" means
 
@@ -105,14 +115,17 @@ sharing boundary, not about protecting data from the operator.
 - The default lives in one table. A new default is a policy change, not a grep
   for `"shared"`.
 - SQL column defaults on the affected tables follow the policy for a fresh
-  database (`notes`, `habits`, `reminders` and `occasions` default to
-  `private`). No backfill was performed: this is a stage environment and
-  existing rows do not matter. Every writer supplies the resolved value, so the
-  column default is only a safety net.
+  database (`notes`, `habits`, `reminders`, `occasions` and `habit_entries`
+  default to `private`; `list_items` keeps the list default `shared`). No
+  backfill was performed: this is a stage environment and existing rows do not
+  matter. Every writer supplies the resolved value, so the column default is
+  only a safety net.
 - A legacy row that stored `private` on a household aggregate is rewritten to
   `shared` by its next sync write; a legacy private habit entry under a shared
-  habit is rewritten to the habit's value.
+  habit is rewritten to the habit's value. Conversely, un-sharing a habit or
+  list immediately removes its entries/items from the partner's pull and
+  bootstrap, and the child rows converge on their next write.
 - The UI renders a visibility control only for `shareable` aggregates. The
-  list screen keeps its existing select; Notes, Events, Habits, Reminders and
-  Occasions get a Share / Unshare action on their existing edit surface. Create
-  forms use the policy default and do not grow a checkbox.
+  list screen keeps its existing select; Notes, Events, Tasks, Habits,
+  Reminders and Occasions get a Share / Unshare action on their existing edit
+  surface. Create forms use the policy default and do not grow a checkbox.

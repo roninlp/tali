@@ -2,6 +2,7 @@ import { Array, Match, Option, Order, Schema } from 'effect'
 
 import {
   DEFAULT_TIME_ZONE,
+  defaultVisibilityFor,
   formatJalaliDate,
   habitStreak,
   jalaliDate,
@@ -216,7 +217,10 @@ export const toHabitRow = (record: MirrorRecord): HabitRow => {
     timeZone,
     ownerId:
       typeof record.data.ownerId === 'string' ? record.data.ownerId : null,
-    visibility: record.data.visibility === 'private' ? 'private' : 'shared',
+    visibility:
+      record.data.visibility === 'private' || record.data.visibility === 'shared'
+        ? record.data.visibility
+        : defaultVisibilityFor('habit'),
     createdAt,
     updatedAt: record.updatedAt,
     version: record.version,

@@ -1,6 +1,6 @@
 import { Array, Option, Schema } from 'effect'
 
-import { DEFAULT_TIME_ZONE } from '@tali/domain'
+import { DEFAULT_TIME_ZONE, defaultVisibilityFor } from '@tali/domain'
 import type { LocalStore, MirrorRecord } from '@tali/sync-client'
 
 import {
@@ -59,6 +59,9 @@ export const TaskRow = Schema.Struct({
   updatedAt: Schema.String,
   version: Schema.Int,
   hasSyncError: Schema.Boolean,
+  /** Populated from the mirror row; optional for server/legacy projections. */
+  ownerId: Schema.optional(Schema.NullOr(Schema.String)),
+  visibility: Schema.optional(Schema.Literals(['private', 'shared'])),
 })
 export type TaskRow = typeof TaskRow.Type
 
@@ -180,6 +183,11 @@ export const toTaskRow = (record: MirrorRecord): TaskRow =>
     updatedAt: record.updatedAt,
     version: record.version,
     hasSyncError: record.syncError !== undefined,
+    ownerId: asNullableString(record.data.ownerId),
+    visibility:
+      record.data.visibility === 'private' || record.data.visibility === 'shared'
+        ? record.data.visibility
+        : defaultVisibilityFor('task'),
   })
 
 /** Project a mirrored note row into the pinned-note lane's shape. */
@@ -351,6 +359,8 @@ export const taskRowFromServer = (task: ServerTask): TaskRow =>
     updatedAt: task.updatedAt ?? '',
     version: task.version ?? 0,
     hasSyncError: false,
+    ownerId: task.ownerId ?? null,
+    visibility: task.visibility ?? defaultVisibilityFor('task'),
   })
 
 export const noteRowFromServer = (note: ServerNote): NoteRow => {

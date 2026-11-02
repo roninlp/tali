@@ -634,4 +634,43 @@ describe("list visibility policy (ADR-0011)", () => {
     )
     expect(makeNarrow.visibility).toBe("private")
   })
+
+  it("converges a legacy shared item to private on a no-visibility write", async () => {
+    const h = makeHarness()
+    const list = await createSharedList(h, "مشترک")
+    const item = await h.svc((svc) =>
+      svc.createItem(
+        viewer(),
+        { clientMutationId: "v-legacy-item", listId: list.id, name: "قدیمی" },
+        NOW
+      )
+    )
+
+    // Simulate a row written before the list was flipped to private.
+    h.db.prepare("UPDATE lists SET visibility = 'private' WHERE id = ?").run(list.id)
+    h.db.prepare("UPDATE list_items SET visibility = 'shared' WHERE id = ?").run(item.id)
+
+    const edited = await h.svc((svc) =>
+      svc.updateItem(
+        viewer(),
+        {
+          id: item.id,
+          clientMutationId: "v-legacy-edit",
+          patch: { name: "تازه" }
+        },
+        NOW
+      )
+    )
+    expect(edited.visibility).toBe("private")
+
+    h.db.prepare("UPDATE list_items SET visibility = 'shared' WHERE id = ?").run(item.id)
+    const checked = await h.svc((svc) =>
+      svc.setItemChecked(
+        viewer(),
+        { id: item.id, clientMutationId: "v-legacy-check", checked: true },
+        NOW
+      )
+    )
+    expect(checked.visibility).toBe("private")
+  })
 })

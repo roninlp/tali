@@ -741,9 +741,14 @@ export class ListService extends Context.Service<ListService>()("ListService", {
             return yield* invalid("visibility", "only the item owner can make it private")
           }
           const parent = yield* loadList(viewer, current.listId)
-          const visibility = patch.visibility === undefined
-            ? current.visibility
-            : yield* itemVisibility(parent, patch.visibility)
+          // A no-op field edit is still a write: a legacy shared item in a
+          // private list must converge to private, exactly as the sync ceiling
+          // does, rather than stay shared because the patch omitted visibility.
+          const visibility = patch.visibility !== undefined
+            ? yield* itemVisibility(parent, patch.visibility)
+            : parent.visibility === "private"
+            ? "private"
+            : current.visibility
           const next = new ListItem({
             ...current,
             name: patch.name?.trim() ?? current.name,
@@ -792,10 +797,12 @@ export class ListService extends Context.Service<ListService>()("ListService", {
           // Idempotent: re-checking a checked item (or unchecking an unchecked
           // one) writes nothing and does not mint a version.
           if (current.done === input.checked) return current
+          const parent = yield* loadList(viewer, current.listId)
           const next = new ListItem({
             ...current,
             done: input.checked,
             checkedAt: input.checked ? now : null,
+            visibility: parent.visibility === "private" ? "private" : current.visibility,
             version: current.version + 1,
             updatedAt: now
           })
@@ -896,12 +903,16 @@ export class ListService extends Context.Service<ListService>()("ListService", {
           const groups: Array<EntityGroup> = []
           final.forEach((item, index) => {
             const order = index + 1
-            if (item.order === order) return
+            const visibility = currentList.visibility === "private"
+              ? "private"
+              : item.visibility
+            if (item.order === order && item.visibility === visibility) return
             groups.push({
               state: itemState(
                 new ListItem({
                   ...item,
                   order,
+                  visibility,
                   version: item.version + 1,
                   updatedAt: now
                 }),

@@ -402,10 +402,9 @@ export const CreateListItem = Command.define('CreateListItem', {
     listId: Schema.String,
     name: Schema.String,
     order: Schema.Int,
-    visibility: ListVisibility,
   },
   messages: [Message.CompletedCreateListItem, Message.FailedCreateListItem],
-  execute: ({ listId, name, order, visibility }) =>
+  execute: ({ listId, name, order }) =>
     Effect.gen(function* () {
       const store = yield* LocalStoreResource.get
       const now = yield* Clock.currentTimeMillis
@@ -417,7 +416,7 @@ export const CreateListItem = Command.define('CreateListItem', {
           createListItemInMirror(
             store,
             listId,
-            { name, order, visibility },
+            { name, order },
             itemId,
             instant,
           ),
@@ -1057,7 +1056,6 @@ export const update = (
               order: nextItemOrder(
                 listItemsFor(inputs.mirror.listItems, list.id),
               ),
-              visibility: list.visibility,
             }),
           ],
         }),

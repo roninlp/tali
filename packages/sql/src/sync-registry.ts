@@ -245,7 +245,10 @@ export interface SyncParentRule {
   readonly visibility: "copy" | "ceiling"
   /**
    * Whether a missing parent id is acceptable. Default `false` (required).
-   * Only the legacy `listItem` wire shape may carry no `list_id`.
+   * Only the legacy `listItem` wire shape that never had a list id may omit
+   * it; an explicit/dangling parent id is rejected. An explicit visibility on
+   * such a legacy orphan is forced `private` (owner-only); an omitted one
+   * keeps the old shared default.
    */
   readonly optional?: boolean
   /**
@@ -865,8 +868,7 @@ const projectDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     ["color", isNullableString]
   ]),
   // Household visibility is fixed (ADR-0011): a patch that tries to choose one
-  // is rejected rather than silently ignored.
-  strict: ["visibility"],
+  // is rejected by the sync service's policy guard before this definition runs.
   purge: purgeProjectReferences(sql),
   ...projectCodec,
   defaults: (patch, context) => ({
@@ -929,7 +931,6 @@ const tagDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     ["name", isString],
     ["color", isNullableString]
   ]),
-  strict: ["visibility"],
   purge: (input) => [
     ...purgeTagReferences(sql)(input),
     sql`
@@ -1196,7 +1197,8 @@ const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
     completion: LIST_ITEM_COMPLETION,
     // Items inherit the list's visibility but may be narrower (ADR-0011). The
     // legacy wire shape may omit `listId`, so the parent link is optional;
-    // when it is present the engine resolves (and bounds) the value.
+    // when it is absent the sync service forces the item private (owner-only)
+    // rather than letting a missing parent choose a visibility.
     parent: {
       entityType: "list",
       field: "listId",
@@ -1844,9 +1846,10 @@ const habitEntryDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition =>
     // A logged day is exactly as visible as its habit (ADR-0011).
     visibility: "copy"
   },
-  // `visibility` is exact inheritance (ADR-0011): the client cannot set it,
-  // and a patch that carries one is rejected rather than silently overridden.
-  strict: ["habitId", "localDate", "status", "visibility"],
+  // `visibility` is exact inheritance (ADR-0011): the client cannot set it;
+  // the sync service's policy guard rejects a patch that carries one before
+  // this definition runs.
+  strict: ["habitId", "localDate", "status"],
   ...habitEntryCodec,
   defaults: (patch, context) => {
     const timeZone = encodeText(patch.timeZone) || "UTC"

@@ -203,7 +203,7 @@ export class HabitEntry extends Model.Class<HabitEntry>("HabitEntry")({
   habitId: HabitId,
   ownerId: UserId,                         // denormalized for per-user filtering
   householdId: HouseholdId,                // denormalized for the sync pull filter
-  visibility: Visibility,                  // inherited from the habit at write time
+  visibility: Visibility,                  // inherited from the habit at write time; pull/bootstrap re-check the parent
   localDate: Schema.DateFromString,        // local date (owner's timezone); backdating window ≤ 7 days
   timeZone: Schema.String,                 // IANA, so "date" is unambiguous
   status: HabitEntryStatus,

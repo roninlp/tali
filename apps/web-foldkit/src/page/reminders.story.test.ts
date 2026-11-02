@@ -1,5 +1,12 @@
 import { Option } from 'effect'
-import { Command, given, message, model, story } from 'foldkit/story'
+import {
+  Command,
+  expectOutMessage,
+  given,
+  message,
+  model,
+  story,
+} from 'foldkit/story'
 import { describe, expect, test } from 'vitest'
 
 import * as Reminders from './reminders'
@@ -424,6 +431,40 @@ describe('reminders responses', () => {
       message(Reminders.Message.ChangedSnoozeMinutes({ minutes: 7 })),
       model(next => {
         expect(next.snoozeMinutes).toBe(10)
+      }),
+    )
+  })
+})
+
+describe('reminder visibility', () => {
+  test('the inbox share action writes the next visibility and updates the row', () => {
+    const item = medicationItem()
+
+    story(
+      update,
+      given(remindersModel({ items: [item] })),
+      message(
+        Reminders.Message.ClickedToggleReminderVisibility({
+          reminderId: item.reminderId,
+          visibility: 'shared',
+        }),
+      ),
+      Command.expectExact(
+        Reminders.SetReminderVisibility({
+          reminderId: item.reminderId,
+          visibility: 'shared',
+        }),
+      ),
+      Command.resolve(
+        Reminders.SetReminderVisibility,
+        Reminders.Message.CompletedSetReminderVisibility({
+          reminderId: item.reminderId,
+          visibility: 'shared',
+        }),
+      ),
+      expectOutMessage(Reminders.OutMessage.WroteLocalData()),
+      model(next => {
+        expect(next.items[0]?.visibility).toBe('shared')
       }),
     )
   })
