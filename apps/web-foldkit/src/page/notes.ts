@@ -54,8 +54,9 @@ import { notesIndexView } from './notes-view'
  *
  * The editor keeps a crash-safe draft in the store's `drafts` object store.
  * Autosave and draft persistence are debounced through Subscriptions keyed by
- * a revision counter, so a keystroke restarts the timer instead of queueing a
- * save per character, and a draft is written 120 ms after typing stops.
+ * a revision counter, so a title or body keystroke restarts the timer instead
+ * of queueing a save per character, and a draft is written 120 ms after typing
+ * stops. The save debounce commits the title and the body together.
  */
 
 // MODEL
@@ -1210,22 +1211,12 @@ export const update = (
         return { model }
       }
 
-      const generation = model.saveGeneration + 1
-
       return {
         model: modifyFields(model, {
           title: () => value,
-          saveGeneration: () => generation,
+          saveRevision: () => model.saveRevision + 1,
           saveState: () => 'saving' as const,
         }),
-        commands: [
-          SaveNoteContent({
-            noteId: model.maybeNoteId.value,
-            title: value,
-            text: model.text,
-            generation,
-          }),
-        ],
       }
     },
 

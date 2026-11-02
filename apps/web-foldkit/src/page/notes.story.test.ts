@@ -508,11 +508,25 @@ describe('note editor autosave', () => {
     )
   })
 
-  test('a title edit commits immediately', () => {
+  test('a title edit only bumps the save debounce', () => {
     story(
       defaultUpdate,
       given(editorModel()),
       message(Notes.Message.UpdatedNoteTitle({ value: 'خرید هفتگی' })),
+      Command.expectNone(),
+      model(next => {
+        expect(next.title).toBe('خرید هفتگی')
+        expect(next.saveRevision).toBe(1)
+        expect(next.saveState).toBe('saving')
+      }),
+    )
+  })
+
+  test('the autosave debounce commits the edited title', () => {
+    story(
+      defaultUpdate,
+      given(editorModel({ saveRevision: 1, title: 'خرید هفتگی' })),
+      message(Notes.Message.TickedNoteSave({ revision: 1 })),
       Command.expectExact(
         Notes.SaveNoteContent({
           noteId: NOTE_ID,
@@ -530,6 +544,10 @@ describe('note editor autosave', () => {
           generation: 1,
         }),
       ),
+      model(next => {
+        expect(next.savedTitle).toBe('خرید هفتگی')
+        expect(next.saveState).toBe('saved')
+      }),
       expectOutMessage(Notes.OutMessage.WroteLocalData()),
     )
   })
