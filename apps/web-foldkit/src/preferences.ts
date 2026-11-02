@@ -1,9 +1,10 @@
 import { Effect, Option, Schema } from 'effect'
-import { Listbox } from '@foldkit/ui'
 import { Command, Submodel, Update } from 'foldkit'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
+
+import { Listbox } from '@foldkit/ui'
 
 import { AuthFailure } from './lib/auth-api'
 import { authErrorMessage } from './lib/auth-copy'
@@ -369,7 +370,10 @@ const foldWeekStartListboxOutMessage = Listbox.OutMessage.match<
   Selected:
     ({ value }) =>
     stepModel =>
-      update(stepModel, Message.UpdatedWeekStartDraft({ value: weekStartOf(value) })),
+      update(
+        stepModel,
+        Message.UpdatedWeekStartDraft({ value: weekStartOf(value) }),
+      ),
 })
 
 const foldDigitsListboxOutMessage = Listbox.OutMessage.match<
@@ -461,8 +465,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
     GotWeekStartListboxMessage: ({ message }) =>
       foldWeekStartListbox(model, message),
 
-    GotDigitsListboxMessage: ({ message }) =>
-      foldDigitsListbox(model, message),
+    GotDigitsListboxMessage: ({ message }) => foldDigitsListbox(model, message),
 
     SucceededSavePreferences: ({ userId, preferences }) => {
       const cache = CachePreferences({ preferences })
@@ -641,9 +644,7 @@ const successView = (model: Model, h: HtmlBuilder<Message>): Html =>
     ? h.div(
         [
           h.Role('status'),
-          h.Class(
-            'alert alert-success items-start gap-2 py-2.5 text-sm leading-7',
-          ),
+          h.Class('notice notice-success items-start gap-2 text-sm leading-7'),
         ],
         [h.span([], ['تنظیمات نمایش ذخیره شد.'])],
       )
@@ -681,11 +682,11 @@ export const settingsView = Submodel.defineView<Model, Message>((model, h) => {
   return h.section(
     [
       h.AriaLabelledBy('settings-display-title'),
-      h.Class('panel grid gap-4 p-4 sm:p-5'),
+      h.Class('panel grid grid-cols-1 gap-4 p-4 sm:p-5'),
     ],
     [
       h.header(
-        [h.Class('grid gap-1')],
+        [h.Class('grid gap-1.5')],
         [
           h.div(
             [h.Class('flex flex-wrap items-center justify-between gap-2')],
@@ -693,7 +694,7 @@ export const settingsView = Submodel.defineView<Model, Message>((model, h) => {
               h.h2(
                 [
                   h.Id('settings-display-title'),
-                  h.Class('m-0 text-lg font-bold'),
+                  h.Class('m-0 text-[0.95rem] font-semibold'),
                 ],
                 ['نمایش'],
               ),
@@ -708,14 +709,14 @@ export const settingsView = Submodel.defineView<Model, Message>((model, h) => {
             ['تقویم شمسی، شروع هفته و شکل اعداد را اینجا تغییر دهید.'],
           ),
           h.p(
-            [h.Class('m-0 text-[0.78rem] leading-7 text-base-content/45')],
+            [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/50')],
             [source.hint],
           ),
         ],
       ),
       h.form(
         [
-          h.Class('grid gap-3.5'),
+          h.Class('grid gap-3'),
           h.OnSubmit(Message.SubmittedDisplayPreferences()),
         ],
         [

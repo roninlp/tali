@@ -31,7 +31,12 @@ export const authFooterLinkView = <Message>(
       config.text,
       ' ',
       h.a(
-        [h.Href(config.href), h.Class('link link-primary font-medium')],
+        [
+          h.Href(config.href),
+          h.Class(
+            'font-medium text-primary underline-offset-4 hover:underline',
+          ),
+        ],
         [config.linkText],
       ),
     ],
@@ -42,14 +47,10 @@ export const authCardView = <Message>(
   h: HtmlBuilder<Message>,
 ): Html =>
   h.section(
-    [
-      h.Class(
-        'card relative w-full max-w-sm border border-base-300 bg-base-100 shadow-xl',
-      ),
-    ],
+    [h.Class('panel w-full max-w-sm p-6 sm:p-8')],
     [
       h.div(
-        [h.Class('card-body gap-5 p-6 sm:p-8')],
+        [h.Class('grid gap-5')],
         [
           h.header(
             [h.Class('grid gap-2')],

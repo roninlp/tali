@@ -42,16 +42,21 @@ const emptyText = (model: Model): string =>
 
 const loadingView = (h: HtmlBuilder<Message>): Html =>
   h.p(
-    [h.Class('m-0 flex items-center gap-2 text-sm text-base-content/55')],
     [
-      h.span([h.Class('loading loading-spinner loading-sm')]),
-      'در حال خواندن دفتر ارسال…',
+      h.Class(
+        'm-0 flex items-center gap-2 text-sm leading-7 text-base-content/55',
+      ),
     ],
+    [h.span([h.Class('spinner spinner-sm')]), 'در حال خواندن دفتر ارسال…'],
   )
 
 const emptyView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.p(
-    [h.Class('m-0 text-sm leading-8 text-base-content/55')],
+    [
+      h.Class(
+        'm-0 grid justify-items-center gap-2 rounded-2xl border border-dashed border-base-300 px-6 py-10 text-center text-sm leading-7 text-base-content/55',
+      ),
+    ],
     [emptyText(model)],
   )
 
@@ -70,10 +75,7 @@ const errorView = (model: Model, h: HtmlBuilder<Message>): Html =>
     onNone: () => h.empty,
     onSome: message =>
       h.p(
-        [
-          h.Role('alert'),
-          h.Class('alert alert-error m-0 py-2 text-sm leading-7'),
-        ],
+        [h.Role('alert'), h.Class('notice notice-error m-0 text-sm leading-7')],
         [message],
       ),
   })
@@ -100,7 +102,10 @@ const metadataView = (
       Option.match(maybeNote, {
         onNone: () => h.empty,
         onSome: note =>
-          h.span([h.Class('text-[0.8rem] text-base-content/55')], [note]),
+          h.span(
+            [h.Class('text-[0.78rem] leading-6 text-base-content/55')],
+            [note],
+          ),
       }),
     ],
   )
@@ -215,7 +220,7 @@ const inboxActionsView = (
 
 const answeredView = (item: ReminderInboxItem, h: HtmlBuilder<Message>): Html =>
   h.p(
-    [h.Class('m-0 text-[0.78rem] text-base-content/50')],
+    [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/50')],
     [
       `${responseCopy(item.dispatch.response)} · ${formatRespondedAt(item.dispatch.respondedAt)}`,
     ],
@@ -233,17 +238,20 @@ const rowView = (
     [
       h.Class(
         isCritical
-          ? 'grid gap-1.5 rounded-box border border-error/30 bg-error/5 p-3'
-          : 'grid gap-1.5 rounded-box border border-base-300 bg-base-200/40 p-3',
+          ? 'grid gap-1.5 border-s-2 border-s-error/50 bg-error/5 py-3 ps-3'
+          : 'grid gap-1.5 border-s-2 border-s-transparent py-3 ps-3',
       ),
     ],
     [
       h.div(
         [h.Class('flex flex-wrap items-baseline justify-between gap-2')],
         [
-          h.strong([h.Class('text-[0.95rem]')], [item.title]),
+          h.strong(
+            [h.Class('text-[0.95rem] leading-6 font-semibold break-words')],
+            [item.title],
+          ),
           h.span(
-            [h.Class('text-[0.78rem] text-base-content/50')],
+            [h.Class('text-[0.72rem] leading-6 text-base-content/50')],
             [formatReminderInstant(item.dispatch.scheduledFor)],
           ),
         ],
@@ -263,14 +271,17 @@ export const remindersPageView = (
   h.section(
     [
       h.AriaLabelledBy('reminder-inbox-heading'),
-      h.Class('panel grid gap-4 p-4 sm:p-5'),
+      h.Class('panel grid grid-cols-1 gap-4 p-4 sm:p-5'),
     ],
     [
       h.div(
         [h.Class('flex flex-wrap items-center justify-between gap-2')],
         [
           h.h2(
-            [h.Id('reminder-inbox-heading'), h.Class('m-0 text-lg font-bold')],
+            [
+              h.Id('reminder-inbox-heading'),
+              h.Class('m-0 text-[0.95rem] font-semibold'),
+            ],
             [headingText(model)],
           ),
           buttonView(
@@ -287,11 +298,11 @@ export const remindersPageView = (
       errorView(model, h),
       statusView(model, h),
       h.ul(
-        [h.Class('m-0 grid list-none gap-2 p-0')],
+        [h.Class('m-0 grid list-none divide-y divide-base-300 p-0')],
         Array.map(model.items, item => rowView(model, item, h)),
       ),
       h.p(
-        [h.Class('m-0 text-[0.78rem] leading-7 text-base-content/45')],
+        [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/50')],
         [
           'این فهرست از دفتر ارسال سرور خوانده می‌شود؛ اگر مرورگر بسته باشد یا اعلان نرسد، یادآوری پس از ۲۴ ساعت به تاریخچه می‌رود و هرگز حذف نمی‌شود.',
         ],

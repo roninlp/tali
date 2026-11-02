@@ -304,7 +304,7 @@ const dividerView = (h: HtmlBuilder<Message>): Html =>
     ],
     [
       h.span([h.Class('h-px flex-1 bg-base-300')]),
-      h.span([h.Class('text-[0.8rem] opacity-80')], ['یا']),
+      h.span([h.Class('text-[0.72rem]')], ['یا']),
       h.span([h.Class('h-px flex-1 bg-base-300')]),
     ],
   )
@@ -313,7 +313,7 @@ const createFormView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.form(
     [h.Class('grid gap-3'), h.OnSubmit(Message.SubmittedCreateHousehold())],
     [
-      h.h2([h.Class('m-0 text-lg font-bold')], ['ساختن خانه']),
+      h.h2([h.Class('m-0 text-[0.95rem] font-semibold')], ['ساختن خانه']),
       textInputView(
         {
           id: 'household-name',
@@ -343,7 +343,7 @@ const joinFormView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.form(
     [h.Class('grid gap-3'), h.OnSubmit(Message.SubmittedJoinHousehold())],
     [
-      h.h2([h.Class('m-0 text-lg font-bold')], ['پیوستن به خانه']),
+      h.h2([h.Class('m-0 text-[0.95rem] font-semibold')], ['پیوستن به خانه']),
       textInputView(
         {
           id: 'household-invite',
@@ -380,9 +380,9 @@ const invitePanelView = (
   h.div(
     [h.Class('grid gap-3')],
     [
-      h.h2([h.Class('m-0 text-lg font-bold')], ['خانه ساخته شد']),
+      h.h2([h.Class('m-0 text-[0.95rem] font-semibold')], ['خانه ساخته شد']),
       h.p(
-        [h.Class('m-0 text-sm leading-8 text-base-content/55')],
+        [h.Class('m-0 text-sm leading-7 text-base-content/55')],
         [
           `کد دعوت «${summary.name}» را برای نفر دوم بفرستید. او با این کد به خانه می‌پیوندد.`,
         ],
@@ -392,7 +392,7 @@ const invitePanelView = (
           h.DataAttribute('testid', 'household-invite-code'),
           h.Dir('ltr'),
           h.Class(
-            'block rounded-field border border-dashed border-base-300 bg-base-200 p-3 text-center text-base tracking-[0.08em] break-all',
+            'block rounded-xl border border-dashed border-base-300 bg-base-200/60 px-4 py-3 text-center text-base tracking-[0.08em] break-all',
           ),
         ],
         [summary.inviteCode],
@@ -438,7 +438,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
                     onNone: () => h.empty,
                     onSome: name =>
                       h.p(
-                        [h.Class('m-0 text-sm text-base-content/55')],
+                        [h.Class('m-0 text-sm leading-7 text-base-content/55')],
                         [`خوش آمدید، ${name}.`],
                       ),
                   }),

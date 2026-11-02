@@ -42,7 +42,7 @@ import { habitHeatmapView } from './habits-heatmap-view'
  * tap and shows the streak badge and the window's rate copy, and each card can
  * open its monthly Jalali heatmap. Everything renders from the mirror, so the
  * screen is complete offline; layout uses logical properties only and every
- * colour resolves from the active daisyUI theme.
+ * colour resolves from the active house theme.
  */
 
 const findHabit = (
@@ -77,12 +77,12 @@ const pageErrorView = (
   return Option.match(maybeError, {
     onNone: () => h.empty,
     onSome: message =>
-      h.p([h.Role('alert'), h.Class('habits-alert')], [message]),
+      h.p([h.Role('alert'), h.Class('notice notice-error')], [message]),
   })
 }
 
 const fieldLabel = (text: string, h: HtmlBuilder<Message>): Html =>
-  h.span([h.Class('habits-label')], [text])
+  h.span([h.Class('text-[0.76rem] leading-6 text-base-content/55')], [text])
 
 const titleFieldView = (
   model: Model,
@@ -90,13 +90,13 @@ const titleFieldView = (
   h: HtmlBuilder<Message>,
 ): Html =>
   h.label(
-    [h.Class('habits-field')],
+    [h.Class('grid min-w-0 gap-1')],
     [
       fieldLabel('عنوان', h),
       h.input([
         h.Id('habit-title'),
         h.Type('text'),
-        h.Class('habits-input'),
+        h.Class('field-input'),
         h.AriaLabel('عنوان عادت'),
         h.Placeholder('مثلاً کتاب خواندن'),
         h.Value(model.title),
@@ -112,11 +112,11 @@ const descriptionFieldView = (
   h: HtmlBuilder<Message>,
 ): Html =>
   h.label(
-    [h.Class('habits-field')],
+    [h.Class('grid min-w-0 gap-1')],
     [
       fieldLabel('توضیح (اختیاری)', h),
       h.textarea([
-        h.Class('habits-input'),
+        h.Class('field-input'),
         h.AriaLabel('توضیح عادت'),
         h.Rows(2),
         h.Value(model.description),
@@ -135,6 +135,9 @@ const frequencyModeButton = (
   h.button(
     [
       h.Type('button'),
+      h.Class(
+        'min-h-10 rounded-full border border-base-300 bg-base-100 px-3 text-[0.82rem] text-base-content/60 transition-colors hover:border-base-content/20 aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:font-semibold aria-pressed:text-primary',
+      ),
       h.AriaPressed(model.frequencyMode === mode ? 'true' : 'false'),
       h.OnClick(Message.SelectedFrequencyMode({ mode })),
     ],
@@ -147,15 +150,18 @@ const frequencyFieldView = (
   h: HtmlBuilder<Message>,
 ): Html =>
   h.div(
-    [h.Class('habits-field')],
+    [h.Class('grid min-w-0 gap-1')],
     [
       h.span(
-        [h.Id('habit-frequency-label'), h.Class('habits-label')],
+        [
+          h.Id('habit-frequency-label'),
+          h.Class('text-[0.76rem] leading-6 text-base-content/55'),
+        ],
         ['فراوانی'],
       ),
       h.div(
         [
-          h.Class('habits-seg'),
+          h.Class('flex flex-wrap gap-1'),
           h.Role('group'),
           h.AriaLabelledBy('habit-frequency-label'),
         ],
@@ -188,16 +194,22 @@ const weekdaysFieldView = (
   }
 
   return h.div(
-    [h.Class('habits-field')],
+    [h.Class('grid min-w-0 gap-1')],
     [
       fieldLabel('روزها', h),
       h.div(
-        [h.Class('habits-days'), h.Role('group'), h.AriaLabel('روزهای هفته')],
+        [
+          h.Class('flex flex-wrap gap-1'),
+          h.Role('group'),
+          h.AriaLabel('روزهای هفته'),
+        ],
         Array.map([6, 7, 1, 2, 3, 4, 5], day =>
           h.button(
             [
               h.Type('button'),
-              h.Class('habits-day'),
+              h.Class(
+                'grid size-10 place-items-center rounded-xl border border-base-300 bg-base-100 text-[0.8rem] text-base-content/60 transition-colors hover:border-base-content/20 aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:font-bold aria-pressed:text-primary',
+              ),
               h.AriaLabel(weekdayLabel(day, 'latin')),
               h.AriaPressed(
                 Array.contains(model.weekdays, day) ? 'true' : 'false',
@@ -222,12 +234,12 @@ const timesFieldView = (
   }
 
   return h.div(
-    [h.Class('habits-field')],
+    [h.Class('grid min-w-0 gap-1')],
     [
       fieldLabel('تعداد در هفته', h),
       h.div(
         [
-          h.Class('habits-times'),
+          h.Class('flex items-center gap-2'),
           h.Role('group'),
           h.AriaLabel('تعداد در هفته'),
         ],
@@ -235,6 +247,9 @@ const timesFieldView = (
           h.button(
             [
               h.Type('button'),
+              h.Class(
+                'grid size-10 place-items-center rounded-xl border border-base-300 bg-base-100 text-base transition-colors hover:border-base-content/20 disabled:opacity-55',
+              ),
               h.AriaLabel('کاهش تعداد'),
               h.Disabled(model.timesPerWeek <= 1),
               h.OnClick(Message.PressedDecreaseTimes()),
@@ -242,12 +257,18 @@ const timesFieldView = (
             ['−'],
           ),
           h.output(
-            [h.AriaLive('polite')],
+            [
+              h.Class('min-w-10 text-center text-[0.95rem] font-semibold'),
+              h.AriaLive('polite'),
+            ],
             [localizeDigits(model.timesPerWeek, digits)],
           ),
           h.button(
             [
               h.Type('button'),
+              h.Class(
+                'grid size-10 place-items-center rounded-xl border border-base-300 bg-base-100 text-base transition-colors hover:border-base-content/20 disabled:opacity-55',
+              ),
               h.AriaLabel('افزایش تعداد'),
               h.Disabled(model.timesPerWeek >= 7),
               h.OnClick(Message.PressedIncreaseTimes()),
@@ -266,24 +287,16 @@ const reminderFieldView = (
   h: HtmlBuilder<Message>,
 ): Html =>
   h.label(
-    [h.Class('habits-field')],
+    [h.Class('grid min-w-0 gap-1')],
     [
       fieldLabel('زمان یادآوری (اختیاری)', h),
       h.div(
-        [
-          h.Style({
-            display: 'flex',
-            gap: '6px',
-            'align-items': 'center',
-            'flex-wrap': 'wrap',
-          }),
-        ],
+        [h.Class('flex flex-wrap items-center gap-1.5')],
         [
           h.input([
-            h.Class('habits-input'),
+            h.Class('field-input max-w-40'),
             h.Type('time'),
             h.AriaLabel('زمان یادآوری عادت'),
-            h.Style({ 'max-width': '160px' }),
             h.Value(model.reminderTime),
             h.Disabled(!inputs.isStoreReady || model.isSaving),
             h.OnInput(value => Message.UpdatedHabitReminderTime({ value })),
@@ -294,7 +307,7 @@ const reminderFieldView = (
                 h.button(
                   [
                     h.Type('button'),
-                    h.Class('habit-action'),
+                    h.Class('btn btn-outline min-h-10'),
                     h.OnClick(Message.ClickedClearReminder()),
                   ],
                   ['حذف یادآور'],
@@ -311,16 +324,22 @@ const iconFieldView = (
   h: HtmlBuilder<Message>,
 ): Html =>
   h.div(
-    [h.Class('habits-field')],
+    [h.Class('grid min-w-0 gap-1')],
     [
       fieldLabel('نشان', h),
       h.div(
-        [h.Class('habits-icons'), h.Role('group'), h.AriaLabel('نشان عادت')],
+        [
+          h.Class('flex flex-wrap gap-1.5'),
+          h.Role('group'),
+          h.AriaLabel('نشان عادت'),
+        ],
         Array.map(iconChoicesFor(model, inputs), choice =>
           h.button(
             [
               h.Type('button'),
-              h.Class('habits-icon'),
+              h.Class(
+                'grid size-10 place-items-center rounded-xl border border-base-300 bg-base-100 text-lg transition-colors hover:border-base-content/20 aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:text-primary',
+              ),
               h.AriaLabel(`نشان ${choice}`),
               h.AriaPressed(model.icon === choice ? 'true' : 'false'),
               h.OnClick(Message.SelectedHabitIcon({ icon: choice })),
@@ -334,15 +353,21 @@ const iconFieldView = (
 
 const colorFieldView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.div(
-    [h.Class('habits-field')],
+    [h.Class('grid min-w-0 gap-1')],
     [
       fieldLabel('رنگ', h),
       h.div(
-        [h.Class('habits-swatches'), h.Role('group'), h.AriaLabel('رنگ عادت')],
+        [
+          h.Class('flex flex-wrap gap-1.5'),
+          h.Role('group'),
+          h.AriaLabel('رنگ عادت'),
+        ],
         Array.map(HABIT_COLORS, entry =>
           h.button([
             h.Type('button'),
-            h.Class('habits-swatch'),
+            h.Class(
+              'size-10 rounded-full border-2 border-transparent p-0 transition-colors aria-pressed:border-base-content aria-pressed:ring-2 aria-pressed:ring-base-100 aria-pressed:ring-inset',
+            ),
             h.AriaLabel(`رنگ ${entry.label}`),
             h.AriaPressed(model.color === entry.value ? 'true' : 'false'),
             h.Style({ background: entry.value }),
@@ -374,12 +399,12 @@ const formView = (
 
   return h.form(
     [
-      h.Class('habits-form'),
+      h.Class('panel grid grid-cols-1 min-w-0 gap-3 p-4 sm:p-5'),
       h.AriaLabel('فرم عادت'),
       h.OnSubmit(Message.SubmittedHabitForm()),
     ],
     [
-      h.h2([], [heading]),
+      h.h2([h.Class('m-0 text-[0.95rem] font-semibold')], [heading]),
       titleFieldView(model, inputs, h),
       descriptionFieldView(model, inputs, h),
       frequencyFieldView(model, digits, h),
@@ -391,15 +416,15 @@ const formView = (
       Option.match(model.maybeFormError, {
         onNone: () => h.empty,
         onSome: message =>
-          h.p([h.Role('alert'), h.Class('habits-alert')], [message]),
+          h.p([h.Role('alert'), h.Class('notice notice-error')], [message]),
       }),
       h.div(
-        [h.Class('habits-form-actions')],
+        [h.Class('flex flex-wrap items-center gap-2')],
         [
           h.button(
             [
               h.Type('submit'),
-              h.Class('habits-primary'),
+              h.Class('btn btn-primary min-h-10'),
               h.Disabled(isDisabled || model.title.trim() === ''),
             ],
             [
@@ -413,7 +438,7 @@ const formView = (
                 h.button(
                   [
                     h.Type('button'),
-                    h.Class('habits-ghost'),
+                    h.Class('btn btn-outline min-h-10'),
                     h.OnClick(Message.ClickedCancelEdit()),
                   ],
                   ['انصراف'],
@@ -435,7 +460,7 @@ const habitMetaView = (
   const period = habitCountingPeriodLabel(stats, digits)
 
   return h.p(
-    [h.Class('habit-meta')],
+    [h.Class('m-0 text-[0.72rem] leading-6 break-words text-base-content/50')],
     [
       `${habitFrequencyLabel(habit.frequency, digits)} · ${habitBestLabel(stats, digits)}`,
       ...(period === null ? [] : [` · دورهٔ شمارش: ${period}`]),
@@ -471,23 +496,31 @@ const habitCardView = (
   return h.keyed('li')(
     habit.id,
     [
-      h.Class('habit-card'),
+      h.Class('panel grid grid-cols-1 min-w-0 gap-2 border-s-4 p-4'),
       h.Style({
         'border-inline-start-color': habit.color ?? DEFAULT_HABIT_COLOR,
       }),
     ],
     [
       h.div(
-        [h.Class('habit-card-head')],
+        [h.Class('flex flex-wrap items-center gap-2')],
         [
           h.span(
-            [h.Class('habit-mark'), h.AriaHidden(true)],
+            [
+              h.Class('grid w-6 shrink-0 place-items-center'),
+              h.AriaHidden(true),
+            ],
             [habit.icon ?? '•'],
           ),
-          h.h3([], [habit.title]),
+          h.h3(
+            [h.Class('m-0 text-[1.02rem] leading-6 font-semibold break-words')],
+            [habit.title],
+          ),
           h.span(
             [
-              h.Class('habit-badge'),
+              h.Class(
+                'inline-flex shrink-0 items-center gap-1 rounded-full bg-warning/12 px-2 py-0.5 text-[0.72rem] leading-5 text-warning',
+              ),
               h.AriaLabel(`زنجیره: ${habitBadgeLabel(stats, digits)}`),
             ],
             [
@@ -498,7 +531,10 @@ const habitCardView = (
           ...(isPending
             ? [
                 h.span(
-                  [h.Class('habit-action'), h.AriaLabel('در انتظار همگام‌سازی')],
+                  [
+                    h.Class('badge badge-sm'),
+                    h.AriaLabel('در انتظار همگام‌سازی'),
+                  ],
                   ['در انتظار'],
                 ),
               ]
@@ -515,15 +551,26 @@ const habitCardView = (
       ),
       ...(habit.description === null
         ? []
-        : [h.p([h.Class('habit-meta')], [habit.description])]),
+        : [
+            h.p(
+              [
+                h.Class(
+                  'm-0 text-[0.72rem] leading-6 break-words text-base-content/50',
+                ),
+              ],
+              [habit.description],
+            ),
+          ]),
       habitMetaView(habit, stats, digits, h),
       h.div(
-        [h.Class('habit-actions')],
+        [h.Class('flex flex-wrap items-center justify-between gap-2')],
         [
           h.button(
             [
               h.Type('button'),
-              h.Class('habit-tap'),
+              h.Class(
+                'inline-flex min-h-10 min-w-11 items-center gap-1.5 rounded-full border border-base-300 bg-base-200 px-3.5 text-[0.82rem] transition-colors hover:border-base-content/20 disabled:opacity-55 data-[status=done]:border-success/45 data-[status=done]:bg-success/12 data-[status=done]:text-success data-[status=partial]:border-warning/45 data-[status=partial]:bg-warning/12 data-[status=partial]:text-warning data-[status=missed]:border-error/40 data-[status=missed]:bg-error/10 data-[status=missed]:text-error',
+              ),
               h.DataAttribute('status', status ?? 'blank'),
               h.AriaLabel(`تغییر وضعیت امروز ${habit.title}`),
               h.Title('هر ضربه: انجام شد → نیمه → از دست رفت'),
@@ -543,15 +590,17 @@ const habitCardView = (
             ],
           ),
           h.div(
-            [h.Class('habit-stat')],
+            [h.Class('ms-auto grid min-w-0 gap-px text-end')],
             [
               h.span(
-                [h.Class('habit-stat-label')],
+                [h.Class('text-[0.68rem] leading-5 text-base-content/50')],
                 [`نرخ ${localizeDigits(model.windowDays, digits)} روزه`],
               ),
               h.span(
                 [
-                  h.Class('habit-stat-value'),
+                  h.Class(
+                    'text-[0.86rem] leading-6 font-semibold data-[kind=progress]:text-warning data-[kind=none]:text-base-content/50',
+                  ),
                   h.DataAttribute('kind', rate.kind),
                 ],
                 [rate.label],
@@ -561,12 +610,12 @@ const habitCardView = (
         ],
       ),
       h.div(
-        [h.Class('habit-actions')],
+        [h.Class('flex flex-wrap items-center justify-end gap-1.5')],
         [
           h.button(
             [
               h.Type('button'),
-              h.Class('habit-action'),
+              h.Class('btn btn-outline min-h-10'),
               h.AriaLabel(`ویرایش ${habit.title}`),
               h.OnClick(Message.ClickedEditHabit({ habitId: habit.id })),
             ],
@@ -575,7 +624,9 @@ const habitCardView = (
           h.button(
             [
               h.Type('button'),
-              h.Class('habit-action'),
+              h.Class(
+                'btn btn-outline min-h-10 aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:text-primary',
+              ),
               h.AriaLabel(`نقشه ماه ${habit.title}`),
               h.AriaPressed(Option.isSome(maybeHeat) ? 'true' : 'false'),
               h.OnClick(Message.ClickedToggleHeat({ habitId: habit.id })),
@@ -587,7 +638,7 @@ const habitCardView = (
                 h.button(
                   [
                     h.Type('button'),
-                    h.Class('habit-action'),
+                    h.Class('btn btn-outline min-h-10'),
                     h.AriaLabel(
                       habit.visibility === 'shared'
                         ? `خصوصی کردن ${habit.title}`
@@ -606,7 +657,9 @@ const habitCardView = (
           h.button(
             [
               h.Type('button'),
-              h.Class('habit-action habit-action--danger'),
+              h.Class(
+                'btn btn-outline min-h-10 border-error/30 bg-error/8 text-error hover:border-error/50 hover:bg-error/12',
+              ),
               h.AriaLabel(`حذف ${habit.title}`),
               h.OnClick(
                 Message.ClickedDeleteHabit({
@@ -635,17 +688,20 @@ const listSectionView = (
   const digits = inputs.display.digits
 
   return h.div(
-    [h.Class('habits-list-section')],
+    [h.Class('grid min-w-0 gap-4')],
     [
       h.div(
-        [h.Class('habits-head')],
+        [h.Class('flex flex-wrap items-center justify-between gap-2')],
         [
           h.div(
-            [],
+            [h.Class('grid gap-1')],
             [
-              h.h2([h.Class('m-0 text-base font-bold')], ['فهرست عادت‌ها']),
+              h.h2(
+                [h.Class('m-0 text-[0.95rem] font-semibold')],
+                ['فهرست عادت‌ها'],
+              ),
               h.p(
-                [],
+                [h.Class('m-0 text-[0.8rem] leading-6 text-base-content/55')],
                 [
                   'با هر ضربه وضعیت امروز می‌چرخد: انجام شد → نیمه → از دست رفت.',
                 ],
@@ -654,7 +710,7 @@ const listSectionView = (
           ),
           h.div(
             [
-              h.Class('habit-lane-windows'),
+              h.Class('flex flex-wrap gap-1'),
               h.Role('group'),
               h.AriaLabel('بازهٔ نرخ موفقیت'),
             ],
@@ -662,6 +718,9 @@ const listSectionView = (
               h.button(
                 [
                   h.Type('button'),
+                  h.Class(
+                    'min-h-8 rounded-full border border-base-300 bg-base-100 px-2.5 text-[0.76rem] text-base-content/60 transition-colors hover:border-base-content/20 aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:font-semibold aria-pressed:text-primary',
+                  ),
                   h.AriaPressed(model.windowDays === days ? 'true' : 'false'),
                   h.OnClick(Message.SelectedHabitWindow({ window: days })),
                 ],
@@ -674,10 +733,14 @@ const listSectionView = (
       Array.match(inputs.mirror.habits, {
         onEmpty: () =>
           h.div(
-            [h.Class('habits-form')],
+            [
+              h.Class(
+                'grid justify-items-center gap-2 rounded-2xl border border-dashed border-base-300 px-6 py-10 text-center text-sm text-base-content/55',
+              ),
+            ],
             [
               h.p(
-                [h.Class('habits-label')],
+                [h.Class('m-0')],
                 [
                   'هنوز عادتی ندارید. عنوان را بنویسید و «افزودن عادت» را بزنید؛ همین یک فرم کافی است.',
                 ],
@@ -686,7 +749,7 @@ const listSectionView = (
           ),
         onNonEmpty: habits =>
           h.ul(
-            [h.Class('habits-list'), h.AriaLabel('عادت‌ها')],
+            [h.Class('m-0 grid list-none gap-3 p-0'), h.AriaLabel('عادت‌ها')],
             Array.map(habits, habit => habitCardView(model, inputs, habit, h)),
           ),
       }),
@@ -724,24 +787,35 @@ export const habitsPageView = (
   const digits = inputs.display.digits
 
   return h.div(
-    [h.Class('habits-root'), h.Dir('rtl'), h.Lang('fa')],
+    [
+      h.Class('overflow-x-clip bg-base-200 text-base-content'),
+      h.Dir('rtl'),
+      h.Lang('fa'),
+    ],
     [
       h.div(
         [
           h.Class(
-            'habits-screen page-wrap mx-auto grid w-full max-w-4xl gap-2.5',
+            'page-wrap mx-auto grid w-full max-w-4xl grid-cols-1 min-w-0 gap-4',
           ),
         ],
         [
           h.header(
-            [h.Class('habits-head')],
+            [h.Class('flex flex-wrap items-baseline justify-between gap-2')],
             [
               h.div(
-                [],
+                [h.Class('grid gap-1')],
                 [
-                  h.h1([], ['عادت‌ها']),
+                  h.h1(
+                    [
+                      h.Class(
+                        'm-0 text-2xl font-bold tracking-tight sm:text-3xl',
+                      ),
+                    ],
+                    ['عادت‌ها'],
+                  ),
                   h.p(
-                    [],
+                    [h.Class('m-0 text-sm leading-7 text-base-content/55')],
                     [
                       'یک عادت، یک تعریف و یک ثبت روزانه. آمار از ثبت‌ها ساخته می‌شود، نه از حافظه.',
                     ],
@@ -751,7 +825,10 @@ export const habitsPageView = (
               ...(inputs.isStoreReady
                 ? [
                     h.p(
-                      [h.Class('habits-source'), h.Role('status')],
+                      [
+                        h.Class('m-0 text-[0.72rem] leading-6 text-warning'),
+                        h.Role('status'),
+                      ],
                       [sourceText(inputs, digits)],
                     ),
                   ]
@@ -762,7 +839,7 @@ export const habitsPageView = (
           pageErrorView(model, inputs, h),
           listSectionView(model, inputs, h),
           h.p(
-            [h.Class('habits-sr'), h.Role('status'), h.AriaLive('polite')],
+            [h.Class('sr-only'), h.Role('status'), h.AriaLive('polite')],
             [model.announcement],
           ),
           habitsToastView(model, h),

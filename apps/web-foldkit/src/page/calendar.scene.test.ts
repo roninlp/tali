@@ -21,9 +21,9 @@ import { describe, test } from 'vitest'
 
 import { Listbox } from '@foldkit/ui'
 
+import { USER_ID } from '../test-fixtures'
 import * as Calendar from './calendar'
 import type { Inputs, Model } from './calendar'
-import { USER_ID } from '../test-fixtures'
 import {
   CALENDAR_TASK_ID,
   EVENT_ID,
@@ -67,14 +67,12 @@ describe('Calendar week view', () => {
       given(calendarModel()),
       expect(role('heading', { name: 'تقویم' })).toExist(),
       expect(text(WEEK_TITLE)).toExist(),
-      expectAll(all.selector('.calendar-day-card')).toHaveCount(7),
+      expectAll(all.selector('[data-calendar-week-day]')).toHaveCount(7),
       expect(
         role('textbox', { name: `کار تازه برای ${TODAY_LABEL}` }),
       ).toExist(),
-      expectAll(all.selector('.calendar-event-add')).toHaveCount(7),
-      expect(text('رویداد زمانی — خالی')).toExist(),
-      expect(text('یادآوری — خالی')).toExist(),
-      expect(text('عادت — خالی')).toExist(),
+      expectAll(all.selector('[data-calendar-event-add]')).toHaveCount(7),
+      expect(text('این روز خالی است.')).toExist(),
       expect(dayCard(TODAY_LABEL)).toHaveAttr('data-today', 'true'),
       expect(selector('[aria-current="date"]')).toHaveAttr(
         'aria-label',
@@ -136,13 +134,19 @@ describe('Calendar week view', () => {
       }),
       given(calendarModel()),
       expect(
-        selector(`section[aria-label="${TODAY_LABEL}"] .calendar-event-chip`),
+        selector(
+          `section[aria-label="${TODAY_LABEL}"] [data-calendar-event-chip]`,
+        ),
       ).toHaveText('سفر'),
       expect(
-        selector(`section[aria-label="${TODAY_LABEL}"] .calendar-time-grid`),
+        selector(
+          `section[aria-label="${TODAY_LABEL}"] [data-calendar-time-grid]`,
+        ),
       ).toExist(),
       expect(
-        selector(`section[aria-label="${TODAY_LABEL}"] .calendar-time-event`),
+        selector(
+          `section[aria-label="${TODAY_LABEL}"] [data-calendar-time-event]`,
+        ),
       ).toHaveAttr('aria-label', '۰۹:۰۰ جلسه'),
     )
   })
@@ -190,7 +194,9 @@ describe('Calendar week view', () => {
           priority: 'high',
         }),
       ),
-      expect(selector('.calendar-sr')).toHaveText('اولویت خرید نان: بالا'),
+      expect(selector('[data-calendar-status]')).toHaveText(
+        'اولویت خرید نان: بالا',
+      ),
     )
   })
 
@@ -311,14 +317,14 @@ describe('Calendar month view', () => {
       expect(tab('جمعه ۸ آبان ۱۴۰۵ — ۱ کار — ۱ رویداد — ۱ مناسبت')).toExist(),
       expectAll(
         all.selector(
-          '.calendar-month-day[data-today="true"] .calendar-month-dot',
+          '[data-calendar-month-day][data-today="true"] [data-calendar-month-dot]',
         ),
       ).toHaveCount(2),
-      expect(selector('.calendar-event-chip-month')).toHaveText('سفر'),
+      expect(selector('[data-calendar-month-event]')).toHaveText('سفر'),
       expect(
         within(
-          selector('.calendar-month-day[data-today="true"]'),
-          selector('.calendar-occasion-chip'),
+          selector('[data-calendar-month-day][data-today="true"]'),
+          selector('[data-calendar-occasion-chip]'),
         ),
       ).toHaveText('تولد مامان'),
     )

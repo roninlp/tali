@@ -1,5 +1,4 @@
 import { Array, Effect, Match, Option, Schema } from 'effect'
-import { Popover } from '@foldkit/ui'
 import {
   Command,
   ManagedResource,
@@ -14,6 +13,7 @@ import { Transition } from 'foldkit/route'
 import { modifyFields } from 'foldkit/struct'
 import { Url, toString as urlToString } from 'foldkit/url'
 
+import { Popover } from '@foldkit/ui'
 import { type ListId, type NoteId } from '@tali/domain'
 
 import * as Auth from './auth'
@@ -499,11 +499,12 @@ const foldTheme: Update.Fold<Model, Message, Theme.Message> = Update.foldChild({
     Message.GotThemeMessage({ message }),
 })
 
-const foldMorePopoverOutMessage =
-  Popover.OutMessage.match<Update.Step<Model, Message>>({
-    Opened: () => stepModel => ({ model: stepModel }),
-    Closed: () => stepModel => ({ model: stepModel }),
-  })
+const foldMorePopoverOutMessage = Popover.OutMessage.match<
+  Update.Step<Model, Message>
+>({
+  Opened: () => stepModel => ({ model: stepModel }),
+  Closed: () => stepModel => ({ model: stepModel }),
+})
 
 const foldMorePopover = Update.foldChild({
   update: Popover.update,
@@ -519,9 +520,8 @@ const closeMorePopover = (model: Model): UpdateReturn => {
 
   return {
     model: modifyFields(model, { morePopover: () => closed.model }),
-    commands: Command.mapMessages(
-      closed.commands,
-      message => Message.GotMorePopoverMessage({ message }),
+    commands: Command.mapMessages(closed.commands, message =>
+      Message.GotMorePopoverMessage({ message }),
     ),
   }
 }
@@ -1597,15 +1597,22 @@ const usesAppShell = AppRoute.isAnyOf([
 
 const placeholderNoteView = (h: HtmlBuilder<Message>): Html =>
   h.p(
-    [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+    [
+      h.Class(
+        'm-0 grid justify-items-center gap-2 rounded-2xl border border-dashed border-base-300 px-6 py-10 text-center text-sm leading-7 text-base-content/55',
+      ),
+    ],
     ['این صفحه در گام بعدی ساخته می‌شود.'],
   )
 
 const placeholderPageView = (heading: string, h: HtmlBuilder<Message>): Html =>
   h.section(
-    [h.Class('page-wrap grid max-w-5xl gap-3')],
+    [h.Class('page-wrap grid grid-cols-1 max-w-5xl gap-4')],
     [
-      h.h1([h.Class('m-0 text-3xl font-bold tracking-tight')], [heading]),
+      h.h1(
+        [h.Class('m-0 text-2xl font-bold tracking-tight sm:text-3xl')],
+        [heading],
+      ),
       placeholderNoteView(h),
     ],
   )
@@ -1622,13 +1629,16 @@ const homeView = (h: HtmlBuilder<Message>): Html =>
         ],
         ['ت'],
       ),
-      h.h1([h.Class('m-0 text-3xl font-bold tracking-tight')], ['تالی']),
+      h.h1(
+        [h.Class('m-0 text-2xl font-bold tracking-tight sm:text-3xl')],
+        ['تالی'],
+      ),
       h.p(
         [h.Class('m-0 text-sm leading-7 text-base-content/60')],
         ['برنامه‌ریز مشترک خانه‌ی شما.'],
       ),
       h.p(
-        [h.Class('m-0 text-xs text-base-content/45')],
+        [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/50')],
         ['در حال هدایت به جای درست…'],
       ),
     ],
@@ -1636,14 +1646,10 @@ const homeView = (h: HtmlBuilder<Message>): Html =>
 
 const notFoundView = (h: HtmlBuilder<Message>): Html =>
   h.section(
-    [
-      h.Class(
-        'card w-full max-w-sm border border-base-300 bg-base-100 shadow-xl',
-      ),
-    ],
+    [h.Class('panel w-full max-w-sm p-6 text-center sm:p-8')],
     [
       h.div(
-        [h.Class('card-body items-center gap-3 text-center')],
+        [h.Class('grid justify-items-center gap-3')],
         [
           h.span(
             [
@@ -1653,9 +1659,12 @@ const notFoundView = (h: HtmlBuilder<Message>): Html =>
             ],
             [searchIcon('size-6')],
           ),
-          h.h1([h.Class('m-0 text-2xl font-bold')], ['صفحه پیدا نشد']),
+          h.h1(
+            [h.Class('m-0 text-2xl font-bold tracking-tight sm:text-3xl')],
+            ['صفحه پیدا نشد'],
+          ),
           h.p(
-            [h.Class('m-0 text-sm text-base-content/55')],
+            [h.Class('m-0 text-sm leading-7 text-base-content/55')],
             ['نشانی‌ای که باز کردید وجود ندارد.'],
           ),
           h.a(
@@ -1687,7 +1696,7 @@ const tasksPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
 
 const remindersPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.section(
-    [h.Class('page-wrap grid max-w-3xl gap-4')],
+    [h.Class('page-wrap grid grid-cols-1 max-w-3xl gap-4')],
     [
       h.header(
         [h.Class('grid gap-1')],
@@ -1697,7 +1706,7 @@ const remindersPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
             ['یادآورها'],
           ),
           h.p(
-            [h.Class('m-0 text-sm text-base-content/55')],
+            [h.Class('m-0 text-sm leading-7 text-base-content/55')],
             ['اعلان‌های این دستگاه و یادآورهایی که مرورگر آن‌ها را ندیده است.'],
           ),
         ],
@@ -1719,7 +1728,7 @@ const remindersPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
 
 const settingsPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.section(
-    [h.Class('page-wrap grid max-w-2xl gap-4')],
+    [h.Class('page-wrap grid grid-cols-1 max-w-2xl gap-4')],
     [
       h.header(
         [h.Class('grid gap-1')],
@@ -1763,7 +1772,7 @@ const settingsPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
 
 const pushHealthPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.section(
-    [h.Class('page-wrap grid max-w-2xl gap-4')],
+    [h.Class('page-wrap grid grid-cols-1 max-w-2xl gap-4')],
     [
       h.h1(
         [h.Class('m-0 text-2xl font-bold tracking-tight sm:text-3xl')],
@@ -2004,12 +2013,13 @@ const moreMenuView = (
             [...config.render.panel],
             [
               h.nav(
-                [
-                  h.AriaLabel('بخش‌های بیشتر'),
-                  h.Class('float-card w-44 p-1.5'),
-                ],
+                [h.AriaLabel('بخش‌های بیشتر'), h.Class('float-card w-44 p-1.5')],
                 Array.map(MORE_SECTIONS, section =>
-                  Shell.morePanelLinkView(section, config.maybeActiveSection, h),
+                  Shell.morePanelLinkView(
+                    section,
+                    config.maybeActiveSection,
+                    h,
+                  ),
                 ),
               ),
             ],

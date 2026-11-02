@@ -26,18 +26,20 @@ import type { Model, ViewInputs } from './lists'
  * Create a list with a title, colour and icon, then see open/checked counts and
  * a two-item preview. Everything reads the mirror, so counts are correct
  * offline; creation queues in the outbox. Layout is logical-property only and
- * every colour resolves from the active daisyUI theme.
+ * every colour resolves from the active theme.
  */
 
-const swatchStyle = (choice: string, isSelected: boolean) => ({
-  background: choice,
-  border: isSelected
-    ? '3px solid var(--color-base-content)'
-    : '1px solid var(--color-base-300)',
-  ...(isSelected
-    ? { 'box-shadow': '0 0 0 2px var(--color-base-100) inset' }
-    : {}),
-})
+const SWATCH_CLASS =
+  'size-9 flex-none cursor-pointer rounded-full p-0 ring-1 ring-base-300 ring-inset transition-shadow aria-pressed:ring-2 aria-pressed:ring-base-content'
+
+const ICON_CHOICE_CLASS =
+  'inline-flex size-10 flex-none items-center justify-center rounded-full border border-base-300 bg-base-100 p-0 text-[1.05rem] text-base-content/65 transition-colors hover:border-base-content/25 data-[active=true]:border-primary data-[active=true]:bg-primary/10 data-[active=true]:text-primary'
+
+const DANGER_BUTTON_CLASS =
+  'inline-flex min-h-10 flex-none items-center rounded-full border border-error/35 bg-error/8 px-3 py-0.5 text-[0.78rem] font-medium text-error transition-colors hover:bg-error/12 disabled:opacity-55 sm:min-h-8'
+
+const EMPTY_STATE_CLASS =
+  'm-0 rounded-2xl border border-dashed border-base-300 px-6 py-10 text-center text-sm leading-7 text-base-content/55'
 
 const listCardView = (
   entry: ListSummary,
@@ -51,24 +53,40 @@ const listCardView = (
   return h.keyed('article')(
     list.id,
     [
-      h.Class('lists-index-card'),
+      h.Class(
+        'grid min-w-0 gap-2 rounded-2xl border border-base-300 bg-base-100 p-4 shadow-panel transition-colors data-[pending=true]:border-warning/40 data-[pending=true]:bg-warning/6',
+      ),
       h.DataAttribute('pending', isPending ? 'true' : 'false'),
     ],
     [
       h.a(
-        [h.Class('lists-index-link'), h.Href(listPath(list.id))],
+        [
+          h.Class('group grid min-w-0 cursor-pointer gap-1 rounded-xl'),
+          h.Href(listPath(list.id)),
+        ],
         [
           h.h3(
-            [h.Class('lists-title')],
+            [h.Class('m-0 flex min-w-0 items-center gap-2')],
             [
               ...(list.icon === null
                 ? []
-                : [h.span([h.Class('lists-title-icon')], [list.icon])]),
-              h.span([], [list.title]),
+                : [h.span([h.Class('shrink-0')], [list.icon])]),
+              h.span(
+                [
+                  h.Class(
+                    'min-w-0 text-[1.02rem] leading-7 font-semibold break-words transition-colors group-hover:text-primary group-hover:underline group-hover:underline-offset-4',
+                  ),
+                ],
+                [list.title],
+              ),
             ],
           ),
           h.p(
-            [h.Class('lists-sub')],
+            [
+              h.Class(
+                'm-0 text-[0.8rem] leading-6 break-words text-base-content/55',
+              ),
+            ],
             [
               `${localizeDigits(entry.open, digits)} باز · ${localizeDigits(
                 entry.done,
@@ -80,14 +98,20 @@ const listCardView = (
             onEmpty: () => h.empty,
             onNonEmpty: names =>
               h.ul(
-                [h.Class('lists-preview')],
-                Array.map(names, name => h.li([], [name])),
+                [
+                  h.Class(
+                    'm-0 list-disc ps-[1.1em] text-[0.8rem] leading-6 text-base-content/50',
+                  ),
+                ],
+                Array.map(names, name =>
+                  h.li([h.Class('break-words')], [name]),
+                ),
               ),
           }),
         ],
       ),
       h.div(
-        [h.Class('lists-index-actions')],
+        [h.Class('flex flex-wrap items-center justify-end gap-1.5')],
         [
           isPending
             ? h.span(
@@ -104,7 +128,7 @@ const listCardView = (
           h.button(
             [
               h.Type('button'),
-              h.Class('lists-danger'),
+              h.Class(DANGER_BUTTON_CLASS),
               h.AriaLabel(`حذف فهرست ${list.title}`),
               h.OnClick(
                 Message.ClickedDeleteList({
@@ -124,7 +148,10 @@ const listCardView = (
 
 const createSectionView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.section(
-    [h.Class('panel grid gap-3 p-5'), h.AriaLabelledBy('lists-create-title')],
+    [
+      h.Class('panel grid grid-cols-1 gap-3 p-4 sm:p-5'),
+      h.AriaLabelledBy('lists-create-title'),
+    ],
     [
       h.h2(
         [h.Id('lists-create-title'), h.Class('m-0 text-lg font-bold')],
@@ -143,7 +170,7 @@ const createSectionView = (model: Model, h: HtmlBuilder<Message>): Html =>
               h.input([
                 h.Name('title'),
                 h.Type('text'),
-                h.Class('input w-full'),
+                h.Class('field-input'),
                 h.Required(true),
                 h.Maxlength(120),
                 h.Autocomplete('off'),
@@ -169,14 +196,12 @@ const createSectionView = (model: Model, h: HtmlBuilder<Message>): Html =>
                     Array.map(COLOR_CHOICES, choice =>
                       h.button([
                         h.Type('button'),
-                        h.Class('lists-swatch'),
+                        h.Class(SWATCH_CLASS),
                         h.AriaLabel(`رنگ ${choice}`),
                         h.AriaPressed(
                           model.indexColor === choice ? 'true' : 'false',
                         ),
-                        h.Style(
-                          swatchStyle(choice, model.indexColor === choice),
-                        ),
+                        h.Style({ background: choice }),
                         h.OnClick(
                           Message.SelectedIndexColor({ color: choice }),
                         ),
@@ -198,7 +223,7 @@ const createSectionView = (model: Model, h: HtmlBuilder<Message>): Html =>
                       h.button(
                         [
                           h.Type('button'),
-                          h.Class('lists-icon-choice'),
+                          h.Class(ICON_CHOICE_CLASS),
                           h.AriaLabel(`نماد ${choice}`),
                           h.AriaPressed(
                             model.indexIcon === choice ? 'true' : 'false',
@@ -255,7 +280,7 @@ const createSectionView = (model: Model, h: HtmlBuilder<Message>): Html =>
         ],
       ),
       h.p(
-        [h.Class('lists-sr'), h.Role('status'), h.AriaLive('polite')],
+        [h.Class('sr-only'), h.Role('status'), h.AriaLive('polite')],
         [model.announcement],
       ),
     ],
@@ -284,13 +309,13 @@ const allListsSectionView = (
     Array.some(listItems(entry), item => item.hasSyncError)
 
   return h.section(
-    [h.Class('grid gap-2'), h.AriaLabelledBy('lists-all-title')],
+    [h.Class('grid gap-3'), h.AriaLabelledBy('lists-all-title')],
     [
       h.div(
         [h.Class('flex flex-wrap items-baseline justify-between gap-2')],
         [
           h.h2(
-            [h.Id('lists-all-title'), h.Class('m-0 text-xl font-bold')],
+            [h.Id('lists-all-title'), h.Class('m-0 text-lg font-bold')],
             ['همه‌ی فهرست‌ها'],
           ),
           h.span(
@@ -302,14 +327,14 @@ const allListsSectionView = (
       Array.match(summaries, {
         onEmpty: () =>
           h.p(
-            [h.Class('lists-empty panel p-5')],
+            [h.Class(EMPTY_STATE_CLASS)],
             [
               'هنوز فهرستی نساخته‌اید. یک عنوان بگذارید و «ساختن فهرست» را بزنید.',
             ],
           ),
         onNonEmpty: entries =>
           h.div(
-            [h.Class('lists-index-grid')],
+            [h.Class('grid min-w-0 gap-3 sm:grid-cols-2')],
             Array.map(entries, entry =>
               listCardView(
                 entry,
@@ -333,13 +358,13 @@ export const listsIndexView = (
   const digits = inputs.display.digits
 
   return h.div(
-    [h.Class('lists-root'), h.Dir('rtl'), h.Lang('fa')],
+    [h.Class('min-w-0 overflow-x-clip'), h.Dir('rtl'), h.Lang('fa')],
     [
       h.div(
-        [h.Class('lists-screen page-wrap grid w-full max-w-5xl gap-4')],
+        [h.Class('page-wrap grid w-full max-w-5xl min-w-0 grid-cols-1 gap-4')],
         [
           h.header(
-            [h.Class('panel grid gap-1.5 p-5')],
+            [h.Class('grid gap-1.5')],
             [
               h.h1(
                 [h.Class('m-0 text-2xl font-bold tracking-tight sm:text-3xl')],
@@ -354,7 +379,7 @@ export const listsIndexView = (
               inputs.isOnline
                 ? h.empty
                 : h.p(
-                    [h.Class('lists-hint'), h.Role('status')],
+                    [h.Class('notice notice-warning m-0'), h.Role('status')],
                     [
                       'آفلاین هستید: ساخت فهرست و افزودن مورد کار می‌کند و بعداً همگام می‌شود.',
                     ],

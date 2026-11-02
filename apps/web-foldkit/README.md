@@ -82,7 +82,7 @@ src/shell.ts       The app chrome (header, action slot, main)
 src/theme.ts       House light/dark theme Submodel and toggle
 src/ui/            Button, field and icon primitives
 src/fonts/         Self-hosted Vazirmatn and its OFL licence
-src/styles.css     Tailwind v4 + daisyUI themes and Tali utilities
+src/styles.css     Tailwind v4 theme tokens and the shared UI primitives
 src/lib/config.ts  API base URL (dev proxy vs deployed /api)
 src/lib/rpc.ts     Typed RPC client over the api Worker's contract
 worker.ts          Deployed Worker: serves the assets and proxies /api/*

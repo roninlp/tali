@@ -52,14 +52,14 @@ const statusView = (
       h.AriaLive('polite'),
       h.Class(
         hasError
-          ? 'badge badge-error badge-sm notes-status'
-          : 'badge badge-ghost badge-sm notes-status',
+          ? 'badge badge-error badge-sm h-7 gap-1.5'
+          : 'badge badge-ghost badge-sm h-7 gap-1.5',
       ),
     ],
     [
       model.saveState === 'saving'
-        ? h.span([h.Class('loading loading-spinner loading-xs')])
-        : h.span([h.Class('notes-status-dot')]),
+        ? h.span([h.Class('spinner spinner-xs')])
+        : h.span([h.Class('size-1.5 rounded-full bg-current opacity-60')]),
       model.loadState === 'ready' ? statusText(model, inputs) : '',
     ],
   )
@@ -67,10 +67,10 @@ const statusView = (
 
 const missingView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.section(
-    [h.Class('panel notes-panel notes-missing')],
+    [h.Class('panel grid grid-cols-1 gap-3 p-4 sm:p-5')],
     [
       h.p(
-        [h.Class('m-0 leading-8')],
+        [h.Class('m-0 text-sm leading-8')],
         [Option.getOrElse(model.maybeLoadHint, () => 'این یادداشت پیدا نشد.')],
       ),
       h.div(
@@ -89,7 +89,10 @@ const tagsView = (
     onEmpty: () => h.empty,
     onNonEmpty: tags =>
       h.div(
-        [h.Class('notes-editor-tags'), h.AriaLabel('برچسب‌ها')],
+        [
+          h.Class('flex flex-wrap items-center gap-1.5'),
+          h.AriaLabel('برچسب‌ها'),
+        ],
         Array.map(tags, tag => {
           const isSelected = Array.contains(model.tagIds, tag.id)
 
@@ -98,8 +101,8 @@ const tagsView = (
               h.Type('button'),
               h.Class(
                 isSelected
-                  ? 'badge badge-primary cursor-pointer'
-                  : 'badge badge-ghost cursor-pointer',
+                  ? 'badge badge-primary min-h-10 cursor-pointer'
+                  : 'badge badge-ghost min-h-10 cursor-pointer',
               ),
               h.AriaPressed(isSelected ? 'true' : 'false'),
               h.Disabled(model.isTrashed),
@@ -114,7 +117,7 @@ const tagsView = (
 const trashedAlertView = (model: Model, h: HtmlBuilder<Message>): Html =>
   model.isTrashed
     ? h.section(
-        [h.Class('alert alert-warning items-start notes-alert')],
+        [h.Class('notice notice-warning m-0 items-start')],
         [
           h.div(
             [h.Class('grid gap-2')],
@@ -124,7 +127,7 @@ const trashedAlertView = (model: Model, h: HtmlBuilder<Message>): Html =>
                 ['این یادداشت در سطل زباله است.'],
               ),
               h.div(
-                [h.Class('notes-alert-actions')],
+                [h.Class('flex flex-wrap items-center gap-2')],
                 [
                   buttonView(
                     {
@@ -155,7 +158,7 @@ const syncErrorView = (model: Model, h: HtmlBuilder<Message>): Html =>
     onNone: () => h.empty,
     onSome: code =>
       h.section(
-        [h.Role('alert'), h.Class('alert alert-error items-start notes-alert')],
+        [h.Role('alert'), h.Class('notice notice-error m-0 items-start')],
         [
           h.div(
             [h.Class('grid gap-2')],
@@ -194,16 +197,19 @@ const editorFormView = (
   h: HtmlBuilder<Message>,
 ): Html =>
   h.section(
-    [h.Class('panel notes-editor-panel')],
+    [h.Class('panel grid grid-cols-1 gap-4 p-4 sm:p-5')],
     [
       h.label(
-        [h.For('note-title'), h.Class('notes-field')],
+        [h.For('note-title'), h.Class('grid gap-1.5')],
         [
-          h.span([h.Class('notes-field-label')], ['عنوان']),
+          h.span(
+            [h.Class('text-sm font-medium text-base-content/70')],
+            ['عنوان'],
+          ),
           h.input([
             h.Id('note-title'),
             h.Type('text'),
-            h.Class('input input-lg w-full font-bold'),
+            h.Class('field-input min-h-12 text-base font-bold'),
             h.AriaLabel('عنوان یادداشت'),
             h.Placeholder('بی‌عنوان'),
             h.Value(model.title),
@@ -214,13 +220,16 @@ const editorFormView = (
       ),
       tagsView(model, inputs, h),
       h.label(
-        [h.For('note-body'), h.Class('notes-field')],
+        [h.For('note-body'), h.Class('grid gap-1.5')],
         [
-          h.span([h.Class('notes-field-label')], ['متن (ساده یا مارک‌داون)']),
+          h.span(
+            [h.Class('text-sm font-medium text-base-content/70')],
+            ['متن (ساده یا مارک‌داون)'],
+          ),
           h.textarea([
             h.Id('note-body'),
             h.AriaLabel('متن یادداشت'),
-            h.Class('textarea textarea-bordered notes-editor-body'),
+            h.Class('field-input min-h-[45dvh] p-4 text-base leading-8'),
             h.Placeholder('از همین‌جا شروع کنید…'),
             h.Value(model.text),
             h.Rows(14),
@@ -231,7 +240,7 @@ const editorFormView = (
         ],
       ),
       h.div(
-        [h.Class('notes-editor-actions')],
+        [h.Class('flex flex-wrap items-center gap-2')],
         [
           h.button(
             [
@@ -295,35 +304,44 @@ export const noteEditorView = (
   h: HtmlBuilder<Message>,
 ): Html =>
   h.div(
-    [h.Class('notes-root'), h.Dir('rtl'), h.Lang('fa')],
+    [
+      h.Class('min-h-dvh overflow-x-clip bg-base-200 text-base-content'),
+      h.Dir('rtl'),
+      h.Lang('fa'),
+    ],
     [
       h.div(
-        [h.Class('notes-screen page-wrap')],
+        [h.Class('page-wrap grid w-full max-w-3xl grid-cols-1 gap-4')],
         [
           h.header(
-            [h.Class('notes-editor-head')],
+            [h.Class('flex flex-wrap items-center justify-between gap-3')],
             [
               h.a(
-                [h.Href(notesRouter()), h.Class('btn btn-ghost notes-back')],
+                [h.Href(notesRouter()), h.Class('btn btn-ghost gap-1.5')],
                 [h.span([h.AriaHidden(true)], ['→']), 'یادداشت‌ها'],
               ),
               statusView(model, inputs, h),
             ],
           ),
-          h.h1([h.Class('notes-sr')], ['یادداشت']),
+          h.h1([h.Class('sr-only')], ['یادداشت']),
           model.loadState === 'missing' ? missingView(model, h) : h.empty,
           model.loadState === 'loading'
             ? h.p(
-                [h.Role('status'), h.Class('notes-loading')],
                 [
-                  h.span([h.Class('loading loading-spinner loading-sm')]),
+                  h.Role('status'),
+                  h.Class(
+                    'm-0 flex items-center gap-2 text-sm text-base-content/55',
+                  ),
+                ],
+                [
+                  h.span([h.Class('spinner spinner-sm')]),
                   'در حال باز کردن یادداشت…',
                 ],
               )
             : h.empty,
           model.loadState === 'ready'
             ? h.div(
-                [h.Class('notes-editor')],
+                [h.Class('grid gap-3')],
                 [
                   trashedAlertView(model, h),
                   syncErrorView(model, h),

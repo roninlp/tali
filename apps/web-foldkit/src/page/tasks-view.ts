@@ -5,9 +5,9 @@ import { Listbox } from '@foldkit/ui'
 import { localizeDigits } from '@tali/domain'
 import type { Digits, TaskBucketBounds } from '@tali/domain'
 
+import { shareActionOf } from '../lib/visibility-writes'
 import type { TagRow, TaskRow } from '../mirror'
 import { taskKey } from '../mirror'
-import { shareActionOf } from '../lib/visibility-writes'
 import { buttonView } from '../ui/button'
 import { textAreaFieldView, textInputView } from '../ui/field'
 import { listboxViewInputs } from '../ui/listbox'
@@ -72,6 +72,46 @@ import {
  * same day moves without a pointer.
  */
 
+/**
+ * A tag chip takes its colour from the `--tag-color` custom property the
+ * projection supplies, so its utilities mix that variable with the theme
+ * tokens rather than naming a colour of their own.
+ */
+const TAG_CLASS: string = [
+  'inline-flex max-w-full items-center rounded-full border px-2 py-0.5 text-[0.72rem] leading-6 font-normal wrap-anywhere transition-colors',
+  'border-[color:color-mix(in_oklch,var(--tag-color)_45%,var(--color-base-300))]',
+  'bg-[color:color-mix(in_oklch,var(--tag-color)_12%,var(--color-base-100))]',
+  'text-[color:color-mix(in_oklch,var(--tag-color)_70%,var(--color-base-content))]',
+  'data-[selected=true]:bg-[color:color-mix(in_oklch,var(--tag-color)_30%,var(--color-base-100))]',
+  'data-[selected=true]:font-semibold',
+].join(' ')
+
+const CHIP_CLASS: string = [
+  'inline-flex max-w-full items-center gap-1 rounded-full border border-base-300 bg-base-200 px-2 py-0.5 text-[0.7rem] leading-6 text-base-content/65 wrap-anywhere',
+  'data-[tone=overdue]:border-warning/35 data-[tone=overdue]:bg-warning/12 data-[tone=overdue]:text-warning',
+  'data-[tone=high]:border-error/30 data-[tone=high]:bg-error/10 data-[tone=high]:text-error',
+  'data-[tone=pending]:border-warning/30 data-[tone=pending]:bg-warning/12 data-[tone=pending]:text-warning',
+  'data-[tone=error]:border-error/35 data-[tone=error]:bg-error/12 data-[tone=error]:text-error',
+].join(' ')
+
+/** The quick-add and filter pills: a quiet chip that lights up when active. */
+const PILL_CLASS: string = [
+  'inline-flex min-h-10 items-center rounded-full border border-base-300 bg-base-100 px-3 py-1 text-[0.8rem] text-base-content/70 transition-colors sm:min-h-9',
+  'hover:border-base-content/20 hover:text-base-content disabled:opacity-55',
+  'data-[active=true]:border-primary data-[active=true]:bg-primary/10 data-[active=true]:font-medium data-[active=true]:text-primary',
+].join(' ')
+
+const QUICK_PANEL_CLASS =
+  'grid min-w-0 gap-2 rounded-xl border border-base-300 bg-base-200/60 p-3'
+
+const CHIP_ROW_CLASS = 'flex min-w-0 flex-wrap items-center gap-1.5'
+
+const INLINE_CREATE_CLASS = 'flex flex-wrap items-center gap-1.5'
+
+const QUIET_CLASS = 'm-0 text-[0.78rem] leading-7 text-base-content/55'
+
+const FIELD_CLASS = 'grid min-w-0 gap-1'
+
 const SAVE_LABELS: Readonly<Record<TaskEditor['saveState'], string>> = {
   idle: '',
   saving: 'در حال ذخیره…',
@@ -103,7 +143,7 @@ const tagChipView = (
     onNone: () =>
       h.span(
         [
-          h.Class('tasks-tag'),
+          h.Class(TAG_CLASS),
           h.Style(style),
           h.DataAttribute('selected', 'false'),
         ],
@@ -113,7 +153,7 @@ const tagChipView = (
       h.button(
         [
           h.Type('button'),
-          h.Class('tasks-tag'),
+          h.Class(TAG_CLASS),
           h.Style(style),
           h.AriaPressed(isSelected ? 'true' : 'false'),
           h.DataAttribute('selected', isSelected ? 'true' : 'false'),
@@ -132,7 +172,7 @@ const chipView = (
 ): Html =>
   h.span(
     [
-      h.Class('tasks-chip'),
+      h.Class(CHIP_CLASS),
       ...(tone === undefined ? [] : [h.DataAttribute('tone', tone)]),
       ...(title === undefined ? [] : [h.Title(title)]),
     ],
@@ -179,14 +219,10 @@ const quickAddPanelView = (
     onSome: panel =>
       panel === 'due'
         ? h.div(
-            [h.Id('tasks-quick-add-due'), h.Class('tasks-quick-panel')],
+            [h.Id('tasks-quick-add-due'), h.Class(QUICK_PANEL_CLASS)],
             [
               h.div(
-                [
-                  h.Role('group'),
-                  h.AriaLabel('موعد'),
-                  h.Class('tasks-chip-row'),
-                ],
+                [h.Role('group'), h.AriaLabel('موعد'), h.Class(CHIP_ROW_CLASS)],
                 Array.map(duePresets, option => {
                   const isActive =
                     dueValue === Option.getOrElse(option.value, () => '')
@@ -194,7 +230,7 @@ const quickAddPanelView = (
                   return h.button(
                     [
                       h.Type('button'),
-                      h.Class('tasks-pill'),
+                      h.Class(PILL_CLASS),
                       h.DataAttribute('active', isActive ? 'true' : 'false'),
                       h.AriaPressed(isActive ? 'true' : 'false'),
                       h.OnClick(
@@ -208,13 +244,16 @@ const quickAddPanelView = (
                 }),
               ),
               h.label(
-                [h.Class('tasks-field')],
+                [h.Class(FIELD_CLASS)],
                 [
-                  h.span([], ['تاریخ دلخواه']),
+                  h.span(
+                    [h.Class('text-[0.76rem] text-base-content/60')],
+                    ['تاریخ دلخواه'],
+                  ),
                   h.input([
                     h.Type('date'),
                     h.AriaLabel('تاریخ موعد'),
-                    h.Class('tasks-input'),
+                    h.Class('field-input'),
                     h.Value(dueValue),
                     h.OnInput(value =>
                       Message.UpdatedQuickAddDueDate({ value }),
@@ -226,19 +265,19 @@ const quickAddPanelView = (
           )
         : panel === 'priority'
           ? h.div(
-              [h.Id('tasks-quick-add-priority'), h.Class('tasks-quick-panel')],
+              [h.Id('tasks-quick-add-priority'), h.Class(QUICK_PANEL_CLASS)],
               [
                 h.div(
                   [
                     h.Role('group'),
                     h.AriaLabel('اولویت'),
-                    h.Class('tasks-chip-row'),
+                    h.Class(CHIP_ROW_CLASS),
                   ],
                   Array.map(PRIORITY_CHOICES, choice =>
                     h.button(
                       [
                         h.Type('button'),
-                        h.Class('tasks-pill'),
+                        h.Class(PILL_CLASS),
                         h.AriaPressed(
                           draft.priority === choice.value ? 'true' : 'false',
                         ),
@@ -260,14 +299,14 @@ const quickAddPanelView = (
             )
           : panel === 'tags'
             ? h.div(
-                [h.Id('tasks-quick-add-tags'), h.Class('tasks-quick-panel')],
+                [h.Id('tasks-quick-add-tags'), h.Class(QUICK_PANEL_CLASS)],
                 [
                   Array.match(inputs.mirror.tags, {
                     onEmpty: () =>
-                      h.p([h.Class('tasks-quiet')], ['هنوز برچسبی ندارید.']),
+                      h.p([h.Class(QUIET_CLASS)], ['هنوز برچسبی ندارید.']),
                     onNonEmpty: tags =>
                       h.div(
-                        [h.Class('tasks-chip-row')],
+                        [h.Class(CHIP_ROW_CLASS)],
                         Array.map(tags, tag =>
                           tagChipView(
                             tag,
@@ -281,13 +320,13 @@ const quickAddPanelView = (
                       ),
                   }),
                   h.div(
-                    [h.Class('tasks-inline-create')],
+                    [h.Class(INLINE_CREATE_CLASS)],
                     [
                       h.input([
                         h.Type('text'),
                         h.AriaLabel('نام برچسب تازه'),
                         h.Placeholder('برچسب تازه…'),
-                        h.Class('tasks-input'),
+                        h.Class('field-input min-w-0 flex-1 basis-36'),
                         h.Disabled(!inputs.isStoreReady),
                         h.Value(draft.newTagName),
                         h.OnInput(value =>
@@ -306,7 +345,7 @@ const quickAddPanelView = (
                       h.button(
                         [
                           h.Type('button'),
-                          h.Class('tasks-pill'),
+                          h.Class(PILL_CLASS),
                           h.Disabled(
                             !inputs.isStoreReady ||
                               draft.newTagName.trim() === '',
@@ -324,12 +363,15 @@ const quickAddPanelView = (
                 ],
               )
             : h.div(
-                [h.Id('tasks-quick-add-project'), h.Class('tasks-quick-panel')],
+                [h.Id('tasks-quick-add-project'), h.Class(QUICK_PANEL_CLASS)],
                 [
                   h.label(
-                    [h.Class('tasks-field')],
+                    [h.Class(FIELD_CLASS)],
                     [
-                      h.span([], ['پروژه']),
+                      h.span(
+                        [h.Class('text-[0.76rem] text-base-content/60')],
+                        ['پروژه'],
+                      ),
                       h.submodel({
                         slotId: model.quickAddProjectListbox.id,
                         model: model.quickAddProjectListbox,
@@ -337,13 +379,10 @@ const quickAddPanelView = (
                         viewInputs: listboxViewInputs({
                           items: [
                             { value: '', label: 'بدون پروژه' },
-                            ...Array.map(
-                              inputs.mirror.projects,
-                              project => ({
-                                value: project.id,
-                                label: project.title,
-                              }),
-                            ),
+                            ...Array.map(inputs.mirror.projects, project => ({
+                              value: project.id,
+                              label: project.title,
+                            })),
                           ],
                           maybeSelectedValue: Option.some(
                             Option.getOrElse(draft.maybeProjectId, () => ''),
@@ -356,13 +395,13 @@ const quickAddPanelView = (
                     ],
                   ),
                   h.div(
-                    [h.Class('tasks-inline-create')],
+                    [h.Class(INLINE_CREATE_CLASS)],
                     [
                       h.input([
                         h.Type('text'),
                         h.AriaLabel('نام پروژه‌ی تازه'),
                         h.Placeholder('پروژه‌ی تازه…'),
-                        h.Class('tasks-input'),
+                        h.Class('field-input min-w-0 flex-1 basis-36'),
                         h.Disabled(!inputs.isStoreReady),
                         h.Value(draft.newProjectTitle),
                         h.OnInput(value =>
@@ -381,7 +420,7 @@ const quickAddPanelView = (
                       h.button(
                         [
                           h.Type('button'),
-                          h.Class('tasks-pill'),
+                          h.Class(PILL_CLASS),
                           h.Disabled(
                             !inputs.isStoreReady ||
                               draft.newProjectTitle.trim() === '',
@@ -405,23 +444,28 @@ const quickAddStatusView = (
   draft: QuickAddDraft,
   h: HtmlBuilder<Message>,
 ): Html =>
-  h.div(
-    [h.Role('status'), h.AriaLive('polite'), h.Class('tasks-quick-status')],
-    [
-      Option.match(draft.maybeError, {
-        onNone: () =>
-          h.span(
-            [],
+  Option.match(draft.maybeError, {
+    onSome: message =>
+      h.p(
+        [
+          h.Role('status'),
+          h.AriaLive('polite'),
+          h.Class('m-0 text-[0.76rem] leading-6 text-error'),
+        ],
+        [message],
+      ),
+    onNone: () =>
+      draft.hasSaved
+        ? h.p(
             [
-              draft.hasSaved
-                ? 'ذخیره شد؛ در صف همگام‌سازی.'
-                : 'هر تغییر اول روی همین دستگاه ذخیره می‌شود؛ بی‌نیاز از اینترنت.',
+              h.Role('status'),
+              h.AriaLive('polite'),
+              h.Class('m-0 text-[0.76rem] leading-6 text-base-content/55'),
             ],
-          ),
-        onSome: message => h.span([h.Class('tasks-error-text')], [message]),
-      }),
-    ],
-  )
+            ['ذخیره شد؛ در صف همگام‌سازی.'],
+          )
+        : h.empty,
+  })
 
 const quickAddView = (
   model: Model,
@@ -446,19 +490,19 @@ const quickAddView = (
   return h.form(
     [
       h.AriaLabel('افزودن سریع کار'),
-      h.Class('tasks-quick panel'),
+      h.Class('panel grid grid-cols-1 min-w-0 gap-3 p-4 sm:p-5'),
       h.OnSubmit(Message.SubmittedQuickAdd()),
     ],
     [
       h.div(
-        [h.Class('tasks-quick-row')],
+        [h.Class('flex flex-wrap gap-2')],
         [
           h.input([
             h.Id('tasks-quick-add'),
             h.Type('text'),
             h.AriaLabel('عنوان کار تازه'),
             h.Placeholder('یک کار تازه… (مثلاً خرید شیر)'),
-            h.Class('tasks-input tasks-quick-input'),
+            h.Class('field-input min-h-11 min-w-0 flex-1 basis-48'),
             h.Value(draft.title),
             h.Disabled(!inputs.isStoreReady),
             h.OnInput(value => Message.UpdatedQuickAddTitle({ value })),
@@ -471,6 +515,7 @@ const quickAddView = (
                 draft.isAdding ||
                 draft.title.trim() === '',
               isLoading: draft.isAdding,
+              class: 'min-h-11',
               children: ['افزودن'],
             },
             h,
@@ -478,12 +523,12 @@ const quickAddView = (
         ],
       ),
       h.div(
-        [h.Role('group'), h.AriaLabel('جزئیات کار'), h.Class('tasks-chip-row')],
+        [h.Role('group'), h.AriaLabel('جزئیات کار'), h.Class(CHIP_ROW_CLASS)],
         [
           h.button(
             [
               h.Type('button'),
-              h.Class('tasks-pill'),
+              h.Class(PILL_CLASS),
               h.DataAttribute(
                 'active',
                 Option.contains(draft.maybePanel, 'due') ||
@@ -500,7 +545,7 @@ const quickAddView = (
           h.button(
             [
               h.Type('button'),
-              h.Class('tasks-pill'),
+              h.Class(PILL_CLASS),
               h.DataAttribute(
                 'active',
                 Option.contains(draft.maybePanel, 'priority') ||
@@ -519,7 +564,7 @@ const quickAddView = (
           h.button(
             [
               h.Type('button'),
-              h.Class('tasks-pill'),
+              h.Class(PILL_CLASS),
               h.DataAttribute(
                 'active',
                 Option.contains(draft.maybePanel, 'tags') ||
@@ -540,7 +585,7 @@ const quickAddView = (
           h.button(
             [
               h.Type('button'),
-              h.Class('tasks-pill'),
+              h.Class(PILL_CLASS),
               h.DataAttribute(
                 'active',
                 Option.contains(draft.maybePanel, 'project') ||
@@ -577,14 +622,25 @@ const projectButtonView = (
   h.button(
     [
       h.Type('button'),
-      h.Class('tasks-project-button'),
+      h.Class(
+        'flex min-h-10 min-w-0 items-center justify-between gap-2 rounded-lg border-0 bg-transparent px-2 py-2 text-start text-[0.84rem] text-base-content/75 transition-colors hover:bg-base-content/5 aria-pressed:bg-primary/10 aria-pressed:font-medium aria-pressed:text-primary',
+      ),
       h.AriaPressed(isSelected ? 'true' : 'false'),
       h.DataAttribute('selected', isSelected ? 'true' : 'false'),
       h.OnClick(onSelect),
     ],
     [
-      h.span([h.Class('tasks-project-name')], [label]),
-      h.span([h.Class('tasks-project-count')], [localizeDigits(count, digits)]),
+      h.span([h.Class('min-w-0 wrap-anywhere')], [label]),
+      count > 0
+        ? h.span(
+            [
+              h.Class(
+                'flex-none text-[0.72rem] text-base-content/50 tabular-nums',
+              ),
+            ],
+            [localizeDigits(count, digits)],
+          )
+        : h.empty,
     ],
   )
 
@@ -600,22 +656,24 @@ const filterPanelView = (
   const active = activeFilterCount(model.settings.filters)
 
   return h.div(
-    [h.Class('tasks-filter-card panel')],
+    [h.Class('panel grid grid-cols-1 min-w-0 gap-3 p-4 sm:p-5')],
     [
       h.button(
         [
           h.Type('button'),
-          h.Class('tasks-filter-close'),
+          h.Class(
+            'ms-auto inline-flex min-h-10 items-center justify-center rounded-full border border-base-300 bg-base-100 px-3.5 py-1 text-[0.8rem] text-base-content/60 transition-colors hover:border-base-content/20 hover:text-base-content lg:hidden',
+          ),
           h.OnClick(Message.ClickedToggleFilters()),
         ],
         ['بستن فیلترها'],
       ),
       h.header(
-        [h.Class('tasks-filter-head')],
+        [h.Class('grid gap-0.5')],
         [
-          h.h2([], ['فیلتر و مرتب‌سازی']),
+          h.h2([h.Class('m-0 text-[0.95rem] font-bold')], ['فیلتر و مرتب‌سازی']),
           h.p(
-            [],
+            [h.Class('m-0 text-[0.78rem] leading-6 text-base-content/50')],
             [
               `${localizeDigits(view.total, digits)} کار · امروز ${localizeDigits(
                 view.counts.today,
@@ -629,14 +687,17 @@ const filterPanelView = (
         ],
       ),
       h.section(
+        [h.AriaLabelledBy('tasks-filter-projects'), h.Class('grid gap-1')],
         [
-          h.AriaLabelledBy('tasks-filter-projects'),
-          h.Class('tasks-filter-block'),
-        ],
-        [
-          h.h3([h.Id('tasks-filter-projects')], ['پروژه‌ها']),
+          h.h3(
+            [
+              h.Id('tasks-filter-projects'),
+              h.Class('m-0 text-[0.82rem] font-medium text-base-content/55'),
+            ],
+            ['پروژه‌ها'],
+          ),
           h.div(
-            [h.Class('tasks-project-list')],
+            [h.Class('grid gap-0.5')],
             [
               projectButtonView(
                 'همه‌ی کارها',
@@ -672,13 +733,13 @@ const filterPanelView = (
             ],
           ),
           h.div(
-            [h.Class('tasks-inline-create')],
+            [h.Class(INLINE_CREATE_CLASS)],
             [
               h.input([
                 h.Type('text'),
                 h.AriaLabel('نام پروژه‌ی تازه'),
                 h.Placeholder('پروژه‌ی تازه…'),
-                h.Class('tasks-input'),
+                h.Class('field-input min-w-0 flex-1 basis-36'),
                 h.Disabled(!inputs.isStoreReady),
                 h.Value(model.newProjectTitle),
                 h.OnInput(value => Message.UpdatedNewProjectTitle({ value })),
@@ -695,7 +756,7 @@ const filterPanelView = (
               h.button(
                 [
                   h.Type('button'),
-                  h.Class('tasks-pill'),
+                  h.Class(PILL_CLASS),
                   h.Disabled(
                     !inputs.isStoreReady || model.newProjectTitle.trim() === '',
                   ),
@@ -712,10 +773,13 @@ const filterPanelView = (
         ],
       ),
       h.section(
-        [h.AriaLabelledBy('tasks-filter-tags'), h.Class('tasks-filter-block')],
+        [h.AriaLabelledBy('tasks-filter-tags'), h.Class('grid gap-1')],
         [
           h.h3(
-            [h.Id('tasks-filter-tags')],
+            [
+              h.Id('tasks-filter-tags'),
+              h.Class('m-0 text-[0.82rem] font-medium text-base-content/55'),
+            ],
             [
               model.settings.filters.tagIds.length > 0
                 ? `برچسب‌ها (${localizeDigits(
@@ -726,11 +790,10 @@ const filterPanelView = (
             ],
           ),
           Array.match(inputs.mirror.tags, {
-            onEmpty: () =>
-              h.p([h.Class('tasks-quiet')], ['هنوز برچسبی ندارید.']),
+            onEmpty: () => h.p([h.Class(QUIET_CLASS)], ['هنوز برچسبی ندارید.']),
             onNonEmpty: tags =>
               h.div(
-                [h.Class('tasks-chip-row')],
+                [h.Class(CHIP_ROW_CLASS)],
                 Array.map(tags, tag =>
                   tagChipView(
                     tag,
@@ -742,13 +805,13 @@ const filterPanelView = (
               ),
           }),
           h.div(
-            [h.Class('tasks-inline-create')],
+            [h.Class(INLINE_CREATE_CLASS)],
             [
               h.input([
                 h.Type('text'),
                 h.AriaLabel('نام برچسب تازه'),
                 h.Placeholder('برچسب تازه…'),
-                h.Class('tasks-input'),
+                h.Class('field-input min-w-0 flex-1 basis-36'),
                 h.Disabled(!inputs.isStoreReady),
                 h.Value(model.newTagName),
                 h.OnInput(value => Message.UpdatedNewTagName({ value })),
@@ -763,7 +826,7 @@ const filterPanelView = (
               h.button(
                 [
                   h.Type('button'),
-                  h.Class('tasks-pill'),
+                  h.Class(PILL_CLASS),
                   h.Disabled(
                     !inputs.isStoreReady || model.newTagName.trim() === '',
                   ),
@@ -850,7 +913,7 @@ const filterPanelView = (
         ],
       ),
       h.div(
-        [h.Class('tasks-sort-row')],
+        [h.Class('grid grid-cols-[minmax(0,1fr)_auto] items-end gap-1')],
         [
           h.div(
             [h.Class('grid gap-1.5')],
@@ -884,7 +947,7 @@ const filterPanelView = (
               type: 'button',
               variant: 'outline',
               size: 'sm',
-              class: 'tasks-sort-direction',
+              class: 'self-end',
               ariaLabel:
                 model.settings.sort.direction === 'asc'
                   ? 'مرتب‌سازی صعودی'
@@ -902,14 +965,14 @@ const filterPanelView = (
         ? h.button(
             [
               h.Type('button'),
-              h.Class('tasks-pill'),
+              h.Class(PILL_CLASS),
               h.OnClick(Message.ClickedClearFilters()),
             ],
             [`پاک کردن فیلترها (${localizeDigits(active, digits)})`],
           )
         : h.empty,
       h.p(
-        [h.Class('tasks-filter-note')],
+        [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/40')],
         ['فیلترها و مرتب‌سازی روی همین دستگاه ذخیره می‌شوند.'],
       ),
     ],
@@ -935,7 +998,9 @@ const moveButton = (
   h.button(
     [
       h.Type('button'),
-      h.Class('tasks-move'),
+      h.Class(
+        'inline-flex min-h-8 items-center rounded-full border border-base-300 bg-base-100 px-2.5 text-[0.68rem] text-base-content/60 transition-colors hover:border-primary hover:bg-primary/8 hover:text-primary',
+      ),
       h.OnClick(
         Message.ClickedMoveTask({
           taskId: task.id,
@@ -957,14 +1022,17 @@ const editorView = (
   const editorId = `task-${task.id}-editor`
 
   return h.div(
-    [h.Id(editorId), h.Class('tasks-editor')],
+    [
+      h.Id(editorId),
+      h.Class('grid min-w-0 gap-3 border-t border-dashed border-base-300 pt-3'),
+    ],
     [
       textInputView(
         {
           id: `task-${task.id}-title`,
           label: 'عنوان',
           value: editor.title,
-          class: 'tasks-input',
+          class: 'min-w-0',
           onInput: value =>
             Message.UpdatedTaskTitle({ taskId: task.id, value }),
         },
@@ -976,14 +1044,18 @@ const editorView = (
           label: 'توضیح',
           value: editor.description,
           rows: 3,
-          class: 'tasks-input',
+          class: 'min-w-0',
           onInput: value =>
             Message.UpdatedTaskDescription({ taskId: task.id, value }),
         },
         h,
       ),
       h.div(
-        [h.Class('tasks-editor-grid')],
+        [
+          h.Class(
+            'grid min-w-0 gap-2 sm:grid-cols-[repeat(auto-fit,minmax(130px,1fr))]',
+          ),
+        ],
         [
           textInputView(
             {
@@ -991,7 +1063,7 @@ const editorView = (
               label: 'موعد',
               type: 'date',
               value: editor.dueDate,
-              class: 'tasks-input',
+              class: 'min-w-0',
               onInput: value =>
                 Message.UpdatedTaskDueDate({ taskId: task.id, value }),
             },
@@ -1090,15 +1162,15 @@ const editorView = (
         ],
       ),
       h.div(
-        [h.Role('group'), h.AriaLabel('برچسب‌ها'), h.Class('tasks-field')],
+        [h.Role('group'), h.AriaLabel('برچسب‌ها'), h.Class(FIELD_CLASS)],
         [
-          h.span([], ['برچسب‌ها']),
+          h.span([h.Class('text-[0.76rem] text-base-content/60')], ['برچسب‌ها']),
           Array.match(inputs.mirror.tags, {
             onEmpty: () =>
-              h.p([h.Class('tasks-quiet')], ['هنوز برچسبی ساخته نشده است.']),
+              h.p([h.Class(QUIET_CLASS)], ['هنوز برچسبی ساخته نشده است.']),
             onNonEmpty: tags =>
               h.div(
-                [h.Class('tasks-chip-row')],
+                [h.Class(CHIP_ROW_CLASS)],
                 Array.map(tags, tag =>
                   tagChipView(
                     tag,
@@ -1117,7 +1189,7 @@ const editorView = (
         ],
       ),
       h.div(
-        [h.Class('tasks-editor-actions')],
+        [h.Class('flex flex-wrap items-center justify-start gap-2')],
         [
           ...(Option.exists(maybeUserId, userId => userId === task.ownerId)
             ? [
@@ -1166,7 +1238,7 @@ const taskMetaView = (
   const isPending = Array.contains(inputs.pendingKeys, taskKey(task.id))
 
   return h.div(
-    [h.Class('tasks-meta')],
+    [h.Class('flex min-w-0 flex-wrap items-center gap-1')],
     [
       chipView(
         dueLabel(task, view.bounds, digits),
@@ -1205,7 +1277,7 @@ const moveActionsView = (
     [
       h.Role('group'),
       h.AriaLabel(`جابه‌جایی ${task.title}`),
-      h.Class('tasks-moves'),
+      h.Class('flex flex-wrap gap-1'),
     ],
     [
       task.dueDate === view.bounds.today
@@ -1242,7 +1314,14 @@ const taskCardView = (
     task.id,
     [
       h.Id(`task-${task.id}`),
-      h.Class('tasks-card'),
+      h.Class(
+        [
+          'grid min-w-0 gap-2 rounded-xl border border-base-300 bg-base-100 p-3 shadow-panel transition-colors',
+          'data-[overdue=true]:border-warning/35 data-[overdue=true]:bg-warning/[0.07]',
+          'data-[dragging=true]:opacity-50',
+          'target:border-primary target:bg-primary/[0.07]',
+        ].join(' '),
+      ),
       h.DataAttribute('overdue', overdue ? 'true' : 'false'),
       h.DataAttribute(
         'dragging',
@@ -1251,14 +1330,16 @@ const taskCardView = (
     ],
     [
       h.div(
-        [h.Class('tasks-card-row')],
+        [h.Class('flex min-w-0 items-start gap-2')],
         [
           h.span(
             [
               h.Draggable(true),
               h.AriaHidden(true),
               h.Title('بکشید تا به روز دیگری برود'),
-              h.Class('tasks-drag-handle'),
+              h.Class(
+                'hidden cursor-grab select-none px-0.5 py-1 text-[0.9rem] text-base-content/35 lg:inline-flex',
+              ),
               h.OnDragStart(Message.StartedTaskDrag({ taskId: task.id })),
               h.OnDragEnd(Message.EndedTaskDrag()),
             ],
@@ -1267,7 +1348,9 @@ const taskCardView = (
           h.button(
             [
               h.Type('button'),
-              h.Class('tasks-check'),
+              h.Class(
+                'relative grid size-5 flex-none place-items-center rounded-full border-[1.5px] border-base-300 bg-base-100 text-[0.62rem] text-transparent transition-colors before:absolute before:-inset-2.5 before:content-[""] hover:border-secondary hover:bg-secondary/8 hover:text-secondary active:scale-90',
+              ),
               h.AriaLabel(`انجام دادن: ${task.title}`),
               h.Title('انجام دادن'),
               h.OnClick(
@@ -1283,7 +1366,9 @@ const taskCardView = (
           h.button(
             [
               h.Type('button'),
-              h.Class('tasks-card-title'),
+              h.Class(
+                'min-w-0 flex-1 cursor-pointer rounded-md border-0 bg-transparent p-0 text-start text-[0.9rem] leading-7 font-semibold wrap-anywhere hover:text-primary hover:underline hover:underline-offset-4',
+              ),
               h.AriaExpanded(editor !== undefined),
               h.AriaControls(editorId),
               h.OnClick(Message.ClickedTaskTitle({ taskId: task.id })),
@@ -1295,14 +1380,23 @@ const taskCardView = (
       editor === undefined &&
       task.description !== null &&
       task.description !== ''
-        ? h.p([h.Class('tasks-card-description')], [task.description])
+        ? h.p(
+            [
+              h.Class(
+                'm-0 text-[0.82rem] leading-7 text-base-content/60 wrap-anywhere',
+              ),
+            ],
+            [task.description],
+          )
         : h.empty,
       taskMetaView(inputs, view, task, h),
       moveActionsView(task, view, h),
       editor !== undefined && editor.saveState !== 'idle'
         ? h.span(
             [
-              h.Class('tasks-save-state'),
+              h.Class(
+                'min-h-[1.2em] text-[0.72rem] leading-6 text-base-content/55 data-[state=saved]:text-success data-[state=error]:text-error',
+              ),
               h.DataAttribute('state', editor.saveState),
               h.Role('status'),
               h.AriaLive('polite'),
@@ -1332,7 +1426,9 @@ const boardView = (
 
   return h.section(
     [
-      h.Class('tasks-board'),
+      h.Class(
+        'grid min-w-0 content-start gap-2 rounded-2xl border border-base-300 bg-base-content/[0.03] p-3 transition-colors data-[over=true]:border-primary data-[over=true]:border-dashed data-[over=true]:bg-primary/10',
+      ),
       h.DataAttribute(
         'over',
         Option.contains(model.maybeDragOverBoard, board.key) ? 'true' : 'false',
@@ -1344,38 +1440,60 @@ const boardView = (
     ],
     [
       h.div(
-        [h.Class('tasks-board-head')],
+        [h.Class('flex flex-wrap items-center justify-between gap-2')],
         [
-          h.h2([h.Id(headingId)], [copy.title]),
+          h.h2(
+            [
+              h.Id(headingId),
+              h.Class('m-0 text-[0.95rem] font-semibold tracking-tight'),
+            ],
+            [copy.title],
+          ),
           h.span(
             [
-              h.Class('tasks-count'),
+              h.Class(
+                'inline-flex min-w-6 items-center justify-center rounded-full bg-primary/12 px-2 py-0.5 text-[0.72rem] font-semibold text-primary tabular-nums',
+              ),
               h.AriaLabel(
                 `${localizeDigits(board.count, inputs.display.digits)} کار`,
               ),
             ],
-            [localizeDigits(board.count, inputs.display.digits)],
+            [localizeDigits(board.count, inputs.display.digits), ' کار'],
           ),
         ],
       ),
-      h.p([h.Class('tasks-board-sub')], [copy.subtitle]),
+      h.p(
+        [h.Class('m-0 text-[0.76rem] leading-6 text-base-content/55')],
+        [copy.subtitle],
+      ),
       board.count === 0
-        ? h.p([h.Class('tasks-board-empty')], [copy.empty])
+        ? h.p(
+            [
+              h.Class(
+                'm-0 rounded-xl border border-dashed border-base-300 px-3 py-6 text-center text-[0.82rem] leading-7 text-base-content/50',
+              ),
+            ],
+            [copy.empty],
+          )
         : h.div(
-            [h.Class('tasks-groups')],
+            [h.Class('grid min-w-0 gap-2')],
             Array.map(groups, group =>
               h.keyed('div')(
                 group.key,
-                [h.Class('tasks-group')],
+                [h.Class('grid min-w-0 gap-1.5')],
                 [
                   group.key === 'today' || group.key === 'noDate'
                     ? h.empty
                     : h.h3(
-                        [h.Class('tasks-group-title')],
+                        [
+                          h.Class(
+                            'mt-1 mb-0 text-[0.78rem] font-medium text-base-content/50',
+                          ),
+                        ],
                         [GROUP_TITLES[group.key]],
                       ),
                   h.ul(
-                    [],
+                    [h.Class('m-0 grid min-w-0 list-none gap-2 p-0')],
                     Array.map(group.tasks, task =>
                       taskCardView(model, inputs, view, task, h),
                     ),
@@ -1403,39 +1521,58 @@ const historyView = (
   )
 
   return h.details(
-    [h.Class('tasks-history')],
+    [h.Class('panel px-4 py-2')],
     [
       h.summary(
-        [],
+        [
+          h.Class(
+            'flex min-h-11 cursor-pointer items-center gap-2 text-[0.9rem]',
+          ),
+        ],
         [
           h.span([], ['تاریخچهٔ انجام']),
           h.span(
-            [h.Class('tasks-count')],
+            [
+              h.Class(
+                'inline-flex min-w-6 items-center justify-center rounded-full bg-primary/12 px-2 py-0.5 text-[0.72rem] font-semibold text-primary tabular-nums',
+              ),
+            ],
             [localizeDigits(completions.length, digits)],
           ),
         ],
       ),
       h.p(
-        [h.Class('tasks-history-hint')],
+        [h.Class('mt-1 mb-2 text-[0.76rem] leading-6 text-base-content/50')],
         ['تا هفت روز قابل بازگردانی است؛ پس از آن بایگانی می‌شود.'],
       ),
       Array.match(completions, {
         onEmpty: () =>
           h.p(
-            [h.Class('tasks-quiet')],
+            [h.Class(QUIET_CLASS)],
             ['هنوز کاری در این هفته انجام نشده است.'],
           ),
         onNonEmpty: rows =>
           h.ul(
-            [],
+            [h.Class('m-0 grid list-none gap-1 p-0')],
             Array.map(rows, task =>
               h.keyed('li')(
                 task.id,
-                [],
                 [
-                  h.p([h.Class('tasks-history-title')], [task.title]),
+                  h.Class(
+                    'flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-base-300 py-2',
+                  ),
+                ],
+                [
+                  h.p(
+                    [
+                      h.Class(
+                        'm-0 min-w-0 flex-1 text-[0.85rem] text-base-content/55 line-through wrap-anywhere',
+                      ),
+                    ],
+                    [task.title],
+                  ),
                   h.span(
-                    [h.Class('tasks-history-time')],
+                    [h.Class('text-[0.72rem] text-base-content/50')],
                     [
                       task.completedAt === null
                         ? ''
@@ -1449,7 +1586,9 @@ const historyView = (
                   h.button(
                     [
                       h.Type('button'),
-                      h.Class('tasks-history-restore'),
+                      h.Class(
+                        'min-h-10 flex-none rounded-full px-3 text-[0.76rem] text-base-content/65 transition-colors hover:bg-base-content/5 hover:text-primary sm:min-h-8',
+                      ),
                       h.AriaLabel(`بازگرداندن ${task.title}`),
                       h.OnClick(
                         Message.ClickedRestoreCompletion({
@@ -1480,12 +1619,24 @@ const toastView = (
     onNone: () => h.empty,
     onSome: toast =>
       h.div(
-        [h.Class('tasks-toast'), h.Role('status'), h.AriaLive('polite')],
         [
-          h.p([], [`انجام شد: ${toast.title}`]),
+          h.Class(
+            'fixed inset-x-3 bottom-[5.5rem] z-40 mx-auto flex max-w-[420px] items-center justify-between gap-3 rounded-2xl border border-base-300 bg-base-100 py-2.5 ps-4 pe-3 text-base-content shadow-float sm:bottom-4',
+          ),
+          h.Role('status'),
+          h.AriaLive('polite'),
+        ],
+        [
+          h.p(
+            [h.Class('m-0 text-[0.85rem] leading-7 wrap-anywhere')],
+            [`انجام شد: ${toast.title}`],
+          ),
           h.button(
             [
               h.Type('button'),
+              h.Class(
+                'min-h-10 flex-none rounded-full border border-base-300 px-3.5 text-[0.8rem] text-base-content/75 transition-colors hover:bg-base-content/5 hover:text-base-content sm:min-h-9',
+              ),
               h.OnClick(
                 Message.ClickedUndoToast({ generation: toast.generation }),
               ),
@@ -1498,11 +1649,14 @@ const toastView = (
 
 const headerView = (inputs: ViewInputs, h: HtmlBuilder<Message>): Html =>
   h.header(
-    [h.Class('tasks-head panel')],
+    [h.Class('grid gap-2')],
     [
-      h.h1([], ['کارها']),
+      h.h1(
+        [h.Class('m-0 text-2xl font-bold tracking-tight sm:text-3xl')],
+        ['کارها'],
+      ),
       h.p(
-        [],
+        [h.Class('m-0 text-sm leading-7 text-base-content/55')],
         [
           'هر تغییر اول روی همین دستگاه ذخیره می‌شود؛ بعد در پس‌زمینه همگام می‌شود.',
         ],
@@ -1510,14 +1664,21 @@ const headerView = (inputs: ViewInputs, h: HtmlBuilder<Message>): Html =>
       inputs.isOnline
         ? h.empty
         : h.p(
-            [h.Role('status'), h.Class('tasks-offline')],
+            [
+              h.Role('status'),
+              h.Class('notice notice-warning m-0 text-[0.8rem] leading-7'),
+            ],
             [
               'آفلاین هستید: ساخت، جابه‌جایی و انجام‌دادن کار می‌کند و بعداً ارسال می‌شود.',
             ],
           ),
       inputs.pending > 0
         ? h.p(
-            [h.Role('status'), h.AriaLive('polite'), h.Class('tasks-pending')],
+            [
+              h.Role('status'),
+              h.AriaLive('polite'),
+              h.Class('m-0 text-[0.78rem] leading-6 text-base-content/50'),
+            ],
             [
               `${localizeDigits(inputs.pending, inputs.display.digits)} تغییر در صف همگام‌سازی است.`,
             ],
@@ -1534,18 +1695,28 @@ export const tasksPageView = (
   const view = viewOf(model, inputs)
 
   return h.div(
-    [h.Class('tasks-root'), h.Dir('rtl'), h.Lang('fa')],
+    [
+      h.Class('overflow-x-clip bg-base-200 text-base-content'),
+      h.Dir('rtl'),
+      h.Lang('fa'),
+    ],
     [
       h.div(
-        [h.Class('tasks-layout page-wrap mx-auto max-w-7xl')],
+        [
+          h.Class(
+            'page-wrap grid grid-cols-1 min-w-0 max-w-7xl gap-4 lg:grid-cols-[264px_minmax(0,1fr)] lg:items-start',
+          ),
+        ],
         [
           h.div(
-            [h.Class('tasks-filter-toggle-wrap')],
+            [h.Class('flex min-w-0 lg:hidden')],
             [
               h.button(
                 [
                   h.Type('button'),
-                  h.Class('tasks-filter-toggle'),
+                  h.Class(
+                    'inline-flex min-h-10 items-center gap-1.5 rounded-full border border-base-300 bg-base-100 px-4 py-1.5 text-[0.85rem] text-base-content transition-colors hover:border-base-content/20 aria-expanded:border-primary aria-expanded:bg-primary/10 aria-expanded:text-primary',
+                  ),
                   h.AriaExpanded(model.isFiltersOpen),
                   h.AriaControls('tasks-filter-panel'),
                   h.OnClick(Message.ClickedToggleFilters()),
@@ -1557,28 +1728,40 @@ export const tasksPageView = (
           h.aside(
             [
               h.Id('tasks-filter-panel'),
-              h.Class('tasks-filter-panel'),
+              h.Class(
+                'hidden min-w-0 data-[open=true]:grid lg:sticky lg:top-[84px] lg:col-start-1 lg:row-start-1 lg:grid',
+              ),
               h.DataAttribute('open', model.isFiltersOpen ? 'true' : 'false'),
               h.AriaLabel('فیلتر کارها'),
             ],
             [filterPanelView(model, inputs, view, h)],
           ),
           h.div(
-            [h.Class('tasks-main')],
+            [h.Class('grid min-w-0 gap-4 lg:col-start-2 lg:row-start-1')],
             [
               headerView(inputs, h),
               quickAddView(model, inputs, view, h),
               Option.match(model.maybeError, {
                 onNone: () => h.empty,
                 onSome: message =>
-                  h.p([h.Role('alert'), h.Class('tasks-alert')], [message]),
+                  h.p(
+                    [
+                      h.Role('alert'),
+                      h.Class('notice notice-error m-0 text-sm leading-7'),
+                    ],
+                    [message],
+                  ),
               }),
               inputs.isStoreReady
                 ? h.div(
                     [],
                     [
                       h.div(
-                        [h.Class('tasks-boards')],
+                        [
+                          h.Class(
+                            'grid min-w-0 gap-4 lg:grid-cols-3 lg:items-start',
+                          ),
+                        ],
                         [
                           boardView(model, inputs, view, view.today, h),
                           boardView(model, inputs, view, view.upcoming, h),
@@ -1589,11 +1772,15 @@ export const tasksPageView = (
                     ],
                   )
                 : h.p(
-                    [h.Class('tasks-loading')],
+                    [
+                      h.Class(
+                        'm-0 flex items-center gap-2 text-sm text-base-content/55',
+                      ),
+                    ],
                     [
                       h.span([
                         h.AriaHidden(true),
-                        h.Class('loading loading-spinner loading-sm'),
+                        h.Class('spinner spinner-sm'),
                       ]),
                       'در حال آماده‌سازی حافظه‌ی محلی…',
                     ],
@@ -1603,7 +1790,7 @@ export const tasksPageView = (
         ],
       ),
       h.p(
-        [h.Class('tasks-sr'), h.Role('status'), h.AriaLive('polite')],
+        [h.Class('sr-only'), h.Role('status'), h.AriaLive('polite')],
         [model.announcement],
       ),
       toastView(model.maybeToast, h),

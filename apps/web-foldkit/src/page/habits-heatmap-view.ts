@@ -41,7 +41,7 @@ const legendDot = (
   h: HtmlBuilder<Message>,
 ): Html =>
   h.span([
-    h.Class('habits-heat-dot'),
+    h.Class('size-2.5 shrink-0 rounded-sm border border-base-300 bg-base-200'),
     ...(maybeStyle === undefined ? [] : [h.Style(maybeStyle)]),
   ])
 
@@ -50,11 +50,17 @@ const legendKey = (
   maybeStyle: Readonly<Record<string, string>> | undefined,
   h: HtmlBuilder<Message>,
 ): Html =>
-  h.span([h.Class('habits-heat-key')], [legendDot(maybeStyle, h), label])
+  h.span(
+    [h.Class('inline-flex items-center gap-1')],
+    [legendDot(maybeStyle, h), label],
+  )
 
 const legendView = (h: HtmlBuilder<Message>): Html =>
   h.div(
-    [h.Class('habits-heat-legend'), h.AriaLabel('راهنمای نقشه')],
+    [
+      h.Class('flex flex-wrap gap-2 text-[0.68rem] text-base-content/55'),
+      h.AriaLabel('راهنمای نقشه'),
+    ],
     [
       legendKey(
         'انجام شد',
@@ -93,7 +99,9 @@ const heatNavButton = (
   h.button(
     [
       h.Type('button'),
-      h.Class('habits-heat-nav'),
+      h.Class(
+        'grid size-10 place-items-center rounded-xl border border-base-300 bg-base-100 text-[0.9rem] text-base-content/65 transition-colors hover:border-base-content/20 hover:text-base-content',
+      ),
       h.AriaLabel(label),
       h.OnClick(message),
     ],
@@ -121,26 +129,37 @@ export const habitHeatmapView = (
     month.year === current.year && month.month === current.month
 
   return h.section(
-    [h.Class('habits-heat'), h.AriaLabel(`نقشه ماه ${month.label}`)],
+    [
+      h.Class('grid gap-2 border-t border-dashed border-base-300 pt-2.5'),
+      h.AriaLabel(`نقشه ماه ${month.label}`),
+    ],
     [
       h.header(
-        [h.Class('habits-heat-head')],
+        [h.Class('flex items-center justify-between gap-2')],
         [
           heatNavButton('ماه قبل', '›', Message.PressedPreviousHeatMonth(), h),
-          h.strong([h.AriaLive('polite')], [month.label]),
+          h.strong(
+            [h.Class('text-[0.82rem] font-semibold'), h.AriaLive('polite')],
+            [month.label],
+          ),
           heatNavButton('ماه بعد', '‹', Message.PressedNextHeatMonth(), h),
         ],
       ),
       h.div(
         [
-          h.Class('habits-heat-grid'),
+          h.Class('grid grid-cols-7 gap-1'),
           h.Role('grid'),
           h.AriaLabel(`روزهای ${month.label}`),
         ],
         [
           ...Array.map(month.weekdayLabels, label =>
             h.span(
-              [h.Class('habits-heat-weekday'), h.Role('columnheader')],
+              [
+                h.Class(
+                  'text-center text-[0.62rem] leading-6 text-base-content/45',
+                ),
+                h.Role('columnheader'),
+              ],
               [label],
             ),
           ),
@@ -155,7 +174,9 @@ export const habitHeatmapView = (
                 cell.date,
                 [
                   h.Role('gridcell'),
-                  h.Class('habits-heat-cell'),
+                  h.Class(
+                    'grid aspect-square place-items-center rounded-md border border-transparent bg-base-200 text-[0.68rem] text-base-content/50 data-[status=done]:bg-success/75 data-[status=done]:text-success-content data-[status=partial]:bg-warning/60 data-[status=partial]:text-warning-content data-[status=missed]:bg-error/30 data-[status=missed]:text-error data-[outside=true]:opacity-35 aria-[current=date]:border-2 aria-[current=date]:border-primary',
+                  ),
                   h.DataAttribute('status', cell.status ?? 'blank'),
                   ...(cell.inMonth ? [] : [h.DataAttribute('outside', 'true')]),
                   ...(cell.date === today ? [h.AriaCurrent('date')] : []),
@@ -170,7 +191,7 @@ export const habitHeatmapView = (
       ),
       legendView(h),
       h.p(
-        [h.Class('habits-heat-hint')],
+        [h.Class('m-0 text-[0.66rem] leading-6 text-base-content/45')],
         [
           'نقشه فقط ثبت خام هر روز را نشان می‌دهد؛ سهمیه و نرخ هفته را زنجیره حساب می‌کند. یک هفته ممکن است میان دو ماه شمسی بیفتد ولی یک‌بار شمرده می‌شود.',
         ],
@@ -181,7 +202,7 @@ export const habitHeatmapView = (
             h.button(
               [
                 h.Type('button'),
-                h.Class('habit-action'),
+                h.Class('btn btn-outline min-h-10 justify-self-start'),
                 h.OnClick(Message.ClickedCurrentHeatMonth()),
               ],
               ['بازگشت به ماه جاری'],

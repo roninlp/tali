@@ -24,20 +24,31 @@ export const notesTrashView = (
   const rows = sortTrashedNoteRows(inputs.mirror.trashedNotes)
 
   return h.div(
-    [h.Class('notes-root'), h.Dir('rtl'), h.Lang('fa')],
+    [
+      h.Class('min-h-dvh overflow-x-clip bg-base-200 text-base-content'),
+      h.Dir('rtl'),
+      h.Lang('fa'),
+    ],
     [
       h.div(
-        [h.Class('notes-screen page-wrap')],
+        [h.Class('page-wrap grid w-full max-w-3xl grid-cols-1 gap-4')],
         [
           h.header(
-            [h.Class('notes-header')],
+            [h.Class('flex flex-wrap items-center justify-between gap-3')],
             [
               h.div(
-                [h.Class('notes-heading')],
+                [h.Class('grid gap-1')],
                 [
-                  h.h1([h.Class('notes-h1')], ['سطل زباله']),
+                  h.h1(
+                    [
+                      h.Class(
+                        'm-0 text-2xl font-bold tracking-tight sm:text-3xl',
+                      ),
+                    ],
+                    ['سطل زباله'],
+                  ),
                   h.p(
-                    [h.Class('notes-subtitle')],
+                    [h.Class('m-0 text-sm leading-7 text-base-content/55')],
                     [
                       'یادداشت‌های حذف‌شده تا ۳۰ روز اینجا می‌مانند و بعد از آن پاک می‌شوند.',
                     ],
@@ -54,20 +65,24 @@ export const notesTrashView = (
           Array.match(rows, {
             onEmpty: () =>
               h.section(
-                [h.Class('panel notes-panel notes-trash-empty')],
+                [
+                  h.Class(
+                    'panel grid grid-cols-1 justify-items-center gap-2 px-6 py-12',
+                  ),
+                ],
                 [
                   h.p(
-                    [h.Class('m-0 text-base-content/55')],
+                    [h.Class('m-0 text-sm leading-7 text-base-content/55')],
                     ['سطل زباله خالی است.'],
                   ),
                 ],
               ),
             onNonEmpty: notes =>
               h.section(
-                [h.Class('panel notes-panel')],
+                [h.Class('panel p-4 sm:p-5')],
                 [
                   h.ul(
-                    [h.Class('notes-list')],
+                    [h.Class('m-0 list-none divide-y divide-base-300 p-0')],
                     Array.map(notes, note => {
                       const isBusy = Option.contains(
                         model.maybeRestoringId,
@@ -76,14 +91,25 @@ export const notesTrashView = (
 
                       return h.keyed('li')(
                         note.id,
-                        [h.Class('notes-row notes-trash-row')],
+                        [h.Class('grid min-w-0 gap-1.5 py-3')],
                         [
                           h.strong(
-                            [h.Class('notes-trash-title')],
+                            [
+                              h.Class(
+                                'text-[0.95rem] leading-7 font-semibold break-words',
+                              ),
+                            ],
                             [note.title],
                           ),
                           note.excerpt !== ''
-                            ? h.span([h.Class('notes-excerpt')], [note.excerpt])
+                            ? h.span(
+                                [
+                                  h.Class(
+                                    'text-sm leading-7 break-words text-base-content/55',
+                                  ),
+                                ],
+                                [note.excerpt],
+                              )
                             : h.empty,
                           h.div(
                             [],
@@ -115,7 +141,7 @@ export const notesTrashView = (
               ),
           }),
           h.p(
-            [h.Role('status'), h.AriaLive('polite'), h.Class('notes-sr')],
+            [h.Role('status'), h.AriaLive('polite'), h.Class('sr-only')],
             [model.announcement],
           ),
         ],

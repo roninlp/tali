@@ -1,7 +1,8 @@
-import { Nav } from '@foldkit/ui'
 import { Array, Option } from 'effect'
 import { inertHtml as ih } from 'foldkit/html'
 import type { Html, HtmlBuilder } from 'foldkit/html'
+
+import { Nav } from '@foldkit/ui'
 
 import {
   AppRoute,
@@ -153,19 +154,19 @@ const brandView = <Message>(h: HtmlBuilder<Message>): Html =>
     [
       h.Href(todayRouter()),
       h.AriaLabel('تالی — امروز'),
-      h.Class('flex shrink-0 items-center gap-2 rounded-lg px-1 py-1'),
+      h.Class('flex shrink-0 items-center gap-2 rounded-xl px-1 py-1'),
     ],
     [
       h.span(
         [
           h.Class(
-            'grid size-8 place-items-center rounded-xl bg-primary text-sm font-black text-primary-content shadow-sm',
+            'grid size-8 place-items-center rounded-xl bg-primary text-sm font-black text-primary-content',
           ),
         ],
         ['ت'],
       ),
       h.span(
-        [h.Class('hidden text-base font-bold tracking-tight sm:inline')],
+        [h.Class('hidden text-[0.95rem] font-bold tracking-tight sm:inline')],
         ['تالی'],
       ),
     ],
@@ -179,7 +180,7 @@ const desktopNavView = (maybeActiveSection: Option.Option<AppSection>): Html =>
     isItemCurrent: section => isActiveSection(maybeActiveSection, section),
     toView: render =>
       ih.nav(
-        [...render.nav, ih.Class('mx-auto hidden md:block')],
+        [...render.nav, ih.Class('mx-auto hidden lg:block')],
         [
           ih.ul(
             [ih.Class('flex items-center gap-0.5')],
@@ -192,10 +193,10 @@ const desktopNavView = (maybeActiveSection: Option.Option<AppSection>): Html =>
                       ...item.link,
                       ih.Class(
                         classNames(
-                          'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[0.82rem] font-medium transition-colors hover:bg-base-content/5',
+                          'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[0.82rem] font-medium transition-colors',
                           item.isCurrent
-                            ? 'bg-primary/10 text-primary'
-                            : 'text-base-content/70',
+                            ? 'bg-primary/12 text-primary'
+                            : 'text-base-content/60 hover:bg-base-content/[0.04] hover:text-base-content',
                         ),
                       ),
                     ],
@@ -288,7 +289,7 @@ const mobileNavView = <Message>(
     [
       h.AriaLabel('نوار پایین تالی'),
       h.Class(
-        'fixed inset-x-0 bottom-0 z-40 border-t border-base-300 bg-base-100/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden',
+        'fixed inset-x-0 bottom-0 z-40 border-t border-base-300/70 bg-base-100/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden',
       ),
     ],
     [
@@ -330,7 +331,7 @@ export const view = <Message>(
       h.header(
         [
           h.Class(
-            'sticky inset-x-0 top-0 z-40 border-b border-base-300 bg-base-100/90 backdrop-blur-md',
+            'sticky inset-x-0 top-0 z-40 border-b border-base-300/70 bg-base-100/80 backdrop-blur-xl',
           ),
         ],
         [
@@ -348,7 +349,7 @@ export const view = <Message>(
                   h.span(
                     [
                       h.Class(
-                        'me-1 hidden max-w-32 truncate text-xs text-base-content/50 lg:inline',
+                        'me-1 hidden max-w-32 truncate text-[0.72rem] text-base-content/45 lg:inline',
                       ),
                     ],
                     [displayName],
@@ -356,7 +357,7 @@ export const view = <Message>(
               }),
               desktopNavView(config.maybeActiveSection),
               h.div(
-                [h.Class('ms-auto flex items-center gap-1 md:ms-0')],
+                [h.Class('ms-auto flex items-center gap-1 lg:ms-0')],
                 [config.actions],
               ),
             ],
@@ -399,7 +400,7 @@ export const standaloneView = <Message>(
       h.div([
         h.AriaHidden(true),
         h.Class(
-          'pointer-events-none absolute inset-0 bg-[radial-gradient(60rem_40rem_at_100%_0%,color-mix(in_oklch,var(--color-primary)_14%,transparent),transparent_60%),radial-gradient(50rem_30rem_at_0%_100%,color-mix(in_oklch,var(--color-secondary)_12%,transparent),transparent_60%)]',
+          'pointer-events-none absolute inset-0 bg-[radial-gradient(48rem_32rem_at_100%_0%,color-mix(in_oklch,var(--color-primary)_7%,transparent),transparent_60%),radial-gradient(40rem_24rem_at_0%_100%,color-mix(in_oklch,var(--color-secondary)_6%,transparent),transparent_60%)]',
         ),
       ]),
       h.div([h.Class('absolute end-4 top-4 z-10')], [config.actions]),

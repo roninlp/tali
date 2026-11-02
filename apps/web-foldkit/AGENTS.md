@@ -128,18 +128,21 @@ subtree_prompted: true
   boots from a clean install with no `node_modules` shim. The Foldkit app was
   unaffected. Drop the patch once a published alchemy release includes the fix;
   see `../../infra/README.md`.
-- **Styling.** `src/styles.css` is the Tali entry: Tailwind v4 only, with the
-  house light/dark tokens declared in its `@theme` block and overridden under
+- **Styling.** `src/styles.css` holds only the design tokens and primitives;
+  screens style themselves with Tailwind utilities at the call site. The house
+  light/dark tokens live in its `@theme` block and are overridden under
   `[data-theme='talidark']` (utilities compile to `var()` references, so
-  runtime theme switching works). Interactive behaviour and ARIA come from
-  `@foldkit/ui` components (`Button`, `Input`, `Listbox`, `Menu`, `Popover`,
-  `Dialog`, `Toast`, `RadioGroup`, `Nav`) rendered through their `toView`
-  callbacks; the component classes those callbacks use (`btn`, `badge`,
-  `spinner`, `notice`, …) live in the owned `@layer components` section of
-  `styles.css`. Vazirmatn ships in `src/fonts/` with its OFL licence and Vite
-  fingerprints it on build. The theme toggle is device-local and restores
-  from `public/theme-boot.js`, which accepts only the two house theme ids,
-  before first paint.
+  runtime theme switching works). The `@layer components` section is limited
+  to the shells `@foldkit/ui` components render through their `toView`
+  callbacks (`btn`, `badge`, `spinner`, `notice`, `field-input`, `float-card`,
+  `menu-*`, `listbox-*`, `app-modal*`, `toast-*`, `segmented`, `form-check`)
+  plus the `page-wrap`, `panel`, `soft-note`, and `section-head` utilities.
+  Page-level styling never goes back into `styles.css`. Interactive behaviour
+  and ARIA come from `@foldkit/ui` components (`Button`, `Input`, `Listbox`,
+  `Menu`, `Popover`, `Dialog`, `Toast`, `RadioGroup`, `Nav`). Vazirmatn ships
+  in `src/fonts/` with its OFL licence and Vite fingerprints it on build. The
+  theme toggle is device-local and restores from `public/theme-boot.js`, which
+  accepts only the two house theme ids, before first paint.
 - **Migration record.** The completed Phase 2 slices and acceptance criteria
   live in `../../docs/plans/foldkit-migration.md`. Keep this file's notes
   project-specific.

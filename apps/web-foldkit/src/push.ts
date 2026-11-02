@@ -766,16 +766,16 @@ const statusRowView = <Message>(
   const tone = TONE_CLASS[config.tone]
 
   return h.div(
-    [h.Class('grid gap-0.5 border-b border-base-300 py-2 last:border-b-0')],
+    [h.Class('grid gap-1 border-b border-base-300 py-2.5 last:border-b-0')],
     [
       h.div(
         [h.Class('flex items-center justify-between gap-2')],
         [
-          h.span([h.Class('text-[0.9rem]')], [config.label]),
+          h.span([h.Class('text-sm leading-7')], [config.label]),
           h.span(
             [
               h.Class(
-                `inline-flex items-center gap-1.5 whitespace-nowrap text-[0.85rem] ${tone.text}`,
+                `inline-flex items-center gap-1.5 whitespace-nowrap text-[0.82rem] ${tone.text}`,
               ),
             ],
             [
@@ -792,7 +792,7 @@ const statusRowView = <Message>(
         onNone: () => h.empty,
         onSome: hint =>
           h.span(
-            [h.Class('text-[0.78rem] leading-7 text-base-content/50')],
+            [h.Class('text-[0.72rem] leading-6 text-base-content/50')],
             [hint],
           ),
       }),
@@ -808,14 +808,17 @@ export const healthView = Submodel.defineView<Model, Message>((model, h) => {
   return h.section(
     [
       h.AriaLabelledBy('push-health-title'),
-      h.Class('panel grid gap-4 p-4 sm:p-5'),
+      h.Class('panel grid grid-cols-1 gap-4 p-4 sm:p-5'),
     ],
     [
       h.header(
-        [h.Class('grid gap-1')],
+        [h.Class('grid gap-1.5')],
         [
           h.h2(
-            [h.Id('push-health-title'), h.Class('m-0 text-lg font-bold')],
+            [
+              h.Id('push-health-title'),
+              h.Class('m-0 text-[0.95rem] font-semibold'),
+            ],
             ['وضعیت اعلان‌ها'],
           ),
           h.p(
@@ -974,7 +977,7 @@ export const healthView = Submodel.defineView<Model, Message>((model, h) => {
         ],
       ),
       h.p(
-        [h.Class('m-0 text-[0.78rem] leading-7 text-base-content/45')],
+        [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/50')],
         [
           'راهنمای ارسال یک اعلان آزمایشی روی همین دستگاه: ',
           h.code([h.Dir('ltr')], ['docs/web-push-local.md']),

@@ -90,7 +90,7 @@ test("flow 5: a recurring event splits on a this-and-following edit", async ({
 
   // ── Month view: the split occurrence opens under its new title ─────────
   await alicePage.getByRole("button", { name: "ماه", exact: true }).click()
-  await alicePage.locator('.calendar-month-day[data-today="true"]').click()
+  await alicePage.locator('[data-calendar-month-day][data-today="true"]').click()
   await expect(
     alicePage.getByRole("button", { name: `بازکردن ${newTitle}` })
   ).toBeVisible()

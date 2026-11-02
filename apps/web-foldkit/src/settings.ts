@@ -239,10 +239,7 @@ export const update = (
 const successView = (model: Model, h: HtmlBuilder<Message>): Html =>
   model.hasSucceeded
     ? h.div(
-        [
-          h.Role('status'),
-          h.Class('alert alert-success py-2.5 text-sm leading-7'),
-        ],
+        [h.Role('status'), h.Class('notice notice-success text-sm leading-7')],
         [h.span([], ['گذرواژه تغییر کرد.'])],
       )
     : h.empty
@@ -250,16 +247,19 @@ const successView = (model: Model, h: HtmlBuilder<Message>): Html =>
 export const view = Submodel.defineView<Model, Message>((model, h) =>
   h.form(
     [
-      h.Class('panel grid gap-4 p-4 sm:p-5'),
+      h.Class('panel grid grid-cols-1 gap-4 p-4 sm:p-5'),
       h.AriaLabelledBy('settings-password-title'),
       h.OnSubmit(Message.SubmittedPassword()),
     ],
     [
       h.header(
-        [h.Class('grid gap-1')],
+        [h.Class('grid gap-1.5')],
         [
           h.h2(
-            [h.Id('settings-password-title'), h.Class('m-0 text-lg font-bold')],
+            [
+              h.Id('settings-password-title'),
+              h.Class('m-0 text-[0.95rem] font-semibold'),
+            ],
             ['گذرواژه'],
           ),
           h.p(

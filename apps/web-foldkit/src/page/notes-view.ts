@@ -46,7 +46,10 @@ const markedView = (
     [],
     Array.map(segments, segment =>
       segment.match
-        ? h.mark([h.Class('notes-mark')], [segment.text])
+        ? h.mark(
+            [h.Class('rounded-sm bg-warning/30 px-0.5 text-base-content')],
+            [segment.text],
+          )
         : h.span([], [segment.text]),
     ),
   )
@@ -107,15 +110,20 @@ const searchResultView = (
 ): Html =>
   h.keyed('li')(
     hit.id,
-    [h.Class('notes-row')],
+    [h.Class('grid min-w-0 gap-1.5 py-3')],
     [
       h.a(
-        [h.Href(notePath(hit.id)), h.Class('notes-title-link')],
+        [
+          h.Href(notePath(hit.id)),
+          h.Class(
+            'text-start text-[0.95rem] leading-7 font-semibold break-words text-base-content underline-offset-4 transition-colors hover:text-primary hover:underline',
+          ),
+        ],
         [markedView(titleSegments(model, inputs, hit), h)],
       ),
       Array.isReadonlyArrayNonEmpty(hit.segments)
         ? h.p(
-            [h.Class('notes-excerpt')],
+            [h.Class('m-0 text-sm leading-7 break-words text-base-content/55')],
             [markedView(snippetSegments(model, inputs, hit), h)],
           )
         : h.empty,
@@ -128,14 +136,21 @@ const searchResultsView = (
   h: HtmlBuilder<Message>,
 ): Html =>
   h.section(
-    [h.Class('panel notes-panel'), h.AriaLabel('نتیجه‌های جست‌وجو')],
     [
-      h.h2([h.Class('notes-section-title')], ['نتیجه‌ها']),
+      h.Class('panel grid grid-cols-1 gap-3 p-4 sm:p-5'),
+      h.AriaLabel('نتیجه‌های جست‌وجو'),
+    ],
+    [
+      h.h2([h.Class('m-0 text-[0.95rem] font-semibold')], ['نتیجه‌ها']),
       Array.match(model.searchHits, {
-        onEmpty: () => h.p([h.Class('notes-empty')], ['چیزی پیدا نشد.']),
+        onEmpty: () =>
+          h.p(
+            [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+            ['چیزی پیدا نشد.'],
+          ),
         onNonEmpty: hits =>
           h.ul(
-            [h.Class('notes-list')],
+            [h.Class('m-0 list-none divide-y divide-base-300 p-0')],
             Array.map(hits, hit => searchResultView(model, inputs, hit, h)),
           ),
       }),
@@ -144,23 +159,32 @@ const searchResultsView = (
 
 const searchSectionView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.section(
-    [h.Class('panel notes-search'), h.AriaLabel('جست‌وجو')],
+    [h.Class('panel grid grid-cols-1 gap-2 p-4 sm:p-5'), h.AriaLabel('جست‌وجو')],
     [
       h.label(
-        [h.For('note-search'), h.Class('notes-search-label')],
+        [
+          h.For('note-search'),
+          h.Class('text-sm font-medium text-base-content/70'),
+        ],
         ['جست‌وجو در یادداشت‌ها (Ctrl+K)'],
       ),
       h.div(
-        [h.Class('notes-search-row')],
+        [h.Class('flex items-center gap-2')],
         [
           h.span(
-            [h.Class('notes-search-input-wrap')],
             [
-              searchIcon('notes-search-icon'),
+              h.Class(
+                'flex min-h-11 flex-1 items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10',
+              ),
+            ],
+            [
+              searchIcon('size-4 shrink-0 text-base-content/40'),
               h.input([
                 h.Id('note-search'),
                 h.Type('search'),
-                h.Class('notes-search-input'),
+                h.Class(
+                  'min-w-0 flex-1 border-0 bg-transparent text-base leading-10 outline-none',
+                ),
                 h.Value(model.query),
                 h.Placeholder('مثلاً: دارو'),
                 h.Autocomplete('off'),
@@ -189,11 +213,13 @@ const searchSectionView = (model: Model, h: HtmlBuilder<Message>): Html =>
       ),
       model.isSearching
         ? h.p(
-            [h.Role('status'), h.Class('notes-search-status')],
             [
-              h.span([h.Class('loading loading-spinner loading-xs')]),
-              'در حال جست‌وجو…',
+              h.Role('status'),
+              h.Class(
+                'm-0 flex items-center gap-2 text-sm text-base-content/55',
+              ),
             ],
+            [h.span([h.Class('spinner spinner-xs')]), 'در حال جست‌وجو…'],
           )
         : h.empty,
       model.isOfflineSearch
@@ -209,15 +235,15 @@ const searchSectionView = (model: Model, h: HtmlBuilder<Message>): Html =>
 
 const noteActionsView = (note: NoteRow, h: HtmlBuilder<Message>): Html =>
   h.div(
-    [h.Class('notes-row-actions')],
+    [h.Class('flex flex-wrap items-center gap-1')],
     [
       h.button(
         [
           h.Type('button'),
           h.Class(
             note.isPinned
-              ? 'btn btn-primary btn-xs gap-1 rounded-full font-normal'
-              : 'btn btn-ghost btn-xs gap-1 rounded-full font-normal',
+              ? 'btn btn-primary btn-xs min-h-10 gap-1 rounded-full font-normal'
+              : 'btn btn-ghost btn-xs min-h-10 gap-1 rounded-full font-normal',
           ),
           h.AriaPressed(note.isPinned ? 'true' : 'false'),
           h.AriaLabel(note.isPinned ? 'برداشتن پین' : 'پین کردن'),
@@ -233,7 +259,9 @@ const noteActionsView = (note: NoteRow, h: HtmlBuilder<Message>): Html =>
       h.button(
         [
           h.Type('button'),
-          h.Class('btn btn-ghost btn-xs gap-1 rounded-full font-normal'),
+          h.Class(
+            'btn btn-ghost btn-xs min-h-10 gap-1 rounded-full font-normal',
+          ),
           h.AriaLabel(note.isArchived ? 'بازگردانی از آرشیو' : 'آرشیو کردن'),
           h.OnClick(
             Message.ClickedToggleArchived({
@@ -248,7 +276,7 @@ const noteActionsView = (note: NoteRow, h: HtmlBuilder<Message>): Html =>
         [
           h.Type('button'),
           h.Class(
-            'btn btn-ghost btn-xs gap-1 rounded-full font-normal text-error',
+            'btn btn-ghost btn-xs min-h-10 gap-1 rounded-full font-normal text-error',
           ),
           h.AriaLabel('انتقال به سطل زباله'),
           h.OnClick(Message.ClickedTrashNote({ noteId: note.id })),
@@ -268,20 +296,27 @@ const noteRowView = (
   return h.keyed('li')(
     note.id,
     [
-      h.Class('notes-row'),
+      h.Class(
+        '-mx-2 grid min-w-0 gap-1.5 rounded-xl px-2 py-3 transition-colors hover:bg-base-content/[0.03] data-[pending=true]:opacity-85',
+      ),
       h.DataAttribute('pending', isPending ? 'true' : 'false'),
     ],
     [
       h.div(
-        [h.Class('notes-row-head')],
+        [h.Class('flex flex-wrap items-baseline gap-2')],
         [
           h.a(
-            [h.Href(notePath(note.id)), h.Class('notes-title-link')],
+            [
+              h.Href(notePath(note.id)),
+              h.Class(
+                'text-start text-[0.95rem] leading-7 font-semibold break-words text-base-content underline-offset-4 transition-colors hover:text-primary hover:underline',
+              ),
+            ],
             [note.title],
           ),
           Array.isReadonlyArrayNonEmpty(note.tagIds)
             ? h.span(
-                [h.Class('notes-tag-list')],
+                [h.Class('flex flex-wrap items-center gap-1')],
                 Array.map(note.tagIds, tagId =>
                   h.span(
                     [h.Class('badge badge-ghost badge-sm')],
@@ -311,7 +346,10 @@ const noteRowView = (
         ],
       ),
       note.excerpt !== ''
-        ? h.p([h.Class('notes-excerpt')], [note.excerpt])
+        ? h.p(
+            [h.Class('m-0 text-sm leading-7 break-words text-base-content/55')],
+            [note.excerpt],
+          )
         : h.empty,
       noteActionsView(note, h),
     ],
@@ -327,14 +365,18 @@ const noteSectionView = (
   emptyCopy: string,
 ): Html =>
   h.section(
-    [h.Class('panel notes-panel'), h.AriaLabel(label)],
+    [h.Class('panel grid grid-cols-1 gap-3 p-4 sm:p-5'), h.AriaLabel(label)],
     [
-      h.h2([h.Class('notes-section-title')], [title]),
+      h.h2([h.Class('m-0 text-[0.95rem] font-semibold')], [title]),
       Array.match(notes, {
-        onEmpty: () => h.p([h.Class('notes-empty')], [emptyCopy]),
+        onEmpty: () =>
+          h.p(
+            [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+            [emptyCopy],
+          ),
         onNonEmpty: rows =>
           h.ul(
-            [h.Class('notes-list')],
+            [h.Class('m-0 list-none divide-y divide-base-300 p-0')],
             Array.map(rows, note => noteRowView(note, inputs, h)),
           ),
       }),
@@ -350,7 +392,7 @@ const archiveSectionView = (
   const count = localizeDigits(sections.archived.length, inputs.display.digits)
 
   return h.section(
-    [h.Class('panel notes-panel'), h.AriaLabel('آرشیو')],
+    [h.Class('panel grid grid-cols-1 gap-3 p-4 sm:p-5'), h.AriaLabel('آرشیو')],
     [
       h.button(
         [
@@ -365,10 +407,14 @@ const archiveSectionView = (
       ),
       model.showArchived
         ? Array.match(sections.archived, {
-            onEmpty: () => h.p([h.Class('notes-empty')], ['آرشیو خالی است.']),
+            onEmpty: () =>
+              h.p(
+                [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+                ['آرشیو خالی است.'],
+              ),
             onNonEmpty: rows =>
               h.ul(
-                [h.Class('notes-list')],
+                [h.Class('m-0 list-none divide-y divide-base-300 p-0')],
                 Array.map(rows, note => noteRowView(note, inputs, h)),
               ),
           })
@@ -386,7 +432,10 @@ const tagFilterView = (
     onEmpty: () => h.empty,
     onNonEmpty: tags =>
       h.section(
-        [h.Class('notes-tag-filter'), h.AriaLabel('فیلتر برچسب')],
+        [
+          h.Class('flex flex-wrap items-center gap-1.5'),
+          h.AriaLabel('فیلتر برچسب'),
+        ],
         Array.map(tags, tag => {
           const isSelected = Array.contains(model.selectedTagIds, tag.id)
 
@@ -395,8 +444,8 @@ const tagFilterView = (
               h.Type('button'),
               h.Class(
                 isSelected
-                  ? 'badge badge-primary badge-lg cursor-pointer'
-                  : 'badge badge-ghost badge-lg cursor-pointer',
+                  ? 'badge badge-primary badge-lg min-h-10 cursor-pointer'
+                  : 'badge badge-ghost badge-lg min-h-10 cursor-pointer',
               ),
               h.AriaPressed(isSelected ? 'true' : 'false'),
               h.OnClick(Message.ToggledTagFilter({ tagId: tag.id })),
@@ -420,11 +469,14 @@ export const notesIndexView = (
       : Array.match(inputs.mirror.notes, {
           onEmpty: () =>
             h.section(
-              [h.Class('panel notes-panel')],
+              [h.Class('panel grid grid-cols-1 gap-1.5 p-4 sm:p-5')],
               [
-                h.p([h.Class('m-0 leading-8')], ['هنوز یادداشتی ندارید.']),
                 h.p(
-                  [h.Class('notes-empty')],
+                  [h.Class('m-0 text-sm leading-8 font-semibold')],
+                  ['هنوز یادداشتی ندارید.'],
+                ),
+                h.p(
+                  [h.Class('m-0 text-sm leading-7 text-base-content/55')],
                   [
                     'از هر صفحه با دکمه‌ی «یادداشت تازه» یا Alt+N شروع کنید؛ همان لحظه باز می‌شود.',
                   ],
@@ -433,7 +485,7 @@ export const notesIndexView = (
             ),
           onNonEmpty: () =>
             h.div(
-              [h.Class('notes-sections')],
+              [h.Class('grid gap-4')],
               [
                 Array.isReadonlyArrayNonEmpty(sections.pinned)
                   ? noteSectionView(
@@ -459,20 +511,31 @@ export const notesIndexView = (
         })
 
   return h.div(
-    [h.Class('notes-root'), h.Dir('rtl'), h.Lang('fa')],
+    [
+      h.Class('min-h-dvh overflow-x-clip bg-base-200 text-base-content'),
+      h.Dir('rtl'),
+      h.Lang('fa'),
+    ],
     [
       h.div(
-        [h.Class('notes-screen page-wrap')],
+        [h.Class('page-wrap grid w-full max-w-3xl grid-cols-1 gap-4')],
         [
           h.header(
-            [h.Class('notes-header')],
+            [h.Class('flex flex-wrap items-center justify-between gap-3')],
             [
               h.div(
-                [h.Class('notes-heading')],
+                [h.Class('grid gap-1')],
                 [
-                  h.h1([h.Class('notes-h1')], ['یادداشت‌ها']),
+                  h.h1(
+                    [
+                      h.Class(
+                        'm-0 text-2xl font-bold tracking-tight sm:text-3xl',
+                      ),
+                    ],
+                    ['یادداشت‌ها'],
+                  ),
                   h.p(
-                    [h.Class('notes-subtitle')],
+                    [h.Class('m-0 text-sm leading-7 text-base-content/55')],
                     [
                       'جست‌وجو، پین، آرشیو و برچسب — همه روی همین دستگاه اول ذخیره می‌شوند.',
                     ],
@@ -480,7 +543,7 @@ export const notesIndexView = (
                 ],
               ),
               h.div(
-                [h.Class('notes-header-actions')],
+                [h.Class('flex flex-wrap items-center gap-2')],
                 [
                   buttonView(
                     {
@@ -518,7 +581,7 @@ export const notesIndexView = (
           tagFilterView(model, inputs, h),
           sectionsView,
           h.p(
-            [h.Role('status'), h.AriaLive('polite'), h.Class('notes-sr')],
+            [h.Role('status'), h.AriaLive('polite'), h.Class('sr-only')],
             [model.announcement],
           ),
         ],

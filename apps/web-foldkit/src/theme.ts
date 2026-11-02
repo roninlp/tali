@@ -98,10 +98,13 @@ const parseThemeMode = (value: string | undefined): ThemeMode =>
   value === 'light' || value === 'dark' || value === 'system' ? value : 'system'
 
 const themeInfoOf = (id: ThemeId): ThemeInfo =>
-  Option.match(Array.findFirst(THEMES, theme => theme.id === id), {
-    onNone: () => HOUSE_LIGHT_INFO,
-    onSome: info => info,
-  })
+  Option.match(
+    Array.findFirst(THEMES, theme => theme.id === id),
+    {
+      onNone: () => HOUSE_LIGHT_INFO,
+      onSome: info => info,
+    },
+  )
 
 const isDarkTheme = (id: ThemeId): boolean => themeInfoOf(id).dark
 
@@ -225,7 +228,10 @@ export const PersistTheme = Command.define('PersistTheme', {
 
 // UPDATE
 
-type ThemeUpdate = (model: Model, message: Message) => Update.Return<Model, Message>
+type ThemeUpdate = (
+  model: Model,
+  message: Message,
+) => Update.Return<Model, Message>
 
 const foldModePickerOutMessage = (handleUpdate: ThemeUpdate) =>
   RadioGroup.OutMessage.match<
@@ -377,10 +383,13 @@ export const pickerView = Submodel.defineView<Model, Message>((model, h) => {
       Array.map(render.options, option =>
         h.button(
           [...option.option, h.Class('segmented-option')],
-          Option.match(Array.findFirst(MODES, mode => mode.value === option.value), {
-            onNone: () => [MODE_LABEL[option.value]],
-            onSome: mode => [mode.icon('size-4'), mode.label],
-          }),
+          Option.match(
+            Array.findFirst(MODES, mode => mode.value === option.value),
+            {
+              onNone: () => [MODE_LABEL[option.value]],
+              onSome: mode => [mode.icon('size-4'), mode.label],
+            },
+          ),
         ),
       ),
     )
@@ -388,14 +397,17 @@ export const pickerView = Submodel.defineView<Model, Message>((model, h) => {
   return h.section(
     [
       h.AriaLabelledBy('theme-picker-title'),
-      h.Class('panel grid gap-4 p-4 sm:p-5'),
+      h.Class('panel grid grid-cols-1 gap-4 p-4 sm:p-5'),
     ],
     [
       h.header(
-        [h.Class('grid gap-1')],
+        [h.Class('grid gap-1.5')],
         [
           h.h2(
-            [h.Id('theme-picker-title'), h.Class('m-0 text-lg font-bold')],
+            [
+              h.Id('theme-picker-title'),
+              h.Class('m-0 text-[0.95rem] font-semibold'),
+            ],
             ['ظاهر'],
           ),
           h.p(
@@ -421,4 +433,3 @@ export const pickerView = Submodel.defineView<Model, Message>((model, h) => {
     ],
   )
 })
-

@@ -1,5 +1,4 @@
 import { Option } from 'effect'
-import { Animation, Dialog, Listbox, Toast as UiToast } from '@foldkit/ui'
 import {
   Command,
   Mount,
@@ -20,6 +19,8 @@ import {
 } from 'foldkit/scene'
 import { modifyFields } from 'foldkit/struct'
 import { expect as assert, describe, test } from 'vitest'
+
+import { Animation, Dialog, Listbox, Toast as UiToast } from '@foldkit/ui'
 
 import { emptyMirrorSnapshot } from '../mirror'
 import { USER_ID } from '../test-fixtures'
@@ -165,10 +166,7 @@ describe('Lists index', () => {
         Dialog.AcquireResources,
         Dialog.Message.SucceededAcquireResources(),
       ),
-      Command.resolve(
-        Dialog.ShowDialog,
-        Dialog.Message.SucceededShowDialog(),
-      ),
+      Command.resolve(Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()),
       click(role('button', { name: 'انصراف' })),
       Command.resolve(
         Dialog.CloseDialog,
@@ -188,9 +186,9 @@ describe('List detail', () => {
       expect(text('۳ مورد · ۱ انجام‌شده')).toExist(),
       expect(role('checkbox', { name: 'نان' })).toExist(),
       expect(role('checkbox', { name: 'شیر' })).toExist(),
-      expect(nth(all.selector('.lists-item'), 0)).toContainText('نان'),
-      expect(nth(all.selector('.lists-item'), 1)).toContainText('پنیر'),
-      expect(nth(all.selector('.lists-item'), 2)).toContainText('شیر'),
+      expect(nth(all.selector('li[data-done]'), 0)).toContainText('نان'),
+      expect(nth(all.selector('li[data-done]'), 1)).toContainText('پنیر'),
+      expect(nth(all.selector('li[data-done]'), 2)).toContainText('شیر'),
       expect(
         text(
           'برای جابه‌جایی دستی، از دکمه‌های ↑/↓ استفاده کنید؛ روی صفحه‌های بزرگ می‌توانید ردیف را بکشید.',
@@ -210,9 +208,9 @@ describe('List detail', () => {
     scene(
       detailScene(detailModel(), inputs),
       given(detailModel()),
-      expect(nth(all.selector('.lists-item'), 0)).toContainText('نان'),
-      expect(nth(all.selector('.lists-item'), 1)).toContainText('شیر'),
-      expect(nth(all.selector('.lists-item'), 2)).toContainText('پنیر'),
+      expect(nth(all.selector('li[data-done]'), 0)).toContainText('نان'),
+      expect(nth(all.selector('li[data-done]'), 1)).toContainText('شیر'),
+      expect(nth(all.selector('li[data-done]'), 2)).toContainText('پنیر'),
     )
   })
 
@@ -357,7 +355,10 @@ describe('List detail', () => {
         Listbox.PortalListboxBackdrop,
         Listbox.Message.CompletedPortalListboxBackdrop(),
       ),
-      Command.resolve(Listbox.FocusItems, Listbox.Message.CompletedFocusItems()),
+      Command.resolve(
+        Listbox.FocusItems,
+        Listbox.Message.CompletedFocusItems(),
+      ),
       click(text('الفبا')),
       Command.resolve(
         Listbox.FocusButton,
@@ -381,7 +382,10 @@ describe('List detail', () => {
         Listbox.PortalListboxBackdrop,
         Listbox.Message.CompletedPortalListboxBackdrop(),
       ),
-      Command.resolve(Listbox.FocusItems, Listbox.Message.CompletedFocusItems()),
+      Command.resolve(
+        Listbox.FocusItems,
+        Listbox.Message.CompletedFocusItems(),
+      ),
       click(text('همان‌جا')),
       Command.resolve(
         Listbox.FocusButton,

@@ -61,15 +61,35 @@ const VISIBILITY_OPTIONS: ReadonlyArray<VisibilityOption> = [
   { value: 'private', label: 'فقط خودم' },
 ]
 
+const DANGER_BUTTON_CLASS =
+  'inline-flex min-h-10 flex-none items-center rounded-full border border-error/35 bg-error/8 px-3 py-0.5 text-[0.78rem] font-medium text-error transition-colors hover:bg-error/12 disabled:opacity-55 sm:min-h-8'
+
+const MINI_BUTTON_CLASS =
+  'inline-flex min-h-10 min-w-10 flex-none items-center justify-center rounded-full border border-base-300 bg-base-100 px-2 py-0.5 text-[0.78rem] text-base-content/65 transition-colors hover:border-secondary hover:text-secondary sm:min-h-8 sm:min-w-8'
+
+const EMPTY_STATE_CLASS =
+  'm-0 rounded-2xl border border-dashed border-base-300 px-6 py-10 text-center text-sm leading-7 text-base-content/55'
+
 const backLinkView = (h: HtmlBuilder<Message>): Html =>
-  h.a([h.Class('lists-back'), h.Href(listsRouter())], ['→ همه‌ی فهرست‌ها'])
+  h.a(
+    [
+      h.Class(
+        'inline-flex min-h-10 flex-none items-center rounded-full border border-base-300 bg-base-100 px-3 py-0.5 text-[0.78rem] text-base-content/65 transition-colors hover:border-primary hover:text-primary sm:min-h-8',
+      ),
+      h.Href(listsRouter()),
+    ],
+    ['→ همه‌ی فهرست‌ها'],
+  )
 
 const loadingView = (h: HtmlBuilder<Message>): Html =>
-  h.p([h.Class('lists-empty'), h.Role('status')], ['در حال آماده‌سازی فهرست…'])
+  h.p(
+    [h.Class(EMPTY_STATE_CLASS), h.Role('status')],
+    ['در حال آماده‌سازی فهرست…'],
+  )
 
 const missingView = (h: HtmlBuilder<Message>): Html =>
   h.p(
-    [h.Class('lists-empty'), h.Role('status')],
+    [h.Class(EMPTY_STATE_CLASS), h.Role('status')],
     ['این فهرست پیدا نشد یا حذف شده است.'],
   )
 
@@ -96,14 +116,16 @@ const headerView = (
   )
 
   return h.header(
-    [h.Class('panel grid gap-2 p-4 sm:p-5')],
+    [h.Class('panel grid grid-cols-1 gap-2 p-4 sm:p-5')],
     [
       h.div(
-        [h.Class('lists-header')],
+        [h.Class('grid min-w-0 gap-2')],
         [
           h.form(
             [
-              h.Class('lists-header-row'),
+              h.Class(
+                'flex min-w-0 flex-wrap items-center justify-between gap-2',
+              ),
               h.OnSubmit(Message.SubmittedRenameList()),
             ],
             [
@@ -117,7 +139,7 @@ const headerView = (
                   h.input([
                     h.Name('listTitle'),
                     h.Type('text'),
-                    h.Class('input w-full text-lg font-semibold'),
+                    h.Class('field-input text-lg font-semibold'),
                     h.Value(titleValue),
                     h.Maxlength(120),
                     h.OnInput(value => Message.UpdatedTitleDraft({ value })),
@@ -126,7 +148,7 @@ const headerView = (
                 ],
               ),
               h.div(
-                [h.Class('lists-header-actions self-end')],
+                [h.Class('flex flex-wrap items-center gap-1.5 self-end')],
                 [
                   buttonView(
                     {
@@ -140,7 +162,7 @@ const headerView = (
                   h.button(
                     [
                       h.Type('button'),
-                      h.Class('lists-danger'),
+                      h.Class(DANGER_BUTTON_CLASS),
                       h.Disabled(model.isDeletingList),
                       h.OnClick(
                         Message.ClickedDeleteList({
@@ -157,7 +179,12 @@ const headerView = (
             ],
           ),
           h.div(
-            [h.Class('lists-item-meta'), h.AriaLive('polite')],
+            [
+              h.Class(
+                'flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.72rem] text-base-content/50',
+              ),
+              h.AriaLive('polite'),
+            ],
             [
               h.span(
                 [],
@@ -181,7 +208,7 @@ const headerView = (
             ],
           ),
           h.div(
-            [h.Class('lists-controls')],
+            [h.Class('grid gap-3 sm:grid-cols-3')],
             [
               h.div(
                 [h.Class('grid gap-1.5')],
@@ -271,7 +298,7 @@ const addItemSectionView = (
 ): Html =>
   h.section(
     [
-      h.Class('panel grid gap-2 p-4 sm:p-5'),
+      h.Class('panel grid grid-cols-1 gap-2 p-4 sm:p-5'),
       h.AriaLabelledBy('lists-entry-title'),
     ],
     [
@@ -280,13 +307,16 @@ const addItemSectionView = (
         ['افزودن مورد'],
       ),
       h.form(
-        [h.Class('lists-add'), h.OnSubmit(Message.SubmittedAddItem())],
+        [
+          h.Class('flex min-w-0 items-center gap-2'),
+          h.OnSubmit(Message.SubmittedAddItem()),
+        ],
         [
           h.input([
             h.Id('lists-item-draft'),
             h.Name('itemName'),
             h.Type('text'),
-            h.Class('input w-full'),
+            h.Class('field-input min-w-0 flex-1'),
             h.AriaLabel('نام مورد تازه'),
             h.Placeholder('مورد تازه… (Enter برای مورد بعد)'),
             h.Autocomplete('off'),
@@ -309,7 +339,7 @@ const addItemSectionView = (
         ],
       ),
       h.p(
-        [h.Class('lists-hint')],
+        [h.Class('soft-note m-0')],
         [
           'تایپ کنید و Enter بزنید؛ نشانگر در همین کادر می‌ماند تا مورد بعدی را بنویسید.',
         ],
@@ -338,7 +368,9 @@ const itemRowView = (
         h.keyed('li')(
           item.id,
           [
-            h.Class('lists-item'),
+            h.Class(
+              'group flex min-w-0 items-start gap-2.5 px-4 py-3 transition-colors hover:bg-base-content/[0.03] data-[dragging=true]:opacity-45 data-[over=true]:bg-primary/6 data-[over=true]:ring-2 data-[over=true]:ring-primary/40 data-[over=true]:ring-inset',
+            ),
             h.DataAttribute('done', item.done ? 'true' : 'false'),
             h.DataAttribute('dragging', isDragging ? 'true' : 'false'),
             h.DataAttribute('over', isDragOver ? 'true' : 'false'),
@@ -353,20 +385,31 @@ const itemRowView = (
             h.button(
               [
                 ...attributes.checkbox,
-                h.Class('lists-check'),
+                h.Class(
+                  'relative grid size-6 flex-none place-items-center rounded-full border-[1.5px] border-base-300 bg-base-100 text-[0.72rem] text-transparent transition-colors before:absolute before:-inset-2 before:content-[""] enabled:hover:border-secondary enabled:active:scale-90 aria-checked:border-secondary aria-checked:bg-secondary aria-checked:text-secondary-content disabled:opacity-55',
+                ),
                 h.Disabled(!canToggle),
               ],
               [item.done ? '✓' : ''],
             ),
             h.div(
-              [h.Class('lists-item-body')],
+              [h.Class('grid min-w-0 flex-1 gap-0.5')],
               [
                 h.span(
-                  [...attributes.label, h.Class('lists-item-name')],
+                  [
+                    ...attributes.label,
+                    h.Class(
+                      'relative inline-block max-w-full min-w-0 break-words leading-7 transition-colors after:absolute after:start-0 after:top-1/2 after:h-px after:w-0 after:bg-current after:transition-[width] after:duration-200 group-data-[done=true]:text-base-content/45 group-data-[done=true]:after:w-full',
+                    ),
+                  ],
                   [item.name],
                 ),
                 h.div(
-                  [h.Class('lists-item-meta')],
+                  [
+                    h.Class(
+                      'flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.72rem] text-base-content/50',
+                    ),
+                  ],
                   [
                     isItemPending
                       ? h.span([h.Class('text-warning')], ['در انتظار ارسال'])
@@ -383,14 +426,18 @@ const itemRowView = (
               ],
             ),
             h.div(
-              [h.Class('lists-item-actions')],
+              [
+                h.Class(
+                  'flex flex-none flex-wrap items-center justify-end gap-1',
+                ),
+              ],
               [
                 ...(isManual
                   ? [
                       h.button(
                         [
                           h.Type('button'),
-                          h.Class('lists-mini'),
+                          h.Class(MINI_BUTTON_CLASS),
                           h.AriaLabel(`جابه‌جایی ${item.name} به بالا`),
                           h.Title('بالا'),
                           h.OnClick(
@@ -405,7 +452,7 @@ const itemRowView = (
                       h.button(
                         [
                           h.Type('button'),
-                          h.Class('lists-mini'),
+                          h.Class(MINI_BUTTON_CLASS),
                           h.AriaLabel(`جابه‌جایی ${item.name} به پایین`),
                           h.Title('پایین'),
                           h.OnClick(
@@ -422,7 +469,7 @@ const itemRowView = (
                 h.button(
                   [
                     h.Type('button'),
-                    h.Class('lists-danger'),
+                    h.Class(DANGER_BUTTON_CLASS),
                     h.AriaLabel(`حذف ${item.name}`),
                     h.OnClick(
                       Message.ClickedDeleteItem({
@@ -456,15 +503,20 @@ const itemsView = (
   return Array.match(view.visible, {
     onEmpty: () =>
       h.p(
-        [h.Class('lists-empty')],
+        [h.Class(EMPTY_STATE_CLASS)],
         ['هنوز موردی ندارد. اولین مورد را از کادر بالا اضافه کنید.'],
       ),
     onNonEmpty: rows =>
       h.div(
-        [],
+        [h.Class('grid gap-2')],
         [
           h.ul(
-            [h.Class('lists-items'), h.AriaLabel('موارد فهرست')],
+            [
+              h.Class(
+                'panel m-0 list-none divide-y divide-base-300 overflow-hidden p-0',
+              ),
+              h.AriaLabel('موارد فهرست'),
+            ],
             Array.map(rows, item =>
               itemRowView(
                 model,
@@ -479,7 +531,7 @@ const itemsView = (
           ),
           isManual
             ? h.p(
-                [h.Class('lists-hint')],
+                [h.Class('soft-note m-0')],
                 [
                   'برای جابه‌جایی دستی، از دکمه‌های ↑/↓ استفاده کنید؛ روی صفحه‌های بزرگ می‌توانید ردیف را بکشید.',
                 ],
@@ -517,7 +569,7 @@ const detailBodyView = (
   const isOwner = Option.exists(inputs.maybeUserId, id => id === list.ownerId)
 
   return h.div(
-    [h.Class('lists-detail')],
+    [h.Class('grid min-w-0 gap-4')],
     [
       headerView(
         model,
@@ -547,12 +599,12 @@ export const listDetailView = (
   )
 
   return h.div(
-    [h.Class('lists-root'), h.Dir('rtl'), h.Lang('fa')],
+    [h.Class('min-w-0 overflow-x-clip'), h.Dir('rtl'), h.Lang('fa')],
     [
       h.div(
-        [h.Class('lists-screen page-wrap grid w-full max-w-5xl gap-4')],
+        [h.Class('page-wrap grid w-full max-w-5xl min-w-0 grid-cols-1 gap-4')],
         [
-          h.h1([h.Class('lists-sr')], ['فهرست']),
+          h.h1([h.Class('sr-only')], ['فهرست']),
           h.div([h.Class('flex flex-wrap gap-1.5')], [backLinkView(h)]),
           !inputs.isStoreReady ||
           (model.isDetailLoading && Option.isNone(maybeList))
