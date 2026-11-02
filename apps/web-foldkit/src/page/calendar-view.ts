@@ -1,7 +1,8 @@
 import { Array, Option } from 'effect'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
-import type { Digits, EventOccurrence } from '@tali/domain'
+import { Checkbox, Listbox } from '@foldkit/ui'
+import type { CalendarTaskItem, Digits, EventOccurrence } from '@tali/domain'
 import { formatJalaliDate, localizeDigits, toJalaliDate } from '@tali/domain'
 
 import type { CalendarEventOccurrence } from '../lib/calendar-data'
@@ -21,10 +22,17 @@ import {
 } from '../lib/occasion-writes'
 import { entityKey } from '../mirror'
 import { taskAnchorPath } from '../route'
-import { Message } from './calendar'
-import type { Model, ViewInputs } from './calendar'
+import { listboxViewInputs } from '../ui/listbox'
+import {
+  Message,
+  OccasionAdvanceListbox,
+  PlanningPriorityListbox,
+  planningPriorityListboxFor,
+} from './calendar'
+import type { Model, PlanningPriorityOption, ViewInputs } from './calendar'
 import {
   type CalendarView,
+  PRIORITY_LABELS,
   calendarViewOf,
   dayLabel,
   emptyDayCopy,
@@ -89,16 +97,11 @@ const quickEventOf = (model: Model, date: string) =>
     () => defaultQuickEvent(date),
   )
 
-type PRIORITY = 'high' | 'medium' | 'low'
-
-const priorityOf = (value: string): PRIORITY =>
-  value === 'high' || value === 'low' ? value : 'medium'
-
-const optionValue = (
-  value: string,
-  label: string,
-  h: HtmlBuilder<Message>,
-): Html => h.option([h.Value(value)], [label])
+const PLANNING_PRIORITY_OPTIONS: ReadonlyArray<PlanningPriorityOption> = [
+  { value: 'high', label: PRIORITY_LABELS.high },
+  { value: 'medium', label: PRIORITY_LABELS.medium },
+  { value: 'low', label: PRIORITY_LABELS.low },
+]
 
 const tabButton = (
   label: string,
@@ -164,60 +167,72 @@ const taskRow = (
   h: HtmlBuilder<Message>,
 ): Html => {
   const busy = Option.contains(model.maybeBusyKey, `done:${item.id}`)
-
-  return h.li(
-    [
-      h.Class('calendar-task'),
-      h.DataAttribute('priority', item.priority),
-      ...(item.projected ? [h.DataAttribute('projected', 'true')] : []),
-    ],
+  const taskBody = h.div(
+    [h.Class('calendar-task-body')],
     [
       item.projected
-        ? h.span([h.AriaHidden(true), h.Class('calendar-task-check')], ['↻'])
-        : h.button(
-            [
-              h.Type('button'),
-              h.Role('checkbox'),
-              h.AriaChecked(false),
-              h.Class('calendar-task-check'),
-              h.AriaLabel(`انجام ${item.title}`),
-              h.Disabled(!inputs.isStoreReady || busy),
-              h.OnClick(
-                Message.ClickedCompleteCalendarTask({
-                  taskId: item.id,
-                  title: item.title,
-                  projected: item.projected,
-                }),
-              ),
-            ],
-            ['✓'],
+        ? h.span([h.Class('calendar-task-title')], [item.title])
+        : h.a(
+            [h.Class('calendar-task-title'), h.Href(taskAnchorPath(item.id))],
+            [item.title],
           ),
-      h.div(
-        [h.Class('calendar-task-body')],
-        [
-          item.projected
-            ? h.span([h.Class('calendar-task-title')], [item.title])
-            : h.a(
-                [
-                  h.Class('calendar-task-title'),
-                  h.Href(taskAnchorPath(item.id)),
-                ],
-                [item.title],
-              ),
-          ...(item.projected
-            ? [
-                h.span(
-                  [h.Class('calendar-task-badge')],
-                  ['تکرارشونده — فقط نمایش'],
-                ),
-              ]
-            : []),
-          ...(item.priority === 'high' && !item.projected
-            ? [h.span([h.Class('calendar-task-badge')], ['اولویت بالا'])]
-            : []),
-        ],
-      ),
+      ...(item.projected
+        ? [h.span([h.Class('calendar-task-badge')], ['تکرارشونده — فقط نمایش'])]
+        : []),
+      ...(item.priority === 'high' && !item.projected
+        ? [h.span([h.Class('calendar-task-badge')], ['اولویت بالا'])]
+        : []),
     ],
+  )
+
+  if (item.projected) {
+    return h.li(
+      [
+        h.Class('calendar-task'),
+        h.DataAttribute('priority', item.priority),
+        ...(item.projected ? [h.DataAttribute('projected', 'true')] : []),
+      ],
+      [
+        h.span([h.AriaHidden(true), h.Class('calendar-task-check')], ['↻']),
+        taskBody,
+      ],
+    )
+  }
+
+  return Checkbox.view(
+    {
+      id: `calendar-check-${item.id}`,
+      isChecked: false,
+      onToggle: () =>
+        Message.ClickedCompleteCalendarTask({
+          taskId: item.id,
+          title: item.title,
+          projected: item.projected,
+        }),
+      toView: attributes =>
+        h.li(
+          [
+            h.Class('calendar-task'),
+            h.DataAttribute('priority', item.priority),
+          ],
+          [
+            h.span(
+              [...attributes.label, h.Class('sr-only')],
+              [`انجام ${item.title}`],
+            ),
+            h.button(
+              [
+                ...attributes.checkbox,
+                h.Class('calendar-task-check'),
+                h.Disabled(!inputs.isStoreReady || busy),
+              ],
+              ['✓'],
+            ),
+            taskBody,
+          ],
+        ),
+    },
+    h,
   )
 }
 
@@ -293,22 +308,22 @@ const eventQuickAdd = (
             h.Disabled(!inputs.isStoreReady),
             h.OnInput(value => Message.UpdatedQuickEventTitle({ date, value })),
           ]),
-          h.label(
-            [h.Class('calendar-event-check')],
-            [
-              h.input([
-                h.Type('checkbox'),
-                h.Checked(draft.allDay),
-                h.AriaLabel('تمام روز'),
-                h.OnClick(
-                  Message.ToggledQuickEventAllDay({
-                    date,
-                    allDay: !draft.allDay,
-                  }),
+          Checkbox.view(
+            {
+              id: `quick-event-all-day-${date}`,
+              isChecked: draft.allDay,
+              onToggle: allDay =>
+                Message.ToggledQuickEventAllDay({ date, allDay }),
+              toView: attributes =>
+                h.div(
+                  [h.Class('calendar-event-check')],
+                  [
+                    h.button([...attributes.checkbox, h.Class('form-check')]),
+                    h.span([...attributes.label], ['تمام روز']),
+                  ],
                 ),
-              ]),
-              'تمام روز',
-            ],
+            },
+            h,
           ),
           draft.allDay
             ? h.p([h.Class('calendar-event-hint')], ['بدون ساعت'])
@@ -686,6 +701,94 @@ const planningGroups = (view: CalendarView) =>
     return Array.isReadonlyArrayEmpty(items) ? [] : [{ date: day.date, items }]
   })
 
+const planningRowView = (
+  item: CalendarTaskItem,
+  date: string,
+  model: Model,
+  inputs: ViewInputs,
+  view: CalendarView,
+  h: HtmlBuilder<Message>,
+): Html => {
+  const priorityListbox = planningPriorityListboxFor(model, item.id)
+
+  return h.keyed('li')(
+    item.id,
+    [h.Class('calendar-plan-row')],
+    [
+      h.span([h.Class('calendar-plan-title')], [item.title]),
+      h.div(
+        [h.Class('calendar-plan-controls')],
+        [
+          h.div(
+            [h.Class('grid gap-1.5')],
+            [
+              h.label(
+                [
+                  h.For(Listbox.buttonId(priorityListbox.id)),
+                  h.Class('sr-only'),
+                ],
+                [`اولویت ${item.title}`],
+              ),
+              h.submodel({
+                slotId: priorityListbox.id,
+                model: priorityListbox,
+                view: PlanningPriorityListbox.view,
+                viewInputs: listboxViewInputs({
+                  items: PLANNING_PRIORITY_OPTIONS,
+                  maybeSelectedValue: Option.some(item.priority),
+                  isDisabled: !inputs.isStoreReady || item.projected,
+                  h,
+                }),
+                toParentMessage: message =>
+                  Message.GotPlanningPriorityListboxMessage({
+                    taskId: item.id,
+                    message,
+                  }),
+              }),
+            ],
+          ),
+          h.button(
+            [
+              h.Type('button'),
+              h.Class('calendar-plan-move'),
+              h.AriaLabel(`یک روز قبل ${item.title}`),
+              h.Disabled(!inputs.isStoreReady || date <= view.week.start),
+              h.OnClick(
+                Message.ClickedMoveCalendarTask({
+                  taskId: item.id,
+                  title: item.title,
+                  date,
+                  days: -1,
+                  projected: item.projected,
+                }),
+              ),
+            ],
+            ['← روز'],
+          ),
+          h.button(
+            [
+              h.Type('button'),
+              h.Class('calendar-plan-move'),
+              h.AriaLabel(`یک روز بعد ${item.title}`),
+              h.Disabled(!inputs.isStoreReady || date >= view.week.end),
+              h.OnClick(
+                Message.ClickedMoveCalendarTask({
+                  taskId: item.id,
+                  title: item.title,
+                  date,
+                  days: 1,
+                  projected: item.projected,
+                }),
+              ),
+            ],
+            ['روز →'],
+          ),
+        ],
+      ),
+    ],
+  )
+}
+
 const planningPanel = (
   model: Model,
   inputs: ViewInputs,
@@ -718,81 +821,7 @@ const planningPanel = (
                 h.ul(
                   [h.Class('calendar-plan-list')],
                   Array.map(group.items, item =>
-                    h.keyed('li')(
-                      item.id,
-                      [h.Class('calendar-plan-row')],
-                      [
-                        h.span([h.Class('calendar-plan-title')], [item.title]),
-                        h.span(
-                          [h.Class('calendar-plan-controls')],
-                          [
-                            h.select(
-                              [
-                                h.AriaLabel(`اولویت ${item.title}`),
-                                h.Value(item.priority),
-                                h.Disabled(!inputs.isStoreReady),
-                                h.OnChange(value =>
-                                  Message.ClickedPrioritizeCalendarTask({
-                                    taskId: item.id,
-                                    title: item.title,
-                                    priority: priorityOf(value),
-                                    currentPriority: item.priority,
-                                    projected: item.projected,
-                                  }),
-                                ),
-                              ],
-                              [
-                                optionValue('high', 'بالا', h),
-                                optionValue('medium', 'متوسط', h),
-                                optionValue('low', 'پایین', h),
-                              ],
-                            ),
-                            h.button(
-                              [
-                                h.Type('button'),
-                                h.Class('calendar-plan-move'),
-                                h.AriaLabel(`یک روز قبل ${item.title}`),
-                                h.Disabled(
-                                  !inputs.isStoreReady ||
-                                    group.date <= view.week.start,
-                                ),
-                                h.OnClick(
-                                  Message.ClickedMoveCalendarTask({
-                                    taskId: item.id,
-                                    title: item.title,
-                                    date: group.date,
-                                    days: -1,
-                                    projected: item.projected,
-                                  }),
-                                ),
-                              ],
-                              ['← روز'],
-                            ),
-                            h.button(
-                              [
-                                h.Type('button'),
-                                h.Class('calendar-plan-move'),
-                                h.AriaLabel(`یک روز بعد ${item.title}`),
-                                h.Disabled(
-                                  !inputs.isStoreReady ||
-                                    group.date >= view.week.end,
-                                ),
-                                h.OnClick(
-                                  Message.ClickedMoveCalendarTask({
-                                    taskId: item.id,
-                                    title: item.title,
-                                    date: group.date,
-                                    days: 1,
-                                    projected: item.projected,
-                                  }),
-                                ),
-                              ],
-                              ['روز →'],
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                    planningRowView(item, group.date, model, inputs, view, h),
                   ),
                 ),
               ],
@@ -1363,40 +1392,41 @@ const occasionsPanel = (
             [h.Class('occasions-field')],
             [
               h.label(
-                [h.For('occasion-advance'), h.Class('occasions-label')],
+                [
+                  h.For(Listbox.buttonId(model.occasionAdvanceListbox.id)),
+                  h.Class('occasions-label'),
+                ],
                 ['یادآوری پیش از موعد'],
               ),
-              h.select(
-                [
-                  h.Id('occasion-advance'),
-                  h.Class('occasions-input'),
-                  h.AriaLabel('یادآوری پیش از موعد'),
-                  h.Value(model.occasionAdvance),
-                  h.OnChange(value =>
-                    Message.SelectedOccasionAdvance({ value }),
-                  ),
-                ],
-                Array.map(ADVANCE_OPTIONS, option =>
-                  optionValue(option.value, option.label, h),
-                ),
-              ),
+              h.submodel({
+                slotId: model.occasionAdvanceListbox.id,
+                model: model.occasionAdvanceListbox,
+                view: OccasionAdvanceListbox.view,
+                viewInputs: listboxViewInputs({
+                  items: ADVANCE_OPTIONS,
+                  maybeSelectedValue: Option.some(model.occasionAdvance),
+                  h,
+                }),
+                toParentMessage: message =>
+                  Message.GotOccasionAdvanceListboxMessage({ message }),
+              }),
             ],
           ),
-          h.label(
-            [h.Class('occasions-check')],
-            [
-              h.input([
-                h.Type('checkbox'),
-                h.Checked(model.occasionYearly),
-                h.AriaLabel('هر سال تکرار شود'),
-                h.OnClick(
-                  Message.ToggledOccasionYearly({
-                    yearly: !model.occasionYearly,
-                  }),
+          Checkbox.view(
+            {
+              id: 'occasion-yearly-check',
+              isChecked: model.occasionYearly,
+              onToggle: yearly => Message.ToggledOccasionYearly({ yearly }),
+              toView: attributes =>
+                h.div(
+                  [h.Class('occasions-check')],
+                  [
+                    h.button([...attributes.checkbox, h.Class('form-check')]),
+                    h.span([...attributes.label], ['هر سال تکرار شود']),
+                  ],
                 ),
-              ]),
-              'هر سال تکرار شود',
-            ],
+            },
+            h,
           ),
           h.div(
             [h.Class('occasions-row-actions')],
@@ -1531,22 +1561,26 @@ const eventEditorView = (
                       ]),
                     ],
                   ),
-                  h.label(
-                    [h.Class('calendar-event-check')],
-                    [
-                      h.input([
-                        h.Type('checkbox'),
-                        h.Checked(draft.allDay),
-                        h.AriaLabel('تمام روز'),
-                        h.Disabled(!canEdit || model.isEventBusy),
-                        h.OnClick(
-                          Message.ToggledEventEditorAllDay({
-                            allDay: !draft.allDay,
-                          }),
+                  Checkbox.view(
+                    {
+                      id: 'event-all-day-check',
+                      isChecked: draft.allDay,
+                      onToggle: allDay =>
+                        Message.ToggledEventEditorAllDay({ allDay }),
+                      toView: attributes =>
+                        h.div(
+                          [h.Class('calendar-event-check')],
+                          [
+                            h.button([
+                              ...attributes.checkbox,
+                              h.Class('form-check'),
+                              h.Disabled(!canEdit || model.isEventBusy),
+                            ]),
+                            h.span([...attributes.label], ['تمام روز']),
+                          ],
                         ),
-                      ]),
-                      'تمام روز',
-                    ],
+                    },
+                    h,
                   ),
                   h.label(
                     [h.Class('calendar-field')],

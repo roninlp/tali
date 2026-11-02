@@ -12,11 +12,14 @@ import { Command, Dom, Submodel, Subscription, Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
 
+import { Listbox } from '@foldkit/ui'
 import {
+  type CalendarTaskItem,
   type Event,
   EventExceptionId,
   EventId,
   LocalDate,
+  type Priority,
   uuidV7,
 } from '@tali/domain'
 import { createTaskInMirror } from '@tali/sync-client'
@@ -129,6 +132,30 @@ export const CalendarPendingScope = Schema.Struct({
 })
 export type CalendarPendingScope = typeof CalendarPendingScope.Type
 
+export type AdvanceOption = Readonly<{
+  value: string
+  label: string
+}>
+
+export const OccasionAdvanceListbox = Listbox.create<AdvanceOption, string>()
+
+export type PlanningPriorityOption = Readonly<{
+  value: Priority
+  label: string
+}>
+
+export const PlanningPriorityListboxEntry = Schema.Struct({
+  taskId: Schema.String,
+  listbox: Listbox.Model,
+})
+export type PlanningPriorityListboxEntry =
+  typeof PlanningPriorityListboxEntry.Type
+
+export const PlanningPriorityListbox = Listbox.create<
+  PlanningPriorityOption,
+  string
+>()
+
 export const Model = Schema.Struct({
   now: Schema.Number,
   view: Schema.Literals(['week', 'month']),
@@ -158,6 +185,8 @@ export const Model = Schema.Struct({
   occasionOriginDate: Schema.String,
   occasionYearly: Schema.Boolean,
   occasionAdvance: Schema.String,
+  occasionAdvanceListbox: Listbox.Model,
+  planningPriorityListboxes: Schema.Array(PlanningPriorityListboxEntry),
   maybeOccasionBusy: Schema.Option(Schema.String),
   maybeOccasionError: Schema.Option(Schema.String),
   occasionAnnouncement: Schema.String,
@@ -299,6 +328,11 @@ export const Message = defineMessageUnion({
   UpdatedOccasionOriginDate: { value: Schema.String },
   ToggledOccasionYearly: { yearly: Schema.Boolean },
   SelectedOccasionAdvance: { value: Schema.String },
+  GotOccasionAdvanceListboxMessage: { message: Listbox.Message },
+  GotPlanningPriorityListboxMessage: {
+    taskId: Schema.String,
+    message: Listbox.Message,
+  },
   SubmittedOccasion: {},
   ClickedEditOccasion: { occasionId: Schema.String },
   ClickedCancelOccasionEdit: {},
@@ -1011,6 +1045,10 @@ export const initialModel = (now: number): Model =>
     occasionOriginDate: '',
     occasionYearly: true,
     occasionAdvance: '7',
+    occasionAdvanceListbox: Listbox.init({
+      id: 'calendar-occasion-advance-listbox',
+    }),
+    planningPriorityListboxes: [],
     maybeOccasionBusy: Option.none(),
     maybeOccasionError: Option.none(),
     occasionAnnouncement: '',
@@ -1031,6 +1069,28 @@ type UpdateReturn = Update.ReturnWithOutMessage<
 
 type CommandReturn = Update.Return<Model, Message, LocalStoreService>
 
+const occasionAdvanceListboxOutMessage = (
+  inputs: Inputs,
+  handleUpdate: (
+    model: Model,
+    message: Message,
+    inputs: Inputs,
+  ) => UpdateReturn,
+) =>
+  Listbox.OutMessage.match<
+    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
+    Listbox.OutMessage<string>
+  >({
+    Selected:
+      ({ value }) =>
+      stepModel =>
+        handleUpdate(
+          stepModel,
+          Message.SelectedOccasionAdvance({ value }),
+          inputs,
+        ),
+  })
+
 const calendarView = (model: Model, inputs: Inputs): CalendarView =>
   calendarViewOf({
     view: model.view,
@@ -1043,6 +1103,101 @@ const calendarView = (model: Model, inputs: Inputs): CalendarView =>
     now: model.now,
     inputs,
   })
+
+const planningPriorityListboxId = (taskId: string): string =>
+  `calendar-planning-priority-${taskId}`
+
+/** The row's priority picker, created closed the first time the row asks for it. */
+export const planningPriorityListboxFor = (
+  model: Model,
+  taskId: string,
+): Listbox.Model =>
+  Option.getOrElse(
+    Option.map(
+      Array.findFirst(
+        model.planningPriorityListboxes,
+        entry => entry.taskId === taskId,
+      ),
+      entry => entry.listbox,
+    ),
+    () => Listbox.init({ id: planningPriorityListboxId(taskId) }),
+  )
+
+const writePlanningPriorityListbox = (
+  model: Model,
+  taskId: string,
+  nextListbox: Listbox.Model,
+): Model => {
+  if (
+    Array.some(
+      model.planningPriorityListboxes,
+      entry => entry.taskId === taskId,
+    )
+  ) {
+    return modifyFields(model, {
+      planningPriorityListboxes: () =>
+        Array.map(model.planningPriorityListboxes, entry =>
+          entry.taskId === taskId
+            ? modifyFields(entry, { listbox: () => nextListbox })
+            : entry,
+        ),
+    })
+  }
+
+  return modifyFields(model, {
+    planningPriorityListboxes: () => [
+      ...model.planningPriorityListboxes,
+      PlanningPriorityListboxEntry.make({ taskId, listbox: nextListbox }),
+    ],
+  })
+}
+
+const planningPriorityOf = (value: string): Priority =>
+  value === 'high' || value === 'low' ? value : 'medium'
+
+const planningPriorityRowOf = (
+  model: Model,
+  inputs: Inputs,
+  taskId: string,
+): Option.Option<CalendarTaskItem> =>
+  Array.findFirst(
+    Array.flatMap(calendarView(model, inputs).week.days, day => day.tasks),
+    item => item.id === taskId && !item.projected,
+  )
+
+const planningPriorityListboxOutMessage =
+  (
+    inputs: Inputs,
+    handleUpdate: (
+      model: Model,
+      message: Message,
+      inputs: Inputs,
+    ) => UpdateReturn,
+  ) =>
+  (taskId: string) =>
+    Listbox.OutMessage.match<
+      Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
+      Listbox.OutMessage<string>
+    >({
+      Selected:
+        ({ value }) =>
+        stepModel =>
+          Option.match(planningPriorityRowOf(stepModel, inputs, taskId), {
+            onNone: () => ({ model: stepModel }),
+            onSome: row =>
+              handleUpdate(
+                stepModel,
+                Message.ClickedPrioritizeCalendarTask({
+                  taskId,
+                  title: row.title,
+                  priority: planningPriorityOf(value),
+                  currentPriority: row.priority,
+                  projected: row.projected,
+                }),
+                inputs,
+              ),
+          }),
+    })
 
 const startFetch = (model: Model): CommandReturn => {
   const generation = model.refreshGeneration + 1
@@ -1208,8 +1363,28 @@ export const update = (
   model: Model,
   message: Message,
   inputs: Inputs,
-): UpdateReturn =>
-  Message.match<UpdateReturn>(message, {
+): UpdateReturn => {
+  const foldOccasionAdvanceListbox = Update.foldChild({
+    update: OccasionAdvanceListbox.update,
+    read: (model: Model) => Option.some(model.occasionAdvanceListbox),
+    write: (model: Model, nextListbox: Listbox.Model) =>
+      modifyFields(model, { occasionAdvanceListbox: () => nextListbox }),
+    toParentMessage: message =>
+      Message.GotOccasionAdvanceListboxMessage({ message }),
+    foldOutMessage: occasionAdvanceListboxOutMessage(inputs, update),
+  })
+
+  const foldPlanningPriorityListbox = Update.foldChildAt({
+    update: PlanningPriorityListbox.update,
+    readAt: (planModel: Model, taskId: string) =>
+      Option.some(planningPriorityListboxFor(planModel, taskId)),
+    writeAt: writePlanningPriorityListbox,
+    toParentMessage: (taskId, message) =>
+      Message.GotPlanningPriorityListboxMessage({ taskId, message }),
+    foldOutMessage: planningPriorityListboxOutMessage(inputs, update),
+  })
+
+  return Message.match<UpdateReturn>(message, {
     TickedCalendar: ({ now }) => {
       const next = modifyFields(model, { now: () => now })
       const seeded =
@@ -2177,7 +2352,14 @@ export const update = (
           ),
       }),
     }),
+
+    GotOccasionAdvanceListboxMessage: ({ message }) =>
+      foldOccasionAdvanceListbox(model, message),
+
+    GotPlanningPriorityListboxMessage: ({ taskId, message }) =>
+      foldPlanningPriorityListbox(model, taskId, message),
   })
+}
 
 /** Entry capability the root folds; resets the transient screen state. */
 export const entered = (model: Model, inputs: Inputs): CommandReturn => {
@@ -2208,6 +2390,9 @@ export const entered = (model: Model, inputs: Inputs): CommandReturn => {
       occasionOriginDate: () => today,
       occasionYearly: () => true,
       occasionAdvance: () => '7',
+      occasionAdvanceListbox: () =>
+        Listbox.init({ id: 'calendar-occasion-advance-listbox' }),
+      planningPriorityListboxes: () => [],
       maybeOccasionBusy: () => Option.none(),
       maybeOccasionError: () => Option.none(),
       occasionAnnouncement: () => '',

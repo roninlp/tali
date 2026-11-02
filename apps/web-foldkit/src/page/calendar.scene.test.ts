@@ -1,6 +1,7 @@
 import { Option } from 'effect'
 import {
   Command,
+  Mount,
   all,
   click,
   expect,
@@ -17,6 +18,8 @@ import {
 } from 'foldkit/scene'
 import { modifyFields } from 'foldkit/struct'
 import { describe, test } from 'vitest'
+
+import { Listbox } from '@foldkit/ui'
 
 import * as Calendar from './calendar'
 import type { Inputs, Model } from './calendar'
@@ -150,9 +153,97 @@ describe('Calendar week view', () => {
       click(tab('برنامه‌ریزی هفته')),
       expect(tab('برنامه‌ریزی هفته')).toHaveAttr('aria-expanded', 'true'),
       expect(role('region', { name: 'برنامه‌ریزی هفته' })).toExist(),
-      expect(role('combobox', { name: 'اولویت خرید نان' })).toHaveValue(
-        'medium',
+      click(role('button', { name: 'اولویت خرید نان' })),
+      Mount.resolve(
+        Listbox.AnchorListbox,
+        Listbox.Message.CompletedAnchorListbox(),
       ),
+      Mount.resolve(
+        Listbox.PortalListboxBackdrop,
+        Listbox.Message.CompletedPortalListboxBackdrop(),
+      ),
+      Command.resolve(
+        Listbox.FocusItems,
+        Listbox.Message.CompletedFocusItems(),
+      ),
+      click(text('بالا')),
+      Command.resolve(
+        Listbox.FocusButton,
+        Listbox.Message.CompletedFocusButton(),
+      ),
+      Mount.expectEnded(Listbox.AnchorListbox),
+      Mount.expectEnded(Listbox.PortalListboxBackdrop),
+      Command.expectExact(
+        Calendar.PrioritizeCalendarTask({
+          taskId: CALENDAR_TASK_ID,
+          title: 'خرید نان',
+          priority: 'high',
+        }),
+      ),
+      Command.resolve(
+        Calendar.PrioritizeCalendarTask,
+        Calendar.Message.CompletedPrioritizeCalendarTask({
+          taskId: CALENDAR_TASK_ID,
+          title: 'خرید نان',
+          priority: 'high',
+        }),
+      ),
+      expect(selector('.calendar-sr')).toHaveText('اولویت خرید نان: بالا'),
+    )
+  })
+
+  test('each planning row keeps its own priority picker', () => {
+    scene(
+      setup({
+        mirror: mirrorWith({
+          tasks: [
+            calendarTask(),
+            calendarTask({
+              id: '0192f0a0-0000-7000-8000-000000000046',
+              title: 'خرید شیر',
+            }),
+          ],
+        }),
+      }),
+      given(calendarModel()),
+      click(tab('برنامه‌ریزی هفته')),
+      expect(role('button', { name: 'اولویت خرید نان' })).toHaveText('متوسط'),
+      click(role('button', { name: 'اولویت خرید شیر' })),
+      Mount.resolve(
+        Listbox.AnchorListbox,
+        Listbox.Message.CompletedAnchorListbox(),
+      ),
+      Mount.resolve(
+        Listbox.PortalListboxBackdrop,
+        Listbox.Message.CompletedPortalListboxBackdrop(),
+      ),
+      Command.resolve(
+        Listbox.FocusItems,
+        Listbox.Message.CompletedFocusItems(),
+      ),
+      click(text('پایین')),
+      Command.resolve(
+        Listbox.FocusButton,
+        Listbox.Message.CompletedFocusButton(),
+      ),
+      Mount.expectEnded(Listbox.AnchorListbox),
+      Mount.expectEnded(Listbox.PortalListboxBackdrop),
+      Command.expectExact(
+        Calendar.PrioritizeCalendarTask({
+          taskId: '0192f0a0-0000-7000-8000-000000000046',
+          title: 'خرید شیر',
+          priority: 'low',
+        }),
+      ),
+      Command.resolve(
+        Calendar.PrioritizeCalendarTask,
+        Calendar.Message.CompletedPrioritizeCalendarTask({
+          taskId: '0192f0a0-0000-7000-8000-000000000046',
+          title: 'خرید شیر',
+          priority: 'low',
+        }),
+      ),
+      expect(role('button', { name: 'اولویت خرید نان' })).toHaveText('متوسط'),
     )
   })
 
@@ -297,6 +388,34 @@ describe('Calendar occasions panel', () => {
           'هنوز مناسبت‌ی ثبت نشده است. تولدها و سالگردها را این‌جا اضافه کنید تا هر سال خودشان در تقویم بیایند.',
         ),
       ).toExist(),
+    )
+  })
+
+  test('the advance picker selects a reminder window', () => {
+    scene(
+      setup(),
+      given(calendarModel()),
+      click(role('button', { name: 'یادآوری پیش از موعد' })),
+      Mount.resolve(
+        Listbox.AnchorListbox,
+        Listbox.Message.CompletedAnchorListbox(),
+      ),
+      Mount.resolve(
+        Listbox.PortalListboxBackdrop,
+        Listbox.Message.CompletedPortalListboxBackdrop(),
+      ),
+      Command.resolve(
+        Listbox.FocusItems,
+        Listbox.Message.CompletedFocusItems(),
+      ),
+      click(text('۳۰ روز قبل')),
+      Command.resolve(
+        Listbox.FocusButton,
+        Listbox.Message.CompletedFocusButton(),
+      ),
+      Mount.expectEnded(Listbox.AnchorListbox),
+      Mount.expectEnded(Listbox.PortalListboxBackdrop),
+      expect(text('۳۰ روز قبل')).toExist(),
     )
   })
 
