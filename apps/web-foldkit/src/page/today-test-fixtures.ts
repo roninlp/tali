@@ -84,6 +84,7 @@ export const habit: HabitRow = {
   startedOn: '2026-10-01',
   reminderTime: null,
   timeZone: 'Asia/Tehran',
+  ownerId: null,
   visibility: 'shared',
   createdAt: '2026-10-01T08:00:00.000Z',
   updatedAt: '2026-10-01T08:00:00.000Z',

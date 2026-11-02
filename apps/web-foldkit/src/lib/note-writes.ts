@@ -1,3 +1,4 @@
+import { defaultVisibilityFor } from '@tali/domain'
 import type { Note } from '@tali/domain'
 import type { LocalStore, ServerRow } from '@tali/sync-client'
 
@@ -47,13 +48,14 @@ export const createNoteInMirror = async (
     patch: {
       id,
       type: 'note',
+      ownerId: store.userId,
       title: '',
       body: textToNoteBody(''),
       plainText: '',
       isPinned: false,
       isArchived: false,
       tagIds: [],
-      visibility: 'shared',
+      visibility: defaultVisibilityFor('note'),
       createdAt: now,
     },
     now,

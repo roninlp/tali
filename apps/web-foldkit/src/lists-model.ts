@@ -1,5 +1,6 @@
 import { Array, Option, Schema } from 'effect'
 
+import { defaultVisibilityFor } from '@tali/domain'
 import type { MirrorRecord } from '@tali/sync-client'
 
 /**
@@ -87,8 +88,13 @@ const asNullableString = (value: unknown): string | null =>
 const asString = (value: unknown): string | null =>
   typeof value === 'string' && value !== '' ? value : null
 
-const asVisibility = (value: unknown): ListVisibility =>
-  value === 'private' ? 'private' : 'shared'
+const asVisibility = (
+  aggregate: 'list' | 'listItem',
+  value: unknown,
+): ListVisibility =>
+  value === 'private' || value === 'shared'
+    ? value
+    : defaultVisibilityFor(aggregate)
 
 const asSort = (value: unknown): ListSort =>
   value === 'alpha' || value === 'status' ? value : 'manual'
@@ -138,7 +144,7 @@ export const toListRow = (record: MirrorRecord): ListRow =>
     icon: asString(record.data.icon),
     sort: asSort(record.data.sort),
     checkedPlacement: asPlacement(record.data.checkedPlacement),
-    visibility: asVisibility(record.data.visibility),
+    visibility: asVisibility('list', record.data.visibility),
     lastWriterId: asNullableString(record.data.lastWriterId),
     createdAt: asNullableString(record.data.createdAt) ?? record.updatedAt,
     updatedAt: record.updatedAt,
@@ -157,7 +163,7 @@ export const toListItemRow = (record: MirrorRecord): ListItemRow =>
     checkedAt: asNullableString(record.data.checkedAt),
     color: asNullableString(record.data.color),
     tagIds: stringArray(record.data.tagIds),
-    visibility: asVisibility(record.data.visibility),
+    visibility: asVisibility('listItem', record.data.visibility),
     lastWriterId: asNullableString(record.data.lastWriterId),
     createdAt: asNullableString(record.data.createdAt) ?? record.updatedAt,
     updatedAt: record.updatedAt,

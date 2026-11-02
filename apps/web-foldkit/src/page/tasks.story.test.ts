@@ -941,3 +941,60 @@ describe('Tasks clock and entry', () => {
     expect(tasks).toContain(todayTask)
   })
 })
+
+describe('task visibility', () => {
+  const ownerTask = {
+    ...todayTask,
+    ownerId: USER_ID,
+    visibility: 'private' as const,
+  }
+  const ownerInputs = inputWith({
+    mirror: { ...defaultInputs().mirror, tasks: [ownerTask] },
+  })
+  const ownerUpdate = (tasks: Tasks.Model, message: Tasks.Message) =>
+    Tasks.update(tasks, message, ownerInputs)
+
+  test('the owner shares a private task', () => {
+    story(
+      ownerUpdate,
+      given(withEditor(baseModel(), ownerTask)),
+      message(
+        Tasks.Message.ClickedToggleTaskVisibility({ taskId: ownerTask.id }),
+      ),
+      Command.expectExact(
+        Tasks.SetTaskVisibility({
+          taskId: ownerTask.id,
+          visibility: 'shared',
+        }),
+      ),
+      Command.resolve(
+        Tasks.SetTaskVisibility,
+        Tasks.Message.CompletedSetTaskVisibility({
+          taskId: ownerTask.id,
+          visibility: 'shared',
+        }),
+      ),
+      expectOutMessage(Tasks.OutMessage.WroteLocalData()),
+      model(next => {
+        expect(next.announcement).toBe('کار با خانه به اشتراک گذاشته شد')
+      }),
+    )
+  })
+
+  test('a non-owner gets no share command', () => {
+    const nonOwner = Tasks.initialModel({
+      now: TODAY_NOW,
+      maybeUserId: Option.some('another-user'),
+      maybeSettings: Option.none(),
+    })
+
+    story(
+      ownerUpdate,
+      given(withEditor(nonOwner, ownerTask)),
+      message(
+        Tasks.Message.ClickedToggleTaskVisibility({ taskId: ownerTask.id }),
+      ),
+      Command.expectNone(),
+    )
+  })
+})

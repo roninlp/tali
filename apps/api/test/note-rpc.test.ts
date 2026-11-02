@@ -212,7 +212,8 @@ describe("Note RPC round-trip", () => {
           id: sharedId,
           clientMutationId: "p-shared",
           title: "مشترک",
-          body: doc("مشترک")
+          body: doc("مشترک"),
+          visibility: "shared"
         })
         yield* client.CreateNote({
           id: privateId,

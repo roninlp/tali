@@ -2,6 +2,7 @@ import { Array, Option } from 'effect'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
 import { syncFailureMessage } from '../lib/sync-copy'
+import { shareActionOf } from '../lib/visibility-writes'
 import { notesRouter, notesTrashRouter } from '../route'
 import { buttonView } from '../ui/button'
 import { formErrorView } from '../ui/field'
@@ -258,6 +259,22 @@ const editorFormView = (
               model.isArchived ? 'بازگردانی از آرشیو' : 'آرشیو',
             ],
           ),
+          model.isOwner
+            ? h.button(
+                [
+                  h.Type('button'),
+                  h.Class('btn btn-ghost gap-1.5 rounded-full'),
+                  h.Disabled(model.isTrashed),
+                  h.AriaLabel(
+                    model.visibility === 'shared'
+                      ? 'خصوصی کردن این یادداشت'
+                      : 'اشتراک این یادداشت با خانه',
+                  ),
+                  h.OnClick(Message.ClickedToggleNoteVisibility()),
+                ],
+                [shareActionOf(model.visibility).label],
+              )
+            : h.empty,
           h.button(
             [
               h.Type('button'),

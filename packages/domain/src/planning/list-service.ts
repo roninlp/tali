@@ -126,8 +126,7 @@ export const ListItemCreateInput = Schema.Struct({
   name: Schema.String.check(Schema.isMinLength(1)),
   order: Schema.optional(Schema.Int),
   color: Schema.optional(Schema.NullOr(Schema.String)),
-  tagIds: Schema.optional(TagIds),
-  visibility: Schema.optional(Visibility)
+  tagIds: Schema.optional(TagIds)
 })
 export type ListItemCreateInput = Schema.Schema.Type<typeof ListItemCreateInput>
 
@@ -145,8 +144,7 @@ export const ListItemsAppendInput = Schema.Struct({
       id: Schema.optional(ListItemId),
       name: Schema.String.check(Schema.isMinLength(1)),
       color: Schema.optional(Schema.NullOr(Schema.String)),
-      tagIds: Schema.optional(TagIds),
-      visibility: Schema.optional(Visibility)
+      tagIds: Schema.optional(TagIds)
     })
   )
 })

@@ -329,7 +329,6 @@ describe('List detail', () => {
           listId: LIST_ID,
           name: 'ماست',
           order: 4,
-          visibility: 'shared',
         }),
       ),
       Command.resolve(

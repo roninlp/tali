@@ -1,4 +1,5 @@
 import {
+  defaultVisibilityFor,
   habitFrequencyHistoryAfter,
   localDateIn,
   sameHabitFrequency,
@@ -58,6 +59,7 @@ export const createHabitInMirror = async (
     patch: {
       id,
       type: 'habit',
+      ownerId: store.userId,
       title,
       description: draft.description ?? null,
       icon: draft.icon ?? null,
@@ -69,7 +71,7 @@ export const createHabitInMirror = async (
       startedOn,
       reminderTime: draft.reminderTime ?? null,
       timeZone,
-      visibility: 'shared',
+      visibility: defaultVisibilityFor('habit'),
       createdAt: now,
     },
     now,

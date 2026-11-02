@@ -12,16 +12,17 @@ import { commonItemFields, TagId } from "./common.js"
  *
  * Tag carries the common-item sync contract (`version`/`deletedAt`) so a
  * rename or soft delete reaches the other device through the same feed as
- * every other aggregate.
+ * every other aggregate. Visibility is `household` (ADR-0011): one shared tag
+ * vocabulary, with no user-facing control.
  */
 export class Tag extends Model.Class<Tag>("Tag")({
   ...commonItemFields("tag", TagId),
+  visibility: Visibility,
   name: Schema.String.check(Schema.isMinLength(1))
 }) {}
 
 export const TagCreate = Schema.Struct({
   name: Schema.String.check(Schema.isMinLength(1)),
-  color: Schema.optional(Schema.NullOr(Schema.String)),
-  visibility: Schema.optional(Visibility)
+  color: Schema.optional(Schema.NullOr(Schema.String))
 })
 export type TagCreate = Schema.Schema.Type<typeof TagCreate>

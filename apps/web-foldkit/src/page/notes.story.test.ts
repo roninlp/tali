@@ -48,6 +48,8 @@ const NOTE_LOAD = (overrides: Partial<Notes.NoteLoad> = {}): Notes.NoteLoad =>
     isPinned: false,
     isArchived: false,
     isTrashed: false,
+    visibility: 'private',
+    isOwner: true,
     version: 4,
     maybeSyncError: Option.none(),
     isDraftApplied: false,
@@ -587,6 +589,36 @@ describe('note editor actions', () => {
         Notes.Message.CompletedSetPinned({ noteId: NOTE_ID, isPinned: true }),
       ),
       expectOutMessage(Notes.OutMessage.WroteLocalData()),
+    )
+
+    story(
+      defaultUpdate,
+      given(editorModel()),
+      message(Notes.Message.ClickedToggleNoteVisibility()),
+      Command.expectExact(
+        Notes.SetNoteVisibility({ noteId: NOTE_ID, visibility: 'shared' }),
+      ),
+      Command.resolve(
+        Notes.SetNoteVisibility,
+        Notes.Message.CompletedSetNoteVisibility({
+          noteId: NOTE_ID,
+          visibility: 'shared',
+        }),
+      ),
+      expectOutMessage(Notes.OutMessage.WroteLocalData()),
+      model(next => {
+        expect(next.visibility).toBe('shared')
+      }),
+    )
+
+    story(
+      defaultUpdate,
+      given(editorModel({ isOwner: false })),
+      message(Notes.Message.ClickedToggleNoteVisibility()),
+      Command.expectNone(),
+      model(next => {
+        expect(next.visibility).toBe('private')
+      }),
     )
 
     story(

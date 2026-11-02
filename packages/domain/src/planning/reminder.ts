@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import { Model } from "effect/schema"
+import { Visibility } from "../common.js"
 import { commonItemFields, ReminderDispatchId, ReminderId, TimeZone, TimestampUtc } from "./common.js"
 import { ReminderLink } from "./reminder-link.js"
 
@@ -99,6 +100,8 @@ export type ReminderRepeat = Schema.Schema.Type<typeof ReminderRepeat>
 
 export class Reminder extends Model.Class<Reminder>("Reminder")({
   ...commonItemFields("reminder", ReminderId),
+  /** Resolved from the reminder's `shareable` policy (ADR-0011); default `private`. */
+  visibility: Visibility,
   /** The reminder's own heading ("داروی فشار"). */
   title: Schema.String,
   /** Optional free text ("همراه با غذا"). */
@@ -174,6 +177,8 @@ export const ReminderInboxItem = Schema.Struct({
   kind: ReminderType,
   tier: ReminderTier,
   link: ReminderLink,
+  /** The reminder's resolved visibility, so the inbox can offer Share/Unshare. */
+  visibility: Visibility,
   /** `inbox` = unanswered and under 24 h old; `history` = everything else. */
   state: Schema.Literals(["inbox", "history"])
 })

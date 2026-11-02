@@ -326,7 +326,8 @@ describe("habit sync", () => {
       localDate: "2026-10-20",
       timeZone: "Asia/Tehran",
       status: "done",
-      visibility: "shared"
+      // The habit defaulted to private, and the entry copies it exactly.
+      visibility: "private"
     })
 
     const stored = h.db
@@ -481,8 +482,7 @@ describe("habit sync", () => {
             habitId,
             localDate: "2026-10-20",
             timeZone: "UTC",
-            status: "done",
-            visibility: "private"
+            status: "done"
           },
           clientUpdatedAt: "2026-10-20T16:00:00.000Z"
         })
@@ -523,8 +523,8 @@ describe("habit sync", () => {
       ]
     })
 
-    // The tap does not send visibility (or sends a wider one): the server must
-    // inherit the habit's, not trust the patch.
+    // The tap does not send visibility: the server inherits the habit's and
+    // never trusts the patch.
     const pushed = await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
@@ -549,6 +549,54 @@ describe("habit sync", () => {
     const partner = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
     expect(partner.items).toEqual([])
     expect(partner.entries).toEqual([])
+  })
+
+  it("rejects a tap that tries to set a habit entry's visibility", async () => {
+    const h = makeHarness()
+    const habitId = uuidV7()
+    const habitEntryId = uuidV7()
+
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "habit",
+          entityId: habitId,
+          baseVersion: 0,
+          patch: {
+            title: "عادت خصوصی",
+            frequency: { _tag: "daily" },
+            timeZone: "UTC",
+            visibility: "private"
+          }
+        })
+      ]
+    })
+
+    const pushed = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "habitEntry",
+          entityId: habitEntryId,
+          baseVersion: 0,
+          patch: {
+            habitId,
+            localDate: "2026-10-20",
+            timeZone: "UTC",
+            status: "done",
+            visibility: "shared"
+          }
+        })
+      ]
+    })
+    expect(pushed.results[0]).toMatchObject({ _tag: "rejected", code: "VisibilityFixed" })
+    const count = h.db
+      .prepare("SELECT COUNT(*) AS n FROM habit_entries WHERE habit_id = ?")
+      .get(habitId) as { readonly n: number }
+    expect(count.n).toBe(0)
   })
 
   it("refuses an entry whose habit is missing, trashed, private to another member, or in another household", async () => {

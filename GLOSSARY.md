@@ -43,6 +43,53 @@ The D1 fixed-window counter (`login_attempts`) keyed by normalized email + clien
 IP: five failed logins per 15 minutes are allowed; the next attempt is answered
 with `429 RateLimited` before any credential comparison.
 
+## Visibility & sharing
+
+### Household
+
+The two-person shared space every syncable row belongs to. A household is the
+boundary for the sync feed and for `shared` rows: both members see and edit
+them. It is not a general ACL group; there is no third role and no per-row
+member list. See [ADR-0011](docs/adr/0011-per-aggregate-visibility-policy.md).
+
+### Visibility
+
+The resolved `private`/`shared` value stored on a syncable row so `/sync/pull`
+can filter it without a join. It is derived from the aggregate's **Visibility
+Policy**, never chosen by hand on every aggregate: an owner-only row is always
+private, a household row always shared, an inherited row copies its parent,
+and only a shareable row follows the user's choice.
+
+_Avoid:_ "permission" or "ACL" for visibility — there is no per-member table.
+
+### Visibility Policy
+
+The four-class rule that decides an aggregate's visibility: `ownerOnly`,
+`household`, `inherited(parent)` and `shareable(default)`. The policy is the
+single source of truth for the default, whether a create input accepts
+`visibility`, and whether the sync engine may change it.
+
+### Private
+
+Hidden from the partner: the other household member cannot read it, pull it, or
+see it in the change feed. Private rows are still stored in the same database
+and are **not** encrypted at rest; the promise is the two-member sharing
+boundary, not protection from the operator.
+
+### Shared
+
+Visible to both household members, who may also **co-edit** it. Shared is not
+read-only. Only the row's owner can turn a shared row private; the partner
+cannot lock the author out. Any member may share a row back.
+
+### Shareable
+
+The only visibility class with a user-facing choice. Lists, events, tasks,
+notes, habits, reminders and occasions are shareable; each has exactly one
+default (lists, events and tasks start shared; notes, habits, reminders and
+occasions start private). Owner-only, household and inherited aggregates never
+render a control.
+
 ## Preferences
 
 ### Display Preferences

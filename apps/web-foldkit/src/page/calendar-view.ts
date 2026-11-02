@@ -20,6 +20,7 @@ import {
   formatOccasionDate,
   upcomingOccasions,
 } from '../lib/occasion-writes'
+import { shareActionOf } from '../lib/visibility-writes'
 import { entityKey } from '../mirror'
 import { taskAnchorPath } from '../route'
 import { listboxViewInputs } from '../ui/listbox'
@@ -1323,6 +1324,20 @@ const occasionsPanel = (
   const preview = occasionsPreview(model.occasionOriginDate, digits)
   const busy = Option.isSome(model.maybeOccasionBusy)
   const isEditing = Option.isSome(model.occasionEditingId)
+  const editingOccasion = Option.flatMap(model.occasionEditingId, occasionId =>
+    Array.findFirst(
+      inputs.mirror.occasions,
+      occasion => occasion.id === occasionId,
+    ),
+  )
+  const canShare = Option.match(editingOccasion, {
+    onNone: () => false,
+    onSome: occasion => Option.contains(inputs.maybeUserId, occasion.ownerId),
+  })
+  const editingVisibility = Option.getOrElse(
+    Option.map(editingOccasion, occasion => occasion.visibility),
+    () => 'private' as const,
+  )
 
   return h.section(
     [h.Class('occasions-panel'), h.AriaLabel('مناسبت‌ها')],
@@ -1446,6 +1461,21 @@ const occasionsPanel = (
               ),
               ...(isEditing
                 ? [
+                    ...(canShare
+                      ? [
+                          h.button(
+                            [
+                              h.Type('button'),
+                              h.Class('occasions-small-button'),
+                              h.Disabled(busy),
+                              h.OnClick(
+                                Message.ClickedToggleOccasionVisibility(),
+                              ),
+                            ],
+                            [shareActionOf(editingVisibility).label],
+                          ),
+                        ]
+                      : []),
                     h.button(
                       [
                         h.Type('button'),
@@ -1503,6 +1533,18 @@ const eventEditorView = (
       const occurrence = editor.occurrence
       const draft = editor.draft
       const inactive = Option.isSome(model.maybePendingScope)
+      const seriesRow = Array.findFirst(
+        inputs.mirror.events,
+        row => row.id === occurrence.id,
+      )
+      const isOwner = Option.match(seriesRow, {
+        onNone: () => false,
+        onSome: row => Option.contains(inputs.maybeUserId, row.ownerId),
+      })
+      const visibility = Option.getOrElse(
+        Option.map(seriesRow, row => row.visibility),
+        () => 'private' as const,
+      )
       const canEdit =
         Option.isSome(
           Array.findFirst(
@@ -1671,6 +1713,21 @@ const eventEditorView = (
                         ],
                         ['ذخیره'],
                       ),
+                      ...(isOwner
+                        ? [
+                            h.button(
+                              [
+                                h.Type('button'),
+                                h.Class('calendar-nav-button'),
+                                h.Disabled(!canEdit || model.isEventBusy),
+                                h.OnClick(
+                                  Message.ClickedToggleEventVisibility(),
+                                ),
+                              ],
+                              [shareActionOf(visibility).label],
+                            ),
+                          ]
+                        : []),
                       h.button(
                         [
                           h.Type('button'),

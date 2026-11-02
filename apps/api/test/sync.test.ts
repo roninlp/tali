@@ -1117,6 +1117,18 @@ describe("sync engine", () => {
     await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "list",
+          entityId: listId,
+          baseVersion: 0,
+          patch: { title: "فهرست" }
+        })
+      ]
+    })
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
       entries: [entry({ entityId: id, baseVersion: 1, patch: { checked: false, listId } })]
     })
 
@@ -1731,5 +1743,684 @@ describe("sync engine", () => {
     expect(stale.resetRequired).toBe(true)
     expect(stale.entries).toEqual([])
     expect(stale.nextCursor).toBe(7)
+  })
+})
+
+describe("visibility policy (ADR-0011)", () => {
+  it("rejects a patch that sets a household aggregate's fixed visibility", async () => {
+    const h = makeHarness()
+    const projectId = uuidV7()
+    const tagId = uuidV7()
+
+    const fixed = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "project",
+          entityId: projectId,
+          baseVersion: 0,
+          patch: { title: "خانه", visibility: "private" }
+        }),
+        entry({
+          entityType: "tag",
+          entityId: tagId,
+          baseVersion: 0,
+          patch: { name: "کار", visibility: "private" }
+        })
+      ]
+    })
+    expect(fixed.results).toMatchObject([
+      { _tag: "rejected", code: "VisibilityFixed" },
+      { _tag: "rejected", code: "VisibilityFixed" }
+    ])
+
+    // The same creates without a visibility apply and resolve to shared.
+    const created = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "project",
+          entityId: projectId,
+          baseVersion: 0,
+          patch: { title: "خانه" }
+        }),
+        entry({
+          entityType: "tag",
+          entityId: tagId,
+          baseVersion: 0,
+          patch: { name: "کار" }
+        })
+      ]
+    })
+    expect(created.results.map((result) => result._tag)).toEqual(["applied", "applied"])
+
+    const page = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    expect(
+      page.items.find((item) => item.entityId === projectId)?.data.visibility
+    ).toBe("shared")
+    expect(page.items.find((item) => item.entityId === tagId)?.data.visibility).toBe("shared")
+  })
+
+  it("lets only the owner un-share a shared row", async () => {
+    const h = makeHarness()
+    const taskId = uuidV7()
+
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [entry({ entityType: "task", entityId: taskId, baseVersion: 0, patch: { title: "مشترک" } })]
+    })
+
+    const flip = await push(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "task",
+          entityId: taskId,
+          baseVersion: 1,
+          patch: { visibility: "private" }
+        })
+      ]
+    })
+    expect(flip.results[0]).toMatchObject({ _tag: "rejected", code: "VisibilityForbidden" })
+
+    const owner = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
+    expect(owner.items.find((item) => item.entityId === taskId)?.data.visibility).toBe("shared")
+
+    // The owner can un-share it; the partner's next pull removes it.
+    const unshared = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "task",
+          entityId: taskId,
+          baseVersion: 1,
+          patch: { visibility: "private" }
+        })
+      ]
+    })
+    expect(unshared.results[0]?._tag).toBe("applied")
+    const partner = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    expect(partner.items.find((item) => item.entityId === taskId)).toBeUndefined()
+    expect(partner.removed).toContainEqual({ entityType: "task", entityId: taskId })
+  })
+
+  it("inherits a list item's visibility from its list and refuses to widen it", async () => {
+    const h = makeHarness()
+    const listId = uuidV7()
+    const privateItem = uuidV7()
+    const sharedItem = uuidV7()
+
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "list",
+          entityId: listId,
+          baseVersion: 0,
+          patch: { title: "خصوصی", visibility: "private" }
+        })
+      ]
+    })
+
+    const widened = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "listItem",
+          entityId: sharedItem,
+          baseVersion: 0,
+          patch: { title: "نمی‌شود", listId, visibility: "shared" }
+        })
+      ]
+    })
+    expect(widened.results[0]).toMatchObject({ _tag: "rejected", code: "VisibilityInherited" })
+
+    const inherited = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "listItem",
+          entityId: privateItem,
+          baseVersion: 0,
+          patch: { title: "نان", listId }
+        })
+      ]
+    })
+    expect(inherited.results[0]?._tag).toBe("applied")
+
+    const page = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
+    expect(
+      page.items.find((item) => item.entityId === privateItem)?.data.visibility
+    ).toBe("private")
+
+    // A shared list may still carry a narrower private item.
+    const sharedList = uuidV7()
+    const narrowItem = uuidV7()
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "list",
+          entityId: sharedList,
+          baseVersion: 0,
+          patch: { title: "مشترک" }
+        })
+      ]
+    })
+    const narrowed = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "listItem",
+          entityId: narrowItem,
+          baseVersion: 0,
+          patch: { title: "خصوصی من", listId: sharedList, visibility: "private" }
+        })
+      ]
+    })
+    expect(narrowed.results[0]?._tag).toBe("applied")
+    const sharedPage = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    expect(
+      sharedPage.items.find((item) => item.entityId === narrowItem)
+    ).toBeUndefined()
+  })
+
+  it("resolves a delete-only tombstone through the aggregate's policy", async () => {
+    const h = makeHarness()
+    const noteId = uuidV7()
+    const reminderId = uuidV7()
+
+    const deleted = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({ entityType: "note", entityId: noteId, baseVersion: 0, op: "delete" }),
+        entry({ entityType: "reminder", entityId: reminderId, baseVersion: 0, op: "delete" })
+      ]
+    })
+    expect(deleted.results.map((result) => result._tag)).toEqual(["applied", "applied"])
+
+    const page = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
+    expect(page.items.find((item) => item.entityId === noteId)?.data.visibility).toBe("private")
+    expect(page.items.find((item) => item.entityId === reminderId)?.data.visibility).toBe(
+      "private"
+    )
+  })
+})
+
+describe("legacy visibility converges on the next write (ADR-0011)", () => {
+  it("rewrites a legacy private household row to shared", async () => {
+    const h = makeHarness()
+    const projectId = uuidV7()
+    const now = NOW()
+
+    h.db.prepare(
+      `INSERT INTO projects
+        (id, type, title, owner_id, household_id, visibility, color, created_at, updated_at, version, deleted_at)
+       VALUES (?, 'project', 'قدیمی', ?, ?, 'private', NULL, ?, ?, 1, NULL)`
+    ).run(projectId, USER_A, HOUSEHOLD, now, now)
+
+    const pushed = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "project",
+          entityId: projectId,
+          baseVersion: 1,
+          patch: { title: "تازه" }
+        })
+      ]
+    })
+    expect(pushed.results[0]?._tag).toBe("applied")
+    expect(
+      h.db.prepare("SELECT visibility FROM projects WHERE id = ?").get(projectId)
+    ).toMatchObject({ visibility: "shared" })
+
+    const partner = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    expect(
+      partner.items.find((item) => item.entityId === projectId)?.data.visibility
+    ).toBe("shared")
+  })
+
+  it("rewrites a legacy private habit entry to its shared habit", async () => {
+    const h = makeHarness()
+    const habitId = uuidV7()
+    const entryId = uuidV7()
+    const now = NOW()
+
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "habit",
+          entityId: habitId,
+          baseVersion: 0,
+          patch: {
+            title: "عادت مشترک",
+            frequency: { _tag: "daily" },
+            timeZone: "UTC",
+            visibility: "shared"
+          }
+        })
+      ]
+    })
+    h.db.prepare(
+      `INSERT INTO habit_entries
+        (id, habit_id, owner_id, household_id, visibility, local_date, time_zone, status, created_at, updated_at, version, deleted_at)
+       VALUES (?, ?, ?, ?, 'private', '2026-10-20', 'UTC', 'done', ?, ?, 1, NULL)`
+    ).run(entryId, habitId, USER_A, HOUSEHOLD, now, now)
+
+    const pushed = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "habitEntry",
+          entityId: entryId,
+          baseVersion: 1,
+          patch: { status: "partial" }
+        })
+      ]
+    })
+    expect(pushed.results[0]?._tag).toBe("applied")
+    expect(
+      h.db.prepare("SELECT visibility FROM habit_entries WHERE id = ?").get(entryId)
+    ).toMatchObject({ visibility: "shared" })
+
+    const partner = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    expect(
+      partner.items.find((item) => item.entityId === entryId)?.data.visibility
+    ).toBe("shared")
+  })
+})
+
+describe("inherited visibility is parent-gated (ADR-0011)", () => {
+  const bootstrapAs = (h: ReturnType<typeof makeHarness>, userId: string) =>
+    h.run(
+      Effect.gen(function*() {
+        const sync = yield* SyncService
+        return yield* sync.bootstrap({ userId, householdId: HOUSEHOLD, offset: 0, limit: 500 })
+      })
+    )
+
+  it("removes a habit's entries from the partner's pull and bootstrap on un-share", async () => {
+    const h = makeHarness()
+    const habitId = uuidV7()
+    const entryId = uuidV7()
+
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "habit",
+          entityId: habitId,
+          baseVersion: 0,
+          patch: {
+            title: "عادت مشترک",
+            frequency: { _tag: "daily" },
+            timeZone: "UTC",
+            visibility: "shared"
+          }
+        })
+      ]
+    })
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "habitEntry",
+          entityId: entryId,
+          baseVersion: 0,
+          patch: { habitId, localDate: "2026-10-20", timeZone: "UTC", status: "done" }
+        })
+      ]
+    })
+
+    const before = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    expect(before.items.find((item) => item.entityId === entryId)?.data.visibility).toBe("shared")
+
+    const unshared = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "habit",
+          entityId: habitId,
+          baseVersion: 1,
+          patch: { visibility: "private" }
+        })
+      ]
+    })
+    expect(unshared.results[0]?._tag).toBe("applied")
+
+    const partner = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    expect(partner.items.find((item) => item.entityId === entryId)).toBeUndefined()
+    expect(partner.removed).toContainEqual({ entityType: "habitEntry", entityId: entryId })
+
+    const boot = await bootstrapAs(h, USER_B)
+    expect(boot.items.find((item) => item.entityId === entryId)).toBeUndefined()
+  })
+
+  it("removes a list's items from the partner's pull and bootstrap on un-share", async () => {
+    const h = makeHarness()
+    const listId = uuidV7()
+    const itemId = uuidV7()
+
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({ entityType: "list", entityId: listId, baseVersion: 0, patch: { title: "مشترک" } }),
+        entry({
+          entityType: "listItem",
+          entityId: itemId,
+          baseVersion: 0,
+          patch: { title: "نان", listId }
+        })
+      ]
+    })
+
+    const before = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    expect(before.items.find((item) => item.entityId === itemId)?.data.visibility).toBe("shared")
+
+    const unshared = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "list",
+          entityId: listId,
+          baseVersion: 1,
+          patch: { visibility: "private" }
+        })
+      ]
+    })
+    expect(unshared.results[0]?._tag).toBe("applied")
+
+    const partner = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    expect(partner.items.find((item) => item.entityId === itemId)).toBeUndefined()
+    expect(partner.removed).toContainEqual({ entityType: "listItem", entityId: itemId })
+
+    const boot = await bootstrapAs(h, USER_B)
+    expect(boot.items.find((item) => item.entityId === itemId)).toBeUndefined()
+  })
+
+  it("resolves a same-push habit un-share against the new parent", async () => {
+    const h = makeHarness()
+    const habitId = uuidV7()
+    const entryId = uuidV7()
+
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "habit",
+          entityId: habitId,
+          baseVersion: 0,
+          patch: {
+            title: "عادت",
+            frequency: { _tag: "daily" },
+            timeZone: "UTC",
+            visibility: "shared"
+          }
+        })
+      ]
+    })
+
+    const both = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "habit",
+          entityId: habitId,
+          baseVersion: 1,
+          patch: { visibility: "private" }
+        }),
+        entry({
+          entityType: "habitEntry",
+          entityId: entryId,
+          baseVersion: 0,
+          patch: { habitId, localDate: "2026-10-20", timeZone: "UTC", status: "done" }
+        })
+      ]
+    })
+    expect(both.results.map((result) => result._tag)).toEqual(["applied", "applied"])
+    expect(
+      h.db.prepare("SELECT visibility FROM habit_entries WHERE id = ?").get(entryId)
+    ).toMatchObject({ visibility: "private" })
+
+    const partner = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    expect(partner.items.find((item) => item.entityId === entryId)).toBeUndefined()
+    expect(partner.removed).toContainEqual({ entityType: "habitEntry", entityId: entryId })
+  })
+
+  it("resolves a same-push list un-share against the new parent", async () => {
+    const h = makeHarness()
+    const listId = uuidV7()
+    const itemId = uuidV7()
+
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({ entityType: "list", entityId: listId, baseVersion: 0, patch: { title: "فهرست" } })
+      ]
+    })
+
+    const both = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "list",
+          entityId: listId,
+          baseVersion: 1,
+          patch: { visibility: "private" }
+        }),
+        entry({
+          entityType: "listItem",
+          entityId: itemId,
+          baseVersion: 0,
+          patch: { title: "مورد", listId }
+        })
+      ]
+    })
+    expect(both.results.map((result) => result._tag)).toEqual(["applied", "applied"])
+    expect(
+      h.db.prepare("SELECT visibility FROM list_items WHERE id = ?").get(itemId)
+    ).toMatchObject({ visibility: "private" })
+
+    const partner = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    expect(partner.items.find((item) => item.entityId === itemId)).toBeUndefined()
+  })
+
+  it("forces an explicitly shared orphan list item private", async () => {
+    const h = makeHarness()
+    const itemId = uuidV7()
+
+    const pushed = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "listItem",
+          entityId: itemId,
+          baseVersion: 0,
+          patch: { title: "یتیم", visibility: "shared" }
+        })
+      ]
+    })
+    expect(pushed.results[0]?._tag).toBe("applied")
+    expect(
+      h.db.prepare("SELECT visibility FROM list_items WHERE id = ?").get(itemId)
+    ).toMatchObject({ visibility: "private" })
+
+    const own = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
+    expect(own.items.find((item) => item.entityId === itemId)?.data.visibility).toBe("private")
+
+    const partner = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    expect(partner.items.find((item) => item.entityId === itemId)).toBeUndefined()
+    expect(partner.removed).toContainEqual({ entityType: "listItem", entityId: itemId })
+  })
+
+  it("re-resolves the new parent when an item moves lists", async () => {
+    const h = makeHarness()
+    const sharedList = uuidV7()
+    const privateList = uuidV7()
+    const itemId = uuidV7()
+
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({ entityType: "list", entityId: sharedList, baseVersion: 0, patch: { title: "مشترک" } }),
+        entry({
+          entityType: "list",
+          entityId: privateList,
+          baseVersion: 0,
+          patch: { title: "خصوصی", visibility: "private" }
+        }),
+        entry({
+          entityType: "listItem",
+          entityId: itemId,
+          baseVersion: 0,
+          patch: { title: "مورد", listId: sharedList }
+        })
+      ]
+    })
+
+    const moved = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "listItem",
+          entityId: itemId,
+          baseVersion: 1,
+          patch: { listId: privateList }
+        })
+      ]
+    })
+    expect(moved.results[0]?._tag).toBe("applied")
+    expect(
+      h.db.prepare("SELECT visibility FROM list_items WHERE id = ?").get(itemId)
+    ).toMatchObject({ visibility: "private" })
+
+    const partner = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    expect(partner.items.find((item) => item.entityId === itemId)).toBeUndefined()
+  })
+
+  it("rejects clearing an item's list parent", async () => {
+    const h = makeHarness()
+    const listId = uuidV7()
+    const itemId = uuidV7()
+
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({ entityType: "list", entityId: listId, baseVersion: 0, patch: { title: "مشترک" } }),
+        entry({
+          entityType: "listItem",
+          entityId: itemId,
+          baseVersion: 0,
+          patch: { title: "مورد", listId }
+        })
+      ]
+    })
+
+    const cleared = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "listItem",
+          entityId: itemId,
+          baseVersion: 1,
+          patch: { listId: null }
+        })
+      ]
+    })
+    expect(cleared.results[0]).toMatchObject({ _tag: "rejected", code: "ParentNotFound" })
+    expect(
+      h.db.prepare("SELECT visibility, list_id FROM list_items WHERE id = ?").get(itemId)
+    ).toMatchObject({ visibility: "shared", list_id: listId })
+  })
+
+  it("rejects a list item that names a missing list", async () => {
+    const h = makeHarness()
+    const itemId = uuidV7()
+
+    const pushed = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "listItem",
+          entityId: itemId,
+          baseVersion: 0,
+          patch: { title: "یتیم", listId: uuidV7(), visibility: "shared" }
+        })
+      ]
+    })
+    expect(pushed.results[0]).toMatchObject({ _tag: "rejected", code: "ParentNotFound" })
+    expect(h.db.prepare("SELECT id FROM list_items WHERE id = ?").get(itemId)).toBeUndefined()
+  })
+
+  it("rejects a move that asks for shared under the new private list", async () => {
+    const h = makeHarness()
+    const sharedList = uuidV7()
+    const privateList = uuidV7()
+    const itemId = uuidV7()
+
+    await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({ entityType: "list", entityId: sharedList, baseVersion: 0, patch: { title: "مشترک" } }),
+        entry({
+          entityType: "list",
+          entityId: privateList,
+          baseVersion: 0,
+          patch: { title: "خصوصی", visibility: "private" }
+        }),
+        entry({
+          entityType: "listItem",
+          entityId: itemId,
+          baseVersion: 0,
+          patch: { title: "مورد", listId: sharedList }
+        })
+      ]
+    })
+
+    const moved = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [
+        entry({
+          entityType: "listItem",
+          entityId: itemId,
+          baseVersion: 1,
+          patch: { listId: privateList, visibility: "shared" }
+        })
+      ]
+    })
+    expect(moved.results[0]).toMatchObject({ _tag: "rejected", code: "VisibilityInherited" })
   })
 })

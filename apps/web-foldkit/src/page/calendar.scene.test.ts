@@ -23,8 +23,10 @@ import { Listbox } from '@foldkit/ui'
 
 import * as Calendar from './calendar'
 import type { Inputs, Model } from './calendar'
+import { USER_ID } from '../test-fixtures'
 import {
   CALENDAR_TASK_ID,
+  EVENT_ID,
   TODAY,
   calendarInputs,
   calendarModel,
@@ -562,6 +564,72 @@ describe('Calendar event editor', () => {
       expect(
         role('textbox', { name: `کار تازه برای ${TODAY_LABEL}` }),
       ).toBeDisabled(),
+    )
+  })
+})
+
+describe('Calendar visibility controls', () => {
+  test('the event owner sees the unshare action', () => {
+    scene(
+      setup({ mirror: mirrorWith({ events: [eventRow()] }) }),
+      given(calendarModel()),
+      click(role('button', { name: 'سفر' })),
+      Command.resolve(
+        Calendar.FocusEventEditor,
+        Calendar.Message.CompletedFocusEventEditor(),
+      ),
+      expect(role('button', { name: 'فقط خودم' })).toExist(),
+      click(role('button', { name: 'فقط خودم' })),
+      Command.expectExact(
+        Calendar.SetCalendarEventVisibility({
+          eventId: EVENT_ID,
+          visibility: 'private',
+        }),
+      ),
+      Command.resolve(
+        Calendar.SetCalendarEventVisibility,
+        Calendar.Message.CompletedSetEventVisibility({
+          eventId: EVENT_ID,
+          visibility: 'private',
+        }),
+      ),
+    )
+  })
+
+  test('a partner does not see the event share action', () => {
+    scene(
+      setup({
+        mirror: mirrorWith({ events: [eventRow({ ownerId: 'another-user' })] }),
+      }),
+      given(calendarModel()),
+      click(role('button', { name: 'سفر' })),
+      Command.resolve(
+        Calendar.FocusEventEditor,
+        Calendar.Message.CompletedFocusEventEditor(),
+      ),
+      expect(role('button', { name: 'فقط خودم' })).toBeAbsent(),
+    )
+  })
+
+  test('the occasion owner sees the share action', () => {
+    scene(
+      setup({
+        mirror: mirrorWith({
+          occasions: [occasionRow({ ownerId: USER_ID, visibility: 'private' })],
+        }),
+      }),
+      given(calendarModel()),
+      click(role('button', { name: 'ویرایش تولد مامان' })),
+      expect(role('button', { name: 'اشتراک با خانه' })).toExist(),
+    )
+  })
+
+  test('a partner does not see the occasion share action', () => {
+    scene(
+      setup({ mirror: mirrorWith({ occasions: [occasionRow()] }) }),
+      given(calendarModel()),
+      click(role('button', { name: 'ویرایش تولد مامان' })),
+      expect(role('button', { name: 'اشتراک با خانه' })).toBeAbsent(),
     )
   })
 })

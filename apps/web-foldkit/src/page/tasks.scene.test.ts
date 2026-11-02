@@ -20,6 +20,7 @@ import { describe, test } from 'vitest'
 import { Listbox } from '@foldkit/ui'
 
 import { emptyMirrorSnapshot, taskKey } from '../mirror'
+import { TODAY_NOW, USER_ID } from '../test-fixtures'
 import type { Inputs } from './tasks'
 import * as Tasks from './tasks'
 import {
@@ -43,6 +44,7 @@ import {
   tagId,
   todayTask,
   tomorrowTask,
+  withEditor,
 } from './tasks-test-fixtures'
 
 const sceneWith = (model: Tasks.Model, overrides: Partial<Inputs> = {}) => {
@@ -571,6 +573,53 @@ describe('Tasks screen', () => {
         'aria-pressed',
         'false',
       ),
+    )
+  })
+})
+
+describe('task visibility control', () => {
+  const ownerTask = {
+    ...todayTask,
+    ownerId: USER_ID,
+    visibility: 'private' as const,
+  }
+  const ownerInputs = {
+    mirror: { ...defaultInputs().mirror, tasks: [ownerTask] },
+  }
+
+  test('the owner sees the share action in the editor', () => {
+    scene(
+      sceneWith(withEditor(baseModel(), ownerTask), ownerInputs),
+      given(withEditor(baseModel(), ownerTask)),
+      expect(role('button', { name: 'اشتراک با خانه' })).toExist(),
+      click(role('button', { name: 'اشتراک با خانه' })),
+      Command.expectExact(
+        Tasks.SetTaskVisibility({
+          taskId: ownerTask.id,
+          visibility: 'shared',
+        }),
+      ),
+      Command.resolve(
+        Tasks.SetTaskVisibility,
+        Tasks.Message.CompletedSetTaskVisibility({
+          taskId: ownerTask.id,
+          visibility: 'shared',
+        }),
+      ),
+    )
+  })
+
+  test('a partner does not see the task share action', () => {
+    const nonOwner = Tasks.initialModel({
+      now: TODAY_NOW,
+      maybeUserId: Option.some('another-user'),
+      maybeSettings: Option.none(),
+    })
+
+    scene(
+      sceneWith(withEditor(nonOwner, ownerTask), ownerInputs),
+      given(withEditor(nonOwner, ownerTask)),
+      expect(role('button', { name: 'اشتراک با خانه' })).toBeAbsent(),
     )
   })
 })

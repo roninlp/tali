@@ -7,6 +7,7 @@ import type { Digits, TaskBucketBounds } from '@tali/domain'
 
 import type { TagRow, TaskRow } from '../mirror'
 import { taskKey } from '../mirror'
+import { shareActionOf } from '../lib/visibility-writes'
 import { buttonView } from '../ui/button'
 import { textAreaFieldView, textInputView } from '../ui/field'
 import { listboxViewInputs } from '../ui/listbox'
@@ -947,6 +948,7 @@ const moveButton = (
   )
 
 const editorView = (
+  maybeUserId: Option.Option<string>,
   task: TaskRow,
   editor: TaskEditor,
   inputs: ViewInputs,
@@ -1117,6 +1119,24 @@ const editorView = (
       h.div(
         [h.Class('tasks-editor-actions')],
         [
+          ...(Option.exists(maybeUserId, userId => userId === task.ownerId)
+            ? [
+                buttonView(
+                  {
+                    type: 'button',
+                    variant: 'ghost',
+                    size: 'sm',
+                    onClick: Message.ClickedToggleTaskVisibility({
+                      taskId: task.id,
+                    }),
+                    children: [
+                      shareActionOf(task.visibility ?? 'shared').label,
+                    ],
+                  },
+                  h,
+                ),
+              ]
+            : []),
           buttonView(
             {
               type: 'button',
@@ -1290,7 +1310,9 @@ const taskCardView = (
             [saveLabel],
           )
         : h.empty,
-      editor === undefined ? h.empty : editorView(task, editor, inputs, h),
+      editor === undefined
+        ? h.empty
+        : editorView(model.maybeUserId, task, editor, inputs, h),
     ],
   )
 }

@@ -1,7 +1,13 @@
 import { Context, Effect, Layer, Option } from "effect"
 import { D1Client } from "@effect/sql-d1"
 import { SqlClient, Statement } from "effect/sql"
-import { type SyncEntityRow, type SyncEntityType, type SyncOp, type Visibility } from "@tali/domain"
+import {
+  defaultVisibilityFor,
+  type SyncEntityRow,
+  type SyncEntityType,
+  type SyncOp,
+  type Visibility
+} from "@tali/domain"
 import {
   makeSyncRegistry,
   type SyncEntityDefinition,
@@ -118,6 +124,14 @@ const toEntityRow = (state: SyncEntityState): SyncEntityRow => ({
   data: state.data
 })
 
+/**
+ * A stored visibility column, defaulting through the aggregate's policy rather
+ * than blindly to `shared` (ADR-0011). A corrupt/legacy value on a
+ * private-by-default aggregate must not become readable by the partner.
+ */
+const storedVisibility = (entityType: SyncEntityType, value: unknown): Visibility =>
+  value === "private" || value === "shared" ? value : defaultVisibilityFor(entityType)
+
 export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
   make: Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
@@ -157,7 +171,7 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
                 entityId: id,
                 householdId: typeof row.householdId === "string" ? row.householdId : null,
                 ownerId: typeof row.ownerId === "string" ? row.ownerId : "",
-                visibility: row.visibility === "private" ? "private" : "shared",
+                visibility: storedVisibility(entityType, row.visibility),
                 version: typeof row.version === "number" ? row.version : Number(row.version ?? 0),
                 updatedAt: String(row.updatedAt ?? ""),
                 deletedAt: typeof row.deletedAt === "string" ? row.deletedAt : null,
@@ -167,6 +181,48 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
           }
         }
         return states
+      })
+
+    /**
+     * Every existing child row of the given parents, regardless of the child's
+     * own visibility/deleted flag.
+     *
+     * `/sync/pull` uses this when a parent becomes invisible to a member (it
+     * went private, or was hard-purged): the child feed rows did not change, so
+     * the only way the partner learns to drop the orphaned items/entries is an
+     * explicit removal. The child table/column comes from the same parent rule
+     * the push path already trusts.
+     */
+    const findChildIds = (refs: ReadonlyArray<EntityRef>) =>
+      Effect.gen(function*() {
+        const byParent = new Map<SyncEntityType, Set<string>>()
+        for (const ref of refs) {
+          const ids = byParent.get(ref.entityType) ?? new Set<string>()
+          ids.add(ref.entityId)
+          byParent.set(ref.entityType, ids)
+        }
+        const children: Array<EntityRef> = []
+        const seen = new Set<string>()
+        for (const def of registry.all()) {
+          const parent = def.parent
+          if (parent === undefined) continue
+          const ids = byParent.get(parent.entityType)
+          if (ids === undefined || ids.size === 0) continue
+          for (const chunk of chunked([...ids], MAX_IN_PARAMS)) {
+            const rows = yield* sql<{ readonly id: string }>`
+              SELECT id FROM ${sql.literal(def.table)}
+              WHERE ${sql.in(parent.column, chunk)}
+            `
+            for (const row of rows) {
+              const child: EntityRef = { entityType: def.entityType, entityId: String(row.id) }
+              const key = entityKey(child)
+              if (seen.has(key)) continue
+              seen.add(key)
+              children.push(child)
+            }
+          }
+        }
+        return children
       })
 
     /**
@@ -399,6 +455,7 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
     return {
       definition,
       findEntities,
+      findChildIds,
       findApplied,
       pullFeed,
       bootstrapPage,

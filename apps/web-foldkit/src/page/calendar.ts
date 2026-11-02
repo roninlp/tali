@@ -57,6 +57,7 @@ import {
   updateOccasionInMirror,
 } from '../lib/occasion-writes'
 import { withRpcClient } from '../lib/rpc'
+import { setVisibilityInMirror } from '../lib/visibility-writes'
 import {
   completeTaskInMirror,
   moveTaskInMirror,
@@ -309,6 +310,12 @@ export const Message = defineMessageUnion({
   UpdatedEventEditorStart: { value: Schema.String },
   UpdatedEventEditorEnd: { value: Schema.String },
   SubmittedEventEditor: {},
+  ClickedToggleEventVisibility: {},
+  CompletedSetEventVisibility: {
+    eventId: Schema.String,
+    visibility: Schema.Literals(['private', 'shared']),
+  },
+  FailedSetEventVisibility: { message: Schema.String },
   ClickedDeleteEvent: {},
   CompletedGenerateEventScopeIds: { ids: EventScopeIdsSchema },
   SelectedEventScope: { scope: CalendarEditScope },
@@ -335,6 +342,12 @@ export const Message = defineMessageUnion({
   },
   SubmittedOccasion: {},
   ClickedEditOccasion: { occasionId: Schema.String },
+  ClickedToggleOccasionVisibility: {},
+  CompletedSetOccasionVisibility: {
+    occasionId: Schema.String,
+    visibility: Schema.Literals(['private', 'shared']),
+  },
+  FailedSetOccasionVisibility: { message: Schema.String },
   ClickedCancelOccasionEdit: {},
   CompletedSaveOccasion: {
     occasionId: Schema.String,
@@ -658,6 +671,88 @@ export const CreateCalendarEvent = Command.define('CreateCalendarEvent', {
       ),
     ),
 })
+
+export const SetCalendarEventVisibility = Command.define(
+  'SetCalendarEventVisibility',
+  {
+    args: {
+      eventId: Schema.String,
+      visibility: Schema.Literals(['private', 'shared']),
+    },
+    messages: [
+      Message.CompletedSetEventVisibility,
+      Message.FailedSetEventVisibility,
+    ],
+    execute: ({ eventId, visibility }) =>
+      Effect.gen(function* () {
+        const store = yield* LocalStoreResource.get
+        const now = yield* Clock.currentTimeMillis
+
+        yield* Effect.tryPromise({
+          try: () =>
+            setVisibilityInMirror(
+              store,
+              'event',
+              eventId,
+              visibility,
+              new Date(now).toISOString(),
+            ),
+          catch: storeFailureMessage,
+        })
+
+        return Message.CompletedSetEventVisibility({ eventId, visibility })
+      }).pipe(
+        Effect.catch(error =>
+          Effect.succeed(
+            Message.FailedSetEventVisibility({
+              message: storeFailureMessage(error),
+            }),
+          ),
+        ),
+      ),
+  },
+)
+
+export const SetCalendarOccasionVisibility = Command.define(
+  'SetCalendarOccasionVisibility',
+  {
+    args: {
+      occasionId: Schema.String,
+      visibility: Schema.Literals(['private', 'shared']),
+    },
+    messages: [
+      Message.CompletedSetOccasionVisibility,
+      Message.FailedSetOccasionVisibility,
+    ],
+    execute: ({ occasionId, visibility }) =>
+      Effect.gen(function* () {
+        const store = yield* LocalStoreResource.get
+        const now = yield* Clock.currentTimeMillis
+
+        yield* Effect.tryPromise({
+          try: () =>
+            setVisibilityInMirror(
+              store,
+              'occasion',
+              occasionId,
+              visibility,
+              new Date(now).toISOString(),
+            ),
+          catch: storeFailureMessage,
+        })
+
+        return Message.CompletedSetOccasionVisibility({ occasionId, visibility })
+      }).pipe(
+        Effect.catch(error =>
+          Effect.succeed(
+            Message.FailedSetOccasionVisibility({
+              message: storeFailureMessage(error),
+            }),
+          ),
+        ),
+      ),
+  },
+)
 
 export const GenerateEventScopeIds = Command.define('GenerateEventScopeIds', {
   messages: [Message.CompletedGenerateEventScopeIds],
@@ -2010,6 +2105,52 @@ export const update = (
       }
     },
 
+    ClickedToggleEventVisibility: () => {
+      if (Option.isNone(model.maybeEditingEvent)) {
+        return { model }
+      }
+
+      const editor = model.maybeEditingEvent.value
+      const maybeSeries = seriesOf(inputs, editor.occurrence)
+
+      if (
+        Option.isNone(maybeSeries) ||
+        !Option.contains(inputs.maybeUserId, maybeSeries.value.ownerId)
+      ) {
+        return { model }
+      }
+
+      return {
+        model: modifyFields(model, {
+          maybeEditorError: () => Option.none(),
+        }),
+        commands: [
+          SetCalendarEventVisibility({
+            eventId: editor.occurrence.id,
+            visibility:
+              maybeSeries.value.visibility === 'shared' ? 'private' : 'shared',
+          }),
+        ],
+      }
+    },
+
+    CompletedSetEventVisibility: ({ visibility }) => ({
+      model: modifyFields(model, {
+        announcement: () =>
+          visibility === 'shared'
+            ? 'رویداد با خانه به اشتراک گذاشته شد'
+            : 'رویداد خصوصی شد',
+        maybeEditorError: () => Option.none(),
+      }),
+      outMessage: OutMessage.WroteLocalData(),
+    }),
+
+    FailedSetEventVisibility: ({ message }) => ({
+      model: modifyFields(model, {
+        maybeEditorError: () => Option.some(message),
+      }),
+    }),
+
     ClickedDeleteEvent: () => {
       if (Option.isNone(model.maybeEditingEvent)) {
         return { model }
@@ -2235,6 +2376,55 @@ export const update = (
           }),
         },
       ),
+
+    ClickedToggleOccasionVisibility: () =>
+      Option.match(model.occasionEditingId, {
+        onNone: () => ({ model }),
+        onSome: occasionId =>
+          Option.match(
+            Array.findFirst(
+              inputs.mirror.occasions,
+              (occasion: OccasionRow) => occasion.id === occasionId,
+            ),
+            {
+              onNone: () => ({ model }),
+              onSome: occasion =>
+                Option.contains(inputs.maybeUserId, occasion.ownerId)
+                  ? {
+                      model: modifyFields(model, {
+                        maybeOccasionError: () => Option.none(),
+                      }),
+                      commands: [
+                        SetCalendarOccasionVisibility({
+                          occasionId,
+                          visibility:
+                            occasion.visibility === 'shared'
+                              ? 'private'
+                              : 'shared',
+                        }),
+                      ],
+                    }
+                  : { model },
+            },
+          ),
+      }),
+
+    CompletedSetOccasionVisibility: ({ visibility }) => ({
+      model: modifyFields(model, {
+        occasionAnnouncement: () =>
+          visibility === 'shared'
+            ? 'مناسبت با خانه به اشتراک گذاشته شد'
+            : 'مناسبت خصوصی شد',
+        maybeOccasionError: () => Option.none(),
+      }),
+      outMessage: OutMessage.WroteLocalData(),
+    }),
+
+    FailedSetOccasionVisibility: ({ message }) => ({
+      model: modifyFields(model, {
+        maybeOccasionError: () => Option.some(message),
+      }),
+    }),
 
     ClickedCancelOccasionEdit: () => ({
       model: resetOccasionForm(model, occasionToday(model, inputs)),

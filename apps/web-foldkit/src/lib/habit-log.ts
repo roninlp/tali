@@ -68,8 +68,6 @@ export interface HabitTapInput {
   readonly timeZone: string
   /** The answer to record; omit for the plain Done → Partial → Missed cycle. */
   readonly status?: HabitEntryStatus
-  /** The habit's visibility, if the caller already has the habit row. */
-  readonly visibility?: 'private' | 'shared'
   /** A client-minted id for a day that has never been logged locally. */
   readonly id: string
   readonly clientMutationId?: string
@@ -115,9 +113,8 @@ export const tapHabitEntry = async (
       localDate: input.localDate,
       timeZone: input.timeZone,
       status,
-      ...(input.visibility === undefined
-        ? {}
-        : { visibility: input.visibility }),
+      // Visibility is exact inheritance: the server copies the habit's value
+      // on every write and rejects a client-supplied one (`VisibilityFixed`).
     },
     // Re-logging a cleared day is an optimistic revive; the server confirms it
     // on the next push (or through the tombstone-repair path if it refuses).

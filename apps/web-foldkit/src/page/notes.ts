@@ -31,6 +31,7 @@ import {
   setNoteTagsInMirror,
   trashNoteInMirror,
 } from '../lib/note-writes'
+import { setVisibilityInMirror } from '../lib/visibility-writes'
 import { withRpcClient } from '../lib/rpc'
 import type { MirrorSnapshot } from '../mirror'
 import type { DisplayFields } from '../preferences-model'
@@ -89,6 +90,9 @@ export const NoteLoad = Schema.Struct({
   isPinned: Schema.Boolean,
   isArchived: Schema.Boolean,
   isTrashed: Schema.Boolean,
+  /** Resolved visibility and ownership, for the Share / Unshare action. */
+  visibility: Schema.Literals(['private', 'shared']),
+  isOwner: Schema.Boolean,
   version: Schema.Int,
   maybeSyncError: Schema.Option(Schema.String),
   isDraftApplied: Schema.Boolean,
@@ -117,6 +121,8 @@ export const Model = Schema.Struct({
   isPinned: Schema.Boolean,
   isArchived: Schema.Boolean,
   isTrashed: Schema.Boolean,
+  visibility: Schema.Literals(['private', 'shared']),
+  isOwner: Schema.Boolean,
   maybeActionError: Schema.Option(Schema.String),
   maybeSyncError: Schema.Option(Schema.String),
   isRetrying: Schema.Boolean,
@@ -158,6 +164,8 @@ export const initialModel = (): Model =>
     isPinned: false,
     isArchived: false,
     isTrashed: false,
+    visibility: 'private',
+    isOwner: false,
     maybeActionError: Option.none(),
     maybeSyncError: Option.none(),
     isRetrying: false,
@@ -242,6 +250,12 @@ export const Message = defineMessageUnion({
     message: Schema.String,
   },
   ClickedToggleEditorPinned: {},
+  ClickedToggleNoteVisibility: {},
+  CompletedSetNoteVisibility: {
+    noteId: Schema.String,
+    visibility: Schema.Literals(['private', 'shared']),
+  },
+  FailedSetNoteVisibility: { message: Schema.String },
   ClickedToggleEditorTag: { tagId: Schema.String },
   CompletedSetTags: {
     noteId: Schema.String,
@@ -346,6 +360,10 @@ export const LoadNoteEditor = Command.define('LoadNoteEditor', {
             isPinned: record.data.isPinned === true,
             isArchived: record.data.isArchived === true,
             isTrashed: record.deletedAt !== null,
+            visibility: record.data.visibility === 'shared' ? 'shared' : 'private',
+            isOwner:
+              record.data.ownerId === undefined ||
+              record.data.ownerId === store.userId,
             version: record.version,
             maybeSyncError: Option.fromNullishOr(record.syncError?.code),
             isDraftApplied: decision.apply,
@@ -464,6 +482,38 @@ export const SetNoteArchived = Command.define('SetNoteArchived', {
         Effect.succeed(
           Message.FailedSetArchived({
             noteId,
+            message: storeFailureMessage(error),
+          }),
+        ),
+      ),
+    ),
+})
+
+export const SetNoteVisibility = Command.define('SetNoteVisibility', {
+  args: {
+    noteId: Schema.String,
+    visibility: Schema.Literals(['private', 'shared']),
+  },
+  messages: [
+    Message.CompletedSetNoteVisibility,
+    Message.FailedSetNoteVisibility,
+  ],
+  execute: ({ noteId, visibility }) =>
+    Effect.gen(function* () {
+      const store = yield* LocalStoreResource.get
+      const now = yield* currentIso
+
+      yield* Effect.tryPromise({
+        try: () =>
+          setVisibilityInMirror(store, 'note', noteId, visibility, now),
+        catch: storeFailureMessage,
+      })
+
+      return Message.CompletedSetNoteVisibility({ noteId, visibility })
+    }).pipe(
+      Effect.catch(error =>
+        Effect.succeed(
+          Message.FailedSetNoteVisibility({
             message: storeFailureMessage(error),
           }),
         ),
@@ -1310,6 +1360,43 @@ export const update = (
         ],
       }
     },
+
+    ClickedToggleNoteVisibility: () => {
+      if (
+        model.loadState !== 'ready' ||
+        model.isTrashed ||
+        !model.isOwner ||
+        Option.isNone(model.maybeNoteId)
+      ) {
+        return { model }
+      }
+
+      return {
+        model: clearActionError(model),
+        commands: [
+          SetNoteVisibility({
+            noteId: model.maybeNoteId.value,
+            visibility: model.visibility === 'shared' ? 'private' : 'shared',
+          }),
+        ],
+      }
+    },
+
+    CompletedSetNoteVisibility: ({ noteId, visibility }) => ({
+      model: modifyFields(model, {
+        maybeActionError: () => Option.none(),
+        ...(isCurrentNote(model, noteId)
+          ? { visibility: () => visibility }
+          : {}),
+      }),
+      outMessage: OutMessage.WroteLocalData(),
+    }),
+
+    FailedSetNoteVisibility: ({ message }) => ({
+      model: modifyFields(model, {
+        maybeActionError: () => Option.some(message),
+      }),
+    }),
 
     ClickedToggleEditorTag: ({ tagId }) => {
       if (

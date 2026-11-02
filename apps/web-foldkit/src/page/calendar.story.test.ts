@@ -1000,3 +1000,103 @@ describe('Calendar occasions', () => {
     )
   })
 })
+
+describe('Calendar visibility actions', () => {
+  test('the event owner toggles the series to private', () => {
+    story(
+      update(weekInputs()),
+      given(calendarModel()),
+      message(
+        Calendar.Message.OpenedEventEditor({ occurrence: oneOffOccurrence }),
+      ),
+      Command.resolve(
+        Calendar.FocusEventEditor,
+        Calendar.Message.CompletedFocusEventEditor(),
+      ),
+      message(Calendar.Message.ClickedToggleEventVisibility()),
+      Command.expectExact(
+        Calendar.SetCalendarEventVisibility({
+          eventId: EVENT_ID,
+          visibility: 'private',
+        }),
+      ),
+      Command.resolve(
+        Calendar.SetCalendarEventVisibility,
+        Calendar.Message.CompletedSetEventVisibility({
+          eventId: EVENT_ID,
+          visibility: 'private',
+        }),
+      ),
+      expectOutMessage(Calendar.OutMessage.WroteLocalData()),
+      model(next => {
+        expect(next.announcement).toBe('رویداد خصوصی شد')
+      }),
+    )
+  })
+
+  test('a partner does not get the event share command', () => {
+    story(
+      update(
+        weekInputs({
+          mirror: mirrorWith({ events: [eventRow({ ownerId: 'another-user' })] }),
+        }),
+      ),
+      given(calendarModel()),
+      message(
+        Calendar.Message.OpenedEventEditor({ occurrence: oneOffOccurrence }),
+      ),
+      Command.resolve(
+        Calendar.FocusEventEditor,
+        Calendar.Message.CompletedFocusEventEditor(),
+      ),
+      message(Calendar.Message.ClickedToggleEventVisibility()),
+      Command.expectNone(),
+    )
+  })
+
+  test('the occasion owner toggles it to shared', () => {
+    story(
+      update(
+        weekInputs({
+          mirror: mirrorWith({
+            occasions: [
+              occasionRow({ ownerId: USER_ID, visibility: 'private' }),
+            ],
+          }),
+        }),
+      ),
+      given(calendarModel()),
+      message(Calendar.Message.ClickedEditOccasion({ occasionId: OCCASION_ID })),
+      message(Calendar.Message.ClickedToggleOccasionVisibility()),
+      Command.expectExact(
+        Calendar.SetCalendarOccasionVisibility({
+          occasionId: OCCASION_ID,
+          visibility: 'shared',
+        }),
+      ),
+      Command.resolve(
+        Calendar.SetCalendarOccasionVisibility,
+        Calendar.Message.CompletedSetOccasionVisibility({
+          occasionId: OCCASION_ID,
+          visibility: 'shared',
+        }),
+      ),
+      expectOutMessage(Calendar.OutMessage.WroteLocalData()),
+      model(next => {
+        expect(next.occasionAnnouncement).toBe(
+          'مناسبت با خانه به اشتراک گذاشته شد',
+        )
+      }),
+    )
+  })
+
+  test('a partner does not get the occasion share command', () => {
+    story(
+      update(weekInputs()),
+      given(calendarModel()),
+      message(Calendar.Message.ClickedEditOccasion({ occasionId: OCCASION_ID })),
+      message(Calendar.Message.ClickedToggleOccasionVisibility()),
+      Command.expectNone(),
+    )
+  })
+})

@@ -1,4 +1,4 @@
-import { Array, Effect, Option, Queue, Schema, Stream } from 'effect'
+import { Array, Clock, Effect, Option, Queue, Schema, Stream } from 'effect'
 import { Command, Submodel, Subscription, Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
@@ -17,6 +17,8 @@ import {
   fetchReminderInbox,
   respondToReminder,
 } from '../lib/reminders/api'
+import { setVisibilityInMirror } from '../lib/visibility-writes'
+import { LocalStoreResource, type LocalStoreService } from '../sync/local-store'
 import {
   DEFAULT_SNOOZE_MINUTES,
   isSnoozePreset,
@@ -83,6 +85,15 @@ export const Message = defineMessageUnion({
     dispatchId: Schema.String,
     message: Listbox.Message,
   },
+  ClickedToggleReminderVisibility: {
+    reminderId: Schema.String,
+    visibility: Schema.Literals(['private', 'shared']),
+  },
+  CompletedSetReminderVisibility: {
+    reminderId: Schema.String,
+    visibility: Schema.Literals(['private', 'shared']),
+  },
+  FailedSetReminderVisibility: { message: Schema.String },
   ClickedRespond: {
     dispatchId: Schema.String,
     response: DispatchResponse,
@@ -157,6 +168,54 @@ export const DrainQueueAndFetchInbox = Command.define(
   },
 )
 
+export const SetReminderVisibility = Command.define(
+  'SetReminderVisibility',
+  {
+    args: {
+      reminderId: Schema.String,
+      visibility: Schema.Literals(['private', 'shared']),
+    },
+    messages: [
+      Message.CompletedSetReminderVisibility,
+      Message.FailedSetReminderVisibility,
+    ],
+    execute: ({ reminderId, visibility }) =>
+      Effect.gen(function* () {
+        const store = yield* LocalStoreResource.get
+        const now = yield* Clock.currentTimeMillis
+
+        yield* Effect.tryPromise({
+          try: () =>
+            setVisibilityInMirror(
+              store,
+              'reminder',
+              reminderId,
+              visibility,
+              new Date(now).toISOString(),
+            ),
+          catch: (cause) =>
+            cause instanceof Error ? cause.message : 'ذخیره در حافظه‌ی محلی ناموفق بود',
+        })
+
+        return Message.CompletedSetReminderVisibility({
+          reminderId,
+          visibility,
+        })
+      }).pipe(
+        Effect.catch(error =>
+          Effect.succeed(
+            Message.FailedSetReminderVisibility({
+              message:
+                typeof error === 'string'
+                  ? error
+                  : 'ذخیره در حافظه‌ی محلی ناموفق بود',
+            }),
+          ),
+        ),
+      ),
+  },
+)
+
 export const RespondToReminder = Command.define('RespondToReminder', {
   args: {
     dispatchId: Schema.String,
@@ -193,7 +252,17 @@ export const init = (): Update.Return<Model, Message> => ({
 
 // UPDATE
 
-type UpdateReturn = Update.Return<Model, Message>
+export const OutMessage = defineMessageUnion({
+  WroteLocalData: {},
+})
+export type OutMessage = typeof OutMessage.Type
+
+type UpdateReturn = Update.ReturnWithOutMessage<
+  Model,
+  Message,
+  OutMessage,
+  import('../sync/local-store').LocalStoreService
+>
 
 const snoozeListboxId = (dispatchId: string): string =>
   `reminder-snooze-${dispatchId}`
@@ -243,7 +312,9 @@ const writeSnoozeListbox = (
 const snoozeListboxOutMessage = (
   handleUpdate: (model: Model, message: Message) => UpdateReturn,
 ) =>
-  Listbox.OutMessage.match<Update.Step<Model, Message>>({
+  Listbox.OutMessage.match<
+    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>
+  >({
     Selected:
       ({ value }) =>
       stepModel =>
@@ -342,6 +413,29 @@ export const update = (model: Model, message: Message): UpdateReturn => {
 
     GotSnoozeListboxMessage: ({ dispatchId, message }) =>
       foldSnoozeListbox(model, dispatchId, message),
+
+    ClickedToggleReminderVisibility: ({ reminderId, visibility }) => ({
+      model: modifyFields(model, { maybeError: () => Option.none() }),
+      commands: [SetReminderVisibility({ reminderId, visibility })],
+    }),
+
+    CompletedSetReminderVisibility: ({ reminderId, visibility }) => ({
+      model: modifyFields(model, {
+        items: () =>
+          Array.map(model.items, item =>
+            item.reminderId === reminderId
+              ? { ...item, visibility }
+              : item,
+          ),
+      }),
+      outMessage: OutMessage.WroteLocalData(),
+    }),
+
+    FailedSetReminderVisibility: ({ message }) => ({
+      model: modifyFields(model, {
+        maybeError: () => Option.some(message),
+      }),
+    }),
 
     ClickedRespond: ({ dispatchId, response }) => {
       if (Option.isSome(model.maybeBusyDispatchId)) {

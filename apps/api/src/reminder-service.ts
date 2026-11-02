@@ -52,6 +52,7 @@ import {
   reminderNextFireAfterNow,
   reminderTierFor,
   snoozeInstant,
+  resolveCreateVisibility,
   uuidV7
 } from "@tali/domain"
 
@@ -582,7 +583,7 @@ export class ReminderService extends Context.Service<ReminderService>()("Reminde
           timeZone,
           ownerId: viewer.userId,
           householdId: viewer.householdId,
-          visibility: (input.visibility ?? "shared") as Visibility,
+          visibility: resolveCreateVisibility("reminder", input.visibility),
           color: input.color ?? null,
           createdAt: now,
           updatedAt: now,
@@ -622,6 +623,10 @@ export class ReminderService extends Context.Service<ReminderService>()("Reminde
       Effect.gen(function*() {
         if (patch.title !== undefined && patch.title.trim().length === 0) {
           return yield* invalid("title", "a reminder needs a title")
+        }
+        // Shared means co-edit; un-sharing is the owner's alone (ADR-0011).
+        if (patch.visibility === "private" && current.ownerId !== viewer.userId) {
+          return yield* invalid("visibility", "only the reminder owner can make it private")
         }
         const repeat = patch.repeat === undefined ? current.repeat : yield* decodeRepeat(patch.repeat)
         const link = patch.link ?? current.link

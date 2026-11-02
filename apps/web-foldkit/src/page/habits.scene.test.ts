@@ -20,6 +20,7 @@ import { describe, test } from 'vitest'
 
 import { HABIT_COLORS } from '../habits-model'
 import { entityKey } from '../mirror'
+import { USER_ID } from '../test-fixtures'
 import * as Habits from './habits'
 import type { Inputs, Model } from './habits'
 import {
@@ -409,6 +410,39 @@ describe('Habits screen', () => {
         'aria-pressed',
         'true',
       ),
+    )
+  })
+})
+
+describe('habit visibility action', () => {
+  const privateHabit = habitRow({
+    ownerId: USER_ID,
+    visibility: 'private',
+  })
+
+  test('the owner sees the share action', () => {
+    scene(
+      setup({
+        mirror: mirrorWith([privateHabit], []),
+        maybeUserId: Option.some(USER_ID),
+      }),
+      given(habitsModel()),
+      expect(
+        role('button', { name: 'اشتراک آب خوردن با خانه' }),
+      ).toExist(),
+    )
+  })
+
+  test('the partner does not see the share action', () => {
+    scene(
+      setup({
+        mirror: mirrorWith([privateHabit], []),
+        maybeUserId: Option.some('another-user'),
+      }),
+      given(habitsModel()),
+      expect(
+        role('button', { name: 'اشتراک آب خوردن با خانه' }),
+      ).toBeAbsent(),
     )
   })
 })

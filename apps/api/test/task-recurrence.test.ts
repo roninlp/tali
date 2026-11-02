@@ -765,7 +765,7 @@ describe("recurring completion through /sync/push (the app's offline path)", () 
             entityId: tagId,
             baseVersion: 0,
             op: "upsert",
-            patch: { name: "خانه", color: null, visibility: "shared" },
+            patch: { name: "خانه", color: null },
             clientUpdatedAt: NOW
           }
         ]
