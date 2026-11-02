@@ -5,9 +5,9 @@ import { defineConfig, devices } from "@playwright/test"
  *
  * `scripts/stack.mjs` boots `alchemy dev --stage e2e`: a fresh local D1 (a new
  * stage has no rows and the migrations run on reconcile), the api Worker in
- * workerd on :8787 and the Vite SPA on :3000 — the same two origins the app is
- * developed against, because the API's CORS allow-list and the session cookie
- * are both origin-sensitive.
+ * workerd on :8787 and the Foldkit SPA on :3001 — the same two origins the app
+ * is developed against, because the API's CORS allow-list and the session
+ * cookie are both origin-sensitive.
  *
  * One worker, no retries. The flows share one household and one D1, and a
  * retried flow would hide the ordering/flake the ticket asks us to prove
@@ -26,7 +26,7 @@ export default defineConfig({
     ? [["list"], ["html", { open: "never" }]]
     : [["github"], ["html", { open: "never" }]],
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: "http://localhost:3001",
     // A failing flow must leave enough to debug it: the trace carries the DOM
     // and network, the video the timing, and the screenshot the final frame.
     trace: "retain-on-failure",
@@ -48,7 +48,7 @@ export default defineConfig({
   ],
   webServer: {
     command: "node scripts/stack.mjs",
-    url: "http://localhost:3000",
+    url: "http://localhost:3001",
     // Never attach to a developer stack: the flows need the fresh `e2e` stage,
     // and silently reusing `dev_<user>` would run them against real local data.
     reuseExistingServer: false,

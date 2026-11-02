@@ -3,6 +3,30 @@ packages:
   - "packages/*"
   - "infra"
 
+catalog:
+  "@cloudflare/vitest-plugin": ^1.4.7
+  "@cloudflare/workers-types": ^5.20261021.1
+  "@noble/hashes": ^2.4.0
+  # Foldkit 0.170 declares `effect: ~4.1.0` (and its packages follow suit).
+  # Keep the whole Effect suite on the same minor: a caret here would let a
+  # future install pick 4.2.x and fork the runtime Foldkit was built against.
+  "@effect/platform-browser": ~4.1.0
+  "@effect/platform-node": ~4.1.0
+  "@effect/sql-d1": ~4.1.0
+  "@tailwindcss/vite": ^4.3.3
+  "@types/node": ^26.6.5
+  daisyui: ^5.7.50
+  effect: ~4.1.0
+  fake-indexeddb: ^6.2.6
+  oxlint: 1.85.0
+  tailwindcss: ^4.3.3
+  # TypeScript 7 is the native compiler. A transitive peer (`capnp-es` via
+  # alchemy) still declares a <6.1 range; it is codegen-only and passes its
+  # gate, so `pnpm peers check` reports it as an expected warning.
+  typescript: ^7.0.2
+  vite: ^8.3.1
+  vitest: ^5.0.4
+
 onlyBuiltDependencies:
   - esbuild
   - workerd
@@ -17,3 +41,16 @@ minimumReleaseAgeExclude:
   - miniflare@5.20261012.1-beta || 5.20261019.2-beta
   - wrangler@4.151.1 || 4.152.0
   - '@cloudflare/vitest-plugin@1.4.7'
+  - '@foldkit/devtools-mcp@0.26.0'
+  - '@foldkit/devtools@0.170.0'
+  - '@foldkit/oxlint-plugin@0.15.4'
+  - '@foldkit/ui@0.170.0'
+  - '@foldkit/vite-plugin@0.29.0'
+  - foldkit@0.170.0
+
+# alchemy 2.0.0-beta.83 predates Effect 4.1 and imports the removed
+# `effect/Crypto` module. This backports upstream's 4.1 support
+# (alchemy-run/alchemy#2754). Drop it once a release contains that fix; see
+# infra/README.md.
+patchedDependencies:
+  alchemy@2.0.0-beta.83: patches/alchemy@2.0.0-beta.83.patch

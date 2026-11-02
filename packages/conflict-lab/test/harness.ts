@@ -1,5 +1,5 @@
 import { exports } from "cloudflare:workers"
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { IDBFactory } from "fake-indexeddb"
 import {
   SyncBootstrapResponse,
@@ -11,19 +11,19 @@ import {
   type SyncPushResult,
   uuidV7
 } from "@tali/domain"
-import { openLocalStore } from "@tali/web/src/lib/local-store/store"
-import type { LocalStore, MirrorRecord } from "@tali/web/src/lib/local-store/types"
-import { createSyncEngine, SyncRejected, type SyncEngine, type SyncTransport } from "@tali/web/src/lib/sync-engine"
-import { api } from "@tali/web/src/lib/rpc"
+import { openLocalStore } from "@tali/sync-client"
+import type { LocalStore, MirrorRecord } from "@tali/sync-client"
+import { createSyncEngine, SyncRejected, type SyncEngine, type SyncTransport } from "@tali/sync-client"
+import { withRpcClient } from "@tali/web-foldkit/src/lib/rpc"
 import type { LabMode } from "./mode"
 
 /**
  * Shared plumbing for the conflict lab (#83).
  *
  * A **device** is a real `LocalStore` (its own fake-indexeddb database) plus
- * the real `createSyncEngine`, talking to the real Worker module over
- * `exports.default.fetch`. Nothing on the client path is faked except the
- * network hop itself.
+ * the real `createSyncEngine` from `@tali/sync-client`, talking to the real
+ * Worker module over `exports.default.fetch`. Nothing on the client path is
+ * faked except the network hop itself.
  */
 
 // ── Worker HTTP ───────────────────────────────────────────────────────────
@@ -234,8 +234,18 @@ export const makeTransport = (
      * The two explicit repair paths the real engine uses. They are the web
      * client's Effect RPC procedures, pointed at the test Worker by `withRpc`.
      */
-    logHabitEntry: (input) => withRpc(account, () => api.logHabitEntry(input)),
-    restoreHabit: (input) => withRpc(account, () => api.restoreHabit(input))
+    logHabitEntry: (input) =>
+      withRpc(account, () =>
+        Effect.runPromise(
+          withRpcClient((client) => client.LogHabitEntry(input))
+        )
+      ),
+    restoreHabit: (input) =>
+      withRpc(account, () =>
+        Effect.runPromise(
+          withRpcClient((client) => client.RestoreHabit(input))
+        )
+      )
   }
 }
 

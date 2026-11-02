@@ -7,11 +7,13 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "typecheck": "tsc --noEmit",
-    "install:browsers": "playwright install chromium"
+    "install:browsers": "playwright install chromium",
+    "test:smoke:foldkit": "node scripts/smoke-foldkit-auth.mjs",
+    "test:smoke:foldkit:sync": "node scripts/smoke-foldkit-sync.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",
-    "@types/node": "^26.6.5",
-    "typescript": "~5.9.3"
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
   }
 }

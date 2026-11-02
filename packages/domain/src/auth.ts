@@ -100,7 +100,8 @@ export type SessionContext = Schema.Schema.Type<typeof SessionContext>
 // --- Plain-HTTP response bodies -----------------------------------------
 //
 // Shared so the web client decodes exactly the shape the Worker sends; the
-// auth routes and `apps/web` both import these instead of hand-mirroring them.
+// auth routes and `apps/web-foldkit` both import these instead of
+// hand-mirroring them.
 
 export const SessionResponse = SessionContext
 export type SessionResponse = SessionContext

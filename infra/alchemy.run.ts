@@ -7,9 +7,9 @@
 //
 // `alchemy dev` runs the api Worker in workerd on :8787 against a local D1
 // simulator (migrations applied on every reconcile), and spawns the web app's
-// own Vite dev server on :3000. `alchemy deploy` provisions the real thing: D1
+// own Vite dev server on :3001. `alchemy deploy` provisions the real thing: D1
 // with the same migrations, the api Worker, and the built SPA assets
-// (`vite build` → dist/client) uploaded to the web Worker.
+// (`vite build` → dist) uploaded to the web Worker.
 //
 // Paths are resolved from this file, not the working directory, so the stack
 // behaves the same whether it starts under Turbo (`infra/`) or from the repo
@@ -202,31 +202,47 @@ export default Alchemy.Stack(
 
     /**
      * The web SPA. Deploy runs the package's own `vite build` and uploads
-     * `dist/client` as static assets with SPA fallback. In dev the build is
-     * skipped and Vite serves the app itself on the port the app's config
-     * pins (:3000), which is what the api Worker's `DEV_ORIGIN` expects.
+     * `dist` as static assets with SPA fallback. In dev the build is skipped
+     * and Vite serves the app itself on the port the app's config pins
+     * (:3001), which is what the api Worker's `DEV_ORIGIN` expects.
      *
      * Deployed, the SPA and the api share one origin: `/api/*` is routed
-     * worker-first into `apps/web/worker.ts`, which strips the prefix and
-     * forwards over the `API` service binding. That is what makes the session
-     * cookie same-origin and lets the client carry a relative `VITE_API_URL`,
-     * so the build does not bake in the deployment's hostname.
+     * worker-first into `apps/web-foldkit/worker.ts`, which strips the prefix
+     * and forwards over the `API` service binding. That is what makes the
+     * session cookie same-origin and lets the client carry a relative
+     * `VITE_API_URL`, so the build does not bake in the deployment's hostname.
      */
     const web = yield* Cloudflare.Website.StaticSite("TaliWeb", {
-      cwd: join(repoRoot, "apps/web"),
-      main: join(repoRoot, "apps/web/worker.ts"),
+      cwd: join(repoRoot, "apps/web-foldkit"),
+      main: join(repoRoot, "apps/web-foldkit/worker.ts"),
       command: "pnpm run build",
-      outdir: "dist/client",
-      dev: { command: "pnpm exec vite", url: "http://localhost:3000" },
+      outdir: "dist",
+      dev: {
+        command: "pnpm exec vite",
+        url: "http://localhost:3001",
+        // Alchemy's sidecar defaults to NODE_ENV=production, and Vite derives
+        // `import.meta.env.DEV` (and its own dev mode) from that. A dev server
+        // must run as development or the app thinks it is a production build.
+        env: { NODE_ENV: "development" }
+      },
       assets: {
         notFoundHandling: "single-page-application",
-        runWorkerFirst: ["/api/*"],
+        // `/api/*` reaches the service binding. `/assets/*` is worker-first
+        // only to detect a stale client asking for a removed hash: the asset
+        // layer answers it with the SPA shell, and the Worker turns that into a
+        // cache-clearing module instead of a blank page.
+        runWorkerFirst: ["/api/*", "/assets/*"],
         // Vite hashes /assets/* filenames, so a copy is immutable for a year.
-        // Only that prefix is cached: index.html (and the SPA fallback) must revalidate.
-        // This prop owns the site's `_headers` rules (it wins over a `_headers`
-        // file), so add future rules here rather than in public/.
+        // The shell entry points and the service worker must never be cached:
+        // a client that kept the previous deployment's index.html asks for old
+        // asset hashes, and the Worker's asset fallback turns that into a
+        // cache-clearing module instead of a blank page. Add future rules here
+        // rather than in public/.
         headers:
-          "/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n"
+          "/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n" +
+          "/\n  Cache-Control: no-store\n" +
+          "/index.html\n  Cache-Control: no-store\n" +
+          "/sw.js\n  Cache-Control: no-store\n"
       },
       env: {
         ...(isDev ? {} : { VITE_API_URL: "/api" }),

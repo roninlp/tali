@@ -87,7 +87,8 @@ import {
  * `/sync/push` resolver deliberately keeps tombstone-wins (an offline edit
  * must not resurrect a deleted row), so a client whose queued tap meets a
  * tombstone recovers by calling this mutation on the RPC path (the sync engine
- * has an explicit repair hook for that, see `apps/web/src/lib/sync-engine.ts`).
+ * has an explicit repair hook for that, see
+ * `packages/sync-client/src/sync-engine.ts`).
  *
  * The day is validated against the ≤ 7-day backdating window in the viewer's
  * local calendar before anything is written: an out-of-window tap is a typed

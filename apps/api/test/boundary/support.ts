@@ -11,7 +11,7 @@ import { uuidV7 } from "@tali/domain"
  */
 
 /** The web dev origin the test Worker config allows (CORS-with-credentials). */
-export const WEB_ORIGIN = "http://localhost:3000"
+export const WEB_ORIGIN = "http://localhost:3001"
 
 /** The session cookie name, pinned here so a rename fails the suite. */
 export const SESSION_COOKIE = "tali_session"

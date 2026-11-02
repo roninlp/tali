@@ -86,7 +86,8 @@ import {
 
 /**
  * The single RPC contract shared by `apps/api` (serves it via
- * `RpcServer.layerHttp`) and `apps/web` (calls it via a derived `RpcClient`).
+ * `RpcServer.layerHttp`) and `apps/web-foldkit` (calls it via a derived
+ * `RpcClient`).
  *
  * Adding a procedure here updates the handler type AND the client type in the
  * same edit — drift is a compile error, not a runtime concern.

@@ -7,9 +7,10 @@ import { defineConfig } from "vitest/config"
  *
  * A private, throwaway package: nothing in production depends on it, and it
  * exists only to prove convergence. Tests run the **real** client engine
- * (`apps/web`'s `LocalStore` + `createSyncEngine`) in workerd next to the
- * **real** api Worker, so pushes, pulls, CAS, dedupe and tombstones are the
- * production code on both sides of the wire — not a fake transport.
+ * (`@tali/sync-client`'s `LocalStore` + `createSyncEngine`, shared with the
+ * Foldkit app) in workerd next to the **real** api Worker, so pushes, pulls,
+ * CAS, dedupe and tombstones are the production code on both sides of the
+ * wire — not a fake transport.
  *
  * Two suites: a bounded deterministic + property run for PR CI, and a longer
  * randomised nightly run (`CONFLICT_LAB_NIGHTLY=1`, see package.json).

@@ -1,8 +1,8 @@
 import { IDBFactory } from "fake-indexeddb"
 import { describe, expect, it } from "vitest"
 import { uuidV7 } from "@tali/domain"
-import { openLocalStore } from "@tali/web/src/lib/local-store/store"
-import { createSyncEngine } from "@tali/web/src/lib/sync-engine"
+import { openLocalStore } from "@tali/sync-client"
+import { createSyncEngine } from "@tali/sync-client"
 import {
   createHousehold,
   makeTransport,

@@ -175,7 +175,7 @@ Effect RPC carries success and failure in one discriminated `Exit` envelope (the
 3. The client recovers by tag — the whole point of the taxonomy:
 
 ```ts
-// apps/web — the derived client (already typed via ApiRpcs)
+// apps/web-foldkit — the derived client (already typed via ApiRpcs)
 const result = yield* client("CreateHabit")(input).pipe(
   Effect.catchTags({
     ValidationError: (e) => showFieldErrors(e.issues),

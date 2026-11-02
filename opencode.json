@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "foldkit-devtools": {
+      "type": "local",
+      "command": ["npx", "-y", "@foldkit/devtools-mcp"],
+      "enabled": true
+    }
+  }
+}

@@ -16,7 +16,7 @@ import { runTrashPurge } from "./trash-purge-runner.js"
  * handler. The layer maps snake_case columns ↔ camelCase model fields so
  * `SqlModel` repositories and hand-written `SELECT *` queries agree on names.
  *
- * Cross-origin dev: the web app runs on :3000 and this Worker on :8787, so the
+ * Cross-origin dev: the web app runs on :3001 and this Worker on :8787, so the
  * response carries CORS headers with credentials (the session cookie). That
  * allowlist is *only* active when the Worker itself is serving a local request
  * (or `WEB_ORIGIN` names an explicit origin); a deployed Worker never echoes a
@@ -62,7 +62,7 @@ const BACKUP_CRON = CRON.backup
 /** The Vite dev server's origin. `127.0.0.1` is deliberately absent: it is a
  * different site from `localhost` for cookies (`SameSite=Lax`), so a page
  * served there could never send the session anyway. */
-const DEV_ORIGIN = "http://localhost:3000"
+const DEV_ORIGIN = "http://localhost:3001"
 
 /** Is this Worker itself serving a local dev request? */
 const isLocalRequest = (request: Request): boolean => {
@@ -92,7 +92,7 @@ const corsHeaders = (origin: string): Record<string, string> => ({
   "access-control-allow-headers":
     "content-type, authorization, traceparent, b3, if-none-match",
   // `etag` is not a CORS-safelisted response header either: without this the
-  // browser hands `fetch` a null ETag on the :3000 → :8787 dev split and the
+  // browser hands `fetch` a null ETag on the :3001 → :8787 dev split and the
   // dashboard silently never revalidates (200 every time, no 304).
   "access-control-expose-headers": "etag",
   "access-control-max-age": "600"

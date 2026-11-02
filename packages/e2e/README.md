@@ -10,7 +10,7 @@ pnpm test:e2e                              # from the repo root
 ```
 
 The runner boots `alchemy dev --stage e2e` itself: a fresh local D1 (migrations
-apply on reconcile), the api Worker on `:8787` and the Vite SPA on `:3000`.
+apply on reconcile), the api Worker on `:8787` and the Foldkit SPA on `:3001`.
 Stop any `pnpm dev` first — the ports are pinned, and attaching to the developer
 stack would run the flows against real local data. A run deletes the `e2e`
 stage's state (`E2E_KEEP_STATE=1` keeps it for debugging); the `dev_<user>`
@@ -25,6 +25,25 @@ The five flows:
 | `03-shared-list.spec.ts` | item checked on A appears live on B |
 | `04-reminder.spec.ts` | medication reminder fires → Done from the notification → inbox shows it |
 | `05-recurring-event.spec.ts` | recurring event in week/month → "this and following" split |
+
+## Auth and sync smoke checks
+
+Two focused smoke checks run against the Foldkit app on `:3001`. Start the
+local stack with `pnpm dev` (api Worker on `:8787`, Foldkit app on `:3001`),
+then run:
+
+```sh
+pnpm test:smoke:foldkit
+pnpm test:smoke:foldkit:sync
+```
+
+The auth check registers a fresh account through the Vite proxy, creates a
+household, reloads into `/today`, signs out, logs back in, and checks the guard
+redirects for a signed-out visitor, a household member, and an account without
+a household. The sync check writes a task online, goes offline, writes another,
+reloads twice, reconnects, and verifies the server feed and a second device
+converge. Neither script starts or resets the stack; they use the local
+development database.
 
 ## Seams
 

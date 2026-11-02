@@ -5,7 +5,7 @@ import { expect, pullAll, syncStatus, test, uniqueTag } from "./support"
  * → the rows converge on both devices.
  *
  * Offline seam: the SPA is served by Vite in dev and its service worker
- * deliberately caches no app shell (`apps/web/public/sw.js`), so a real
+ * deliberately caches no app shell (`apps/web-foldkit/public/sw.js`), so a real
  * `context.setOffline(true)` reload cannot load the document at all. The flow
  * instead makes the browser *believe* it is offline (`navigator.onLine` is
  * false, the app's own signal) and cuts the API origin: the document still
