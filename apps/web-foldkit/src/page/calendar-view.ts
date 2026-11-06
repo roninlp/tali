@@ -23,6 +23,7 @@ import {
 import { shareActionOf } from '../lib/visibility-writes'
 import { entityKey } from '../mirror'
 import { taskAnchorPath } from '../route'
+import { classNames } from '../ui/class-names'
 import { listboxViewInputs } from '../ui/listbox'
 import {
   Message,
@@ -1032,15 +1033,22 @@ const monthGrid = (
   const weekdays = weekDaysFor(model.anchor, inputs.display.weekStart)
 
   return h.div(
-    [],
+    [
+      h.Class(
+        'overflow-hidden rounded-xl border border-base-300 bg-base-300/70',
+      ),
+    ],
     [
       h.div(
-        [h.Class('grid grid-cols-7 gap-0.5'), h.Role('row')],
+        [
+          h.Class('grid grid-cols-7 gap-px border-b border-base-300'),
+          h.Role('row'),
+        ],
         Array.map(weekdays, day =>
           h.div(
             [
               h.Class(
-                'text-center text-[0.64rem] leading-6 text-base-content/55',
+                'bg-base-100 py-1 text-center text-[0.64rem] leading-5 text-base-content/55',
               ),
               h.Role('columnheader'),
               h.AriaLabel(day.weekday),
@@ -1051,7 +1059,7 @@ const monthGrid = (
       ),
       h.ol(
         [
-          h.Class('m-0 grid min-w-0 list-none grid-cols-7 gap-0.5 p-0'),
+          h.Class('m-0 grid min-w-0 list-none grid-cols-7 gap-px p-0'),
           h.AriaLabel(monthTitle(model.anchor, digits)),
         ],
         Array.map(view.month.days, cell => {
@@ -1084,7 +1092,7 @@ const monthGrid = (
                 [
                   h.Type('button'),
                   h.Class(
-                    'grid min-h-11 w-full min-w-0 content-start justify-items-center gap-1 rounded-xl border border-transparent bg-base-100 px-1 py-1.5 text-base-content transition-colors hover:border-base-300 data-[busy=true]:border-primary/30 data-[outside=true]:bg-base-200 data-[outside=true]:text-base-content/35 data-[today=true]:ring-2 data-[today=true]:ring-primary/60 data-[today=true]:ring-inset aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:text-primary',
+                    'grid min-h-24 w-full min-w-0 content-start justify-items-center gap-1 bg-base-100 px-1 py-2 text-base-content transition-colors hover:bg-primary/[0.04] data-[outside=true]:bg-base-200 data-[outside=true]:text-base-content/35 data-[today=true]:ring-2 data-[today=true]:ring-primary/50 data-[today=true]:ring-inset aria-pressed:bg-primary/[0.07] aria-pressed:ring-1 aria-pressed:ring-primary/40 aria-pressed:text-primary',
                   ),
                   ...(cell.inMonth ? [] : [h.DataAttribute('outside', 'true')]),
                   ...(cell.isBusy ? [h.DataAttribute('busy', 'true')] : []),
@@ -1381,6 +1389,261 @@ const dayDetail = (
           ],
         )
       })()
+}
+
+/**
+ * The phone rendering of the month: a chronological ledger of the anchor
+ * week. The date sits in the gutter on a continuous marker line, the day's
+ * lanes and items follow, and the selected day carries the quick add.
+ */
+const monthAgenda = (
+  model: Model,
+  inputs: ViewInputs,
+  view: CalendarView,
+  h: HtmlBuilder<Message>,
+): Html => {
+  const digits = inputs.display.digits
+  const week = view.week
+
+  const nav = h.div(
+    [h.Class('flex flex-wrap items-center justify-between gap-2')],
+    [
+      h.div(
+        [h.Class('flex items-center gap-1.5')],
+        [
+          h.button(
+            [
+              h.Type('button'),
+              h.Class(NAV_BUTTON_CLASS),
+              h.AriaLabel('هفتهٔ قبل'),
+              h.OnClick(Message.PressedPreviousWeek()),
+            ],
+            ['→'],
+          ),
+          h.button(
+            [
+              h.Type('button'),
+              h.Class(NAV_BUTTON_CLASS),
+              h.AriaLabel('هفتهٔ بعد'),
+              h.OnClick(Message.PressedNextWeek()),
+            ],
+            ['←'],
+          ),
+        ],
+      ),
+      h.button(
+        [
+          h.Type('button'),
+          h.Class(NAV_BUTTON_CLASS),
+          h.OnClick(Message.PressedTodayWeek()),
+        ],
+        ['امروز'],
+      ),
+    ],
+  )
+
+  const strip = h.div(
+    [h.Class('grid grid-cols-7 gap-1.5')],
+    Array.map(week.days, day => {
+      const isSelected = Option.contains(model.maybeSelectedDay, day.date)
+      const isToday = day.date === view.today
+      const laneCount =
+        day.tasks.length + day.events.length + day.occasions.length
+
+      return h.button(
+        [
+          h.Type('button'),
+          h.Class(
+            classNames(
+              'grid min-w-0 content-start justify-items-center gap-0.5 rounded-xl border px-0.5 py-1.5 text-center transition-colors',
+              isSelected
+                ? 'border-primary bg-primary text-primary-content'
+                : 'border-base-300 bg-base-100 text-base-content hover:border-primary/40',
+            ),
+          ),
+          h.AriaLabel(`روز ${dayLabel(day.date, digits)}`),
+          h.AriaPressed(isSelected ? 'true' : 'false'),
+          ...(isToday ? [h.DataAttribute('today', 'true')] : []),
+          h.OnClick(Message.SelectedCalendarDay({ date: day.date })),
+        ],
+        [
+          h.span(
+            [
+              h.Class(
+                isSelected
+                  ? 'text-[0.62rem] text-primary-content/75'
+                  : 'text-[0.62rem] text-base-content/55',
+              ),
+            ],
+            [weekdayOf(day.date)],
+          ),
+          h.span(
+            [
+              h.Class(
+                classNames(
+                  'text-[0.95rem] font-bold leading-5',
+                  isToday && !isSelected ? 'text-primary' : undefined,
+                ),
+              ),
+            ],
+            [jalaliDayNumber(day.date, digits)],
+          ),
+          h.span(
+            [h.Class('flex h-1 items-center gap-0.5'), h.AriaHidden(true)],
+            Array.makeBy(Math.min(3, laneCount), () =>
+              h.span([
+                h.Class(
+                  isSelected
+                    ? 'size-1 rounded-full bg-primary-content/70'
+                    : 'size-1 rounded-full bg-primary/45',
+                ),
+              ]),
+            ),
+          ),
+        ],
+      )
+    }),
+  )
+
+  const rows = h.ol(
+    [
+      h.Class('m-0 grid list-none gap-0 p-0'),
+      h.AriaLabel(`روزنگار ${monthTitle(model.anchor, digits)}`),
+    ],
+    Array.map(week.days, day => {
+      const isSelected = Option.contains(model.maybeSelectedDay, day.date)
+      const isToday = day.date === view.today
+      const laneCount =
+        day.tasks.length + day.events.length + day.occasions.length
+      const label = dayLabel(day.date, digits)
+
+      return h.li(
+        [
+          h.Class('grid min-w-0 grid-cols-[3rem_0.9rem_minmax(0,1fr)] gap-2'),
+          h.DataAttribute('calendar-agenda-day', 'true'),
+          ...(isToday ? [h.DataAttribute('today', 'true')] : []),
+          ...(isSelected ? [h.DataAttribute('selected', 'true')] : []),
+        ],
+        [
+          h.button(
+            [
+              h.Type('button'),
+              h.Class(
+                'grid content-start justify-items-center gap-0 rounded-lg px-1 py-1',
+              ),
+              h.AriaLabel(`انتخاب ${label}`),
+              h.AriaPressed(isSelected ? 'true' : 'false'),
+              h.OnClick(Message.SelectedCalendarDay({ date: day.date })),
+            ],
+            [
+              h.span(
+                [h.Class('text-[0.64rem] leading-5 text-base-content/50')],
+                [weekdayOf(day.date)],
+              ),
+              h.span(
+                [
+                  h.Class(
+                    isToday
+                      ? 'text-xl font-bold leading-6 text-primary'
+                      : 'text-xl font-bold leading-6',
+                  ),
+                ],
+                [jalaliDayNumber(day.date, digits)],
+              ),
+              h.span(
+                [h.Class('text-[0.58rem] leading-5 text-base-content/45')],
+                [monthNameOf(day.date)],
+              ),
+            ],
+          ),
+          h.span(
+            [h.Class('relative flex justify-center'), h.AriaHidden(true)],
+            [
+              h.span([h.Class('absolute inset-y-0 w-px bg-base-300')]),
+              h.span([
+                h.Class(
+                  isToday
+                    ? 'relative mt-2.5 size-2.5 rounded-full bg-primary ring-4 ring-primary/15'
+                    : 'relative mt-2.5 size-2.5 rounded-full bg-base-300 ring-2 ring-base-200',
+                ),
+              ]),
+            ],
+          ),
+          h.div(
+            [
+              h.Class(
+                classNames(
+                  'grid min-w-0 content-start gap-1 rounded-xl border p-2',
+                  isSelected
+                    ? 'border-base-300 bg-base-100 shadow-panel'
+                    : 'border-transparent',
+                ),
+              ),
+            ],
+            [
+              h.div(
+                [h.Class('flex flex-wrap items-center justify-between gap-2')],
+                [
+                  ...(isToday
+                    ? [
+                        h.span(
+                          [h.Class('badge badge-primary badge-sm')],
+                          ['امروز'],
+                        ),
+                      ]
+                    : []),
+                  h.span(
+                    [
+                      h.Class(
+                        'ms-auto text-[0.68rem] leading-5 text-base-content/50',
+                      ),
+                    ],
+                    [
+                      `${taskCountLabel(day.tasks.length, digits)} · ${monthEventSummary(day.events.length, digits)}`,
+                    ],
+                  ),
+                ],
+              ),
+              ...(day.tasks.length > 0
+                ? [
+                    h.ul(
+                      [h.Class('m-0 grid list-none gap-0.5 p-0')],
+                      Array.map(day.tasks, item =>
+                        taskRow(item, model, inputs, h),
+                      ),
+                    ),
+                  ]
+                : []),
+              ...eventLanes(day, digits, week.timeZone, h),
+              ...(laneCount === 0
+                ? [
+                    h.p(
+                      [
+                        h.Class(
+                          'm-0 text-[0.78rem] leading-6 text-base-content/45',
+                        ),
+                      ],
+                      [emptyDayCopy],
+                    ),
+                  ]
+                : []),
+              ...(isSelected
+                ? [taskQuickAdd(model, inputs, day.date, label, h)]
+                : []),
+            ],
+          ),
+        ],
+      )
+    }),
+  )
+
+  return h.div(
+    [
+      h.Class('grid gap-3 lg:hidden'),
+      h.DataAttribute('calendar-agenda', 'true'),
+    ],
+    [nav, strip, rows],
+  )
 }
 
 const occasionRowView = (
@@ -2314,8 +2577,52 @@ export const calendarPageView = (
         ? [weekView(model, inputs, view, h)]
         : [
             monthNavigation(model, digits, h),
-            monthGrid(model, inputs, view, h),
-            dayDetail(model, inputs, view, h),
+            h.div(
+              [
+                h.Class(
+                  'hidden lg:grid lg:grid-cols-[minmax(0,1fr)_19rem] lg:items-start lg:gap-4',
+                ),
+              ],
+              [
+                h.div(
+                  [h.Class('min-w-0')],
+                  [monthGrid(model, inputs, view, h)],
+                ),
+                h.div(
+                  [h.Class('lg:sticky lg:top-20')],
+                  [
+                    Option.match(model.maybeSelectedDay, {
+                      onNone: () =>
+                        h.div(
+                          [
+                            h.Class(
+                              'panel grid gap-1 p-4 text-[0.8rem] leading-7 text-base-content/50',
+                            ),
+                          ],
+                          [
+                            h.p(
+                              [
+                                h.Class(
+                                  'm-0 font-semibold text-base-content/70',
+                                ),
+                              ],
+                              ['جزئیات روز'],
+                            ),
+                            h.p(
+                              [h.Class('m-0')],
+                              [
+                                'برای دیدن برنامه‌ها و کارهای یک روز، آن را از تقویم انتخاب کنید.',
+                              ],
+                            ),
+                          ],
+                        ),
+                      onSome: () => dayDetail(model, inputs, view, h),
+                    }),
+                  ],
+                ),
+              ],
+            ),
+            monthAgenda(model, inputs, view, h),
             habitTrendReserve(h),
           ]),
       occasionsPanel(model, inputs, view, h),
