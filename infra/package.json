@@ -18,7 +18,7 @@
     "deploy": "sh -c 'set -a; [ -f ../.env ] && . ../.env; set +a; exec alchemy deploy \"$@\"' sh",
     "plan": "sh -c 'set -a; [ -f ../.env ] && . ../.env; set +a; exec alchemy plan \"$@\"' sh",
     "destroy": "sh -c 'set -a; [ -f ../.env ] && . ../.env; set +a; exec alchemy destroy \"$@\"' sh",
-    "github": "sh -c 'set -a; [ -f ../.env ] && . ../.env; set +a; exec alchemy deploy --config github.stack.ts --profile admin \"$@\"' sh",
+    "github": "sh -c 'set -a; [ -f ../.env ] && . ../.env; set +a; if [ -z \"$GITHUB_TOKEN\" ] && command -v gh >/dev/null 2>&1; then GITHUB_TOKEN=$(gh auth token); export GITHUB_TOKEN; fi; exec alchemy deploy --config github.stack.ts --profile admin --yes \"$@\"' sh",
     "typecheck": "tsc --noEmit"
   }
 }
