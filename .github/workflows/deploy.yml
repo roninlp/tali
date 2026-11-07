@@ -1,0 +1,77 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Deploys are serialized, never cancelled mid-flight: a half-applied Alchemy
+# stack is worse than a deploy that waits for the previous one.
+concurrency:
+  group: deploy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  TURBO_TELEMETRY_DISABLED: "1"
+  CI: "true"
+  # Alchemy defaults the stage to `live_${USER}`. On a GitHub runner that is
+  # `live_runner` — a different environment with its own D1 database, Workers
+  # and state store. Pin the stage the deployment already uses (override with a
+  # repository variable named ALCHEMY_STAGE).
+  ALCHEMY_STAGE: ${{ vars.ALCHEMY_STAGE || 'live_ronin' }}
+
+jobs:
+  deploy:
+    name: Deploy to Cloudflare
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12.6.0
+          run_install: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # A fresh checkout has no minted token yet. Skip rather than fail the
+      # push workflow until `pnpm stack:ci` has run and the VAPID secrets are
+      # set (see infra/README.md).
+      - name: Check deploy secrets
+        id: guard
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          VAPID_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+        run: |
+          missing=""
+          [ -z "$CF_TOKEN" ] && missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -z "$VAPID_KEY" ] && missing="$missing VAPID_PRIVATE_KEY"
+          if [ -n "$missing" ]; then
+            echo "::warning::Deploy skipped; missing secrets:$missing. Run pnpm stack:ci and set the VAPID secrets (see infra/README.md)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The Cloudflare token is minted and written to this repository's secrets
+      # by `pnpm stack:ci` (infra/github.stack.ts), not pasted in by hand.
+      # `CI=true` makes Alchemy read environment credentials; `--yes` approves
+      # the plan and any state-store upgrade without a prompt.
+      - name: Deploy
+        if: steps.guard.outputs.skip != 'true'
+        run: pnpm stack:deploy -- --yes
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+          TALI_BACKUPS: ${{ vars.TALI_BACKUPS || 'on' }}

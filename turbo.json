@@ -15,16 +15,76 @@
     },
     "dev": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "passThroughEnv": [
+        "CI",
+        "ALCHEMY_STAGE",
+        "ALCHEMY_PROFILE",
+        "ALCHEMY_HOME",
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CLOUDFLARE_API_TOKEN",
+        "CLOUDFLARE_API_KEY",
+        "CLOUDFLARE_EMAIL",
+        "CLOUDFLARE_ACCOUNT_EMAIL",
+        "VAPID_PRIVATE_KEY",
+        "VAPID_PUBLIC_KEY",
+        "VAPID_SUBJECT",
+        "TALI_BACKUPS"
+      ]
     },
     "deploy": {
-      "cache": false
+      "cache": false,
+      "passThroughEnv": [
+        "CI",
+        "ALCHEMY_STAGE",
+        "ALCHEMY_PROFILE",
+        "ALCHEMY_HOME",
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CLOUDFLARE_API_TOKEN",
+        "CLOUDFLARE_API_KEY",
+        "CLOUDFLARE_EMAIL",
+        "CLOUDFLARE_ACCOUNT_EMAIL",
+        "VAPID_PRIVATE_KEY",
+        "VAPID_PUBLIC_KEY",
+        "VAPID_SUBJECT",
+        "TALI_BACKUPS"
+      ]
     },
     "plan": {
-      "cache": false
+      "cache": false,
+      "passThroughEnv": [
+        "CI",
+        "ALCHEMY_STAGE",
+        "ALCHEMY_PROFILE",
+        "ALCHEMY_HOME",
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CLOUDFLARE_API_TOKEN",
+        "CLOUDFLARE_API_KEY",
+        "CLOUDFLARE_EMAIL",
+        "CLOUDFLARE_ACCOUNT_EMAIL",
+        "VAPID_PRIVATE_KEY",
+        "VAPID_PUBLIC_KEY",
+        "VAPID_SUBJECT",
+        "TALI_BACKUPS"
+      ]
     },
     "destroy": {
-      "cache": false
+      "cache": false,
+      "passThroughEnv": [
+        "CI",
+        "ALCHEMY_STAGE",
+        "ALCHEMY_PROFILE",
+        "ALCHEMY_HOME",
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CLOUDFLARE_API_TOKEN",
+        "CLOUDFLARE_API_KEY",
+        "CLOUDFLARE_EMAIL",
+        "CLOUDFLARE_ACCOUNT_EMAIL",
+        "VAPID_PRIVATE_KEY",
+        "VAPID_PUBLIC_KEY",
+        "VAPID_SUBJECT",
+        "TALI_BACKUPS"
+      ]
     }
   }
 }

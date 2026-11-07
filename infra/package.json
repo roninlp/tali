@@ -14,10 +14,11 @@
     "typescript": "catalog:"
   },
   "scripts": {
-    "dev": "alchemy dev",
-    "deploy": "alchemy deploy",
-    "plan": "alchemy plan",
-    "destroy": "alchemy destroy",
+    "dev": "sh -c 'set -a; [ -f ../.env ] && . ../.env; set +a; exec alchemy dev \"$@\"' sh",
+    "deploy": "sh -c 'set -a; [ -f ../.env ] && . ../.env; set +a; exec alchemy deploy \"$@\"' sh",
+    "plan": "sh -c 'set -a; [ -f ../.env ] && . ../.env; set +a; exec alchemy plan \"$@\"' sh",
+    "destroy": "sh -c 'set -a; [ -f ../.env ] && . ../.env; set +a; exec alchemy destroy \"$@\"' sh",
+    "github": "sh -c 'set -a; [ -f ../.env ] && . ../.env; set +a; exec alchemy deploy --config github.stack.ts --profile admin \"$@\"' sh",
     "typecheck": "tsc --noEmit"
   }
 }
