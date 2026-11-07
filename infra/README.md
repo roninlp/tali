@@ -78,7 +78,7 @@ repository:
 and every future operator target the same environment:
 
 ```sh
-export ALCHEMY_STAGE=live_ronin
+export ALCHEMY_STAGE=demo
 ```
 
 Locally, copy the example file and deploy — the package script loads it:
@@ -149,7 +149,7 @@ into GitHub:
    gh secret set VAPID_SUBJECT --body "$(grep VAPID_SUBJECT .env | cut -d= -f2-)"
    ```
 
-4. Push to `main`. The deploy workflow pins `ALCHEMY_STAGE` to `live_ronin`
+4. Push to `main`. The deploy workflow pins `ALCHEMY_STAGE` to `demo`
    (the stage the current deployment uses); set a repository variable
    `ALCHEMY_STAGE` to target a different one. `TALI_BACKUPS` (default `on`) is
    also a repository variable. Until the Cloudflare token and the VAPID key are

@@ -21,7 +21,7 @@ env:
   # `live_runner` — a different environment with its own D1 database, Workers
   # and state store. Pin the stage the deployment already uses (override with a
   # repository variable named ALCHEMY_STAGE).
-  ALCHEMY_STAGE: ${{ vars.ALCHEMY_STAGE || 'live_ronin' }}
+  ALCHEMY_STAGE: ${{ vars.ALCHEMY_STAGE || 'demo' }}
 
 jobs:
   deploy:
