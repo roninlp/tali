@@ -107,7 +107,7 @@ const publicKeyOf = (privateKey: string): string => {
 
 const VAPID_DEV_SUBJECT = "mailto:dev@tali.local"
 
-const vapid = (() => {
+const resolveVapid = () => {
   const privateKey = process.env.VAPID_PRIVATE_KEY?.trim() ?? ""
   const publicKey = process.env.VAPID_PUBLIC_KEY?.trim() ?? ""
   const subject = process.env.VAPID_SUBJECT?.trim() ?? ""
@@ -141,7 +141,7 @@ const vapid = (() => {
     // A local mailto is enough for a dev push service.
     subject: subject === "" ? VAPID_DEV_SUBJECT : subject
   }
-})()
+}
 
 /**
  * The api Worker — a plain `async fetch` module (no Effect worker bridge), so
@@ -161,7 +161,8 @@ const vapid = (() => {
  * database. The expressions and the Worker's dispatch share
  * `@tali/config`'s `CRON_EXPRESSIONS`, so the two cannot drift.
  */
-export const Api = Cloudflare.Worker("TaliApi", {
+const defineApi = (vapid: ReturnType<typeof resolveVapid>) =>
+  Cloudflare.Worker("TaliApi", {
   main: join(repoRoot, "apps/api/src/index.ts"),
   // `nodejs_compat` is the default from 2026-08-04, so the flag is redundant;
   // newer workerd builds reject it outright instead of warning.
@@ -196,6 +197,7 @@ export default Alchemy.Stack(
   "tali",
   { providers: Cloudflare.providers(), state },
   Effect.gen(function* () {
+    const Api = defineApi(resolveVapid())
     const database = yield* Database
     const backups = Backups === undefined ? undefined : yield* Backups
     const api = yield* Api

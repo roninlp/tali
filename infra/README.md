@@ -111,8 +111,19 @@ into GitHub:
    the CI token; do not use it for day-to-day deploys:
 
    ```sh
-   alchemy profile create admin
-   alchemy profile edit --profile admin --add Cloudflare   # API Token or Key
+   cd infra
+   pnpm exec alchemy profile create admin
+   pnpm exec alchemy profile edit --profile admin --add Cloudflare
+   ```
+
+   Or configure it non-interactively from the repository `.env`:
+
+   ```sh
+   pnpm exec alchemy profile edit --profile admin --add Cloudflare \
+     --method stored \
+     --set apiToken=env:CLOUDFLARE_API_TOKEN \
+     --set accountId=env:CLOUDFLARE_ACCOUNT_ID \
+     --env-file ../.env
    ```
 
    The GitHub provider picks up the `gh` CLI login. If it cannot, export a
