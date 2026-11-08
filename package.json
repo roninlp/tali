@@ -16,6 +16,7 @@
     "stack:deploy": "turbo run deploy",
     "stack:destroy": "turbo run destroy",
     "test:push": "node scripts/test-push.mjs",
+    "eval:capture": "node scripts/eval-capture.mjs",
     "test:smoke:foldkit": "pnpm --filter @tali/e2e test:smoke:foldkit",
     "test:smoke:foldkit:sync": "pnpm --filter @tali/e2e test:smoke:foldkit:sync",
     "stack:ci": "pnpm --filter @tali/infra run github"
