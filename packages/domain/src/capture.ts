@@ -1,4 +1,5 @@
 import { Effect, Result, Schema, SchemaIssue } from "effect"
+import { Temporal } from "temporal-polyfill/full"
 import type { RecurrenceRule } from "./recurrence.js"
 import type { HabitFrequency } from "./planning/habit.js"
 import type { ReminderRepeat } from "./planning/reminder.js"
@@ -743,6 +744,37 @@ export const toCreateInput = (
       }
     }
   })
+
+// ── Card picker helpers (shared by the review UI) ─────────────────────────
+
+/**
+ * A local date + clock time in an IANA zone as a UTC instant.
+ *
+ * The review card edits a local wall time; the domain stores UTC. Pure, so the
+ * client can convert before it sends the reviewed draft and the server never
+ * has to guess which offset the user meant.
+ */
+export const localDateTimeToInstant = (
+  localDate: string,
+  clockTime: string,
+  timeZone: string
+): string =>
+  Temporal.PlainDateTime.from(`${localDate}T${clockTime}`)
+    .toZonedDateTime(timeZone)
+    .toInstant()
+    .toString()
+
+/** The local date (`YYYY-MM-DD`) and `HH:mm` of a UTC instant in a zone. */
+export const instantToLocalParts = (
+  instant: string,
+  timeZone: string
+): { readonly date: string; readonly time: string } => {
+  const zoned = Temporal.Instant.from(instant).toZonedDateTimeISO(timeZone)
+  return {
+    date: zoned.toPlainDate().toString(),
+    time: zoned.toPlainTime().toString({ smallestUnit: "minute" })
+  }
+}
 
 /** The prompt context the extractor needs from the viewer (ADR-0012 §8). */
 export interface CaptureContext {

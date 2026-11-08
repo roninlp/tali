@@ -1,11 +1,11 @@
 import { Array, Option } from 'effect'
 
 import {
-  extractNotePlainText,
-  plainTextToNoteBody,
   type NoteParagraph,
   type NoteTextDocument,
   type NoteTextNode,
+  extractNotePlainText,
+  plainTextToNoteBody,
 } from '@tali/domain'
 
 /**

@@ -20,6 +20,7 @@ import * as Auth from './auth'
 import { GuardDecision, guardRoute, landingPath, landingRoute } from './guard'
 import { PushEnvironment } from './lib/push/service-worker'
 import * as Calendar from './page/calendar'
+import * as Capture from './page/capture'
 import * as Habits from './page/habits'
 import * as Household from './page/household'
 import * as Lists from './page/lists'
@@ -70,6 +71,7 @@ export const Model = Schema.Struct({
   habits: Habits.Model,
   calendar: Calendar.Model,
   reminders: Reminders.Model,
+  capture: Capture.Model,
   settings: Settings.Model,
   morePopover: Popover.Model,
 })
@@ -112,6 +114,7 @@ export const Message = defineMessageUnion({
   GotHabitsMessage: { message: Habits.Message },
   GotCalendarMessage: { message: Calendar.Message },
   GotRemindersMessage: { message: Reminders.Message },
+  GotCaptureMessage: { message: Capture.Message },
   GotSettingsMessage: { message: Settings.Message },
   GotMorePopoverMessage: { message: Popover.Message },
 })
@@ -166,6 +169,7 @@ export const init: Runtime.RoutingApplicationInit<
   const habitsInit = Habits.init({ now: flags.now })
   const calendarInit = Calendar.init({ now: flags.now })
   const remindersInit = Reminders.init()
+  const captureInit = Capture.init({ maybeUserId })
   const model = Model.make({
     route,
     theme: themeInit.model,
@@ -183,6 +187,7 @@ export const init: Runtime.RoutingApplicationInit<
     habits: habitsInit.model,
     calendar: calendarInit.model,
     reminders: remindersInit.model,
+    capture: captureInit.model,
     settings: Settings.initialModel(),
     morePopover: Popover.init({ id: 'mobile-more-menu' }),
   })
@@ -280,6 +285,9 @@ const toCalendarMessage = (message: Calendar.Message): Message =>
 const toRemindersMessage = (message: Reminders.Message): Message =>
   Message.GotRemindersMessage({ message })
 
+const toCaptureMessage = (message: Capture.Message): Message =>
+  Message.GotCaptureMessage({ message })
+
 const toSettingsMessage = (message: Settings.Message): Message =>
   Message.GotSettingsMessage({ message })
 
@@ -367,6 +375,16 @@ const calendarInputs = (model: Model): Calendar.Inputs => ({
   ),
   maybeHouseholdId: Option.flatMap(Auth.maybeSession(model.auth), session =>
     Option.fromNullishOr(session.householdId),
+  ),
+})
+
+/** Capture reads the display preference and the live connectivity state. */
+const captureInputs = (model: Model): Capture.Inputs => ({
+  display: Preferences.currentDisplayFields(model.preferences),
+  isOnline: model.sync.isOnline,
+  maybeUserId: Option.map(
+    Auth.maybeSession(model.auth),
+    session => session.user.id,
   ),
 })
 
@@ -1233,6 +1251,34 @@ const foldRemindersEntered = Update.foldChildStep({
   foldOutMessage: foldRemindersOutMessage,
 })
 
+type CaptureFoldInput = Readonly<{
+  message: Capture.Message
+  inputs: Capture.Inputs
+}>
+
+const foldCapture = Update.foldChild({
+  update: (capture: Capture.Model, input: CaptureFoldInput) =>
+    Capture.update(capture, input.message, input.inputs),
+  read: (model: Model) => Option.some(model.capture),
+  write: (model: Model, nextCapture: Capture.Model) =>
+    modifyFields(model, { capture: () => nextCapture }),
+  toParentMessage: toCaptureMessage,
+})
+
+const foldCaptureMessage = (
+  model: Model,
+  message: Capture.Message,
+): UpdateReturn =>
+  foldCapture(model, { message, inputs: captureInputs(model) })
+
+const foldCaptureEntered = Update.foldChildStep({
+  update: Capture.entered,
+  read: (model: Model) => Option.some(model.capture),
+  write: (model: Model, nextCapture: Capture.Model) =>
+    modifyFields(model, { capture: () => nextCapture }),
+  toParentMessage: toCaptureMessage,
+})
+
 type SettingsFoldInput = Readonly<{
   message: Settings.Message
   inputs: Settings.Inputs
@@ -1344,6 +1390,13 @@ const enterRoute = (
     Option.isSome(Transition.entered(transition, 'Reminders'))
   ) {
     return foldRemindersEntered(model)
+  }
+
+  if (
+    model.route._tag === 'Capture' &&
+    Option.isSome(Transition.entered(transition, 'Capture'))
+  ) {
+    return foldCaptureEntered(model)
   }
 
   if (model.route._tag === 'List') {
@@ -1533,6 +1586,7 @@ export const update = (model: Model, message: Message) =>
     GotHabitsMessage: ({ message }) => foldHabitsMessage(model, message),
     GotCalendarMessage: ({ message }) => foldCalendarMessage(model, message),
     GotRemindersMessage: ({ message }) => foldReminders(model, message),
+    GotCaptureMessage: ({ message }) => foldCaptureMessage(model, message),
     GotSettingsMessage: ({ message }) => foldSettingsMessage(model, message),
     GotMorePopoverMessage: ({ message }) => foldMorePopover(model, message),
   })
@@ -1565,6 +1619,7 @@ const pageCopy = (route: AppRoute): PageCopy =>
       heading: 'یادآورها',
       documentTitle: 'یادآورها — تالی',
     }),
+    Capture: () => ({ heading: 'کپچر', documentTitle: 'کپچر — تالی' }),
     Settings: () => ({ heading: 'تنظیمات', documentTitle: 'تنظیمات — تالی' }),
     Household: () => ({
       heading: 'خانه‌ی مشترک',
@@ -1591,6 +1646,7 @@ const usesAppShell = AppRoute.isAnyOf([
   'Habits',
   'Calendar',
   'Reminders',
+  'Capture',
   'Settings',
   'PushHealth',
 ])
@@ -1878,6 +1934,14 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): Html =>
           toParentMessage: toCalendarMessage,
         }),
       Reminders: () => remindersPageView(model, h),
+      Capture: () =>
+        h.submodel({
+          slotId: 'capture-page',
+          model: model.capture,
+          view: Capture.view,
+          viewInputs: captureInputs(model),
+          toParentMessage: toCaptureMessage,
+        }),
       Settings: () => settingsPageView(model, h),
       PushHealth: () => pushHealthPageView(model, h),
       NotFound: () => notFoundView(h),
@@ -2029,6 +2093,7 @@ const moreMenuView = (
   )
 
 const MORE_SECTIONS: ReadonlyArray<Shell.AppSection> = [
+  'Capture',
   'Habits',
   'Lists',
   'Reminders',

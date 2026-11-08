@@ -52,6 +52,7 @@ const isHouseholdRoute = AppRoute.isAnyOf([
   'Habits',
   'Calendar',
   'Reminders',
+  'Capture',
   'PushHealth',
 ])
 
