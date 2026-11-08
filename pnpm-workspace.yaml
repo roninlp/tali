@@ -14,6 +14,13 @@ catalog:
   "@effect/platform-node": ~4.1.0
   "@effect/sql-d1": ~4.1.0
   "@tailwindcss/vite": ^4.3.3
+  # TanStack AI: the Dissect run (ADR-0012 §7). `ai-openai` supplies the
+  # OpenAI-compatible adapter (`openaiCompatible`) the OpenCode Go gateway
+  # speaks; the `ai-openai-compatible` name in the first draft of ADR-0012 was
+  # never published. `ai-effect` supplies the Effect 4.1 `chat`/`serverTool`.
+  "@tanstack/ai": ^1.2.0
+  "@tanstack/ai-effect": ^0.1.0
+  "@tanstack/ai-openai": ^1.1.1
   "@types/node": ^26.6.5
   effect: ~4.1.0
   fake-indexeddb: ^6.2.6
@@ -37,6 +44,9 @@ allowBuilds:
   "@cloudflare/workerd-linux-64": true
 
 minimumReleaseAgeExclude:
+  - "@tanstack/ai@1.2.0"
+  - "@tanstack/ai-effect@0.1.0"
+  - "@tanstack/ai-openai@1.1.1"
   - miniflare@5.20261012.1-beta || 5.20261019.2-beta
   - wrangler@4.151.1 || 4.152.0
   - '@cloudflare/vitest-plugin@1.4.7'

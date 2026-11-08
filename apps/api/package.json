@@ -10,6 +10,9 @@
   },
   "dependencies": {
     "@effect/sql-d1": "catalog:",
+    "@tanstack/ai": "catalog:",
+    "@tanstack/ai-effect": "catalog:",
+    "@tanstack/ai-openai": "catalog:",
     "@tali/config": "workspace:*",
     "@tali/domain": "workspace:*",
     "@tali/rpc": "workspace:*",

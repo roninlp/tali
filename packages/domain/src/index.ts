@@ -14,6 +14,7 @@ export * from "./today"
 export * from "./recurrence"
 export * from "./persian"
 export * from "./note-search"
+export * from "./capture"
 export {
   EventExceptionId,
   EventId,
