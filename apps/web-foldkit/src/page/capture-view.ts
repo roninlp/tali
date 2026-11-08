@@ -919,15 +919,12 @@ const resultView = (
             [h.Class('flex flex-wrap gap-2')],
             [
               ...result.created.map((row) =>
-                h.a(
-                  [
-                    h.Href(routeForRow(row)),
-                    h.Class(
-                      'badge badge-outline badge-lg text-[0.72rem] no-underline',
-                    ),
-                  ],
-                  [row.title],
-                ),
+                h.keyed('a')(row.id, [
+                  h.Href(routeForRow(row)),
+                  h.Class(
+                    'badge badge-outline badge-lg text-[0.72rem] no-underline',
+                  ),
+                ], [row.title]),
               ),
             ],
           ),
@@ -965,9 +962,9 @@ const historyRow = (
   h: HtmlBuilder<Message>,
 ): Html => {
   const isExpanded = Option.contains(model.expandedHistoryId, capture.id)
-  return h.li(
-    [h.Class('grid gap-2 border-b border-base-200 py-3 last:border-0')],
-    [
+  return h.keyed('li')(capture.id, [
+    h.Class('grid gap-2 border-b border-base-200 py-3 last:border-0'),
+  ], [
       h.button(
         [
           h.Type('button'),
@@ -1003,13 +1000,10 @@ const historyRow = (
                 : h.div(
                     [h.Class('flex flex-wrap gap-1.5')],
                     capture.createdIds.map((row) =>
-                      h.a(
-                        [
-                          h.Href(routeForRow(row)),
-                          h.Class('badge badge-outline badge-sm text-[0.68rem] no-underline'),
-                        ],
-                        [row.title],
-                      ),
+                      h.keyed('a')(row.id, [
+                        h.Href(routeForRow(row)),
+                        h.Class('badge badge-outline badge-sm text-[0.68rem] no-underline'),
+                      ], [row.title]),
                     ),
                   ),
             ],
