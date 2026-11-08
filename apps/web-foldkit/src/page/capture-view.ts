@@ -575,19 +575,26 @@ const instantPicker = (
     h.Type('datetime-local'),
     h.Class(inputClass),
     h.Value(value),
-    h.OnInput((raw) =>
-      raw === ''
-        ? Message.AnsweredNeedsInput({ index, field: entry.field, value: '' })
-        : Message.AnsweredNeedsInput({
-            index,
-            field: entry.field,
-            value: localDateTimeToInstant(
-              raw.slice(0, 10),
-              raw.slice(11, 16),
-              inputs.display.timeZone,
-            ),
-          }),
-    ),
+    h.OnInput((raw) => {
+      // A datetime-local control may hand back a date without a time while
+      // the user is still picking; do not answer with an invalid instant.
+      if (raw.length < 16) {
+        return Message.AnsweredNeedsInput({
+          index,
+          field: entry.field,
+          value: '',
+        })
+      }
+      return Message.AnsweredNeedsInput({
+        index,
+        field: entry.field,
+        value: localDateTimeToInstant(
+          raw.slice(0, 10),
+          raw.slice(11, 16),
+          inputs.display.timeZone,
+        ),
+      })
+    }),
   ])
 }
 
