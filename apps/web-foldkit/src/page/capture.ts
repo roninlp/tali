@@ -275,6 +275,7 @@ const cardToDraft = (card: CaptureCard): CaptureDraft => {
 }
 
 const missingFieldOf = (field: string): string => {
+  if (field === 'start' || field === 'end') return 'timing'
   if (field.startsWith('timing.')) return 'timing'
   if (field.startsWith('repeat.')) return 'repeat'
   return field
@@ -309,11 +310,18 @@ const setDraftField = (
 
   if (draft._tag === 'event') {
     if (field === 'timing' || field === 'timing.date') {
+      if (value === '') return Struct.assign(draft, { timing: undefined })
+      if (value.includes('T')) {
+        const end = new Date(Date.parse(value) + 60 * 60 * 1000).toISOString()
+        return Struct.assign(draft, {
+          timing: { _tag: 'timed' as const, start: value, end },
+        })
+      }
       return Struct.assign(draft, {
-        timing: value === '' ? undefined : { _tag: 'allDay' as const, date: value },
+        timing: { _tag: 'allDay' as const, date: value },
       })
     }
-    if (field === 'timing.start') {
+    if (field === 'timing.start' || field === 'start') {
       if (value === '') return draft
       const current = draft.timing
       const end =
@@ -324,7 +332,7 @@ const setDraftField = (
         timing: { _tag: 'timed' as const, start: value, end },
       })
     }
-    if (field === 'timing.end') {
+    if (field === 'timing.end' || field === 'end') {
       if (value === '') return draft
       const current = draft.timing
       const start = current?._tag === 'timed' ? current.start : value
@@ -665,7 +673,9 @@ export const update = (
     UpdatedCardField: ({ index, field, value }) => ({
       model: updateCard(model, index, (card) =>
         modifyFields(card, {
-          draft: () => setDraftField(card.draft, field, value),
+          // Editing the structural field is an answer too: the card's real
+          // picker and the Needs Input picker write the same draft field.
+          draft: () => answerNeedsInput(card.draft, field, value),
         }),
       ),
     }),
