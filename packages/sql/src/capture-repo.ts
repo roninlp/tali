@@ -83,7 +83,9 @@ export class CaptureRepo extends Context.Service<CaptureRepo>()("CaptureRepo", {
           SELECT ${sql.literal(CAPTURE_COLUMNS)} FROM capture
           WHERE owner_id = ${input.ownerId}
             AND dedupe_key = ${input.dedupeKey}
-            AND status <> 'failed'
+            -- A parsed/committed row is a result worth returning; a failed or
+            -- still-pending row is not (a retry must run again).
+            AND status IN ('parsed', 'committed')
             AND created_at >= ${input.since}
           ORDER BY created_at DESC, id DESC
           LIMIT 1
