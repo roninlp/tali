@@ -137,11 +137,15 @@ mis-created row is done in that row's own screen.
 ### 7. The Extractor is a service with a swappable Layer
 
 `Extractor` is a `Context.Service` with an `ExtractorLive` layer (TanStack AI +
-an OpenAI-compatible adapter, base URL / model / key from env) and a replay layer
-for tests. The provider is OpenCode Console's OpenAI-compatible endpoint
-(`https://opencode.ai/inference/openai/v1`) with `deepseek-v4.1-flash` by
-default. Changing provider later is one layer, not a rewrite; tests and the eval
-harness never call a model.
+`@tanstack/ai-effect` + the `@tanstack/ai-openai` compatible adapter, base URL /
+model / key from env) and a replay layer for tests. The provider is OpenCode
+Go's OpenAI-compatible endpoint
+(`https://opencode.ai/inference/go/openai/v1`) with `deepseek-v4.1-flash` by
+default. The gateway requires an `x-opencode-session` header on every request
+and a non-generic User-Agent; both ride the adapter's `wrapFetch` middleware.
+`stream: false` with tools is verified against the live endpoint. Changing
+provider later is one layer, not a rewrite; tests and the eval harness never
+call a model.
 
 Note the platform constraint: OpenCode's free model ids are restricted to the
 OpenCode client, so a Worker uses paid ids.
@@ -174,6 +178,11 @@ state and keeps the text. A model or network failure marks the capture `failed`
 with a retry, and the text stays in the Foldkit Model and in `localStorage` so a
 reload or a crash cannot lose a thought.
 
+The caps in §9 are abuse protection, not per-call cost control: a Go
+subscription is a monthly included allowance per model (DeepSeek V4.1 Flash
+carries a $100/month allowance), so a runaway loop is the risk, not the price of
+one call.
+
 ## Alternatives considered
 
 | Alternative | Why rejected |
@@ -190,8 +199,8 @@ reload or a crash cannot lose a thought.
 ## Consequences
 
 - **New dependencies:** `@tanstack/ai`, `@tanstack/ai-effect`,
-  `@tanstack/ai-openai-compatible`, added to the pnpm catalog (ADR-0010) and
-  referenced as `catalog:`; the whole stack stays on Effect 4.1.
+  `@tanstack/ai-openai` (its `compatible` subpath), added to the pnpm catalog
+  (ADR-0010) and referenced as `catalog:`; the whole stack stays on Effect 4.1.
 - **New deploy config:** an API key secret plus `CAPTURE_MODEL` and
   `CAPTURE_BASE_URL` vars in `infra/alchemy.run.ts`, `.env.example`, and the
   deploy workflow's secrets. The feature is inert without them, and the
