@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import type { Headers } from "effect/http/Headers"
 import { ApiRpcs } from "@tali/rpc"
 import {
+  CaptureForbidden,
   EventForbidden,
   HabitForbidden,
   ListForbidden,
@@ -12,6 +13,7 @@ import {
   Unauthorized
 } from "@tali/domain"
 import { AuthService } from "./auth-service.js"
+import { CaptureService, type CaptureViewer } from "./capture-service.js"
 import { EventService, type EventViewer } from "./event-service.js"
 import { HabitService, type HabitViewer } from "./habit-service.js"
 import { ListService, type ListViewer } from "./list-service.js"
@@ -65,6 +67,7 @@ export const viewerFromHeaders = (
       userId: context.user.id,
       householdId: context.householdId,
       timeZone: prefs.timeZone,
+      weekStart: prefs.weekStart,
       defaultCheckedPlacement: prefs.checkedItemPlacement
     } as const
   })
@@ -181,6 +184,30 @@ const withOccasionViewer = <A, E, R>(
         : error
     ),
     Effect.flatMap(run)
+  )
+
+/**
+ * Capture has its own typed forbidden error (same pattern as notes/lists). The
+ * viewer also carries the display week start the Dissect prompt needs.
+ */
+const withCaptureViewer = <A, E, R>(
+  headers: Headers,
+  run: (viewer: CaptureViewer) => Effect.Effect<A, E, R>
+): Effect.Effect<A, E | Unauthorized | CaptureForbidden, AuthService | PreferencesService | R> =>
+  viewerFromHeaders(headers).pipe(
+    Effect.mapError((error) =>
+      error._tag === "TaskForbidden"
+        ? new CaptureForbidden({ reason: error.reason })
+        : error
+    ),
+    Effect.flatMap((viewer) =>
+      run({
+        userId: viewer.userId,
+        householdId: viewer.householdId,
+        timeZone: viewer.timeZone,
+        weekStart: viewer.weekStart ?? "saturday"
+      })
+    )
   )
 
 export const RpcHandlers = ApiRpcs.toLayer({
@@ -408,5 +435,17 @@ export const RpcHandlers = ApiRpcs.toLayer({
       OccasionService.pipe(Effect.flatMap((svc) => svc.materialiseReminders(viewer, input)))),
   PrepareOccasionTask: (input, { headers }) =>
     withOccasionViewer(headers, (viewer) =>
-      OccasionService.pipe(Effect.flatMap((svc) => svc.prepareTask(viewer, input))))
+      OccasionService.pipe(Effect.flatMap((svc) => svc.prepareTask(viewer, input)))),
+
+  // ── Capture ───────────────────────────────────────────────────────────
+
+  DissectCapture: (input, { headers }) =>
+    withCaptureViewer(headers, (viewer) =>
+      CaptureService.pipe(Effect.flatMap((svc) => svc.dissect(viewer, input)))),
+  CommitCapture: (input, { headers }) =>
+    withCaptureViewer(headers, (viewer) =>
+      CaptureService.pipe(Effect.flatMap((svc) => svc.commit(viewer, input)))),
+  ListCaptures: (input, { headers }) =>
+    withCaptureViewer(headers, (viewer) =>
+      CaptureService.pipe(Effect.flatMap((svc) => svc.list(viewer, input))))
 })

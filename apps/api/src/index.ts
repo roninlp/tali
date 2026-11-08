@@ -3,6 +3,7 @@ import { HttpRouter } from "effect/http"
 import { D1Client } from "@effect/sql-d1"
 import { CRON } from "@tali/config"
 import { makeAppLayer } from "./http-layer.js"
+import { captureConfigOf } from "./capture-extractor.js"
 import { runD1Backup } from "./d1-backup.js"
 import { vapidConfigOf } from "./push-gateway.js"
 import { runReminderSweep } from "./reminder-sweep-runner.js"
@@ -39,6 +40,12 @@ interface Env {
   BACKUP_DATABASE_NAME?: string
   /** Nightly backup retention window in days, as an Alchemy var binding. */
   BACKUP_RETENTION_DAYS?: string
+  /** Capture model credentials (ADR-0012 §7). A secret binding. */
+  OPENCODE_API_KEY?: string
+  /** The OpenCode Go OpenAI-compatible root; defaults in code. */
+  CAPTURE_BASE_URL?: string
+  /** The paid model id the Worker uses; defaults in code. */
+  CAPTURE_MODEL?: string
 }
 
 /**
@@ -127,7 +134,10 @@ export default {
       vapid: vapidConfigOf(env),
       // `alchemy dev` sets this; a deployed Worker has no such binding, so the
       // local sweep trigger is not registered at all (ADR-0005 §11).
-      devRoutes: env.DEV_ROUTES === "1"
+      devRoutes: env.DEV_ROUTES === "1",
+      // A missing key leaves the feature inert with a typed error at call
+      // time; it never prevents the Worker (or its layer) from building.
+      capture: captureConfigOf(env)
     }).pipe(
       Layer.provide(
         D1Client.layer({

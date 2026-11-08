@@ -330,6 +330,12 @@ export class CaptureNotFound extends Schema.TaggedError<CaptureNotFound>()(
   { id: CaptureId }
 ) {}
 
+/** The viewer cannot use Capture (no household yet). */
+export class CaptureForbidden extends Schema.TaggedError<CaptureForbidden>()(
+  "CaptureForbidden",
+  { reason: Schema.Literals(["private", "household", "noHousehold"]) }
+) {}
+
 export const CaptureServiceError = Schema.Union([
   CaptureTooLong,
   CaptureEmpty,
@@ -338,7 +344,8 @@ export const CaptureServiceError = Schema.Union([
   ModelTimeout,
   InvalidDraft,
   DraftIncomplete,
-  CaptureNotFound
+  CaptureNotFound,
+  CaptureForbidden
 ])
 export type CaptureServiceError = Schema.Schema.Type<typeof CaptureServiceError>
 

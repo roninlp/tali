@@ -20,6 +20,13 @@ import {
 } from "@tali/sql"
 import { AuthServiceLive } from "./auth-service.js"
 import { AuthRoutes } from "./auth-routes.js"
+import {
+  CaptureConfig,
+  type CaptureConfigValue,
+  ExtractorLive,
+  captureConfigOf
+} from "./capture-extractor.js"
+import { CaptureServiceLive } from "./capture-service.js"
 import { CalendarRoutes } from "./calendar-routes.js"
 import { CalendarServiceLive } from "./calendar-service.js"
 import { EventServiceLive } from "./event-service.js"
@@ -74,7 +81,11 @@ const ServiceLayers = Layer.mergeAll(
   HabitServiceLive,
   ReminderServiceLive,
   OccasionServiceLive,
-  PushGatewayLive
+  PushGatewayLive,
+  // Capture's service needs the Extractor; wire it here because sibling
+  // layers in this merge are not auto-provided. The Extractor's CaptureConfig
+  // comes from the outer app layer.
+  CaptureServiceLive.pipe(Layer.provide(ExtractorLive))
 )
 
 /** The aggregate repositories (each service also provides the ones it owns). */
@@ -105,6 +116,11 @@ export interface AppOptions {
    * `alchemy dev` sets this; a deploy never does (ADR-0005 §11).
    */
   readonly devRoutes?: boolean
+  /**
+   * The Capture model binding. Omitted in tests and non-capture environments;
+   * the feature is inert until an API key is supplied.
+   */
+  readonly capture?: CaptureConfigValue
 }
 
 /**
@@ -135,7 +151,10 @@ export const makeAppLayer = (options: AppOptions = {}) => {
     Layer.provide(ReminderSweepLive.pipe(Layer.provide(ServiceLayers))),
     Layer.provide(ServiceLayers),
     Layer.provide(RepoLayers),
-    Layer.provide(Layer.succeed(PushConfig, options.vapid ?? null))
+    Layer.provide(Layer.succeed(PushConfig, options.vapid ?? null)),
+    Layer.provide(
+      Layer.succeed(CaptureConfig, options.capture ?? captureConfigOf({}))
+    )
   )
 }
 

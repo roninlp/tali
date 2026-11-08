@@ -113,7 +113,7 @@ describe("preferences migrations", () => {
   it("applies every migration in numeric order to scratch SQLite", () => {
     const files = migrationFiles()
     expect(files[0]).toBe("0001_list_items.sql")
-    expect(files.at(-1)).toBe("0013_occasions.sql")
+    expect(files.at(-1)).toBe("0014_capture.sql")
     expect(files).toContain("0006_user_preferences.sql")
     expect(files).toContain("0007_task_recurrence.sql")
     expect(files).toContain("0008_list_last_writer.sql")
