@@ -161,7 +161,41 @@ const resolveVapid = () => {
  * database. The expressions and the Worker's dispatch share
  * `@tali/config`'s `CRON_EXPRESSIONS`, so the two cannot drift.
  */
-const defineApi = (vapid: ReturnType<typeof resolveVapid>) =>
+/**
+ * Capture model config (ticket #101; ADR-0012 §7).
+ *
+ * The key is a Workers Secret supplied out of band; the Go base URL and the
+ * paid model id are ordinary vars. The feature is inert without the key: the
+ * Worker still builds and every Dissect fails with a typed `ModelUnavailable`,
+ * so a deploy without Capture credentials is a warning, not a broken stack.
+ *
+ * The base URL is the **Go** root, not the pay-as-you-go `/inference` root, and
+ * the gateway also needs `x-opencode-session` + a non-generic User-Agent; both
+ * are set by the extractor's `wrapFetch` middleware, not here.
+ */
+const CAPTURE_DEFAULT_BASE_URL = "https://opencode.ai/inference/go/openai/v1"
+const CAPTURE_DEFAULT_MODEL = "deepseek-v4.1-flash"
+
+const resolveCapture = () => {
+  const apiKey = process.env.OPENCODE_API_KEY?.trim() ?? ""
+  const baseUrl = process.env.CAPTURE_BASE_URL?.trim() || CAPTURE_DEFAULT_BASE_URL
+  const model = process.env.CAPTURE_MODEL?.trim() || CAPTURE_DEFAULT_MODEL
+
+  if (apiKey === "") {
+    console.warn(
+      "[tali] OPENCODE_API_KEY is not set: Capture is inert and every Dissect " +
+        "fails with a typed ModelUnavailable. Set it (a Workers secret in CI) " +
+        "to enable the feature."
+    )
+  }
+
+  return { apiKey, baseUrl, model }
+}
+
+const defineApi = (
+  vapid: ReturnType<typeof resolveVapid>,
+  capture: ReturnType<typeof resolveCapture>
+) =>
   Cloudflare.Worker("TaliApi", {
   main: join(repoRoot, "apps/api/src/index.ts"),
   // `nodejs_compat` is the default from 2026-08-04, so the flag is redundant;
@@ -185,10 +219,15 @@ const defineApi = (vapid: ReturnType<typeof resolveVapid>) =>
           BACKUP_RETENTION_DAYS: "14"
         }
       : {}),
-    // Plain config (public by design); the private key binds as a secret.
+    // Plain config (public by design); the private keys bind as secrets.
     VAPID_PUBLIC_KEY: vapid.publicKey,
     VAPID_SUBJECT: vapid.subject,
     VAPID_PRIVATE_KEY: Redacted.make(vapid.privateKey),
+    CAPTURE_BASE_URL: capture.baseUrl,
+    CAPTURE_MODEL: capture.model,
+    ...(capture.apiKey === ""
+      ? {}
+      : { OPENCODE_API_KEY: Redacted.make(capture.apiKey) }),
     DEV_ROUTES: isDev ? "1" : "0"
   }
 })
@@ -197,7 +236,7 @@ export default Alchemy.Stack(
   "tali",
   { providers: Cloudflare.providers(), state },
   Effect.gen(function* () {
-    const Api = defineApi(resolveVapid())
+    const Api = defineApi(resolveVapid(), resolveCapture())
     const database = yield* Database
     const backups = Backups === undefined ? undefined : yield* Backups
     const api = yield* Api

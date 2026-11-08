@@ -29,6 +29,9 @@
         "VAPID_PRIVATE_KEY",
         "VAPID_PUBLIC_KEY",
         "VAPID_SUBJECT",
+        "OPENCODE_API_KEY",
+        "CAPTURE_BASE_URL",
+        "CAPTURE_MODEL",
         "TALI_BACKUPS"
       ]
     },
@@ -47,6 +50,9 @@
         "VAPID_PRIVATE_KEY",
         "VAPID_PUBLIC_KEY",
         "VAPID_SUBJECT",
+        "OPENCODE_API_KEY",
+        "CAPTURE_BASE_URL",
+        "CAPTURE_MODEL",
         "TALI_BACKUPS"
       ]
     },
@@ -65,6 +71,9 @@
         "VAPID_PRIVATE_KEY",
         "VAPID_PUBLIC_KEY",
         "VAPID_SUBJECT",
+        "OPENCODE_API_KEY",
+        "CAPTURE_BASE_URL",
+        "CAPTURE_MODEL",
         "TALI_BACKUPS"
       ]
     },
@@ -83,6 +92,9 @@
         "VAPID_PRIVATE_KEY",
         "VAPID_PUBLIC_KEY",
         "VAPID_SUBJECT",
+        "OPENCODE_API_KEY",
+        "CAPTURE_BASE_URL",
+        "CAPTURE_MODEL",
         "TALI_BACKUPS"
       ]
     }
