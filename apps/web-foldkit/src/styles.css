@@ -104,6 +104,15 @@
     scrollbar-gutter: stable;
   }
 
+  /* Foldkit's scroll lock compensates for a right-side scrollbar with a
+     physical `padding-right`. The house UI is RTL, where the root scrollbar
+     sits on the left, and `scrollbar-gutter: stable` already reserves the
+     gutter. Dropping the injected padding keeps the page from shifting when
+     a dialog opens or closes. */
+  html[style*='overflow: hidden'] {
+    padding-right: 0 !important;
+  }
+
   body {
     margin: 0;
     min-block-size: 100dvh;
