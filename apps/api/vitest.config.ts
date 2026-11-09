@@ -39,7 +39,15 @@ export default defineConfig(async () => {
           test: {
             name: "boundary",
             include: ["test/boundary/**/*.test.ts"],
-            setupFiles: ["./test/boundary/setup.ts"]
+            setupFiles: ["./test/boundary/setup.ts"],
+            // The pool's warm-module snapshot inlines every transformed
+            // module's code (source maps included) into one WebSocket message.
+            // With the Worker's full import graph that crosses workerd's 32 MiB
+            // limit, and a runner dies before its first test with "Message is
+            // too large" (1009) — workers-sdk#16349. Without the on-disk
+            // transform cache the pool skips the snapshot and fetches modules
+            // one at a time instead.
+            fsModuleCache: false
           }
         }
       ]
