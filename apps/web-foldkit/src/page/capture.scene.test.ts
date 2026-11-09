@@ -161,6 +161,26 @@ describe('capture view', () => {
     )
   })
 
+  test('a failed history row offers a retry and its error', () => {
+    const failed = captureOf({
+      status: 'failed',
+      error: 'مدل در ۶۰ ثانیه پاسخ نداد',
+      drafts: [],
+    })
+    scene(
+      setup(),
+      given(
+        model({
+          history: [failed],
+          expandedHistoryId: Option.some(failed.id),
+        }),
+      ),
+      expect(text('ناموفق')).toExist(),
+      expect(text('مدل در ۶۰ ثانیه پاسخ نداد')).toExist(),
+      expect(role('button', { name: 'تلاش دوباره' })).toExist(),
+    )
+  })
+
   test('the result strip names what was created', () => {
     scene(
       setup(),

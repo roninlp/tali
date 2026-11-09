@@ -162,6 +162,7 @@ export const Message = defineMessageUnion({
   },
   FailedLoadHistory: { generation: Schema.Int, failure: CaptureFailure },
   ClickedToggleHistory: { captureId: Schema.String },
+  ClickedRetryHistory: { captureId: Schema.String },
   CompletedCacheText: {},
   IgnoredInput: {},
 })
@@ -556,6 +557,18 @@ const updateNumberField = (
   return draft
 }
 
+const freshComposer = (model: Model, text: string): Model =>
+  modifyFields(model, {
+    text: () => text,
+    phase: () => 'idle',
+    cards: () => [],
+    maybeCaptureId: () => Option.none(),
+    maybeCapture: () => Option.none(),
+    maybeResult: () => Option.none(),
+    maybeError: () => Option.none(),
+    maybeRetryAfter: () => Option.none(),
+  })
+
 const startDissect = (model: Model, inputs: Inputs): UpdateReturn => {
   if (!inputs.isOnline) {
     return {
@@ -651,6 +664,7 @@ export const update = (
                   'مدل پاسخ نداد. متن تو حفظ شده است؛ دوباره تلاش کن.',
               ),
           }),
+          commands: historyCommand(model),
         }
       }
       const cards = Array.map(capture.drafts, (draft) =>
@@ -825,17 +839,29 @@ export const update = (
     }),
 
     ClickedNewCapture: () => {
-      const next = modifyFields(model, {
-        text: () => '',
-        phase: () => 'idle',
-        cards: () => [],
-        maybeCaptureId: () => Option.none(),
-        maybeCapture: () => Option.none(),
-        maybeResult: () => Option.none(),
-        maybeError: () => Option.none(),
-        maybeRetryAfter: () => Option.none(),
-      })
+      const next = freshComposer(model, '')
       return { model: next, commands: cacheCommands(next, inputs) }
+    },
+
+    /**
+     * Retry a failed history row: the row's text returns to the composer and a
+     * fresh Dissect starts. Failed rows are excluded from the text dedupe, so
+     * this runs the model again instead of replaying the failure.
+     */
+    ClickedRetryHistory: ({ captureId }) => {
+      const capture = model.history.find((row) => row.id === captureId)
+      if (capture === undefined) return { model }
+      const next = modifyFields(freshComposer(model, capture.text), {
+        expandedHistoryId: () => Option.none(),
+      })
+      const started = startDissect(next, inputs)
+      return {
+        model: started.model,
+        commands: [
+          ...cacheCommands(next, inputs),
+          ...(started.commands ?? []),
+        ],
+      }
     },
 
     CompletedLoadHistory: ({ captures }) => ({

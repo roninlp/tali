@@ -1044,28 +1044,50 @@ const historyRow = (
   return h.keyed('li')(capture.id, [
     h.Class('grid gap-2 border-b border-base-200 py-3 last:border-0'),
   ], [
-      h.button(
+      h.div(
+        [h.Class('flex items-center gap-2')],
         [
-          h.Type('button'),
-          h.Class('flex w-full items-center justify-between gap-2 text-right'),
-          h.AriaExpanded(isExpanded),
-          h.OnClick(Message.ClickedToggleHistory({ captureId: capture.id })),
-        ],
-        [
-          h.span(
-            [h.Class('min-w-0 flex-1 truncate text-[0.82rem]')],
-            [capture.text],
+          h.button(
+            [
+              h.Type('button'),
+              h.Class(
+                'flex min-w-0 flex-1 items-center justify-between gap-2 text-right',
+              ),
+              h.AriaExpanded(isExpanded),
+              h.OnClick(Message.ClickedToggleHistory({ captureId: capture.id })),
+            ],
+            [
+              h.span(
+                [h.Class('min-w-0 flex-1 truncate text-[0.82rem]')],
+                [capture.text],
+              ),
+              h.span(
+                [h.Class('badge badge-ghost badge-sm shrink-0 text-[0.66rem]')],
+                [STATUS_LABELS[capture.status]],
+              ),
+            ],
           ),
-          h.span(
-            [h.Class('badge badge-ghost badge-sm shrink-0 text-[0.66rem]')],
-            [STATUS_LABELS[capture.status]],
-          ),
+          capture.status === 'failed'
+            ? h.button(
+                [
+                  h.Type('button'),
+                  h.Class('btn btn-ghost btn-xs shrink-0'),
+                  h.OnClick(
+                    Message.ClickedRetryHistory({ captureId: capture.id }),
+                  ),
+                ],
+                ['تلاش دوباره'],
+              )
+            : h.empty,
         ],
       ),
       isExpanded
         ? h.div(
             [h.Class('grid gap-2')],
             [
+              capture.status === 'failed' && capture.error !== null
+                ? noticeView('error', capture.error, h)
+                : h.empty,
               h.p(
                 [
                   h.Class(

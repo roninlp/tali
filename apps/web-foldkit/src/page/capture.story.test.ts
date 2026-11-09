@@ -194,6 +194,11 @@ describe('capture composer', () => {
         expect(current.phase).toBe('idle')
         expect(Option.getOrThrow(current.maybeError)).toContain('gateway')
       }),
+      Command.expectExact(CapturePage.LoadHistory({ generation: 1 })),
+      Command.resolve(
+        CapturePage.LoadHistory,
+        CapturePage.Message.CompletedLoadHistory({ generation: 1, captures: [] }),
+      ),
     )
   })
 })
@@ -376,6 +381,69 @@ describe('capture review', () => {
           'timing.start',
         )
       }),
+    )
+  })
+
+  test('retrying a failed history row reloads its text and dissects again', () => {
+    const failed = captureOf({
+      status: 'failed',
+      error: 'مدل در ۶۰ ثانیه پاسخ نداد',
+      drafts: [],
+    })
+    story(
+      update(),
+      given({ ...initial(), history: [failed] }),
+      message(
+        CapturePage.Message.ClickedRetryHistory({ captureId: failed.id }),
+      ),
+      model((current) => {
+        expect(current.text).toBe(failed.text)
+        expect(current.phase).toBe('dissecting')
+        expect(current.expandedHistoryId).toEqual(Option.none())
+        expect(current.maybeError).toEqual(Option.none())
+      }),
+      Command.expectExact(
+        CapturePage.CacheText({ userId: USER_ID, text: failed.text }),
+        CapturePage.DissectCapture({ generation: 1, text: failed.text }),
+      ),
+      Command.resolve(
+        CapturePage.CacheText,
+        CapturePage.Message.CompletedCacheText(),
+      ),
+      Command.resolve(
+        CapturePage.DissectCapture,
+        CapturePage.Message.CompletedDissect({ capture: captureOf() }),
+      ),
+      Command.resolve(
+        CapturePage.LoadHistory,
+        CapturePage.Message.CompletedLoadHistory({
+          generation: 1,
+          captures: [captureOf()],
+        }),
+      ),
+    )
+  })
+
+  test('retrying offline keeps the text and explains it needs a network', () => {
+    const failed = captureOf({ status: 'failed', drafts: [] })
+    story(
+      update({ isOnline: false }),
+      given({ ...initial(), history: [failed] }),
+      message(
+        CapturePage.Message.ClickedRetryHistory({ captureId: failed.id }),
+      ),
+      model((current) => {
+        expect(current.text).toBe(failed.text)
+        expect(current.phase).toBe('idle')
+        expect(Option.getOrThrow(current.maybeError)).toContain('اینترنت')
+      }),
+      Command.expectExact(
+        CapturePage.CacheText({ userId: USER_ID, text: failed.text }),
+      ),
+      Command.resolve(
+        CapturePage.CacheText,
+        CapturePage.Message.CompletedCacheText(),
+      ),
     )
   })
 
