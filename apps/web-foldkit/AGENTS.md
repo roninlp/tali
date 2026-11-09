@@ -93,6 +93,12 @@ subtree_prompted: true
   sync engine, cadence table, and task projection. `@tali/conflict-lab` imports
   that core, so the two-device convergence suite runs against the same engine
   as the Foldkit app.
+- **Observability.** `src/lib/tracing.ts` wires `OtlpTracer` into
+  `entry.ts`'s `resources` Layer and redacts spans through `@tali/telemetry`
+  before export, because Foldkit attaches `command.args` (Capture text and
+  drafts) to every Command span. It is inert without `VITE_OTLP_TRACES_URL`;
+  `traceparent` propagation to the api is always on. See ADR-0013 and
+  `../../infra/README.md` § Observability.
 - **Theme boot.** `public/theme-boot.js` is loaded in `index.html`'s head and
   applies `tali.theme` / `tali.mode` to `<html data-theme>` before first paint;
   `src/theme.ts` starts from the same values in `entry.ts` flags, so a saved

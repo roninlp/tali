@@ -3,6 +3,7 @@ import { HttpRouter } from "effect/http"
 import { D1Client } from "@effect/sql-d1"
 import { CRON } from "@tali/config"
 import { makeAppLayer } from "./http-layer.js"
+import { makeCloudflareTracer } from "./cloudflare-tracer.js"
 import { captureConfigOf } from "./capture-extractor.js"
 import { runD1Backup } from "./d1-backup.js"
 import { vapidConfigOf } from "./push-gateway.js"
@@ -123,6 +124,9 @@ const withCors = (response: Response, origin: string): Response => {
 
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+    // Built before the first await so it captures this invocation's Cloudflare
+    // trace context; see `cloudflare-tracer.ts`.
+    const tracer = await makeCloudflareTracer()
     const origin = allowedOrigin(request, env)
 
     // Browser preflight: answer before the router sees it.
@@ -137,7 +141,8 @@ export default {
       devRoutes: env.DEV_ROUTES === "1",
       // A missing key leaves the feature inert with a typed error at call
       // time; it never prevents the Worker (or its layer) from building.
-      capture: captureConfigOf(env)
+      capture: captureConfigOf(env),
+      tracer
     }).pipe(
       Layer.provide(
         D1Client.layer({

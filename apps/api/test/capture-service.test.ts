@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { DatabaseSync } from "node:sqlite"
 import { describe, expect, it } from "vitest"
-import { Effect, Layer, String as Str } from "effect"
+import { Effect, Layer, String as Str, Tracer } from "effect"
 import { D1Client } from "@effect/sql-d1"
 import {
   type CaptureDraft,
@@ -91,7 +91,10 @@ const fiveDrafts: ReadonlyArray<CaptureDraft> = [
   }
 ]
 
-const makeHarness = (extractor: Layer.Layer<Extractor>) => {
+const makeHarness = (
+  extractor: Layer.Layer<Extractor>,
+  tracer?: Tracer.Tracer
+) => {
   const db = new DatabaseSync(":memory:")
   for (const file of migrationFiles()) {
     db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), "utf8"))
@@ -110,7 +113,12 @@ const makeHarness = (extractor: Layer.Layer<Extractor>) => {
   )
 
   const run = <A, E>(effect: Effect.Effect<A, E, CaptureService>): Promise<A> =>
-    Effect.runPromise(Effect.provide(effect, layer))
+    Effect.runPromise(
+      Effect.provide(
+        tracer === undefined ? effect : Effect.provideService(effect, Tracer.Tracer, tracer),
+        layer
+      )
+    )
 
   const svc = <A, E>(
     f: (service: CaptureServiceApi) => Effect.Effect<A, E, never>
@@ -447,5 +455,50 @@ describe("CaptureService.remove", () => {
 
     expect(error._tag).toBe("CaptureNotFound")
     expect(h.count("capture")).toBe(1)
+  })
+})
+
+describe("CaptureService tracing", () => {
+  const recordingTracer = (spans: Array<Tracer.NativeSpan>): Tracer.Tracer =>
+    Tracer.make({
+      span: (options) => {
+        const span = new Tracer.NativeSpan(options)
+        spans.push(span)
+        return span
+      }
+    })
+
+  it("names the Dissect, model, and Commit spans without user text", async () => {
+    const spans: Array<Tracer.NativeSpan> = []
+    const h = makeHarness(replayLayer(FIVE_TEXT, fiveDrafts), recordingTracer(spans))
+
+    const capture = await h.svc((svc) => svc.dissect(viewer, { text: FIVE_TEXT }, NOW))
+    await h.svc((svc) =>
+      svc.commit(viewer, { captureId: capture.id, drafts: capture.drafts }, NOW)
+    )
+
+    const dissect = spans.find((span) => span.name === "capture.dissect")
+    const commit = spans.find((span) => span.name === "capture.commit")
+    expect(dissect).toBeDefined()
+    expect(commit).toBeDefined()
+
+    const dissectAttributes = Object.fromEntries(dissect!.attributes)
+    expect(dissectAttributes["capture.id"]).toBe(capture.id)
+    expect(dissectAttributes["capture.outcome"]).toBe("ok")
+    expect(dissectAttributes["capture.proposal_count"]).toBe(5)
+    expect(dissectAttributes["capture.chars"]).toBe(FIVE_TEXT.length)
+
+    const commitAttributes = Object.fromEntries(commit!.attributes)
+    expect(commitAttributes["capture.id"]).toBe(capture.id)
+    expect(commitAttributes["capture.outcome"]).toBe("ok")
+    expect(commitAttributes["capture.commit.created_count"]).toBe(5)
+    expect(commitAttributes["capture.commit.remaining_count"]).toBe(0)
+
+    const exported = JSON.stringify(
+      spans.map((span) => [...span.attributes])
+    )
+    expect(exported).not.toContain(FIVE_TEXT)
+    expect(exported).not.toContain("خرید نان")
+    expect(exported).not.toContain("نوبت دکتر")
   })
 })

@@ -32,7 +32,17 @@
         "OPENCODE_API_KEY",
         "CAPTURE_BASE_URL",
         "CAPTURE_MODEL",
-        "TALI_BACKUPS"
+        "TALI_BACKUPS",
+        "TALI_TRACE_SAMPLE_RATE",
+        "TALI_TRACE_PROPAGATION",
+        "TALI_OTLP_TRACES_URL",
+        "TALI_OTLP_TRACES_HEADERS",
+        "TALI_OTLP_TRACES_SKIP_PREFLIGHT",
+        "TALI_OTLP_LOGS_URL",
+        "TALI_OTLP_LOGS_HEADERS",
+        "TALI_OTLP_LOGS_SKIP_PREFLIGHT",
+        "VITE_OTLP_TRACES_URL",
+        "VITE_OTLP_TRACES_HEADERS"
       ]
     },
     "deploy": {
@@ -53,7 +63,17 @@
         "OPENCODE_API_KEY",
         "CAPTURE_BASE_URL",
         "CAPTURE_MODEL",
-        "TALI_BACKUPS"
+        "TALI_BACKUPS",
+        "TALI_TRACE_SAMPLE_RATE",
+        "TALI_TRACE_PROPAGATION",
+        "TALI_OTLP_TRACES_URL",
+        "TALI_OTLP_TRACES_HEADERS",
+        "TALI_OTLP_TRACES_SKIP_PREFLIGHT",
+        "TALI_OTLP_LOGS_URL",
+        "TALI_OTLP_LOGS_HEADERS",
+        "TALI_OTLP_LOGS_SKIP_PREFLIGHT",
+        "VITE_OTLP_TRACES_URL",
+        "VITE_OTLP_TRACES_HEADERS"
       ]
     },
     "plan": {
@@ -74,7 +94,17 @@
         "OPENCODE_API_KEY",
         "CAPTURE_BASE_URL",
         "CAPTURE_MODEL",
-        "TALI_BACKUPS"
+        "TALI_BACKUPS",
+        "TALI_TRACE_SAMPLE_RATE",
+        "TALI_TRACE_PROPAGATION",
+        "TALI_OTLP_TRACES_URL",
+        "TALI_OTLP_TRACES_HEADERS",
+        "TALI_OTLP_TRACES_SKIP_PREFLIGHT",
+        "TALI_OTLP_LOGS_URL",
+        "TALI_OTLP_LOGS_HEADERS",
+        "TALI_OTLP_LOGS_SKIP_PREFLIGHT",
+        "VITE_OTLP_TRACES_URL",
+        "VITE_OTLP_TRACES_HEADERS"
       ]
     },
     "destroy": {
@@ -95,7 +125,17 @@
         "OPENCODE_API_KEY",
         "CAPTURE_BASE_URL",
         "CAPTURE_MODEL",
-        "TALI_BACKUPS"
+        "TALI_BACKUPS",
+        "TALI_TRACE_SAMPLE_RATE",
+        "TALI_TRACE_PROPAGATION",
+        "TALI_OTLP_TRACES_URL",
+        "TALI_OTLP_TRACES_HEADERS",
+        "TALI_OTLP_TRACES_SKIP_PREFLIGHT",
+        "TALI_OTLP_LOGS_URL",
+        "TALI_OTLP_LOGS_HEADERS",
+        "TALI_OTLP_LOGS_SKIP_PREFLIGHT",
+        "VITE_OTLP_TRACES_URL",
+        "VITE_OTLP_TRACES_HEADERS"
       ]
     }
   }

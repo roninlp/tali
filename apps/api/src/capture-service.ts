@@ -141,7 +141,14 @@ export class CaptureService extends Context.Service<CaptureService>()("CaptureSe
         const existing = yield* captures
           .findRecentByDedupe({ ownerId: viewer.userId, dedupeKey, since })
           .pipe(Effect.orDie)
-        if (Option.isSome(existing)) return existing.value
+        if (Option.isSome(existing)) {
+          yield* Effect.annotateCurrentSpan({
+            "capture.id": existing.value.id,
+            "capture.chars": text.length,
+            "capture.outcome": "deduplicated"
+          })
+          return existing.value
+        }
 
         const limit = yield* limiter.consume(viewer.userId)
         if (limit.limited) {
@@ -162,10 +169,15 @@ export class CaptureService extends Context.Service<CaptureService>()("CaptureSe
           committedAt: null
         }
         yield* captures.insert(pending, dedupeKey).pipe(Effect.orDie)
+        yield* Effect.annotateCurrentSpan({
+          "capture.id": pending.id,
+          "capture.chars": text.length
+        })
 
         const result = yield* extractor
           .dissect({
             userId: viewer.userId,
+            captureId: pending.id,
             text,
             now,
             timeZone: viewer.timeZone,
@@ -174,6 +186,11 @@ export class CaptureService extends Context.Service<CaptureService>()("CaptureSe
           .pipe(Effect.result)
 
         if (Result.isFailure(result)) {
+          yield* Effect.annotateCurrentSpan({
+            "capture.outcome": "failed",
+            "capture.error_tag": result.failure._tag,
+            "capture.proposal_count": 0
+          })
           const failed = yield* captures
             .setStatus({
               id: pending.id,
@@ -184,13 +201,17 @@ export class CaptureService extends Context.Service<CaptureService>()("CaptureSe
               committedAt: null
             })
             .pipe(Effect.orDie)
-          return Option.getOrElse(failed, () => ({
+          return Option.getOrElse(failed, (): Capture => ({
             ...pending,
             status: "failed",
             error: failureMessage(result.failure)
           }))
         }
 
+        yield* Effect.annotateCurrentSpan({
+          "capture.outcome": "ok",
+          "capture.proposal_count": result.success.length
+        })
         const parsed = yield* captures
           .setStatus({
             id: pending.id,
@@ -201,12 +222,12 @@ export class CaptureService extends Context.Service<CaptureService>()("CaptureSe
             committedAt: null
           })
           .pipe(Effect.orDie)
-        return Option.getOrElse(parsed, () => ({
+        return Option.getOrElse(parsed, (): Capture => ({
           ...pending,
           status: "parsed",
           drafts: result.success
         }))
-      })
+      }).pipe(Effect.withSpan("capture.dissect"))
 
     const sha256Hex = async (value: string): Promise<string> => {
       const digest = await crypto.subtle.digest(
@@ -285,7 +306,16 @@ export class CaptureService extends Context.Service<CaptureService>()("CaptureSe
     ): Effect.Effect<CaptureCommitResult, CaptureServiceError> =>
       Effect.gen(function*() {
         const capture = yield* readOwned(viewer, input.captureId)
+        const drafts = input.drafts.slice(0, CAPTURE_MAX_DRAFTS)
+        yield* Effect.annotateCurrentSpan({
+          "capture.id": capture.id,
+          "capture.proposal_count": drafts.length
+        })
         if (capture.status === "committed") {
+          yield* Effect.annotateCurrentSpan({
+            "capture.outcome": "already_committed",
+            "capture.commit.created_count": capture.createdIds.length
+          })
           return {
             capture,
             created: capture.createdIds,
@@ -293,8 +323,6 @@ export class CaptureService extends Context.Service<CaptureService>()("CaptureSe
             remaining: 0
           }
         }
-
-        const drafts = input.drafts.slice(0, CAPTURE_MAX_DRAFTS)
 
         // A visible card with an unanswered Needs Input blocks the commit
         // before any validation or write (ADR-0012 §4).
@@ -366,6 +394,12 @@ export class CaptureService extends Context.Service<CaptureService>()("CaptureSe
           remaining = prepared.length - failure.draftIndex
         }
 
+        yield* Effect.annotateCurrentSpan({
+          "capture.outcome": failure === null ? "ok" : "partial",
+          "capture.commit.created_count": created.length,
+          "capture.commit.remaining_count": remaining
+        })
+
         const status = failure === null ? "committed" : "parsed"
         const updated = yield* captures
           .setStatus({
@@ -379,7 +413,7 @@ export class CaptureService extends Context.Service<CaptureService>()("CaptureSe
           .pipe(Effect.orDie)
 
         return {
-          capture: Option.getOrElse(updated, () => ({
+          capture: Option.getOrElse(updated, (): Capture => ({
             ...capture,
             status,
             drafts,
@@ -390,8 +424,16 @@ export class CaptureService extends Context.Service<CaptureService>()("CaptureSe
           created,
           failure,
           remaining
-        }
-      })
+        } satisfies CaptureCommitResult
+      }).pipe(
+        Effect.tapError((error) =>
+          Effect.annotateCurrentSpan({
+            "capture.outcome": "failed",
+            "capture.error_tag": error._tag
+          })
+        ),
+        Effect.withSpan("capture.commit")
+      )
 
     const list = (
       viewer: CaptureViewer,

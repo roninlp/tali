@@ -1,7 +1,8 @@
 # infra — Alchemy
 
-The Tali stack as typed TypeScript. `alchemy.run.ts` declares four resources and
-is the single owner of how the app runs:
+The Tali stack as typed TypeScript. `alchemy.run.ts` declares four base
+resources, plus opt-in OTLP destinations (see Observability), and is the single
+owner of how the app runs:
 
 | Resource | Type | Local (`alchemy dev`) | Deploy |
 | --- | --- | --- | --- |
@@ -187,6 +188,66 @@ root is a different path. A deploy without the key still succeeds and warns:
 the feature is inert and every Dissect fails with a typed `ModelUnavailable`.
 Set the key as a repository secret (`gh secret set OPENCODE_API_KEY --body …`)
 for the deploy workflow.
+
+## Observability
+
+`TaliApi` ships with Workers Logs and Workers Traces enabled
+(`observability.enabled`, `logs.invocationLogs`, `traces.enabled`). Traces are
+head-sampled at **10%** by default (`TALI_TRACE_SAMPLE_RATE`, 0–1) and
+`redactQueryString` removes request query strings from both signals. Traces
+have seven-day retention in Workers Observability; persisted traces start
+contributing to Cloudflare ingestion and storage billing on **2026-12-01**, so
+the sampling rate is the cost lever.
+
+What a sampled request shows in the Workers Observability waterfall:
+
+- the fetch handler and an `http.span` named `POST /rpc` (or the matched route);
+- `capture.dissect`, `capture.model.call`, and `capture.commit` with
+  `capture.id`, `capture.proposal_count`, `capture.model.name`,
+  `capture.model.duration_ms`, `capture.commit.created_count`,
+  `capture.commit.remaining_count`, and `capture.outcome`;
+- Cloudflare's automatic `fetch` span for the OpenCode Go model call, and one
+  span per D1 statement, without extra code;
+- the `http.client` span the browser's RPC client creates, when the api accepts
+  inbound trace context.
+
+User text, titles, bodies, quotes, questions, prompts, and draft payloads are
+never span names or attributes. The api drops every attribute outside the
+allowlisted namespaces and vetoes sensitive key tokens; the Foldkit app wraps
+`OtlpTracer` in the same redactor because Foldkit attaches `command.args` to
+Command spans. `TALI_TRACE_PROPAGATION=accept` merges the browser trace with the
+api trace (it requires trace propagation on the Cloudflare account); otherwise
+the two share only the `traceparent` ids Effect propagates.
+
+### External OTLP
+
+Dashboard-only is the default. To also export to Grafana, Honeycomb, Axiom, or
+another OTLP/HTTP collector, set one or both URLs:
+
+```sh
+export TALI_OTLP_TRACES_URL=https://otel.example.com/v1/traces
+export TALI_OTLP_TRACES_HEADERS='{"authorization":"Bearer <token>"}'
+export TALI_OTLP_LOGS_URL=https://otel.example.com/v1/logs
+export TALI_OTLP_LOGS_HEADERS='{"authorization":"Bearer <token>"}'
+```
+
+Each URL creates a `Cloudflare.Workers.ObservabilityDestination` and adds its
+slug to the Worker's `traces.destinations` / `logs.destinations`. No endpoint or
+token is committed. Cloudflare preflights the endpoint on create and update, so
+it must answer a `POST` with 2xx; use `TALI_OTLP_*_SKIP_PREFLIGHT=1` on create
+if the collector rejects empty probes. Removing the URL removes the
+destination on the next deploy.
+
+Browser export is separate and build-time, because the SPA is static:
+
+```sh
+export VITE_OTLP_TRACES_URL=https://otel.example.com/v1/traces
+export VITE_OTLP_TRACES_HEADERS='{"authorization":"Bearer <browser-scoped-key>"}'
+```
+
+The value ends up in the bundle, so use a browser-scoped ingest key, never a
+server token, and allow the collector's CORS preflight. Unset keeps Foldkit
+Command spans in memory; the browser still propagates `traceparent`.
 
 ## Notes
 

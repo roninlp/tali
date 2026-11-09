@@ -4,6 +4,7 @@ import { Runtime } from 'foldkit'
 import { readCachedPreferences } from './lib/preferences-cache'
 import { detectPushEnvironment } from './lib/push/service-worker'
 import { readCachedSession } from './lib/session-cache'
+import { tracingResources } from './lib/tracing'
 import {
   Flags,
   Message,
@@ -51,6 +52,7 @@ const application = Runtime.makeApplication({
   view,
   subscriptions,
   managedResources,
+  resources: tracingResources,
   container: document.getElementById('root'),
   routing: {
     onUrlRequest: request => Message.ClickedLink({ request }),
