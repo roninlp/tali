@@ -49,7 +49,7 @@ const SOURCE_QUIET: Readonly<Record<'events' | 'reminders', string>> = {
 }
 
 const KBD_CLASS =
-  'me-1 inline-grid min-h-[18px] min-w-[18px] place-items-center rounded-[5px] border border-b-2 border-base-300 bg-base-200 px-1 text-[0.62rem] text-base-content/55'
+  'me-1 inline-grid min-h-[18px] min-w-[18px] place-items-center rounded-[5px] border border-b-2 border-base-300 bg-base-200 px-1 text-[0.62rem] text-base-content/70'
 
 const GLANCE_ROW_CLASS =
   'flex min-h-9 items-center justify-between gap-2.5 border-t border-base-content/8 text-[0.78rem] first:border-t-0'
@@ -99,7 +99,7 @@ const quickAddView = (
           h.label(
             [
               h.For('today-quick-add'),
-              h.Class('text-[0.7rem] font-semibold text-base-content/55'),
+              h.Class('text-[0.7rem] font-semibold text-base-content/70'),
             ],
             ['کار تازه برای امروز'],
           ),
@@ -111,7 +111,7 @@ const quickAddView = (
               placeholder: 'مثلاً: خرید نان…',
               isDisabled: !inputs.isStoreReady,
               class:
-                'min-h-9 min-w-0 border-0 bg-transparent px-1 text-sm outline-none placeholder:text-base-content/40 focus:ring-0',
+                'min-h-9 min-w-0 border-0 bg-transparent px-1 text-sm outline-none placeholder:text-base-content/70 focus:ring-0',
               onInput: value => Message.UpdatedQuickAddDraft({ value }),
               attributes: [
                 h.OnKeyDownPreventDefault(key =>
@@ -167,13 +167,13 @@ const timelineView = (
           h.span(
             [
               h.Class(
-                'text-[0.78rem] font-bold uppercase tracking-wide text-base-content/55',
+                'text-[0.78rem] font-bold uppercase tracking-wide text-base-content/70',
               ),
             ],
             ['نوار زمان امروز'],
           ),
           h.span(
-            [h.Class('text-[0.72rem] text-base-content/45')],
+            [h.Class('text-[0.72rem] text-base-content/70')],
             [`${localizeDigits(timed.length, digits)} کار زمان‌دار`],
           ),
         ],
@@ -189,7 +189,7 @@ const timelineView = (
             h.span(
               [
                 h.Class(
-                  "absolute top-[26px] translate-x-1/2 pt-2.5 text-[0.62rem] leading-none tabular-nums text-base-content/45 before:absolute before:start-1/2 before:top-0 before:h-1.5 before:w-px before:bg-base-content/15 before:content-['']",
+                  "absolute top-[26px] translate-x-1/2 pt-2.5 text-[0.62rem] leading-none tabular-nums text-base-content/70 before:absolute before:start-1/2 before:top-0 before:h-1.5 before:w-px before:bg-base-content/15 before:content-['']",
                 ),
                 h.Style({
                   'inset-inline-start': `${Math.max(stripPercent(hour * 60), 2.5)}%`,
@@ -201,7 +201,7 @@ const timelineView = (
           h.span(
             [
               h.Class(
-                "absolute top-[26px] translate-x-1/2 pt-2.5 text-[0.62rem] leading-none tabular-nums text-base-content/45 before:absolute before:start-1/2 before:top-0 before:h-1.5 before:w-px before:bg-base-content/15 before:content-['']",
+                "absolute top-[26px] translate-x-1/2 pt-2.5 text-[0.62rem] leading-none tabular-nums text-base-content/70 before:absolute before:start-1/2 before:top-0 before:h-1.5 before:w-px before:bg-base-content/15 before:content-['']",
               ),
               h.Style({ 'inset-inline-end': '2px', transform: 'none' }),
             ],
@@ -300,7 +300,7 @@ const taskRowView = (
                 h.p(
                   [
                     h.Class(
-                      'm-0 text-[0.74rem] leading-6 break-words text-base-content/55 group-data-[overdue=true]:text-warning/80',
+                      'm-0 text-[0.74rem] leading-6 break-words text-base-content/70 group-data-[overdue=true]:text-warning/80',
                     ),
                   ],
                   [
@@ -363,7 +363,7 @@ const tasksLaneView = (
             ],
             [
               h.p(
-                [h.Class('m-0 text-[0.85rem] leading-7 text-base-content/60')],
+                [h.Class('m-0 text-[0.85rem] leading-7 text-base-content/70')],
                 ['امروز خالی است. یک کار کوچک برای شروع کافی است.'],
               ),
               h.button(
@@ -383,7 +383,10 @@ const tasksLaneView = (
             [],
             [
               h.ul(
-                [h.Class('m-0 grid list-none p-0')],
+                [
+                  h.Class('m-0 grid list-none p-0'),
+                  h.AriaLabel('کارهای امروز'),
+                ],
                 Array.map(tasks, (task, index) =>
                   taskRowView(model, inputs, view, task, index, h),
                 ),
@@ -391,7 +394,7 @@ const tasksLaneView = (
               h.footer(
                 [
                   h.Class(
-                    'hidden flex-wrap items-center gap-4 border-t border-base-content/8 px-3 py-2 text-[0.68rem] text-base-content/50 sm:flex sm:px-4',
+                    'hidden flex-wrap items-center gap-4 border-t border-base-content/8 px-3 py-2 text-[0.68rem] text-base-content/70 sm:flex sm:px-4',
                   ),
                 ],
                 [
@@ -428,7 +431,7 @@ const notesLaneView = (view: TodayView, h: HtmlBuilder<Message>): Html =>
         ],
         [
           h.p(
-            [h.Class('m-0 text-[0.85rem] leading-7 text-base-content/60')],
+            [h.Class('m-0 text-[0.85rem] leading-7 text-base-content/70')],
             ['یادداشتی پین نشده است.'],
           ),
           h.a(
@@ -477,7 +480,7 @@ const notesLaneView = (view: TodayView, h: HtmlBuilder<Message>): Html =>
                     : h.p(
                         [
                           h.Class(
-                            'm-0 line-clamp-1 text-[0.74rem] leading-6 text-base-content/55',
+                            'm-0 line-clamp-1 text-[0.74rem] leading-6 text-base-content/70',
                           ),
                         ],
                         [note.excerpt],
@@ -565,7 +568,7 @@ const habitRowView = (
           h.p(
             [
               h.Class(
-                'm-0 text-[0.72rem] leading-6 break-words text-base-content/50',
+                'm-0 text-[0.72rem] leading-6 break-words text-base-content/70',
               ),
             ],
             [
@@ -601,13 +604,13 @@ const habitRowView = (
             [h.Class('ms-auto grid min-w-0 gap-px text-end')],
             [
               h.span(
-                [h.Class('text-[0.68rem] leading-5 text-base-content/50')],
+                [h.Class('text-[0.68rem] leading-5 text-base-content/70')],
                 [`نرخ ${localizeDigits(model.habitWindow, digits)} روزه`],
               ),
               h.span(
                 [
                   h.Class(
-                    'text-[0.88rem] leading-6 font-semibold data-[kind=progress]:text-warning data-[kind=none]:text-base-content/50',
+                    'text-[0.88rem] leading-6 font-semibold data-[kind=progress]:text-warning data-[kind=none]:text-base-content/70',
                   ),
                   h.DataAttribute('kind', rate.kind),
                 ],
@@ -619,7 +622,7 @@ const habitRowView = (
                     h.span(
                       [
                         h.Class(
-                          'text-[0.66rem] leading-5 text-base-content/45',
+                          'text-[0.66rem] leading-5 text-base-content/70',
                         ),
                       ],
                       [period],
@@ -655,7 +658,7 @@ const habitsLaneView = (
             ],
             [
               h.p(
-                [h.Class('m-0 text-[0.85rem] leading-7 text-base-content/60')],
+                [h.Class('m-0 text-[0.85rem] leading-7 text-base-content/70')],
                 ['هنوز عادتی نساخته‌اید. یک عادت کوچک برای امروز کافی است.'],
               ),
               h.a(
@@ -693,7 +696,7 @@ const habitsLaneView = (
                             Message.SelectedHabitWindow({ window: days }),
                           ),
                           h.Class(
-                            'min-h-8 rounded-full border border-base-300 bg-base-100 px-3 text-[0.78rem] text-base-content/60 transition-colors hover:border-base-content/25 aria-pressed:border-primary aria-pressed:bg-primary/12 aria-pressed:font-semibold aria-pressed:text-primary',
+                            'min-h-8 rounded-full border border-base-300 bg-base-100 px-3 text-[0.78rem] text-base-content/70 transition-colors hover:border-base-content/25 aria-pressed:border-primary aria-pressed:bg-primary/12 aria-pressed:font-semibold aria-pressed:text-primary',
                           ),
                         ],
                         [`${localizeDigits(days, digits)} روز`],
@@ -740,7 +743,7 @@ const quietLaneView = (
   h.p(
     [
       h.Class(
-        'm-0 rounded-xl border border-dashed border-base-300 bg-base-200/40 px-4 py-4 text-[0.82rem] leading-7 text-base-content/55',
+        'm-0 rounded-xl border border-dashed border-base-300 bg-base-200/40 px-4 py-4 text-[0.82rem] leading-7 text-base-content/70',
       ),
     ],
     [SOURCE_QUIET[section]],
@@ -862,7 +865,7 @@ const orderPanelView = (
       h.p(
         [
           h.Class(
-            'm-0 mb-2 mt-1 text-[0.76rem] leading-7 text-base-content/55',
+            'm-0 mb-2 mt-1 text-[0.76rem] leading-7 text-base-content/70',
           ),
         ],
         [
@@ -894,7 +897,7 @@ const orderPanelView = (
                     [
                       h.Type('button'),
                       h.Class(
-                        'grid size-9 place-items-center rounded-lg border border-base-300 bg-base-100 text-[0.95rem] text-base-content/55 transition-colors enabled:hover:border-primary enabled:hover:bg-primary/10 enabled:hover:text-primary disabled:opacity-35',
+                        'grid size-9 place-items-center rounded-lg border border-base-300 bg-base-100 text-[0.95rem] text-base-content/70 transition-colors enabled:hover:border-primary enabled:hover:bg-primary/10 enabled:hover:text-primary disabled:opacity-35',
                       ),
                       h.AriaLabel(`انتقال ${SECTION_TITLES[section]} به بالا`),
                       h.Disabled(index === 0 || model.orderBusy),
@@ -911,7 +914,7 @@ const orderPanelView = (
                     [
                       h.Type('button'),
                       h.Class(
-                        'grid size-9 place-items-center rounded-lg border border-base-300 bg-base-100 text-[0.95rem] text-base-content/55 transition-colors enabled:hover:border-primary enabled:hover:bg-primary/10 enabled:hover:text-primary disabled:opacity-35',
+                        'grid size-9 place-items-center rounded-lg border border-base-300 bg-base-100 text-[0.95rem] text-base-content/70 transition-colors enabled:hover:border-primary enabled:hover:bg-primary/10 enabled:hover:text-primary disabled:opacity-35',
                       ),
                       h.AriaLabel(`انتقال ${SECTION_TITLES[section]} به پایین`),
                       h.Disabled(index === order.length - 1 || model.orderBusy),
@@ -934,7 +937,7 @@ const orderPanelView = (
         ? h.p(
             [
               h.Role('status'),
-              h.Class('m-0 mt-2 text-[0.76rem] text-base-content/55'),
+              h.Class('m-0 mt-2 text-[0.76rem] text-base-content/70'),
             ],
             ['در حال ذخیره‌ی ترتیب…'],
           )
@@ -980,7 +983,7 @@ const headerView = (
             ['امروز'],
           ),
           h.p(
-            [h.Class('m-0 text-[0.9rem] text-base-content/60')],
+            [h.Class('m-0 text-[0.9rem] text-base-content/70')],
             [formatTodayHeading(view.today, digits)],
           ),
         ],
@@ -991,9 +994,10 @@ const headerView = (
           h.p(
             [
               h.Class(
-                'group m-0 inline-flex items-center gap-2 rounded-full border border-base-300 bg-base-200/60 px-3 py-1 text-[0.76rem] text-base-content/60 data-[offline=true]:border-warning/40 data-[offline=true]:bg-warning/10 data-[offline=true]:text-warning',
+                'group m-0 inline-flex items-center gap-2 rounded-full border border-base-300 bg-base-200/60 px-3 py-1 text-[0.76rem] text-base-content/70 data-[offline=true]:border-warning/40 data-[offline=true]:bg-warning/10 data-[offline=true]:text-warning',
               ),
               h.Role('status'),
+              h.DataAttribute('today-source', 'true'),
               ...(offline ? [h.DataAttribute('offline', 'true')] : []),
             ],
             [
@@ -1010,7 +1014,7 @@ const headerView = (
             [
               h.Type('button'),
               h.Class(
-                'min-h-10 rounded-full border border-base-300 bg-base-100 px-4 text-[0.8rem] font-medium text-base-content/60 transition-colors hover:border-primary hover:text-primary aria-expanded:border-primary/40 aria-expanded:bg-primary/10 aria-expanded:text-primary',
+                'min-h-10 rounded-full border border-base-300 bg-base-100 px-4 text-[0.8rem] font-medium text-base-content/70 transition-colors hover:border-primary hover:text-primary aria-expanded:border-primary/40 aria-expanded:bg-primary/10 aria-expanded:text-primary',
               ),
               h.AriaExpanded(model.orderOpen),
               h.AriaControls('today-order-panel'),
@@ -1056,7 +1060,7 @@ const railView = (
               h.span(
                 [
                   h.Class(
-                    'text-[0.72rem] font-bold uppercase tracking-wide text-base-content/50',
+                    'text-[0.72rem] font-bold uppercase tracking-wide text-base-content/70',
                   ),
                 ],
                 ['بعدی'],
@@ -1078,7 +1082,7 @@ const railView = (
           Option.match(maybeNext, {
             onNone: () =>
               h.p(
-                [h.Class('m-0 text-[0.82rem] leading-7 text-base-content/55')],
+                [h.Class('m-0 text-[0.82rem] leading-7 text-base-content/70')],
                 ['برای امروز کار زمان‌داری نمانده است.'],
               ),
             onSome: task =>
@@ -1092,7 +1096,7 @@ const railView = (
                   h.p(
                     [
                       h.Class(
-                        'm-0 text-[0.74rem] leading-6 text-base-content/55',
+                        'm-0 text-[0.74rem] leading-6 text-base-content/70',
                       ),
                     ],
                     [dueLabel(task, bounds, digits)],
@@ -1116,7 +1120,7 @@ const railView = (
               h.span(
                 [
                   h.Class(
-                    'text-[0.72rem] font-bold uppercase tracking-wide text-base-content/50',
+                    'text-[0.72rem] font-bold uppercase tracking-wide text-base-content/70',
                   ),
                 ],
                 ['امروز در یک نگاه'],
@@ -1197,7 +1201,7 @@ const railView = (
               h.span(
                 [
                   h.Class(
-                    'text-[0.72rem] font-bold uppercase tracking-wide text-base-content/50',
+                    'text-[0.72rem] font-bold uppercase tracking-wide text-base-content/70',
                   ),
                 ],
                 ['این هفته'],
@@ -1220,7 +1224,7 @@ const railView = (
                   h.span(
                     [
                       h.AriaHidden(true),
-                      h.Class('text-[0.6rem] leading-4 text-base-content/50'),
+                      h.Class('text-[0.6rem] leading-4 text-base-content/70'),
                     ],
                     [cell.shortWeekday],
                   ),
@@ -1237,7 +1241,7 @@ const railView = (
       h.section(
         [
           h.Class(
-            'rounded-2xl border border-base-300 bg-base-200/40 p-4 text-[0.8rem] leading-7 text-base-content/55',
+            'rounded-2xl border border-base-300 bg-base-200/40 p-4 text-[0.8rem] leading-7 text-base-content/70',
           ),
           h.AriaLabel('منابع'),
         ],

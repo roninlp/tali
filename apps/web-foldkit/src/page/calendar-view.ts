@@ -83,10 +83,10 @@ const TASK_BADGE_CLASS =
   'justify-self-start rounded-full border border-primary/25 bg-primary/10 px-1.5 text-[0.68rem] leading-5 text-primary'
 
 const TASK_CHECK_CLASS =
-  'relative grid size-5 flex-none place-items-center rounded-full border-[1.5px] border-base-300 bg-base-100 text-[0.62rem] text-base-content/55 transition-colors before:absolute before:-inset-1.5 before:content-[""] hover:border-secondary hover:text-secondary disabled:opacity-45'
+  'relative grid size-5 flex-none place-items-center rounded-full border-[1.5px] border-base-300 bg-base-100 text-[0.62rem] text-base-content/70 transition-colors before:absolute before:-inset-1.5 before:content-[""] hover:border-secondary hover:text-secondary disabled:opacity-45'
 
 const QUICK_INPUT_CLASS =
-  'min-h-10 min-w-0 flex-1 rounded-xl border border-base-300 bg-base-100 px-2.5 text-[0.8rem] outline-none transition-colors placeholder:text-base-content/35 focus:border-primary focus:ring-4 focus:ring-primary/10 disabled:opacity-55 min-[1024px]:min-h-9'
+  'min-h-10 min-w-0 flex-1 rounded-xl border border-base-300 bg-base-100 px-2.5 text-[0.8rem] outline-none transition-colors placeholder:text-base-content/70 focus:border-primary focus:ring-4 focus:ring-primary/10 disabled:opacity-55 min-[1024px]:min-h-9'
 
 const NAV_BUTTON_CLASS = 'btn btn-sm btn-outline min-h-10 rounded-full px-3.5'
 const PRIMARY_BUTTON_CLASS = 'btn btn-primary min-h-10 rounded-xl'
@@ -103,7 +103,7 @@ const EVENT_CHIP_MONTH_CLASS =
   'flex w-full min-w-0 items-center justify-center gap-1 rounded-full bg-secondary/12 px-1 text-[0.5rem] leading-5 text-secondary data-[allday=true]:bg-info/12 data-[allday=true]:text-info'
 
 const EVENT_CHIP_MORE_CLASS =
-  'flex w-full items-center justify-center rounded-lg px-1.5 py-0.5 text-[0.66rem] leading-6 text-base-content/55'
+  'flex w-full items-center justify-center rounded-lg px-1.5 py-0.5 text-[0.66rem] leading-6 text-base-content/70'
 
 const OCCASION_CHIP_CLASS =
   'min-w-0 truncate rounded-full bg-error/12 px-1.5 text-[0.55rem] leading-5 text-error'
@@ -112,11 +112,11 @@ const OCCASION_CHIP_WEEK_CLASS =
   'w-full truncate rounded-full bg-error/12 px-1.5 py-0.5 text-[0.64rem] leading-5 text-error'
 
 const OCCASION_CHIP_MORE_CLASS =
-  'min-w-0 rounded-full px-1.5 text-center text-[0.55rem] leading-5 text-base-content/55'
+  'min-w-0 rounded-full px-1.5 text-center text-[0.55rem] leading-5 text-base-content/70'
 
-const META_CLASS = 'm-0 text-[0.78rem] leading-6 text-base-content/55'
+const META_CLASS = 'm-0 text-[0.78rem] leading-6 text-base-content/70'
 const FIELD_CLASS = 'grid min-w-0 gap-1.5'
-const FIELD_LABEL_CLASS = 'text-[0.78rem] text-base-content/55'
+const FIELD_LABEL_CLASS = 'text-[0.78rem] text-base-content/70'
 
 const DIALOG_BACKDROP_CLASS =
   'fixed inset-0 z-[60] grid place-items-center bg-black/40 p-3 backdrop-blur-[2px]'
@@ -125,7 +125,7 @@ const DIALOG_CLASS =
   'grid max-h-[calc(100dvh-1.5rem)] w-full max-w-[27.5rem] gap-3 overflow-y-auto rounded-2xl border border-base-300 bg-base-100 p-5 text-base-content shadow-float'
 
 const DIALOG_TITLE_CLASS = 'm-0 text-base font-semibold outline-none'
-const DIALOG_HINT_CLASS = 'm-0 text-[0.78rem] leading-6 text-base-content/55'
+const DIALOG_HINT_CLASS = 'm-0 text-[0.78rem] leading-6 text-base-content/70'
 const DIALOG_ACTIONS_CLASS = 'flex flex-wrap justify-end gap-2'
 
 const pickerField = (
@@ -159,7 +159,7 @@ const pickerField = (
   )
 }
 
-const SCOPE_HINT_CLASS = 'text-[0.7rem] leading-6 text-base-content/55'
+const SCOPE_HINT_CLASS = 'text-[0.7rem] leading-6 text-base-content/70'
 
 const viewOf = (model: Model, inputs: ViewInputs): CalendarView =>
   calendarViewOf({
@@ -211,7 +211,7 @@ const tabButton = (
     [
       h.Type('button'),
       h.Class(
-        'inline-flex min-h-10 items-center justify-center rounded-full px-3.5 text-[0.8rem] text-base-content/55 transition-colors hover:text-base-content aria-pressed:bg-primary aria-pressed:font-semibold aria-pressed:text-primary-content',
+        'inline-flex min-h-10 items-center justify-center rounded-full px-3.5 text-[0.8rem] text-base-content/70 transition-colors hover:text-base-content aria-pressed:bg-primary aria-pressed:font-semibold aria-pressed:text-primary-content',
       ),
       h.AriaPressed(model.view === view ? 'true' : 'false'),
       h.OnClick(Message.SelectedCalendarView({ view })),
@@ -250,7 +250,7 @@ const headerView = (
             ['تقویم'],
           ),
           h.p(
-            [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+            [h.Class('m-0 text-sm leading-7 text-base-content/70')],
             [
               'هفته و ماه را یک‌جا ببینید؛ کارها، رویدادها و مناسبت‌ها در یک نگاه.',
             ],
@@ -415,7 +415,7 @@ const eventQuickAdd = (
           h.AriaLabel(`رویداد تازه برای ${label}`),
           h.AriaExpanded(draft.open),
           h.Class(
-            'inline-flex cursor-pointer list-none items-center gap-1 rounded-lg py-1 text-[0.7rem] leading-6 text-base-content/45 transition-colors hover:text-primary group-data-[open=true]:text-primary',
+            'inline-flex cursor-pointer list-none items-center gap-1 rounded-lg py-1 text-[0.7rem] leading-6 text-base-content/70 transition-colors hover:text-primary group-data-[open=true]:text-primary',
           ),
           h.OnClick(
             Message.ToggledEventQuickAdd({ date, isOpen: !draft.open }),
@@ -455,7 +455,7 @@ const eventQuickAdd = (
                       h.div(
                         [
                           h.Class(
-                            'inline-flex items-center gap-1.5 text-[0.72rem] leading-6 text-base-content/55',
+                            'inline-flex items-center gap-1.5 text-[0.72rem] leading-6 text-base-content/70',
                           ),
                         ],
                         [
@@ -473,7 +473,7 @@ const eventQuickAdd = (
                   ? h.p(
                       [
                         h.Class(
-                          'm-0 text-[0.68rem] leading-6 text-base-content/55',
+                          'm-0 text-[0.68rem] leading-6 text-base-content/70',
                         ),
                       ],
                       ['بدون ساعت'],
@@ -584,7 +584,7 @@ const eventRow = (
           h.span(
             [
               h.Class(
-                'flex-none text-[0.68rem] tabular-nums text-base-content/55',
+                'flex-none text-[0.68rem] tabular-nums text-base-content/70',
               ),
             ],
             [time ?? 'تمام روز'],
@@ -704,7 +704,7 @@ const timeGridView = (
             h.span(
               [
                 h.Class(
-                  'absolute start-0 translate-y-[-0.6em] text-[0.58rem] tabular-nums text-base-content/35',
+                  'absolute start-0 translate-y-[-0.6em] text-[0.58rem] tabular-nums text-base-content/70',
                 ),
               ],
               [hourLabel(hour, digits)],
@@ -819,7 +819,7 @@ const weekDayCard = (
         [h.Class('flex items-baseline justify-between gap-1.5')],
         [
           h.span(
-            [h.Class('text-[0.78rem] leading-6 text-base-content/55')],
+            [h.Class('text-[0.78rem] leading-6 text-base-content/70')],
             [weekdayOf(day.date)],
           ),
           h.span(
@@ -835,7 +835,7 @@ const weekDayCard = (
               ),
               ' ',
               h.span(
-                [h.Class('text-[0.68rem] text-base-content/55')],
+                [h.Class('text-[0.68rem] text-base-content/70')],
                 [monthNameOf(day.date)],
               ),
             ],
@@ -862,7 +862,7 @@ const weekDayCard = (
             h.p(
               [
                 h.Class(
-                  'm-0 py-1 text-[0.75rem] leading-6 text-base-content/45',
+                  'm-0 py-1 text-[0.75rem] leading-6 text-base-content/70',
                 ),
               ],
               [emptyDayCopy],
@@ -993,7 +993,7 @@ const planningPanel = (
     [
       h.h2([h.Class('m-0 text-[0.95rem] font-semibold')], ['برنامه‌ریزی هفته']),
       h.p(
-        [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/50')],
+        [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/70')],
         [
           'هفته را مرور کنید: اولویت هر کار را تعیین کنید یا آن را یک روز جابه‌جا کنید. کارهای تکرارشونده فقط نمایشی‌اند.',
         ],
@@ -1001,7 +1001,7 @@ const planningPanel = (
       ...(Array.isReadonlyArrayEmpty(groups)
         ? [
             h.p(
-              [h.Class('m-0 text-[0.78rem] leading-6 text-base-content/55')],
+              [h.Class('m-0 text-[0.78rem] leading-6 text-base-content/70')],
               [emptyWeekCopy],
             ),
           ]
@@ -1012,7 +1012,7 @@ const planningPanel = (
                 h.p(
                   [
                     h.Class(
-                      'm-0 text-[0.74rem] leading-6 text-base-content/50',
+                      'm-0 text-[0.74rem] leading-6 text-base-content/70',
                     ),
                   ],
                   [dayLabel(group.date, digits)],
@@ -1100,7 +1100,7 @@ const monthGrid = (
           h.div(
             [
               h.Class(
-                'bg-base-100 py-1 text-center text-[0.64rem] leading-5 text-base-content/55',
+                'bg-base-100 py-1 text-center text-[0.64rem] leading-5 text-base-content/70',
               ),
               h.Role('columnheader'),
               h.AriaLabel(day.weekday),
@@ -1146,7 +1146,7 @@ const monthGrid = (
                 [
                   h.Type('button'),
                   h.Class(
-                    'grid min-h-24 w-full min-w-0 content-start justify-items-center gap-1 bg-base-100 px-1 py-2 text-base-content transition-colors hover:bg-primary/[0.04] data-[outside=true]:bg-base-200 data-[outside=true]:text-base-content/35 data-[today=true]:ring-2 data-[today=true]:ring-primary/50 data-[today=true]:ring-inset aria-pressed:bg-primary/[0.07] aria-pressed:ring-1 aria-pressed:ring-primary/40 aria-pressed:text-primary',
+                    'grid min-h-24 w-full min-w-0 content-start justify-items-center gap-1 bg-base-100 px-1 py-2 text-base-content transition-colors hover:bg-primary/[0.04] data-[outside=true]:bg-base-200 data-[outside=true]:text-base-content/70 data-[today=true]:ring-2 data-[today=true]:ring-primary/50 data-[today=true]:ring-inset aria-pressed:bg-primary/[0.07] aria-pressed:ring-1 aria-pressed:ring-primary/40 aria-pressed:text-primary',
                   ),
                   ...(cell.inMonth ? [] : [h.DataAttribute('outside', 'true')]),
                   ...(cell.isBusy ? [h.DataAttribute('busy', 'true')] : []),
@@ -1394,7 +1394,7 @@ const dayDetail = (
                             [occasion.title],
                           ),
                           h.span(
-                            [h.Class('text-[0.7rem] text-base-content/55')],
+                            [h.Class('text-[0.7rem] text-base-content/70')],
                             [formatOccasionDate(occasion, digits)],
                           ),
                         ],
@@ -1436,7 +1436,7 @@ const dayDetail = (
                   h.p(
                     [
                       h.Class(
-                        'm-0 text-[0.78rem] leading-6 text-base-content/55',
+                        'm-0 text-[0.78rem] leading-6 text-base-content/70',
                       ),
                     ],
                     [emptyDayCopy],
@@ -1530,7 +1530,7 @@ const monthAgenda = (
               h.Class(
                 isSelected
                   ? 'text-[0.62rem] text-primary-content/75'
-                  : 'text-[0.62rem] text-base-content/55',
+                  : 'text-[0.62rem] text-base-content/70',
               ),
             ],
             [weekdayOf(day.date)],
@@ -1597,7 +1597,7 @@ const monthAgenda = (
             ],
             [
               h.span(
-                [h.Class('text-[0.64rem] leading-5 text-base-content/50')],
+                [h.Class('text-[0.64rem] leading-5 text-base-content/70')],
                 [weekdayOf(day.date)],
               ),
               h.span(
@@ -1611,7 +1611,7 @@ const monthAgenda = (
                 [jalaliDayNumber(day.date, digits)],
               ),
               h.span(
-                [h.Class('text-[0.58rem] leading-5 text-base-content/45')],
+                [h.Class('text-[0.58rem] leading-5 text-base-content/70')],
                 [monthNameOf(day.date)],
               ),
             ],
@@ -1655,7 +1655,7 @@ const monthAgenda = (
                   h.span(
                     [
                       h.Class(
-                        'ms-auto text-[0.68rem] leading-5 text-base-content/50',
+                        'ms-auto text-[0.68rem] leading-5 text-base-content/70',
                       ),
                     ],
                     [
@@ -1680,7 +1680,7 @@ const monthAgenda = (
                     h.p(
                       [
                         h.Class(
-                          'm-0 text-[0.78rem] leading-6 text-base-content/45',
+                          'm-0 text-[0.78rem] leading-6 text-base-content/70',
                         ),
                       ],
                       [emptyDayCopy],
@@ -1742,7 +1742,7 @@ const occasionRowView = (
             ? []
             : [
                 h.span(
-                  [h.Class('text-[0.78rem] leading-6 text-base-content/55')],
+                  [h.Class('text-[0.78rem] leading-6 text-base-content/70')],
                   ['یک‌بار'],
                 ),
               ]),
@@ -1751,17 +1751,17 @@ const occasionRowView = (
       ...(entry.occurrence === null
         ? [
             h.p(
-              [h.Class('m-0 text-[0.78rem] leading-6 text-base-content/55')],
+              [h.Class('m-0 text-[0.78rem] leading-6 text-base-content/70')],
               ['تاریخ این مناسبت گذشته است.'],
             ),
           ]
         : [
             h.p(
-              [h.Class('m-0 text-[0.78rem] leading-6 text-base-content/55')],
+              [h.Class('m-0 text-[0.78rem] leading-6 text-base-content/70')],
               [formatOccasionDate(entry.occurrence, digits)],
             ),
             h.p(
-              [h.Class('m-0 text-[0.78rem] leading-6 text-base-content/55')],
+              [h.Class('m-0 text-[0.78rem] leading-6 text-base-content/70')],
               [
                 formatAdvanceReminder(entry.occurrence, digits) ??
                   advanceLabel(occasion.advanceReminderDays),
@@ -1979,7 +1979,7 @@ const occasionsPanel = (
                 h.div(
                   [
                     h.Class(
-                      'inline-flex items-center gap-2 text-[0.8rem] text-base-content/65 sm:col-span-2',
+                      'inline-flex items-center gap-2 text-[0.8rem] text-base-content/70 sm:col-span-2',
                     ),
                   ],
                   [
@@ -2146,7 +2146,7 @@ const eventEditorView = (
                 ],
                 [
                   h.label(
-                    [h.Class('grid gap-1 text-[0.8rem] text-base-content/55')],
+                    [h.Class('grid gap-1 text-[0.8rem] text-base-content/70')],
                     [
                       'عنوان',
                       inputControlView(
@@ -2172,7 +2172,7 @@ const eventEditorView = (
                         h.div(
                           [
                             h.Class(
-                              'inline-flex items-center gap-1.5 text-[0.72rem] leading-6 text-base-content/55',
+                              'inline-flex items-center gap-1.5 text-[0.72rem] leading-6 text-base-content/70',
                             ),
                           ],
                           [
@@ -2242,7 +2242,7 @@ const eventEditorView = (
                           [
                             h.Role('status'),
                             h.Class(
-                              'm-0 text-[0.68rem] leading-6 text-base-content/55',
+                              'm-0 text-[0.68rem] leading-6 text-base-content/70',
                             ),
                           ],
                           [
@@ -2564,7 +2564,7 @@ const weekView = (
             [h.Class('flex flex-wrap items-center gap-2')],
             [
               h.p(
-                [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/50')],
+                [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/70')],
                 [
                   `${localizeDigits(view.week.totals.tasks, digits)} کار · ${localizeDigits(view.week.totals.events, digits)} رویداد · ${localizeDigits(view.week.totals.occasions, digits)} مناسبت`,
                 ],
@@ -2613,7 +2613,7 @@ const habitTrendReserve = (h: HtmlBuilder<Message>): Html =>
     [
       h.h2([h.Class('m-0 text-[0.9rem] font-semibold')], ['روند عادت‌ها']),
       h.p(
-        [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/50')],
+        [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/70')],
         ['نمودار ماهانهٔ عادت‌ها در گام عادت‌ها این‌جا نمایش داده می‌شود.'],
       ),
     ],
@@ -2659,7 +2659,7 @@ export const calendarPageView = (
                         h.div(
                           [
                             h.Class(
-                              'panel grid gap-1 p-4 text-[0.8rem] leading-7 text-base-content/50',
+                              'panel grid gap-1 p-4 text-[0.8rem] leading-7 text-base-content/70',
                             ),
                           ],
                           [

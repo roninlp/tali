@@ -31,7 +31,7 @@ export const listboxTriggerContent = <Message>(
     [h.Class('flex w-full items-center justify-between gap-2 min-w-0')],
     [
       h.span([h.Class('truncate')], [label]),
-      chevronDownIcon('size-3.5 shrink-0 text-base-content/50'),
+      chevronDownIcon('size-3.5 shrink-0 text-base-content/70'),
     ],
   )
 

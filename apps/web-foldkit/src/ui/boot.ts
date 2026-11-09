@@ -22,7 +22,7 @@ export const bootView = <Message>(
     [
       h.AriaBusy(true),
       h.Class(
-        'grid justify-items-center gap-4 text-center text-base-content/60',
+        'grid justify-items-center gap-4 text-center text-base-content/70',
       ),
     ],
     [

@@ -85,7 +85,7 @@ const pageErrorView = (
 }
 
 const fieldLabel = (text: string, h: HtmlBuilder<Message>): Html =>
-  h.span([h.Class('text-[0.76rem] leading-6 text-base-content/55')], [text])
+  h.span([h.Class('text-[0.76rem] leading-6 text-base-content/70')], [text])
 
 const titleFieldView = (
   model: Model,
@@ -143,7 +143,7 @@ const frequencyModeButton = (
     [
       h.Type('button'),
       h.Class(
-        'min-h-10 rounded-full border border-base-300 bg-base-100 px-3 text-[0.82rem] text-base-content/60 transition-colors hover:border-base-content/20 aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:font-semibold aria-pressed:text-primary',
+        'min-h-10 rounded-full border border-base-300 bg-base-100 px-3 text-[0.82rem] text-base-content/70 transition-colors hover:border-base-content/20 aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:font-semibold aria-pressed:text-primary',
       ),
       h.AriaPressed(model.frequencyMode === mode ? 'true' : 'false'),
       h.OnClick(Message.SelectedFrequencyMode({ mode })),
@@ -162,7 +162,7 @@ const frequencyFieldView = (
       h.span(
         [
           h.Id('habit-frequency-label'),
-          h.Class('text-[0.76rem] leading-6 text-base-content/55'),
+          h.Class('text-[0.76rem] leading-6 text-base-content/70'),
         ],
         ['فراوانی'],
       ),
@@ -216,7 +216,7 @@ const weekdaysFieldView = (
             [
               h.Type('button'),
               h.Class(
-                'grid size-10 place-items-center rounded-xl border border-base-300 bg-base-100 text-[0.8rem] text-base-content/60 transition-colors hover:border-base-content/20 aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:font-bold aria-pressed:text-primary',
+                'grid size-10 place-items-center rounded-xl border border-base-300 bg-base-100 text-[0.8rem] text-base-content/70 transition-colors hover:border-base-content/20 aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:font-bold aria-pressed:text-primary',
               ),
               h.AriaLabel(weekdayLabel(day, 'latin')),
               h.AriaPressed(
@@ -472,7 +472,7 @@ const habitMetaView = (
   const period = habitCountingPeriodLabel(stats, digits)
 
   return h.p(
-    [h.Class('m-0 text-[0.72rem] leading-6 break-words text-base-content/50')],
+    [h.Class('m-0 text-[0.72rem] leading-6 break-words text-base-content/70')],
     [
       `${habitFrequencyLabel(habit.frequency, digits)} · ${habitBestLabel(stats, digits)}`,
       ...(period === null ? [] : [` · دورهٔ شمارش: ${period}`]),
@@ -569,7 +569,7 @@ const habitCardView = (
             h.p(
               [
                 h.Class(
-                  'm-0 text-[0.72rem] leading-6 break-words text-base-content/50',
+                  'm-0 text-[0.72rem] leading-6 break-words text-base-content/70',
                 ),
               ],
               [habit.description],
@@ -607,13 +607,13 @@ const habitCardView = (
             [h.Class('ms-auto grid min-w-0 gap-px text-end')],
             [
               h.span(
-                [h.Class('text-[0.68rem] leading-5 text-base-content/50')],
+                [h.Class('text-[0.68rem] leading-5 text-base-content/70')],
                 [`نرخ ${localizeDigits(model.windowDays, digits)} روزه`],
               ),
               h.span(
                 [
                   h.Class(
-                    'text-[0.86rem] leading-6 font-semibold data-[kind=progress]:text-warning data-[kind=none]:text-base-content/50',
+                    'text-[0.86rem] leading-6 font-semibold data-[kind=progress]:text-warning data-[kind=none]:text-base-content/70',
                   ),
                   h.DataAttribute('kind', rate.kind),
                 ],
@@ -715,7 +715,7 @@ const listSectionView = (
                 ['فهرست عادت‌ها'],
               ),
               h.p(
-                [h.Class('m-0 text-[0.8rem] leading-6 text-base-content/55')],
+                [h.Class('m-0 text-[0.8rem] leading-6 text-base-content/70')],
                 [
                   'با هر ضربه وضعیت امروز می‌چرخد: انجام شد → نیمه → از دست رفت.',
                 ],
@@ -733,7 +733,7 @@ const listSectionView = (
                 [
                   h.Type('button'),
                   h.Class(
-                    'min-h-8 rounded-full border border-base-300 bg-base-100 px-2.5 text-[0.76rem] text-base-content/60 transition-colors hover:border-base-content/20 aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:font-semibold aria-pressed:text-primary',
+                    'min-h-8 rounded-full border border-base-300 bg-base-100 px-2.5 text-[0.76rem] text-base-content/70 transition-colors hover:border-base-content/20 aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:font-semibold aria-pressed:text-primary',
                   ),
                   h.AriaPressed(model.windowDays === days ? 'true' : 'false'),
                   h.OnClick(Message.SelectedHabitWindow({ window: days })),
@@ -749,7 +749,7 @@ const listSectionView = (
           h.div(
             [
               h.Class(
-                'grid justify-items-center gap-2 rounded-2xl border border-dashed border-base-300 px-6 py-10 text-center text-sm text-base-content/55',
+                'grid justify-items-center gap-2 rounded-2xl border border-dashed border-base-300 px-6 py-10 text-center text-sm text-base-content/70',
               ),
             ],
             [
@@ -829,7 +829,7 @@ export const habitsPageView = (
                     ['عادت‌ها'],
                   ),
                   h.p(
-                    [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+                    [h.Class('m-0 text-sm leading-7 text-base-content/70')],
                     [
                       'یک عادت، یک تعریف و یک ثبت روزانه. آمار از ثبت‌ها ساخته می‌شود، نه از حافظه.',
                     ],

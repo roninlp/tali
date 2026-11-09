@@ -83,7 +83,7 @@ test('flow 5: a recurring event splits on a this-and-following edit', async ({
   await expect(prompt).toBeVisible()
   await prompt
     .getByRole('radio', { name: /این رویداد و رویدادهای بعدی/ })
-    .check()
+    .click()
   await prompt.getByRole('button', { name: 'ادامه' }).click()
 
   await expect(

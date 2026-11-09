@@ -26,7 +26,7 @@ export const authFooterLinkView = <Message>(
   h: HtmlBuilder<Message>,
 ): Html =>
   h.nav(
-    [h.Class('text-center text-sm text-base-content/60')],
+    [h.Class('text-center text-sm text-base-content/70')],
     [
       config.text,
       ' ',
@@ -77,7 +77,7 @@ export const authCardView = <Message>(
                 [config.title],
               ),
               h.p(
-                [h.Class('text-sm leading-7 text-base-content/60')],
+                [h.Class('text-sm leading-7 text-base-content/70')],
                 [config.subtitle],
               ),
             ],

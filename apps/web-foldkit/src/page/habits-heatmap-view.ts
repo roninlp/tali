@@ -58,7 +58,7 @@ const legendKey = (
 const legendView = (h: HtmlBuilder<Message>): Html =>
   h.div(
     [
-      h.Class('flex flex-wrap gap-2 text-[0.68rem] text-base-content/55'),
+      h.Class('flex flex-wrap gap-2 text-[0.68rem] text-base-content/70'),
       h.AriaLabel('راهنمای نقشه'),
     ],
     [
@@ -100,7 +100,7 @@ const heatNavButton = (
     [
       h.Type('button'),
       h.Class(
-        'grid size-10 place-items-center rounded-xl border border-base-300 bg-base-100 text-[0.9rem] text-base-content/65 transition-colors hover:border-base-content/20 hover:text-base-content',
+        'grid size-10 place-items-center rounded-xl border border-base-300 bg-base-100 text-[0.9rem] text-base-content/70 transition-colors hover:border-base-content/20 hover:text-base-content',
       ),
       h.AriaLabel(label),
       h.OnClick(message),
@@ -159,7 +159,7 @@ export const habitHeatmapView = (
             h.span(
               [
                 h.Class(
-                  'text-center text-[0.62rem] leading-6 text-base-content/45',
+                  'text-center text-[0.62rem] leading-6 text-base-content/70',
                 ),
                 h.Role('columnheader'),
               ],
@@ -178,7 +178,7 @@ export const habitHeatmapView = (
                 [
                   h.Role('gridcell'),
                   h.Class(
-                    'grid aspect-square place-items-center rounded-md border border-transparent bg-base-200 text-[0.68rem] text-base-content/50 data-[status=done]:bg-success/75 data-[status=done]:text-success-content data-[status=partial]:bg-warning/60 data-[status=partial]:text-warning-content data-[status=missed]:bg-error/30 data-[status=missed]:text-error data-[outside=true]:opacity-35 aria-[current=date]:border-2 aria-[current=date]:border-primary',
+                    'grid aspect-square place-items-center rounded-md border border-transparent bg-base-200 text-[0.68rem] text-base-content/70 data-[status=done]:bg-success/75 data-[status=done]:text-success-content data-[status=partial]:bg-warning/60 data-[status=partial]:text-warning-content data-[status=missed]:bg-error/30 data-[status=missed]:text-error data-[outside=true]:opacity-35 aria-[current=date]:border-2 aria-[current=date]:border-primary',
                   ),
                   h.DataAttribute('status', cell.status ?? 'blank'),
                   ...(cell.inMonth ? [] : [h.DataAttribute('outside', 'true')]),
@@ -194,7 +194,7 @@ export const habitHeatmapView = (
       ),
       legendView(h),
       h.p(
-        [h.Class('m-0 text-[0.66rem] leading-6 text-base-content/45')],
+        [h.Class('m-0 text-[0.66rem] leading-6 text-base-content/70')],
         [
           'نقشه فقط ثبت خام هر روز را نشان می‌دهد؛ سهمیه و نرخ هفته را زنجیره حساب می‌کند. یک هفته ممکن است میان دو ماه شمسی بیفتد ولی یک‌بار شمرده می‌شود.',
         ],

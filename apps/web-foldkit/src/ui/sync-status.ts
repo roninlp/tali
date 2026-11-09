@@ -90,7 +90,7 @@ export const syncStatusView = <Message>(
       h.Role('status'),
       h.AriaLive('polite'),
       h.Class(
-        'badge badge-sm h-7 gap-1.5 border-base-300 bg-base-100 px-2.5 text-[0.72rem] whitespace-nowrap text-base-content/65',
+        'badge badge-sm h-7 gap-1.5 border-base-300 bg-base-100 px-2.5 text-[0.72rem] whitespace-nowrap text-base-content/70',
       ),
       ...Option.match(hintOf(config), {
         onNone: () => [],

@@ -166,7 +166,7 @@ const noticeView = (
   )
 
 const fieldLabel = (text: string, h: HtmlBuilder<Message>): Html =>
-  h.span([h.Class('text-[0.72rem] font-medium text-base-content/55')], [text])
+  h.span([h.Class('text-[0.72rem] font-medium text-base-content/70')], [text])
 
 const choiceField = (
   label: string,
@@ -192,7 +192,7 @@ const choiceField = (
               h.AriaLabel(option.label),
               h.AriaPressed(value === option.value ? 'true' : 'false'),
               h.Class(
-                'min-h-8 rounded-full border border-base-300 bg-base-100 px-3 text-[0.76rem] text-base-content/65 transition-colors hover:border-base-content/20 aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:font-semibold aria-pressed:text-primary',
+                'min-h-8 rounded-full border border-base-300 bg-base-100 px-3 text-[0.76rem] text-base-content/70 transition-colors hover:border-base-content/20 aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:font-semibold aria-pressed:text-primary',
               ),
               h.OnClick(onChange(option.value)),
             ],
@@ -312,7 +312,7 @@ const weekdayToggles = (
           h.AriaPressed(days.includes(weekday.day) ? 'true' : 'false'),
           h.OnClick(Message.ToggledWeekday({ index, kind, day: weekday.day })),
           h.Class(
-            'min-h-9 rounded-full border border-base-300 bg-base-100 px-3 text-[0.76rem] text-base-content/65 transition-colors aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:font-semibold aria-pressed:text-primary',
+            'min-h-9 rounded-full border border-base-300 bg-base-100 px-3 text-[0.76rem] text-base-content/70 transition-colors aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:font-semibold aria-pressed:text-primary',
           ),
         ],
         [weekday.label],
@@ -602,7 +602,7 @@ const eventStructural = (
             ],
           ),
       h.p(
-        [h.Class('m-0 text-[0.7rem] leading-5 text-base-content/45')],
+        [h.Class('m-0 text-[0.7rem] leading-5 text-base-content/70')],
         ['بدون ساعت، رویداد تمام‌روز است.'],
       ),
     ],
@@ -863,7 +863,7 @@ const cardView = (
         card.cardId,
         [
           h.Class(
-            'flex items-center justify-between gap-2 rounded-2xl border border-dashed border-base-300 px-4 py-3 text-[0.78rem] text-base-content/45',
+            'flex items-center justify-between gap-2 rounded-2xl border border-dashed border-base-300 px-4 py-3 text-[0.78rem] text-base-content/70',
           ),
         ],
         [
@@ -916,7 +916,7 @@ const cardView = (
                   h.p(
                     [
                       h.Class(
-                        'm-0 text-[0.72rem] leading-5 text-base-content/45',
+                        'm-0 text-[0.72rem] leading-5 text-base-content/70',
                       ),
                     ],
                     [`«${card.draft.sourceQuote}»`],
@@ -983,7 +983,7 @@ const composerView = (
         [h.Class('flex flex-wrap items-center justify-between gap-2')],
         [
           h.span(
-            [h.Class('text-[0.7rem] text-base-content/40')],
+            [h.Class('text-[0.7rem] text-base-content/70')],
             [`${characterCount} از ${countText(4000, inputs.display)} کاراکتر`],
           ),
           h.div(
@@ -1063,7 +1063,7 @@ const reviewView = (
                 ['پیشنهادها'],
               ),
               h.p(
-                [h.Class('m-0 text-[0.76rem] leading-6 text-base-content/55')],
+                [h.Class('m-0 text-[0.76rem] leading-6 text-base-content/70')],
                 [
                   `${countText(cards.length, inputs.display)} کارت؛ هر کدام را که نمی‌خواهی کنار بگذار.`,
                 ],
@@ -1289,7 +1289,7 @@ const historyView = (
       h.h2([h.Class('m-0 text-lg font-bold tracking-tight')], ['کپچرهای اخیر']),
       model.isHistoryLoading
         ? h.p(
-            [h.Class('m-0 text-[0.78rem] text-base-content/50')],
+            [h.Class('m-0 text-[0.78rem] text-base-content/70')],
             ['در حال بارگذاری…'],
           )
         : h.empty,
@@ -1299,7 +1299,7 @@ const historyView = (
       }),
       model.history.length === 0 && !model.isHistoryLoading
         ? h.p(
-            [h.Class('m-0 text-[0.78rem] leading-6 text-base-content/50')],
+            [h.Class('m-0 text-[0.78rem] leading-6 text-base-content/70')],
             ['هنوز کپچری ثبت نشده است.'],
           )
         : h.ul(
@@ -1322,7 +1322,7 @@ export const captureView = Submodel.defineView<Model, Message, Inputs>(
               ['کپچر'],
             ),
             h.p(
-              [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+              [h.Class('m-0 text-sm leading-7 text-base-content/70')],
               [
                 'هر چه در ذهن داری بنویس؛ پیشنهادها را ببین، ویرایش کن و یک‌جا بساز.',
               ],
