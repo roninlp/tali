@@ -8,7 +8,7 @@ import { excerptAroundMatch, markMatches } from '../lib/note-search'
 import type { NoteRow } from '../mirror'
 import { notePath, notesTrashRouter } from '../route'
 import { buttonView } from '../ui/button'
-import { formErrorView } from '../ui/field'
+import { formErrorView, inputControlView } from '../ui/field'
 import {
   archiveIcon,
   pinIcon,
@@ -179,22 +179,27 @@ const searchSectionView = (model: Model, h: HtmlBuilder<Message>): Html =>
             ],
             [
               searchIcon('size-4 shrink-0 text-base-content/40'),
-              h.input([
-                h.Id('note-search'),
-                h.Type('search'),
-                h.Class(
-                  'min-w-0 flex-1 border-0 bg-transparent text-base leading-10 outline-none',
-                ),
-                h.Value(model.query),
-                h.Placeholder('مثلاً: دارو'),
-                h.Autocomplete('off'),
-                h.OnInput(value => Message.UpdatedSearchQuery({ value })),
-                h.OnKeyDownPreventDefault(key =>
-                  key === 'Escape'
-                    ? Option.some(Message.ClickedClearSearch())
-                    : Option.none(),
-                ),
-              ]),
+              inputControlView(
+                {
+                  id: 'note-search',
+                  label: 'جست‌وجو در یادداشت‌ها',
+                  type: 'search',
+                  value: model.query,
+                  placeholder: 'مثلاً: دارو',
+                  autoComplete: 'off',
+                  class:
+                    'min-w-0 flex-1 border-0 bg-transparent leading-10 outline-none',
+                  onInput: value => Message.UpdatedSearchQuery({ value }),
+                  attributes: [
+                    h.OnKeyDownPreventDefault(key =>
+                      key === 'Escape'
+                        ? Option.some(Message.ClickedClearSearch())
+                        : Option.none(),
+                    ),
+                  ],
+                },
+                h,
+              ),
             ],
           ),
           model.query.trim() !== ''

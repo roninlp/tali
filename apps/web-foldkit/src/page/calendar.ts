@@ -57,14 +57,15 @@ import {
   updateOccasionInMirror,
 } from '../lib/occasion-writes'
 import { withRpcClient } from '../lib/rpc'
-import { setVisibilityInMirror } from '../lib/visibility-writes'
 import {
   completeTaskInMirror,
   moveTaskInMirror,
   updateTaskInMirror,
 } from '../lib/task-writes'
+import { setVisibilityInMirror } from '../lib/visibility-writes'
 import { LocalStoreResource } from '../sync/local-store'
 import type { LocalStoreService } from '../sync/local-store'
+import * as Picker from '../ui/picker'
 import {
   CalendarFetchState,
   type CalendarReadInputs,
@@ -191,6 +192,7 @@ export const Model = Schema.Struct({
   maybeOccasionBusy: Schema.Option(Schema.String),
   maybeOccasionError: Schema.Option(Schema.String),
   occasionAnnouncement: Schema.String,
+  picker: Picker.Model,
 })
 export type Model = typeof Model.Type
 
@@ -336,6 +338,7 @@ export const Message = defineMessageUnion({
   ToggledOccasionYearly: { yearly: Schema.Boolean },
   SelectedOccasionAdvance: { value: Schema.String },
   GotOccasionAdvanceListboxMessage: { message: Listbox.Message },
+  GotPickerMessage: { message: Picker.Message },
   GotPlanningPriorityListboxMessage: {
     taskId: Schema.String,
     message: Listbox.Message,
@@ -741,7 +744,10 @@ export const SetCalendarOccasionVisibility = Command.define(
           catch: storeFailureMessage,
         })
 
-        return Message.CompletedSetOccasionVisibility({ occasionId, visibility })
+        return Message.CompletedSetOccasionVisibility({
+          occasionId,
+          visibility,
+        })
       }).pipe(
         Effect.catch(error =>
           Effect.succeed(
@@ -1147,6 +1153,7 @@ export const initialModel = (now: number): Model =>
     maybeOccasionBusy: Option.none(),
     maybeOccasionError: Option.none(),
     occasionAnnouncement: '',
+    picker: Picker.init({ id: 'calendar-picker' }),
   })
 
 export const init = (options: InitOptions): Update.Return<Model, Message> => ({
@@ -1454,6 +1461,79 @@ const parsedAdvance = (value: string): Option.Option<number> => {
     : Option.none()
 }
 
+const setEventEditorField = (
+  model: Model,
+  field: 'date' | 'startTime' | 'endTime',
+  value: string,
+): Model =>
+  modifyFields(model, {
+    maybeEditingEvent: () =>
+      Option.map(model.maybeEditingEvent, editor =>
+        modifyFields(editor, {
+          draft: () =>
+            field === 'date'
+              ? modifyFields(editor.draft, { date: () => value })
+              : field === 'startTime'
+                ? modifyFields(editor.draft, { startTime: () => value })
+                : modifyFields(editor.draft, { endTime: () => value }),
+        }),
+      ),
+  })
+
+const applyPickerValue = (
+  model: Model,
+  target: string,
+  value: string,
+): Model => {
+  if (target.startsWith('quick:')) {
+    const [, date, field] = target.split(':')
+    if (date === undefined || field === undefined) {
+      return model
+    }
+    return modifyFields(model, {
+      quickEvents: () =>
+        quickEventField(model, date, draft =>
+          field === 'startTime'
+            ? { ...draft, startTime: value }
+            : { ...draft, endTime: value },
+        ),
+    })
+  }
+  if (target === 'event:date') {
+    return setEventEditorField(model, 'date', value)
+  }
+  if (target === 'event:startTime') {
+    return setEventEditorField(model, 'startTime', value)
+  }
+  if (target === 'event:endTime') {
+    return setEventEditorField(model, 'endTime', value)
+  }
+  if (target === 'occasion:originDate') {
+    return modifyFields(model, { occasionOriginDate: () => value })
+  }
+  return model
+}
+
+const foldPickerOutMessage = Picker.OutMessage.match<
+  Update.Step<Model, Message>
+>({
+  PickedValue:
+    ({ target, value }) =>
+    stepModel => ({ model: applyPickerValue(stepModel, target, value) }),
+  ClearedValue:
+    ({ target }) =>
+    stepModel => ({ model: applyPickerValue(stepModel, target, '') }),
+})
+
+const foldPicker = Update.foldChild({
+  update: Picker.update,
+  read: (model: Model) => Option.some(model.picker),
+  write: (model, nextPicker) =>
+    modifyFields(model, { picker: () => nextPicker }),
+  toParentMessage: message => Message.GotPickerMessage({ message }),
+  foldOutMessage: foldPickerOutMessage,
+})
+
 export const update = (
   model: Model,
   message: Message,
@@ -1480,6 +1560,9 @@ export const update = (
   })
 
   return Message.match<UpdateReturn>(message, {
+    GotPickerMessage: ({ message: pickerMessage }) =>
+      foldPicker(model, pickerMessage),
+
     TickedCalendar: ({ now }) => {
       const next = modifyFields(model, { now: () => now })
       const seeded =

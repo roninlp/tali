@@ -144,6 +144,27 @@ export const monitorIcon = (className: string): Html =>
 export const checkIcon = (className: string): Html =>
   strokeIcon(className, [ih.path([...roundCaps(), ih.D('m5 12 4.5 4.5L19 7')])])
 
+export const clockIcon = (className: string): Html =>
+  strokeIcon(className, [
+    ih.circle([ih.Cx('12'), ih.Cy('12'), ih.R('9')]),
+    ih.path([...roundCaps(), ih.D('M12 7v5l3 2')]),
+  ])
+
+export const chevronLeftIcon = (className: string): Html =>
+  strokeIcon(className, [
+    ih.path([...roundCaps(), ih.D('M15 18l-6-6 6-6')]),
+  ])
+
+export const chevronRightIcon = (className: string): Html =>
+  strokeIcon(className, [
+    ih.path([...roundCaps(), ih.D('M9 6l6 6-6 6')]),
+  ])
+
+export const closeIcon = (className: string): Html =>
+  strokeIcon(className, [
+    ih.path([...roundCaps(), ih.D('M6 6l12 12M18 6L6 18')]),
+  ])
+
 export const chevronDownIcon = (className: string): Html =>
   strokeIcon(className, [ih.path([...roundCaps(), ih.D('m6 9 6 6 6-6')])])
 

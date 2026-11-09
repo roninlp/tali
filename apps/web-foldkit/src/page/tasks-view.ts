@@ -9,8 +9,10 @@ import { shareActionOf } from '../lib/visibility-writes'
 import type { TagRow, TaskRow } from '../mirror'
 import { taskKey } from '../mirror'
 import { buttonView } from '../ui/button'
-import { textAreaFieldView, textInputView } from '../ui/field'
+import { inputControlView, textAreaFieldView, textInputView } from '../ui/field'
+import { chevronDownIcon } from '../ui/icons'
 import { listboxViewInputs } from '../ui/listbox'
+import { pickerDialogView, pickerTriggerView } from '../ui/picker'
 import { Message } from './tasks'
 import type {
   Model,
@@ -243,23 +245,19 @@ const quickAddPanelView = (
                   )
                 }),
               ),
-              h.label(
-                [h.Class(FIELD_CLASS)],
-                [
-                  h.span(
-                    [h.Class('text-[0.76rem] text-base-content/60')],
-                    ['تاریخ دلخواه'],
-                  ),
-                  h.input([
-                    h.Type('date'),
-                    h.AriaLabel('تاریخ موعد'),
-                    h.Class('field-input'),
-                    h.Value(dueValue),
-                    h.OnInput(value =>
-                      Message.UpdatedQuickAddDueDate({ value }),
-                    ),
-                  ]),
-                ],
+              pickerTriggerView(
+                {
+                  id: 'tasks-quick-add-due-date',
+                  label: 'تاریخ دلخواه',
+                  target: 'quickAdd:due',
+                  mode: 'date',
+                  value: dueValue,
+                  today: view.bounds.today,
+                  digits: inputs.display.digits,
+                  toParentMessage: message =>
+                    Message.GotPickerMessage({ message }),
+                },
+                h,
               ),
             ],
           )
@@ -322,26 +320,30 @@ const quickAddPanelView = (
                   h.div(
                     [h.Class(INLINE_CREATE_CLASS)],
                     [
-                      h.input([
-                        h.Type('text'),
-                        h.AriaLabel('نام برچسب تازه'),
-                        h.Placeholder('برچسب تازه…'),
-                        h.Class('field-input min-w-0 flex-1 basis-36'),
-                        h.Disabled(!inputs.isStoreReady),
-                        h.Value(draft.newTagName),
-                        h.OnInput(value =>
-                          Message.UpdatedQuickAddNewTag({ value }),
-                        ),
-                        h.OnKeyDownPreventDefault(key =>
-                          key === 'Enter'
-                            ? Option.some(
-                                Message.SubmittedQuickAddTag({
-                                  name: draft.newTagName,
-                                }),
-                              )
-                            : Option.none(),
-                        ),
-                      ]),
+                      inputControlView(
+                        {
+                          id: 'tasks-quick-add-new-tag',
+                          label: 'نام برچسب تازه',
+                          value: draft.newTagName,
+                          placeholder: 'برچسب تازه…',
+                          isDisabled: !inputs.isStoreReady,
+                          class: 'min-w-0 flex-1 basis-36',
+                          onInput: value =>
+                            Message.UpdatedQuickAddNewTag({ value }),
+                          attributes: [
+                            h.OnKeyDownPreventDefault(key =>
+                              key === 'Enter'
+                                ? Option.some(
+                                    Message.SubmittedQuickAddTag({
+                                      name: draft.newTagName,
+                                    }),
+                                  )
+                                : Option.none(),
+                            ),
+                          ],
+                        },
+                        h,
+                      ),
                       h.button(
                         [
                           h.Type('button'),
@@ -397,26 +399,30 @@ const quickAddPanelView = (
                   h.div(
                     [h.Class(INLINE_CREATE_CLASS)],
                     [
-                      h.input([
-                        h.Type('text'),
-                        h.AriaLabel('نام پروژه‌ی تازه'),
-                        h.Placeholder('پروژه‌ی تازه…'),
-                        h.Class('field-input min-w-0 flex-1 basis-36'),
-                        h.Disabled(!inputs.isStoreReady),
-                        h.Value(draft.newProjectTitle),
-                        h.OnInput(value =>
-                          Message.UpdatedQuickAddNewProject({ value }),
-                        ),
-                        h.OnKeyDownPreventDefault(key =>
-                          key === 'Enter'
-                            ? Option.some(
-                                Message.SubmittedQuickAddProject({
-                                  title: draft.newProjectTitle,
-                                }),
-                              )
-                            : Option.none(),
-                        ),
-                      ]),
+                      inputControlView(
+                        {
+                          id: 'tasks-quick-add-new-project',
+                          label: 'نام پروژه‌ی تازه',
+                          value: draft.newProjectTitle,
+                          placeholder: 'پروژه‌ی تازه…',
+                          isDisabled: !inputs.isStoreReady,
+                          class: 'min-w-0 flex-1 basis-36',
+                          onInput: value =>
+                            Message.UpdatedQuickAddNewProject({ value }),
+                          attributes: [
+                            h.OnKeyDownPreventDefault(key =>
+                              key === 'Enter'
+                                ? Option.some(
+                                    Message.SubmittedQuickAddProject({
+                                      title: draft.newProjectTitle,
+                                    }),
+                                  )
+                                : Option.none(),
+                            ),
+                          ],
+                        },
+                        h,
+                      ),
                       h.button(
                         [
                           h.Type('button'),
@@ -497,16 +503,18 @@ const quickAddView = (
       h.div(
         [h.Class('flex flex-wrap gap-2')],
         [
-          h.input([
-            h.Id('tasks-quick-add'),
-            h.Type('text'),
-            h.AriaLabel('عنوان کار تازه'),
-            h.Placeholder('یک کار تازه… (مثلاً خرید شیر)'),
-            h.Class('field-input min-h-11 min-w-0 flex-1 basis-48'),
-            h.Value(draft.title),
-            h.Disabled(!inputs.isStoreReady),
-            h.OnInput(value => Message.UpdatedQuickAddTitle({ value })),
-          ]),
+          inputControlView(
+            {
+              id: 'tasks-quick-add',
+              label: 'عنوان کار تازه',
+              value: draft.title,
+              placeholder: 'یک کار تازه… (مثلاً خرید شیر)',
+              isDisabled: !inputs.isStoreReady,
+              class: 'min-h-11 min-w-0 flex-1 basis-48',
+              onInput: value => Message.UpdatedQuickAddTitle({ value }),
+            },
+            h,
+          ),
           buttonView(
             {
               type: 'submit',
@@ -735,24 +743,29 @@ const filterPanelView = (
           h.div(
             [h.Class(INLINE_CREATE_CLASS)],
             [
-              h.input([
-                h.Type('text'),
-                h.AriaLabel('نام پروژه‌ی تازه'),
-                h.Placeholder('پروژه‌ی تازه…'),
-                h.Class('field-input min-w-0 flex-1 basis-36'),
-                h.Disabled(!inputs.isStoreReady),
-                h.Value(model.newProjectTitle),
-                h.OnInput(value => Message.UpdatedNewProjectTitle({ value })),
-                h.OnKeyDownPreventDefault(key =>
-                  key === 'Enter'
-                    ? Option.some(
-                        Message.SubmittedFilterProject({
-                          title: model.newProjectTitle,
-                        }),
-                      )
-                    : Option.none(),
-                ),
-              ]),
+              inputControlView(
+                {
+                  id: 'tasks-new-project',
+                  label: 'نام پروژه‌ی تازه',
+                  value: model.newProjectTitle,
+                  placeholder: 'پروژه‌ی تازه…',
+                  isDisabled: !inputs.isStoreReady,
+                  class: 'min-w-0 flex-1 basis-36',
+                  onInput: value => Message.UpdatedNewProjectTitle({ value }),
+                  attributes: [
+                    h.OnKeyDownPreventDefault(key =>
+                      key === 'Enter'
+                        ? Option.some(
+                            Message.SubmittedFilterProject({
+                              title: model.newProjectTitle,
+                            }),
+                          )
+                        : Option.none(),
+                    ),
+                  ],
+                },
+                h,
+              ),
               h.button(
                 [
                   h.Type('button'),
@@ -807,22 +820,29 @@ const filterPanelView = (
           h.div(
             [h.Class(INLINE_CREATE_CLASS)],
             [
-              h.input([
-                h.Type('text'),
-                h.AriaLabel('نام برچسب تازه'),
-                h.Placeholder('برچسب تازه…'),
-                h.Class('field-input min-w-0 flex-1 basis-36'),
-                h.Disabled(!inputs.isStoreReady),
-                h.Value(model.newTagName),
-                h.OnInput(value => Message.UpdatedNewTagName({ value })),
-                h.OnKeyDownPreventDefault(key =>
-                  key === 'Enter'
-                    ? Option.some(
-                        Message.SubmittedFilterTag({ name: model.newTagName }),
-                      )
-                    : Option.none(),
-                ),
-              ]),
+              inputControlView(
+                {
+                  id: 'tasks-new-tag',
+                  label: 'نام برچسب تازه',
+                  value: model.newTagName,
+                  placeholder: 'برچسب تازه…',
+                  isDisabled: !inputs.isStoreReady,
+                  class: 'min-w-0 flex-1 basis-36',
+                  onInput: value => Message.UpdatedNewTagName({ value }),
+                  attributes: [
+                    h.OnKeyDownPreventDefault(key =>
+                      key === 'Enter'
+                        ? Option.some(
+                            Message.SubmittedFilterTag({
+                              name: model.newTagName,
+                            }),
+                          )
+                        : Option.none(),
+                    ),
+                  ],
+                },
+                h,
+              ),
               h.button(
                 [
                   h.Type('button'),
@@ -1016,6 +1036,7 @@ const editorView = (
   maybeUserId: Option.Option<string>,
   task: TaskRow,
   editor: TaskEditor,
+  today: string,
   inputs: ViewInputs,
   h: HtmlBuilder<Message>,
 ): Html => {
@@ -1057,15 +1078,16 @@ const editorView = (
           ),
         ],
         [
-          textInputView(
+          pickerTriggerView(
             {
               id: `task-${task.id}-due`,
               label: 'موعد',
-              type: 'date',
+              target: `task:${task.id}:due`,
+              mode: 'date',
               value: editor.dueDate,
-              class: 'min-w-0',
-              onInput: value =>
-                Message.UpdatedTaskDueDate({ taskId: task.id, value }),
+              today,
+              digits: inputs.display.digits,
+              toParentMessage: message => Message.GotPickerMessage({ message }),
             },
             h,
           ),
@@ -1406,7 +1428,14 @@ const taskCardView = (
         : h.empty,
       editor === undefined
         ? h.empty
-        : editorView(model.maybeUserId, task, editor, inputs, h),
+        : editorView(
+            model.maybeUserId,
+            task,
+            editor,
+            view.bounds.today,
+            inputs,
+            h,
+          ),
     ],
   )
 }
@@ -1520,14 +1549,17 @@ const historyView = (
     new Date(model.now).toISOString(),
   )
 
-  return h.details(
+  return h.section(
     [h.Class('panel px-4 py-2')],
     [
-      h.summary(
+      h.button(
         [
+          h.Type('button'),
+          h.AriaExpanded(model.isHistoryOpen),
           h.Class(
-            'flex min-h-11 cursor-pointer items-center gap-2 text-[0.9rem]',
+            'flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-lg text-start text-[0.9rem] transition-colors hover:text-primary',
           ),
+          h.OnClick(Message.ClickedToggleHistory()),
         ],
         [
           h.span([], ['تاریخچهٔ انجام']),
@@ -1539,72 +1571,92 @@ const historyView = (
             ],
             [localizeDigits(completions.length, digits)],
           ),
+          h.span(
+            [
+              h.Class(
+                'ms-auto text-base-content/40 transition-transform data-[open=true]:rotate-180',
+              ),
+              h.DataAttribute('open', model.isHistoryOpen ? 'true' : 'false'),
+            ],
+            [chevronDownIcon('size-4')],
+          ),
         ],
       ),
-      h.p(
-        [h.Class('mt-1 mb-2 text-[0.76rem] leading-6 text-base-content/50')],
-        ['تا هفت روز قابل بازگردانی است؛ پس از آن بایگانی می‌شود.'],
-      ),
-      Array.match(completions, {
-        onEmpty: () =>
+      h.div(
+        [h.Class(model.isHistoryOpen ? 'grid gap-1' : 'hidden')],
+        [
           h.p(
-            [h.Class(QUIET_CLASS)],
-            ['هنوز کاری در این هفته انجام نشده است.'],
-          ),
-        onNonEmpty: rows =>
-          h.ul(
-            [h.Class('m-0 grid list-none gap-1 p-0')],
-            Array.map(rows, task =>
-              h.keyed('li')(
-                task.id,
-                [
-                  h.Class(
-                    'flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-base-300 py-2',
-                  ),
-                ],
-                [
-                  h.p(
-                    [
-                      h.Class(
-                        'm-0 min-w-0 flex-1 text-[0.85rem] text-base-content/55 line-through wrap-anywhere',
-                      ),
-                    ],
-                    [task.title],
-                  ),
-                  h.span(
-                    [h.Class('text-[0.72rem] text-base-content/50')],
-                    [
-                      task.completedAt === null
-                        ? ''
-                        : formatCompletionTime(
-                            task.completedAt,
-                            timeZone,
-                            digits,
-                          ),
-                    ],
-                  ),
-                  h.button(
-                    [
-                      h.Type('button'),
-                      h.Class(
-                        'min-h-10 flex-none rounded-full px-3 text-[0.76rem] text-base-content/65 transition-colors hover:bg-base-content/5 hover:text-primary sm:min-h-8',
-                      ),
-                      h.AriaLabel(`بازگرداندن ${task.title}`),
-                      h.OnClick(
-                        Message.ClickedRestoreCompletion({
-                          taskId: task.id,
-                          title: task.title,
-                          maybeStartedAt: Option.fromNullishOr(task.startedAt),
-                        }),
-                      ),
-                    ],
-                    ['بازگرداندن'],
-                  ),
-                ],
+            [
+              h.Class(
+                'mt-1 mb-2 text-[0.76rem] leading-6 text-base-content/50',
               ),
-            ),
+            ],
+            ['تا هفت روز قابل بازگردانی است؛ پس از آن بایگانی می‌شود.'],
           ),
-      }),
+          Array.match(completions, {
+            onEmpty: () =>
+              h.p(
+                [h.Class(QUIET_CLASS)],
+                ['هنوز کاری در این هفته انجام نشده است.'],
+              ),
+            onNonEmpty: rows =>
+              h.ul(
+                [h.Class('m-0 grid list-none gap-1 p-0')],
+                Array.map(rows, task =>
+                  h.keyed('li')(
+                    task.id,
+                    [
+                      h.Class(
+                        'flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-base-300 py-2',
+                      ),
+                    ],
+                    [
+                      h.p(
+                        [
+                          h.Class(
+                            'm-0 min-w-0 flex-1 text-[0.85rem] text-base-content/55 line-through wrap-anywhere',
+                          ),
+                        ],
+                        [task.title],
+                      ),
+                      h.span(
+                        [h.Class('text-[0.72rem] text-base-content/50')],
+                        [
+                          task.completedAt === null
+                            ? ''
+                            : formatCompletionTime(
+                                task.completedAt,
+                                timeZone,
+                                digits,
+                              ),
+                        ],
+                      ),
+                      h.button(
+                        [
+                          h.Type('button'),
+                          h.Class(
+                            'min-h-10 flex-none rounded-full px-3 text-[0.76rem] text-base-content/65 transition-colors hover:bg-base-content/5 hover:text-primary sm:min-h-8',
+                          ),
+                          h.AriaLabel(`بازگرداندن ${task.title}`),
+                          h.OnClick(
+                            Message.ClickedRestoreCompletion({
+                              taskId: task.id,
+                              title: task.title,
+                              maybeStartedAt: Option.fromNullishOr(
+                                task.startedAt,
+                              ),
+                            }),
+                          ),
+                        ],
+                        ['بازگرداندن'],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          }),
+        ],
+      ),
     ],
   )
 }
@@ -1792,6 +1844,15 @@ export const tasksPageView = (
       h.p(
         [h.Class('sr-only'), h.Role('status'), h.AriaLive('polite')],
         [model.announcement],
+      ),
+      pickerDialogView(
+        {
+          model: model.picker,
+          toParentMessage: message => Message.GotPickerMessage({ message }),
+          digits: inputs.display.digits,
+          weekStart: inputs.display.weekStart,
+        },
+        h,
       ),
       toastView(model.maybeToast, h),
     ],

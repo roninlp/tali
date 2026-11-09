@@ -471,7 +471,7 @@ describe('Calendar event editor', () => {
       expect(role('dialog', { name: 'رویداد' })).toExist(),
       expect(role('textbox', { name: 'عنوان رویداد' })).toHaveValue('سفر'),
       expect(role('checkbox', { name: 'تمام روز' })).toBeChecked(),
-      expect(role('textbox', { name: 'تاریخ رویداد' })).toHaveValue(TODAY),
+      expect(role('button', { name: 'تاریخ' })).toContainText('۸ آبان ۱۴۰۵'),
       expect(role('button', { name: 'ذخیره' })).toBeEnabled(),
       expect(role('button', { name: 'حذف رویداد' })).toBeEnabled(),
     )

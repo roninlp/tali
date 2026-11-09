@@ -24,7 +24,10 @@ import { shareActionOf } from '../lib/visibility-writes'
 import { entityKey } from '../mirror'
 import { taskAnchorPath } from '../route'
 import { classNames } from '../ui/class-names'
+import { inputControlView } from '../ui/field'
 import { listboxViewInputs } from '../ui/listbox'
+import { pickerDialogView, pickerTriggerView } from '../ui/picker'
+import type { PickerMode } from '../ui/picker'
 import {
   Message,
   OccasionAdvanceListbox,
@@ -48,6 +51,7 @@ import {
   showsSourceHint,
   sourceText,
   taskCountLabel,
+  todayIn,
   weekDaysFor,
   weekTitle,
   weekdayOf,
@@ -87,10 +91,6 @@ const DANGER_BUTTON_CLASS =
   'btn min-h-10 rounded-xl border-error/30 bg-error/8 text-error hover:bg-error/14 hover:text-error'
 const SMALL_BUTTON_CLASS = 'btn btn-sm btn-outline min-h-10 rounded-full px-3'
 
-const TIME_LABEL_CLASS =
-  'grid min-w-0 gap-0.5 text-[0.68rem] text-base-content/50'
-const TIME_INPUT_CLASS = 'field-input h-8 w-full min-w-0 px-1.5 text-[0.78rem]'
-
 const EVENT_CHIP_CLASS =
   'flex w-full min-w-0 items-center gap-1 rounded-lg bg-secondary/12 px-1.5 py-0.5 text-start text-[0.66rem] leading-6 text-secondary data-[allday=true]:bg-info/12 data-[allday=true]:text-info'
 const EVENT_CHIP_MONTH_CLASS =
@@ -116,8 +116,34 @@ const DIALOG_CLASS =
 const DIALOG_TITLE_CLASS = 'm-0 text-base font-semibold outline-none'
 const DIALOG_HINT_CLASS = 'm-0 text-[0.78rem] leading-6 text-base-content/55'
 const DIALOG_ACTIONS_CLASS = 'flex flex-wrap justify-end gap-2'
-const SCOPE_OPTION_CLASS =
-  'grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-start gap-2 rounded-xl border border-base-300 bg-base-100 p-3 transition-colors data-[disabled=true]:opacity-60 data-[selected=true]:border-primary data-[selected=true]:bg-primary/8'
+
+const pickerField = (
+  config: Readonly<{
+    id: string
+    label: string
+    target: string
+    mode: PickerMode
+    value: string
+    today: string
+    isDisabled?: boolean
+  }>,
+  digits: Digits,
+  h: HtmlBuilder<Message>,
+): Html =>
+  pickerTriggerView(
+    {
+      id: config.id,
+      label: config.label,
+      target: config.target,
+      mode: config.mode,
+      value: config.value,
+      today: config.today,
+      digits,
+      ...(config.isDisabled === true ? { isDisabled: true } : {}),
+      toParentMessage: message => Message.GotPickerMessage({ message }),
+    },
+    h,
+  )
 const SCOPE_HINT_CLASS = 'text-[0.7rem] leading-6 text-base-content/55'
 
 const viewOf = (model: Model, inputs: ViewInputs): CalendarView =>
@@ -325,15 +351,18 @@ const taskQuickAdd = (
       h.OnSubmit(Message.SubmittedTaskQuickAdd({ date })),
     ],
     [
-      h.input([
-        h.Type('text'),
-        h.Class(QUICK_INPUT_CLASS),
-        h.AriaLabel(`کار تازه برای ${label}`),
-        h.Placeholder('کار تازه…'),
-        h.Value(value),
-        h.Disabled(!inputs.isStoreReady),
-        h.OnInput(next => Message.UpdatedTaskDraft({ date, value: next })),
-      ]),
+      inputControlView(
+        {
+          id: `calendar-task-${date}`,
+          label: `کار تازه برای ${label}`,
+          value,
+          placeholder: 'کار تازه…',
+          isDisabled: !inputs.isStoreReady,
+          class: QUICK_INPUT_CLASS,
+          onInput: next => Message.UpdatedTaskDraft({ date, value: next }),
+        },
+        h,
+      ),
       h.button(
         [
           h.Type('submit'),
@@ -357,122 +386,127 @@ const eventQuickAdd = (
   h: HtmlBuilder<Message>,
 ): Html => {
   const draft = quickEventOf(model, date)
+  const today = todayIn(inputs.display.timeZone, new Date(model.now))
+  const digits = inputs.display.digits
 
   return h.keyed('details')(
     `${date}:${draft.open ? 'open' : 'closed'}`,
+    [h.Class('group min-w-0'), h.DataAttribute('calendar-event-add', 'true')],
     [
-      h.Class('group min-w-0'),
-      h.DataAttribute('calendar-event-add', 'true'),
-      // The details is native-controlled while open: rendering an explicit
-      // `open=false` on every pass can close it between the click and the
-      // OnToggle dispatch while the mirror is still settling. Keying the
-      // element on the open state remounts it closed after a successful add
-      // without racing the native toggle.
-      ...(draft.open ? [h.Open(true)] : []),
-      h.OnToggle(isOpen => Message.ToggledEventQuickAdd({ date, isOpen })),
-    ],
-    [
-      h.summary(
+      h.button(
         [
+          h.Type('button'),
           h.AriaLabel(`رویداد تازه برای ${label}`),
+          h.AriaExpanded(draft.open),
           h.Class(
-            'inline-flex cursor-pointer list-none items-center gap-1 rounded-lg py-1 text-[0.7rem] leading-6 text-base-content/45 transition-colors hover:text-primary group-open:text-primary [&::-webkit-details-marker]:hidden',
+            'inline-flex cursor-pointer list-none items-center gap-1 rounded-lg py-1 text-[0.7rem] leading-6 text-base-content/45 transition-colors hover:text-primary group-data-[open=true]:text-primary',
+          ),
+          h.OnClick(
+            Message.ToggledEventQuickAdd({ date, isOpen: !draft.open }),
           ),
         ],
         ['+ رویداد'],
       ),
-      h.form(
-        [
-          h.Class(
-            'mt-1 grid min-w-0 gap-2 rounded-xl border border-base-300 bg-base-200/50 p-2',
-          ),
-          h.OnSubmit(Message.SubmittedEventQuickAdd({ date })),
-        ],
-        [
-          h.input([
-            h.Type('text'),
-            h.Class('field-input'),
-            h.AriaLabel(`عنوان رویداد برای ${label}`),
-            h.Placeholder('رویداد تازه…'),
-            h.Value(draft.title),
-            h.Disabled(!inputs.isStoreReady),
-            h.OnInput(value => Message.UpdatedQuickEventTitle({ date, value })),
-          ]),
-          Checkbox.view(
-            {
-              id: `quick-event-all-day-${date}`,
-              isChecked: draft.allDay,
-              onToggle: allDay =>
-                Message.ToggledQuickEventAllDay({ date, allDay }),
-              toView: attributes =>
-                h.div(
+      ...(draft.open
+        ? [
+            h.form(
+              [
+                h.Class(
+                  'mt-1 grid min-w-0 gap-2 rounded-xl border border-base-300 bg-base-200/50 p-2',
+                ),
+                h.OnSubmit(Message.SubmittedEventQuickAdd({ date })),
+              ],
+              [
+                inputControlView(
+                  {
+                    id: `quick-event-title-${date}`,
+                    label: `عنوان رویداد برای ${label}`,
+                    value: draft.title,
+                    placeholder: 'رویداد تازه…',
+                    isDisabled: !inputs.isStoreReady,
+                    onInput: value =>
+                      Message.UpdatedQuickEventTitle({ date, value }),
+                  },
+                  h,
+                ),
+                Checkbox.view(
+                  {
+                    id: `quick-event-all-day-${date}`,
+                    isChecked: draft.allDay,
+                    onToggle: allDay =>
+                      Message.ToggledQuickEventAllDay({ date, allDay }),
+                    toView: attributes =>
+                      h.div(
+                        [
+                          h.Class(
+                            'inline-flex items-center gap-1.5 text-[0.72rem] leading-6 text-base-content/55',
+                          ),
+                        ],
+                        [
+                          h.button([
+                            ...attributes.checkbox,
+                            h.Class('form-check'),
+                          ]),
+                          h.span([...attributes.label], ['تمام روز']),
+                        ],
+                      ),
+                  },
+                  h,
+                ),
+                draft.allDay
+                  ? h.p(
+                      [
+                        h.Class(
+                          'm-0 text-[0.68rem] leading-6 text-base-content/55',
+                        ),
+                      ],
+                      ['بدون ساعت'],
+                    )
+                  : h.span(
+                      [h.Class('grid min-w-0 gap-1.5')],
+                      [
+                        pickerField(
+                          {
+                            id: `quick-event-start-${date}`,
+                            label: 'از',
+                            target: `quick:${date}:startTime`,
+                            mode: 'time',
+                            value: draft.startTime,
+                            today,
+                          },
+                          digits,
+                          h,
+                        ),
+                        pickerField(
+                          {
+                            id: `quick-event-end-${date}`,
+                            label: 'تا',
+                            target: `quick:${date}:endTime`,
+                            mode: 'time',
+                            value: draft.endTime,
+                            today,
+                          },
+                          digits,
+                          h,
+                        ),
+                      ],
+                    ),
+                h.button(
                   [
-                    h.Class(
-                      'inline-flex items-center gap-1.5 text-[0.72rem] leading-6 text-base-content/55',
+                    h.Type('submit'),
+                    h.Class(`${PRIMARY_BUTTON_CLASS} w-full`),
+                    h.Disabled(
+                      !inputs.isStoreReady ||
+                        model.isEventBusy ||
+                        draft.title.trim() === '',
                     ),
                   ],
-                  [
-                    h.button([...attributes.checkbox, h.Class('form-check')]),
-                    h.span([...attributes.label], ['تمام روز']),
-                  ],
+                  [model.isEventBusy ? 'در حال ذخیره…' : 'افزودن رویداد'],
                 ),
-            },
-            h,
-          ),
-          draft.allDay
-            ? h.p(
-                [h.Class('m-0 text-[0.68rem] leading-6 text-base-content/55')],
-                ['بدون ساعت'],
-              )
-            : h.span(
-                [h.Class('grid min-w-0 gap-1.5')],
-                [
-                  h.label(
-                    [h.Class(TIME_LABEL_CLASS)],
-                    [
-                      'از',
-                      h.input([
-                        h.Type('time'),
-                        h.Class(TIME_INPUT_CLASS),
-                        h.AriaLabel(`ساعت شروع رویداد در ${label}`),
-                        h.Value(draft.startTime),
-                        h.OnInput(value =>
-                          Message.UpdatedQuickEventStart({ date, value }),
-                        ),
-                      ]),
-                    ],
-                  ),
-                  h.label(
-                    [h.Class(TIME_LABEL_CLASS)],
-                    [
-                      'تا',
-                      h.input([
-                        h.Type('time'),
-                        h.Class(TIME_INPUT_CLASS),
-                        h.AriaLabel(`ساعت پایان رویداد در ${label}`),
-                        h.Value(draft.endTime),
-                        h.OnInput(value =>
-                          Message.UpdatedQuickEventEnd({ date, value }),
-                        ),
-                      ]),
-                    ],
-                  ),
-                ],
-              ),
-          h.button(
-            [
-              h.Type('submit'),
-              h.Class(`${PRIMARY_BUTTON_CLASS} w-full`),
-              h.Disabled(
-                !inputs.isStoreReady ||
-                  model.isEventBusy ||
-                  draft.title.trim() === '',
-              ),
-            ],
-            [model.isEventBusy ? 'در حال ذخیره…' : 'افزودن رویداد'],
-          ),
-        ],
-      ),
+              ],
+            ),
+          ]
+        : []),
     ],
   )
 }
@@ -1851,34 +1885,33 @@ const occasionsPanel = (
                 [h.For('occasion-title'), h.Class(FIELD_LABEL_CLASS)],
                 ['عنوان'],
               ),
-              h.input([
-                h.Id('occasion-title'),
-                h.Type('text'),
-                h.Class('field-input'),
-                h.AriaLabel('عنوان مناسبت'),
-                h.Placeholder('تولد، سالگرد…'),
-                h.Value(model.occasionTitle),
-                h.OnInput(value => Message.UpdatedOccasionTitle({ value })),
-              ]),
+              inputControlView(
+                {
+                  id: 'occasion-title',
+                  label: 'عنوان مناسبت',
+                  value: model.occasionTitle,
+                  placeholder: 'تولد، سالگرد…',
+                  onInput: value => Message.UpdatedOccasionTitle({ value }),
+                },
+                h,
+              ),
             ],
           ),
           h.div(
             [h.Class(FIELD_CLASS)],
             [
-              h.label(
-                [h.For('occasion-origin'), h.Class(FIELD_LABEL_CLASS)],
-                ['تاریخ شروع (میلادی)'],
+              pickerField(
+                {
+                  id: 'occasion-origin',
+                  label: 'تاریخ شروع',
+                  target: 'occasion:originDate',
+                  mode: 'date',
+                  value: model.occasionOriginDate,
+                  today: view.today,
+                },
+                digits,
+                h,
               ),
-              h.input([
-                h.Id('occasion-origin'),
-                h.Type('date'),
-                h.Class('field-input'),
-                h.AriaLabel('تاریخ شروع مناسبت'),
-                h.Value(model.occasionOriginDate),
-                h.OnInput(value =>
-                  Message.UpdatedOccasionOriginDate({ value }),
-                ),
-              ]),
               ...(preview === ''
                 ? []
                 : [h.span([h.Class(META_CLASS)], [preview])]),
@@ -2017,6 +2050,8 @@ const eventEditorView = (
     onSome: editor => {
       const occurrence = editor.occurrence
       const draft = editor.draft
+      const digits = inputs.display.digits
+      const today = todayIn(inputs.display.timeZone, new Date(model.now))
       const inactive = Option.isSome(model.maybePendingScope)
       const seriesRow = Array.findFirst(
         inputs.mirror.events,
@@ -2081,16 +2116,17 @@ const eventEditorView = (
                     [h.Class('grid gap-1 text-[0.8rem] text-base-content/55')],
                     [
                       'عنوان',
-                      h.input([
-                        h.Type('text'),
-                        h.Class('field-input'),
-                        h.AriaLabel('عنوان رویداد'),
-                        h.Value(draft.title),
-                        h.Disabled(!canEdit || model.isEventBusy),
-                        h.OnInput(value =>
-                          Message.UpdatedEventEditorTitle({ value }),
-                        ),
-                      ]),
+                      inputControlView(
+                        {
+                          id: 'calendar-event-editor-title',
+                          label: 'عنوان رویداد',
+                          value: draft.title,
+                          isDisabled: !canEdit || model.isEventBusy,
+                          onInput: value =>
+                            Message.UpdatedEventEditorTitle({ value }),
+                        },
+                        h,
+                      ),
                     ],
                   ),
                   Checkbox.view(
@@ -2118,59 +2154,50 @@ const eventEditorView = (
                     },
                     h,
                   ),
-                  h.label(
-                    [h.Class('grid gap-1 text-[0.8rem] text-base-content/55')],
-                    [
-                      'تاریخ',
-                      h.input([
-                        h.Type('date'),
-                        h.Class('field-input'),
-                        h.AriaLabel('تاریخ رویداد'),
-                        h.Value(draft.date),
-                        h.Disabled(!canEdit || model.isEventBusy),
-                        h.OnInput(value =>
-                          Message.UpdatedEventEditorDate({ value }),
-                        ),
-                      ]),
-                    ],
+                  pickerField(
+                    {
+                      id: 'calendar-event-editor-date',
+                      label: 'تاریخ',
+                      target: 'event:date',
+                      mode: 'date',
+                      value: draft.date,
+                      today,
+                      isDisabled: !canEdit || model.isEventBusy,
+                    },
+                    digits,
+                    h,
                   ),
                   ...(draft.allDay
                     ? []
                     : [
                         h.span(
-                          [h.Class('flex flex-wrap gap-2')],
+                          [h.Class('grid gap-2 sm:grid-cols-2')],
                           [
-                            h.label(
-                              [h.Class(TIME_LABEL_CLASS)],
-                              [
-                                'از',
-                                h.input([
-                                  h.Type('time'),
-                                  h.Class(TIME_INPUT_CLASS),
-                                  h.AriaLabel('ساعت شروع'),
-                                  h.Value(draft.startTime),
-                                  h.Disabled(!canEdit || model.isEventBusy),
-                                  h.OnInput(value =>
-                                    Message.UpdatedEventEditorStart({ value }),
-                                  ),
-                                ]),
-                              ],
+                            pickerField(
+                              {
+                                id: 'calendar-event-editor-start',
+                                label: 'از',
+                                target: 'event:startTime',
+                                mode: 'time',
+                                value: draft.startTime,
+                                today,
+                                isDisabled: !canEdit || model.isEventBusy,
+                              },
+                              digits,
+                              h,
                             ),
-                            h.label(
-                              [h.Class(TIME_LABEL_CLASS)],
-                              [
-                                'تا',
-                                h.input([
-                                  h.Type('time'),
-                                  h.Class(TIME_INPUT_CLASS),
-                                  h.AriaLabel('ساعت پایان'),
-                                  h.Value(draft.endTime),
-                                  h.Disabled(!canEdit || model.isEventBusy),
-                                  h.OnInput(value =>
-                                    Message.UpdatedEventEditorEnd({ value }),
-                                  ),
-                                ]),
-                              ],
+                            pickerField(
+                              {
+                                id: 'calendar-event-editor-end',
+                                label: 'تا',
+                                target: 'event:endTime',
+                                mode: 'time',
+                                value: draft.endTime,
+                                today,
+                                isDisabled: !canEdit || model.isEventBusy,
+                              },
+                              digits,
+                              h,
                             ),
                           ],
                         ),
@@ -2315,27 +2342,24 @@ const scopePromptView = (
                   h.AriaLabelledBy('calendar-scope-title'),
                 ],
                 [
-                  h.label(
+                  h.button(
                     [
-                      h.Class(SCOPE_OPTION_CLASS),
+                      h.Type('button'),
+                      h.Role('radio'),
+                      h.AriaChecked(model.eventScope === 'thisOccurrence'),
+                      h.Class(
+                        'grid cursor-pointer grid-cols-1 items-start gap-2 rounded-xl border border-base-300 bg-base-100 p-3 text-start transition-colors data-[selected=true]:border-primary data-[selected=true]:bg-primary/8',
+                      ),
                       ...(model.eventScope === 'thisOccurrence'
                         ? [h.DataAttribute('selected', 'true')]
                         : []),
+                      h.OnClick(
+                        Message.SelectedEventScope({
+                          scope: 'thisOccurrence',
+                        }),
+                      ),
                     ],
                     [
-                      h.input([
-                        h.Id('calendar-scope-this'),
-                        h.Type('radio'),
-                        h.Name('calendar-event-scope'),
-                        h.Value('thisOccurrence'),
-                        h.AriaLabel('فقط این رویداد'),
-                        h.Checked(model.eventScope === 'thisOccurrence'),
-                        h.OnChange(() =>
-                          Message.SelectedEventScope({
-                            scope: 'thisOccurrence',
-                          }),
-                        ),
-                      ]),
                       h.span(
                         [h.Class('grid min-w-0 gap-0.5')],
                         [
@@ -2353,31 +2377,34 @@ const scopePromptView = (
                       ),
                     ],
                   ),
-                  h.label(
+                  h.button(
                     [
-                      h.Class(SCOPE_OPTION_CLASS),
+                      h.Type('button'),
+                      h.Role('radio'),
+                      h.AriaChecked(model.eventScope === 'thisAndFollowing'),
+                      ...(!splitAvailable || model.isEventBusy
+                        ? [h.Disabled(true)]
+                        : []),
+                      h.Class(
+                        'grid cursor-pointer grid-cols-1 items-start gap-2 rounded-xl border border-base-300 bg-base-100 p-3 text-start transition-colors data-[disabled=true]:opacity-60 data-[selected=true]:border-primary data-[selected=true]:bg-primary/8',
+                      ),
                       ...(model.eventScope === 'thisAndFollowing'
                         ? [h.DataAttribute('selected', 'true')]
                         : []),
                       ...(splitAvailable
                         ? []
                         : [h.DataAttribute('disabled', 'true')]),
+                      ...(splitAvailable && !model.isEventBusy
+                        ? [
+                            h.OnClick(
+                              Message.SelectedEventScope({
+                                scope: 'thisAndFollowing',
+                              }),
+                            ),
+                          ]
+                        : []),
                     ],
                     [
-                      h.input([
-                        h.Type('radio'),
-                        h.Name('calendar-event-scope'),
-                        h.Value('thisAndFollowing'),
-                        h.AriaLabel('این رویداد و رویدادهای بعدی'),
-                        h.Checked(model.eventScope === 'thisAndFollowing'),
-                        h.Disabled(!splitAvailable || model.isEventBusy),
-                        h.AriaDescribedBy('calendar-scope-following-hint'),
-                        h.OnChange(() =>
-                          Message.SelectedEventScope({
-                            scope: 'thisAndFollowing',
-                          }),
-                        ),
-                      ]),
                       h.span(
                         [h.Class('grid min-w-0 gap-0.5')],
                         [
@@ -2634,6 +2661,15 @@ export const calendarPageView = (
       }),
       eventEditorView(model, inputs, h),
       scopePromptView(model, inputs, h),
+      pickerDialogView(
+        {
+          model: model.picker,
+          toParentMessage: message => Message.GotPickerMessage({ message }),
+          digits: inputs.display.digits,
+          weekStart: inputs.display.weekStart,
+        },
+        h,
+      ),
       h.p(
         [
           h.Class('sr-only'),

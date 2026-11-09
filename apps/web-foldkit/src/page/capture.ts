@@ -26,6 +26,7 @@ import {
   isInstant,
 } from '../lib/capture-instant'
 import type { DisplayFields } from '../preferences-model'
+import * as Picker from '../ui/picker'
 import { captureView } from './capture-view'
 
 /**
@@ -79,6 +80,7 @@ export const Model = Schema.Struct({
   historyGeneration: Schema.Int,
   dissectGeneration: Schema.Int,
   commitGeneration: Schema.Int,
+  picker: Picker.Model,
 })
 export type Model = typeof Model.Type
 
@@ -86,6 +88,8 @@ export type Inputs = Readonly<{
   display: DisplayFields
   isOnline: boolean
   maybeUserId: Option.Option<string>
+  /** The Jalali today as ISO, for the date and time picker. */
+  today: string
 }>
 
 export type ViewInputs = Inputs
@@ -96,7 +100,7 @@ export const initialModel = (options: {
   Model.make({
     text: Option.match(options.maybeUserId, {
       onNone: () => loadCaptureText(undefined),
-      onSome: (userId) => loadCaptureText(userId),
+      onSome: userId => loadCaptureText(userId),
     }),
     phase: 'idle',
     cards: [],
@@ -112,6 +116,7 @@ export const initialModel = (options: {
     historyGeneration: 0,
     dissectGeneration: 0,
     commitGeneration: 0,
+    picker: Picker.init({ id: 'capture-picker' }),
   })
 
 // MESSAGE
@@ -169,6 +174,7 @@ export const Message = defineMessageUnion({
   FailedDeleteHistory: { failure: CaptureFailure },
   CompletedCacheText: {},
   IgnoredInput: {},
+  GotPickerMessage: { message: Picker.Message },
 })
 export type Message = typeof Message.Type
 
@@ -179,7 +185,7 @@ export const DissectCapture = Command.define('DissectCapture', {
   messages: [Message.CompletedDissect, Message.FailedDissect],
   execute: ({ text }) =>
     dissectCapture({ text }).pipe(
-      Effect.map((result) =>
+      Effect.map(result =>
         result.ok
           ? Message.CompletedDissect({ capture: result.value })
           : Message.FailedDissect({ failure: result.error }),
@@ -196,7 +202,7 @@ export const CommitCapture = Command.define('CommitCapture', {
   messages: [Message.CompletedCommit, Message.FailedCommit],
   execute: ({ captureId, drafts }) =>
     commitCapture({ captureId: CaptureId.make(captureId), drafts }).pipe(
-      Effect.map((result) =>
+      Effect.map(result =>
         result.ok
           ? Message.CompletedCommit({ result: result.value })
           : Message.FailedCommit({ failure: result.error }),
@@ -209,7 +215,7 @@ export const LoadHistory = Command.define('LoadHistory', {
   messages: [Message.CompletedLoadHistory, Message.FailedLoadHistory],
   execute: ({ generation }) =>
     listCaptures({ limit: 20 }).pipe(
-      Effect.map((result) =>
+      Effect.map(result =>
         result.ok
           ? Message.CompletedLoadHistory({ generation, captures: result.value })
           : Message.FailedLoadHistory({ generation, failure: result.error }),
@@ -222,7 +228,7 @@ export const DeleteCapture = Command.define('DeleteCapture', {
   messages: [Message.CompletedDeleteHistory, Message.FailedDeleteHistory],
   execute: ({ captureId }) =>
     deleteCapture({ captureId: CaptureId.make(captureId) }).pipe(
-      Effect.map((result) =>
+      Effect.map(result =>
         result.ok
           ? Message.CompletedDeleteHistory({ capture: result.value })
           : Message.FailedDeleteHistory({ failure: result.error }),
@@ -270,7 +276,7 @@ const cacheCommands = (
 ): ReadonlyArray<Command.Command<Message>> =>
   Option.match(inputs.maybeUserId, {
     onNone: () => [],
-    onSome: (userId) => [CacheText({ userId, text: model.text })],
+    onSome: userId => [CacheText({ userId, text: model.text })],
   })
 
 const withError = (model: Model, message: string): Model =>
@@ -292,7 +298,7 @@ const updateCard = (
   })
 
 export const visibleCards = (model: Model): ReadonlyArray<CaptureCard> =>
-  model.cards.filter((card) => !card.isDiscarded)
+  model.cards.filter(card => !card.isDiscarded)
 
 const cardToDraft = (card: CaptureCard): CaptureDraft => {
   const title = card.title.trim()
@@ -314,7 +320,7 @@ const withoutMissing = (draft: CaptureDraft, field: string): CaptureDraft =>
   modifyFields(draft, {
     missing: () => {
       const answered = answeredFieldsOf(field)
-      return draft.missing.filter((entry) => !answered.includes(entry.field))
+      return draft.missing.filter(entry => !answered.includes(entry.field))
     },
   })
 
@@ -468,6 +474,204 @@ const answerNeedsInput = (
   return withoutMissing(setDraftField(draft, field, resolved), field)
 }
 
+const currentInstantOf = (
+  draft: CaptureDraft,
+  field: string,
+): string | undefined => {
+  if (draft._tag === 'task' && field === 'dueAt') {
+    return draft.dueAt ?? undefined
+  }
+  if (draft._tag === 'reminder' && field === 'fireAt') {
+    return draft.fireAt ?? undefined
+  }
+  if (draft._tag === 'event' && draft.timing?._tag === 'timed') {
+    if (field === 'timing.start' || field === 'start') {
+      return draft.timing.start
+    }
+    if (field === 'timing.end' || field === 'end') {
+      return draft.timing.end
+    }
+  }
+  return undefined
+}
+
+/** The day a clock-time edit belongs to, from the draft's own date. */
+const draftDateOf = (
+  draft: CaptureDraft,
+  field: string,
+  timeZone: string,
+): string | undefined => {
+  const instant = currentInstantOf(draft, field)
+  if (instant !== undefined) {
+    const date = instantPartsOf(instant, timeZone)?.date
+    if (date !== undefined) {
+      return date
+    }
+  }
+  if (draft._tag === 'task' && field === 'dueAt') {
+    return draft.dueDate ?? undefined
+  }
+  if (draft._tag === 'event' && draft.timing?._tag === 'allDay') {
+    return draft.timing.date
+  }
+  return undefined
+}
+
+/** The clock time already stored in an instant field, for a date edit. */
+const draftClockTimeOf = (
+  draft: CaptureDraft,
+  field: string,
+  timeZone: string,
+): string => {
+  const instant = currentInstantOf(draft, field)
+  return instant === undefined
+    ? '09:00'
+    : (instantPartsOf(instant, timeZone)?.time ?? '09:00')
+}
+
+const withCardDraft = (
+  model: Model,
+  index: number,
+  draft: CaptureDraft,
+): Model => updateCard(model, index, card => Struct.assign(card, { draft }))
+
+const pickerTargetParts = (
+  target: string,
+): { kind: string; index: number; field: string } | undefined => {
+  const [kind, rawIndex, ...fieldParts] = target.split(':')
+  if (kind === undefined || rawIndex === undefined || fieldParts.length === 0) {
+    return undefined
+  }
+  const index = Number.parseInt(rawIndex, 10)
+  return Number.isNaN(index)
+    ? undefined
+    : { kind, index, field: fieldParts.join(':') }
+}
+
+const applyPickerValue = (
+  model: Model,
+  target: string,
+  value: string,
+  inputs: Inputs,
+): Model => {
+  const parts = pickerTargetParts(target)
+  if (parts === undefined) {
+    return model
+  }
+  const { kind, index, field } = parts
+  const card = model.cards[index]
+  if (card === undefined) {
+    return model
+  }
+  const timeZone = inputs.display.timeZone
+  const draft = card.draft
+
+  if (kind === 'card') {
+    return withCardDraft(model, index, setDraftField(draft, field, value))
+  }
+
+  if (kind === 'card-instant') {
+    if (value === '') {
+      const date = draftDateOf(draft, field, timeZone)
+      if (
+        draft._tag === 'event' &&
+        (field === 'timing.start' ||
+          field === 'timing.end' ||
+          field === 'start' ||
+          field === 'end') &&
+        date !== undefined
+      ) {
+        return withCardDraft(
+          model,
+          index,
+          setDraftField(draft, 'timing.date', date),
+        )
+      }
+      return withCardDraft(model, index, setDraftField(draft, field, ''))
+    }
+    const date = draftDateOf(draft, field, timeZone)
+    const instant =
+      date === undefined ? undefined : instantOf(date, value, timeZone)
+    return instant === undefined
+      ? model
+      : withCardDraft(model, index, setDraftField(draft, field, instant))
+  }
+
+  if (kind === 'card-instant-date') {
+    if (value === '') {
+      return withCardDraft(model, index, setDraftField(draft, field, ''))
+    }
+    const instant = instantOf(
+      value,
+      draftClockTimeOf(draft, field, timeZone),
+      timeZone,
+    )
+    return instant === undefined
+      ? model
+      : withCardDraft(model, index, setDraftField(draft, field, instant))
+  }
+
+  if (kind === 'need-time') {
+    return withCardDraft(
+      model,
+      index,
+      answerNeedsInput(draft, field, value, timeZone),
+    )
+  }
+
+  if (kind === 'need-date') {
+    return withCardDraft(
+      model,
+      index,
+      answerNeedsInput(draft, field, value, timeZone),
+    )
+  }
+
+  if (kind === 'need-datetime') {
+    if (value === '') {
+      return model
+    }
+    const [date, time] = value.split('T')
+    if (date === undefined || time === undefined) {
+      return model
+    }
+    const instant = instantOf(date, time, timeZone)
+    return instant === undefined
+      ? model
+      : withCardDraft(
+          model,
+          index,
+          answerNeedsInput(draft, field, instant, timeZone),
+        )
+  }
+
+  return model
+}
+
+const foldPickerOutMessage = (inputs: Inputs) =>
+  Picker.OutMessage.match<Update.Step<Model, Message>>({
+    PickedValue:
+      ({ target, value }) =>
+      stepModel => ({
+        model: applyPickerValue(stepModel, target, value, inputs),
+      }),
+    ClearedValue:
+      ({ target }) =>
+      stepModel => ({
+        model: applyPickerValue(stepModel, target, '', inputs),
+      }),
+  })
+
+const makeFoldPicker = (inputs: Inputs) =>
+  Update.foldChild({
+    update: Picker.update,
+    read: (model: Model) => Option.some(model.picker),
+    write: (model, nextPicker) =>
+      modifyFields(model, { picker: () => nextPicker }),
+    toParentMessage: message => Message.GotPickerMessage({ message }),
+    foldOutMessage: foldPickerOutMessage(inputs),
+  })
+
 const toggleWeekday = (
   days: ReadonlyArray<number>,
   day: number,
@@ -475,7 +679,7 @@ const toggleWeekday = (
   days.includes(day)
     ? days.length === 1
       ? days
-      : days.filter((candidate) => candidate !== day)
+      : days.filter(candidate => candidate !== day)
     : [...days, day].sort((left, right) => left - right)
 
 const setHabitFrequency = (
@@ -494,10 +698,7 @@ const setHabitFrequency = (
         : current?._tag === 'weekly'
           ? current
           : { _tag: 'weekly' as const, times: 3 }
-  return withoutMissing(
-    Struct.assign(draft, { frequency }),
-    'frequency',
-  )
+  return withoutMissing(Struct.assign(draft, { frequency }), 'frequency')
 }
 
 const setReminderRepeat = (
@@ -507,7 +708,8 @@ const setReminderRepeat = (
   if (draft._tag !== 'reminder') return draft
   const current = draft.repeat
   const time =
-    current !== undefined && (current._tag === 'daily' || current._tag === 'weekly')
+    current !== undefined &&
+    (current._tag === 'daily' || current._tag === 'weekly')
       ? current.time
       : '08:00'
   const repeat =
@@ -518,8 +720,7 @@ const setReminderRepeat = (
         : kind === 'weekly'
           ? {
               _tag: 'weekly' as const,
-              days:
-                current?._tag === 'weekly' ? current.days : [5],
+              days: current?._tag === 'weekly' ? current.days : [5],
               time,
             }
           : {
@@ -527,16 +728,13 @@ const setReminderRepeat = (
               hours: current?._tag === 'interval' ? current.hours : 8,
             }
 
-  const withRepeat = withoutMissing(
-    Struct.assign(draft, { repeat }),
-    'repeat',
-  )
+  const withRepeat = withoutMissing(Struct.assign(draft, { repeat }), 'repeat')
 
   // A one-off reminder with no fire time is still a Needs Input.
   if (kind === 'once' && draft.fireAt === undefined) {
     return modifyFields(withRepeat, {
       missing: () =>
-        withRepeat.missing.some((entry) => entry.field === 'fireAt')
+        withRepeat.missing.some(entry => entry.field === 'fireAt')
           ? withRepeat.missing
           : [
               ...withRepeat.missing,
@@ -616,7 +814,7 @@ const startCommit = (model: Model): UpdateReturn => {
   if (cards.length === 0) {
     return { model: withError(model, 'کارتی برای ساخت نیست.') }
   }
-  const blocked = cards.findIndex((card) => card.draft.missing.length > 0)
+  const blocked = cards.findIndex(card => card.draft.missing.length > 0)
   if (blocked >= 0) {
     return {
       model: withError(
@@ -647,7 +845,9 @@ const startCommit = (model: Model): UpdateReturn => {
   }
 }
 
-const historyCommand = (model: Model): ReadonlyArray<Command.Command<Message>> => {
+const historyCommand = (
+  model: Model,
+): ReadonlyArray<Command.Command<Message>> => {
   const generation = model.historyGeneration + 1
   return [LoadHistory({ generation })]
 }
@@ -656,8 +856,12 @@ export const update = (
   model: Model,
   message: Message,
   inputs: Inputs,
-): UpdateReturn =>
-  Message.match<UpdateReturn>(message, {
+): UpdateReturn => {
+  const foldPicker = makeFoldPicker(inputs)
+  return Message.match<UpdateReturn>(message, {
+    GotPickerMessage: ({ message: pickerMessage }) =>
+      foldPicker(model, pickerMessage),
+
     UpdatedText: ({ value }) => {
       const next = modifyFields(model, {
         text: () => value,
@@ -684,7 +888,7 @@ export const update = (
           commands: historyCommand(model),
         }
       }
-      const cards = Array.map(capture.drafts, (draft) =>
+      const cards = Array.map(capture.drafts, draft =>
         CaptureCard.make({
           cardId: uuidV7(),
           draft,
@@ -755,49 +959,39 @@ export const update = (
     }),
 
     ClickedDiscardCard: ({ index }) => ({
-      model: updateCard(model, index, (card) =>
+      model: updateCard(model, index, card =>
         modifyFields(card, { isDiscarded: () => true }),
       ),
     }),
 
     UpdatedCardTitle: ({ index, value }) => ({
-      model: updateCard(model, index, (card) =>
+      model: updateCard(model, index, card =>
         modifyFields(card, { title: () => value }),
       ),
     }),
 
     UpdatedCardField: ({ index, field, value }) => ({
-      model: updateCard(model, index, (card) =>
+      model: updateCard(model, index, card =>
         modifyFields(card, {
           // Editing the structural field is an answer too: the card's real
           // picker and the Needs Input picker write the same draft field.
           draft: () =>
-            answerNeedsInput(
-              card.draft,
-              field,
-              value,
-              inputs.display.timeZone,
-            ),
+            answerNeedsInput(card.draft, field, value, inputs.display.timeZone),
         }),
       ),
     }),
 
     AnsweredNeedsInput: ({ index, field, value }) => ({
-      model: updateCard(model, index, (card) =>
+      model: updateCard(model, index, card =>
         modifyFields(card, {
           draft: () =>
-            answerNeedsInput(
-              card.draft,
-              field,
-              value,
-              inputs.display.timeZone,
-            ),
+            answerNeedsInput(card.draft, field, value, inputs.display.timeZone),
         }),
       ),
     }),
 
     SelectedHabitFrequency: ({ index, kind }) => ({
-      model: updateCard(model, index, (card) =>
+      model: updateCard(model, index, card =>
         modifyFields(card, {
           draft: () => setHabitFrequency(card.draft, kind),
         }),
@@ -805,7 +999,7 @@ export const update = (
     }),
 
     SelectedReminderRepeat: ({ index, kind }) => ({
-      model: updateCard(model, index, (card) =>
+      model: updateCard(model, index, card =>
         modifyFields(card, {
           draft: () => setReminderRepeat(card.draft, kind),
         }),
@@ -813,7 +1007,7 @@ export const update = (
     }),
 
     ToggledWeekday: ({ index, kind, day }) => ({
-      model: updateCard(model, index, (card) => {
+      model: updateCard(model, index, card => {
         if (kind === 'habit' && card.draft._tag === 'habit') {
           const draft = card.draft
           const current = draft.frequency
@@ -848,7 +1042,7 @@ export const update = (
     }),
 
     ChangedNumberField: ({ index, field, value }) => ({
-      model: updateCard(model, index, (card) =>
+      model: updateCard(model, index, card =>
         modifyFields(card, {
           draft: () => updateNumberField(card.draft, field, value),
         }),
@@ -872,8 +1066,7 @@ export const update = (
 
     CompletedDeleteHistory: ({ capture }) => ({
       model: modifyFields(model, {
-        history: () =>
-          model.history.filter((row) => row.id !== capture.id),
+        history: () => model.history.filter(row => row.id !== capture.id),
         expandedHistoryId: () =>
           Option.contains(model.expandedHistoryId, capture.id)
             ? Option.none()
@@ -889,7 +1082,7 @@ export const update = (
     }),
 
     ClickedRetryHistory: ({ captureId }) => {
-      const capture = model.history.find((row) => row.id === captureId)
+      const capture = model.history.find(row => row.id === captureId)
       if (capture === undefined) return { model }
       const next = modifyFields(freshComposer(model, capture.text), {
         expandedHistoryId: () => Option.none(),
@@ -897,10 +1090,7 @@ export const update = (
       const started = startDissect(next, inputs)
       return {
         model: started.model,
-        commands: [
-          ...cacheCommands(next, inputs),
-          ...(started.commands ?? []),
-        ],
+        commands: [...cacheCommands(next, inputs), ...(started.commands ?? [])],
       }
     },
 
@@ -933,6 +1123,7 @@ export const update = (
     /** A picker emitted an incomplete value (mid-pick); keep the model as is. */
     IgnoredInput: () => ({ model }),
   })
+}
 
 // VIEW
 

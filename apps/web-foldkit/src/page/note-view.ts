@@ -5,7 +5,11 @@ import { syncFailureMessage } from '../lib/sync-copy'
 import { shareActionOf } from '../lib/visibility-writes'
 import { notesRouter, notesTrashRouter } from '../route'
 import { buttonView } from '../ui/button'
-import { formErrorView } from '../ui/field'
+import {
+  formErrorView,
+  inputControlView,
+  textAreaControlView,
+} from '../ui/field'
 import { archiveIcon, pinIcon, trashIcon } from '../ui/icons'
 import { Message } from './notes'
 import type { Model, ViewInputs } from './notes'
@@ -206,16 +210,18 @@ const editorFormView = (
             [h.Class('text-sm font-medium text-base-content/70')],
             ['عنوان'],
           ),
-          h.input([
-            h.Id('note-title'),
-            h.Type('text'),
-            h.Class('field-input min-h-12 text-base font-bold'),
-            h.AriaLabel('عنوان یادداشت'),
-            h.Placeholder('بی‌عنوان'),
-            h.Value(model.title),
-            h.Disabled(model.isTrashed),
-            h.OnInput(value => Message.UpdatedNoteTitle({ value })),
-          ]),
+          inputControlView(
+            {
+              id: 'note-title',
+              label: 'عنوان یادداشت',
+              value: model.title,
+              placeholder: 'بی‌عنوان',
+              isDisabled: model.isTrashed,
+              class: 'min-h-12 text-base font-bold',
+              onInput: value => Message.UpdatedNoteTitle({ value }),
+            },
+            h,
+          ),
         ],
       ),
       tagsView(model, inputs, h),
@@ -226,17 +232,19 @@ const editorFormView = (
             [h.Class('text-sm font-medium text-base-content/70')],
             ['متن (ساده یا مارک‌داون)'],
           ),
-          h.textarea([
-            h.Id('note-body'),
-            h.AriaLabel('متن یادداشت'),
-            h.Class('field-input min-h-[45dvh] p-4 text-base leading-8'),
-            h.Placeholder('از همین‌جا شروع کنید…'),
-            h.Value(model.text),
-            h.Rows(14),
-            h.Readonly(model.isTrashed),
-            h.Disabled(model.isTrashed),
-            h.OnInput(value => Message.UpdatedNoteText({ value })),
-          ]),
+          textAreaControlView(
+            {
+              id: 'note-body',
+              label: 'متن یادداشت',
+              value: model.text,
+              rows: 14,
+              placeholder: 'از همین‌جا شروع کنید…',
+              isDisabled: model.isTrashed,
+              class: 'min-h-[45dvh] p-4 text-base leading-8',
+              onInput: value => Message.UpdatedNoteText({ value }),
+            },
+            h,
+          ),
         ],
       ),
       h.div(

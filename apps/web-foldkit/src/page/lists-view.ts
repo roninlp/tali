@@ -15,7 +15,7 @@ import {
 import { listPath } from '../route'
 import { buttonView } from '../ui/button'
 import { confirmDialogView } from '../ui/confirm'
-import { formErrorView } from '../ui/field'
+import { formErrorView, inputControlView } from '../ui/field'
 import { toastStackView } from '../ui/toast'
 import { Message, confirmSpec } from './lists'
 import type { Model, ViewInputs } from './lists'
@@ -167,18 +167,21 @@ const createSectionView = (model: Model, h: HtmlBuilder<Message>): Html =>
                 [h.Class('text-[0.8rem] text-base-content/55')],
                 ['عنوان'],
               ),
-              h.input([
-                h.Name('title'),
-                h.Type('text'),
-                h.Class('field-input'),
-                h.Required(true),
-                h.Maxlength(120),
-                h.Autocomplete('off'),
-                h.Placeholder('مثلاً خرید هفتگی'),
-                h.Value(model.indexTitle),
-                h.Disabled(model.isCreating),
-                h.OnInput(value => Message.UpdatedIndexTitle({ value })),
-              ]),
+              inputControlView(
+                {
+                  id: 'lists-title',
+                  label: 'عنوان',
+                  name: 'title',
+                  value: model.indexTitle,
+                  placeholder: 'مثلاً خرید هفتگی',
+                  autoComplete: 'off',
+                  isDisabled: model.isCreating,
+                  isRequired: true,
+                  onInput: value => Message.UpdatedIndexTitle({ value }),
+                  attributes: [h.Maxlength(120)],
+                },
+                h,
+              ),
             ],
           ),
           h.div(

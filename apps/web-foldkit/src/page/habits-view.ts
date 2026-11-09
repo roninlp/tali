@@ -23,6 +23,8 @@ import {
 } from '../habits-model'
 import { shareActionOf } from '../lib/visibility-writes'
 import { confirmDialogView } from '../ui/confirm'
+import { inputControlView, textAreaControlView } from '../ui/field'
+import { pickerDialogView, pickerTriggerView } from '../ui/picker'
 import { toastStackView } from '../ui/toast'
 import {
   Message,
@@ -89,20 +91,21 @@ const titleFieldView = (
   inputs: ViewInputs,
   h: HtmlBuilder<Message>,
 ): Html =>
-  h.label(
+  h.div(
     [h.Class('grid min-w-0 gap-1')],
     [
       fieldLabel('عنوان', h),
-      h.input([
-        h.Id('habit-title'),
-        h.Type('text'),
-        h.Class('field-input'),
-        h.AriaLabel('عنوان عادت'),
-        h.Placeholder('مثلاً کتاب خواندن'),
-        h.Value(model.title),
-        h.Disabled(!inputs.isStoreReady || model.isSaving),
-        h.OnInput(value => Message.UpdatedHabitTitle({ value })),
-      ]),
+      inputControlView(
+        {
+          id: 'habit-title',
+          label: 'عنوان عادت',
+          value: model.title,
+          placeholder: 'مثلاً کتاب خواندن',
+          isDisabled: !inputs.isStoreReady || model.isSaving,
+          onInput: value => Message.UpdatedHabitTitle({ value }),
+        },
+        h,
+      ),
     ],
   )
 
@@ -111,18 +114,21 @@ const descriptionFieldView = (
   inputs: ViewInputs,
   h: HtmlBuilder<Message>,
 ): Html =>
-  h.label(
+  h.div(
     [h.Class('grid min-w-0 gap-1')],
     [
       fieldLabel('توضیح (اختیاری)', h),
-      h.textarea([
-        h.Class('field-input'),
-        h.AriaLabel('توضیح عادت'),
-        h.Rows(2),
-        h.Value(model.description),
-        h.Disabled(!inputs.isStoreReady || model.isSaving),
-        h.OnInput(value => Message.UpdatedHabitDescription({ value })),
-      ]),
+      textAreaControlView(
+        {
+          id: 'habit-description',
+          label: 'توضیح عادت',
+          value: model.description,
+          rows: 2,
+          isDisabled: !inputs.isStoreReady || model.isSaving,
+          onInput: value => Message.UpdatedHabitDescription({ value }),
+        },
+        h,
+      ),
     ],
   )
 
@@ -286,35 +292,36 @@ const reminderFieldView = (
   inputs: ViewInputs,
   h: HtmlBuilder<Message>,
 ): Html =>
-  h.label(
+  h.div(
     [h.Class('grid min-w-0 gap-1')],
     [
-      fieldLabel('زمان یادآوری (اختیاری)', h),
-      h.div(
-        [h.Class('flex flex-wrap items-center gap-1.5')],
-        [
-          h.input([
-            h.Class('field-input max-w-40'),
-            h.Type('time'),
-            h.AriaLabel('زمان یادآوری عادت'),
-            h.Value(model.reminderTime),
-            h.Disabled(!inputs.isStoreReady || model.isSaving),
-            h.OnInput(value => Message.UpdatedHabitReminderTime({ value })),
-          ]),
-          ...(model.reminderTime === ''
-            ? []
-            : [
-                h.button(
-                  [
-                    h.Type('button'),
-                    h.Class('btn btn-outline min-h-10'),
-                    h.OnClick(Message.ClickedClearReminder()),
-                  ],
-                  ['حذف یادآور'],
-                ),
-              ]),
-        ],
+      pickerTriggerView(
+        {
+          id: 'habit-reminder-time',
+          label: 'زمان یادآوری (اختیاری)',
+          target: 'habit:reminderTime',
+          mode: 'time',
+          value: model.reminderTime,
+          today: habitToday(model.now, inputs.display.timeZone),
+          digits: inputs.display.digits,
+          isDisabled: !inputs.isStoreReady || model.isSaving,
+          toParentMessage: message => Message.GotPickerMessage({ message }),
+        },
+        h,
       ),
+      ...(model.reminderTime === ''
+        ? []
+        : [
+            h.button(
+              [
+                h.Type('button'),
+                h.Class('btn btn-outline btn-sm w-fit'),
+                h.Disabled(!inputs.isStoreReady || model.isSaving),
+                h.OnClick(Message.ClickedClearReminder()),
+              ],
+              ['حذف یادآور'],
+            ),
+          ]),
     ],
   )
 
@@ -844,6 +851,15 @@ export const habitsPageView = (
           ),
           habitsToastView(model, h),
           habitsConfirmDialogView(model, h),
+          pickerDialogView(
+            {
+              model: model.picker,
+              toParentMessage: message => Message.GotPickerMessage({ message }),
+              digits: inputs.display.digits,
+              weekStart: inputs.display.weekStart,
+            },
+            h,
+          ),
         ],
       ),
     ],

@@ -6,12 +6,11 @@ import {
   type Capture,
   type CaptureCreatedRow,
   type NeedsInput,
-  localDateTimeToInstant,
   localizeDigits,
 } from '@tali/domain'
 
-import { instantOf, instantPartsOf } from '../lib/capture-instant'
-
+import { instantPartsOf } from '../lib/capture-instant'
+import type { DisplayFields } from '../preferences-model'
 import {
   calendarRouter,
   habitsRouter,
@@ -19,8 +18,14 @@ import {
   remindersRouter,
   taskAnchorPath,
 } from '../route'
-import type { DisplayFields } from '../preferences-model'
+import { buttonView } from '../ui/button'
+import { inputControlView, textAreaControlView } from '../ui/field'
 import { retryIcon, trashIcon } from '../ui/icons'
+import {
+  type PickerMode,
+  pickerDialogView,
+  pickerTriggerView,
+} from '../ui/picker'
 import {
   type CaptureCard,
   type Inputs,
@@ -53,7 +58,10 @@ const STATUS_LABELS: Readonly<Record<Capture['status'], string>> = {
   committed: 'ساخته شد',
 }
 
-const WEEKDAYS: ReadonlyArray<{ readonly day: number; readonly label: string }> = [
+const WEEKDAYS: ReadonlyArray<{
+  readonly day: number
+  readonly label: string
+}> = [
   { day: 6, label: 'شنبه' },
   { day: 7, label: 'یکشنبه' },
   { day: 1, label: 'دوشنبه' },
@@ -65,9 +73,7 @@ const WEEKDAYS: ReadonlyArray<{ readonly day: number; readonly label: string }> 
 
 const digitsOf = (display: DisplayFields) => display.digits
 
-const habitFrequencyKind = (
-  value: string,
-): 'daily' | 'weekdays' | 'weekly' =>
+const habitFrequencyKind = (value: string): 'daily' | 'weekdays' | 'weekly' =>
   value === 'weekdays' ? 'weekdays' : value === 'weekly' ? 'weekly' : 'daily'
 
 const reminderRepeatKind = (
@@ -108,9 +114,12 @@ const createdSummary = (
     return acc
   }, {})
   const parts = Object.entries(counts).map(
-    ([type, count]) => `${countText(count, display)} ${TYPE_LABELS[type] ?? type}`,
+    ([type, count]) =>
+      `${countText(count, display)} ${TYPE_LABELS[type] ?? type}`,
   )
-  return parts.length === 0 ? 'چیزی ساخته نشد.' : `${parts.join('، ')} ساخته شد.`
+  return parts.length === 0
+    ? 'چیزی ساخته نشد.'
+    : `${parts.join('، ')} ساخته شد.`
 }
 
 const noticeView = (
@@ -131,73 +140,38 @@ const noticeView = (
   )
 
 const fieldLabel = (text: string, h: HtmlBuilder<Message>): Html =>
-  h.span(
-    [h.Class('text-[0.72rem] font-medium text-base-content/55')],
-    [text],
-  )
+  h.span([h.Class('text-[0.72rem] font-medium text-base-content/55')], [text])
 
-const inputClass =
-  'field-input min-h-10 w-full rounded-xl border border-base-300 bg-base-100 px-3 text-[0.85rem]'
-
-const dateField = (
-  label: string,
-  value: string,
-  onChange: (value: string) => Message,
-  h: HtmlBuilder<Message>,
-): Html =>
-  h.label(
-    [h.Class('grid min-w-0 gap-1')],
-    [
-      fieldLabel(label, h),
-      h.input([
-        h.Type('date'),
-        h.Class(inputClass),
-        h.Value(value),
-        h.OnChange(onChange),
-      ]),
-    ],
-  )
-
-const timeField = (
-  label: string,
-  value: string,
-  onChange: (value: string) => Message,
-  h: HtmlBuilder<Message>,
-  disabled = false,
-): Html =>
-  h.label(
-    [h.Class('grid min-w-0 gap-1')],
-    [
-      fieldLabel(label, h),
-      h.input([
-        h.Type('time'),
-        h.Class(inputClass),
-        h.Value(value),
-        h.Disabled(disabled),
-        h.OnChange(onChange),
-      ]),
-    ],
-  )
-
-const selectField = (
+const choiceField = (
   label: string,
   value: string,
   options: ReadonlyArray<{ readonly value: string; readonly label: string }>,
   onChange: (value: string) => Message,
   h: HtmlBuilder<Message>,
 ): Html =>
-  h.label(
+  h.div(
     [h.Class('grid min-w-0 gap-1')],
     [
       fieldLabel(label, h),
-      h.select(
+      h.div(
         [
-          h.Class(inputClass),
-          h.Value(value),
-          h.OnChange(onChange),
+          h.Role('group'),
+          h.AriaLabel(label),
+          h.Class('flex flex-wrap gap-1.5'),
         ],
-        options.map((option) =>
-          h.option([h.Value(option.value)], [option.label]),
+        options.map(option =>
+          h.button(
+            [
+              h.Type('button'),
+              h.AriaLabel(option.label),
+              h.AriaPressed(value === option.value ? 'true' : 'false'),
+              h.Class(
+                'min-h-8 rounded-full border border-base-300 bg-base-100 px-3 text-[0.76rem] text-base-content/65 transition-colors hover:border-base-content/20 aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:font-semibold aria-pressed:text-primary',
+              ),
+              h.OnClick(onChange(option.value)),
+            ],
+            [option.label],
+          ),
         ),
       ),
     ],
@@ -208,22 +182,88 @@ const numberField = (
   value: number,
   min: number,
   max: number,
+  digits: DisplayFields['digits'],
   onChange: (value: number) => Message,
   h: HtmlBuilder<Message>,
 ): Html =>
-  h.label(
+  h.div(
     [h.Class('grid min-w-0 gap-1')],
     [
       fieldLabel(label, h),
-      h.input([
-        h.Type('number'),
-        h.Class(inputClass),
-        h.Min(String(min)),
-        h.Max(String(max)),
-        h.Value(String(value)),
-        h.OnInput((raw) => onChange(Number(raw))),
-      ]),
+      h.div(
+        [
+          h.Role('group'),
+          h.AriaLabel(label),
+          h.Class('flex items-center gap-2'),
+        ],
+        [
+          buttonView(
+            {
+              variant: 'outline',
+              size: 'sm',
+              isSquare: true,
+              ariaLabel: `کاهش ${label}`,
+              isDisabled: value <= min,
+              onClick: onChange(Math.max(min, value - 1)),
+              children: ['−'],
+            },
+            h,
+          ),
+          h.output(
+            [
+              h.AriaLive('polite'),
+              h.Class('min-w-8 text-center text-[0.95rem] font-semibold'),
+            ],
+            [localizeDigits(value, digits)],
+          ),
+          buttonView(
+            {
+              variant: 'outline',
+              size: 'sm',
+              isSquare: true,
+              ariaLabel: `افزایش ${label}`,
+              isDisabled: value >= max,
+              onClick: onChange(Math.min(max, value + 1)),
+              children: ['+'],
+            },
+            h,
+          ),
+        ],
+      ),
     ],
+  )
+
+const pickerField = (
+  config: Readonly<{
+    id: string
+    label: string
+    target: string
+    mode: PickerMode
+    value: string
+    inputs: Inputs
+    isDisabled?: boolean
+    placeholder?: string
+  }>,
+  h: HtmlBuilder<Message>,
+): Html =>
+  pickerTriggerView(
+    {
+      id: config.id,
+      label: config.label,
+      target: config.target,
+      mode: config.mode,
+      value: config.value,
+      today: config.inputs.today,
+      digits: digitsOf(config.inputs.display),
+      ...(config.isDisabled === undefined
+        ? {}
+        : { isDisabled: config.isDisabled }),
+      ...(config.placeholder === undefined
+        ? {}
+        : { placeholder: config.placeholder }),
+      toParentMessage: message => Message.GotPickerMessage({ message }),
+    },
+    h,
   )
 
 const weekdayToggles = (
@@ -234,7 +274,7 @@ const weekdayToggles = (
 ): Html =>
   h.div(
     [h.Class('flex flex-wrap gap-1.5')],
-    WEEKDAYS.map((weekday) =>
+    WEEKDAYS.map(weekday =>
       h.button(
         [
           h.Type('button'),
@@ -262,7 +302,7 @@ const habitStructural = (
   return h.div(
     [h.Class('grid gap-2')],
     [
-      selectField(
+      choiceField(
         'تکرار',
         kind,
         [
@@ -270,7 +310,7 @@ const habitStructural = (
           { value: 'weekdays', label: 'روزهای انتخابی' },
           { value: 'weekly', label: 'چند بار در هفته' },
         ],
-        (value) =>
+        value =>
           Message.SelectedHabitFrequency({
             index,
             kind: habitFrequencyKind(value),
@@ -286,15 +326,21 @@ const habitStructural = (
             frequency.times,
             1,
             7,
-            (value) => Message.ChangedNumberField({ index, field: 'times', value }),
+            digitsOf(inputs.display),
+            value =>
+              Message.ChangedNumberField({ index, field: 'times', value }),
             h,
           )
         : h.empty,
-      timeField(
-        'ساعت یادآوری (اختیاری)',
-        draft.reminderTime ?? '',
-        (value) =>
-          Message.UpdatedCardField({ index, field: 'reminderTime', value }),
+      pickerField(
+        {
+          id: `habit-reminder-time-${index}`,
+          label: 'ساعت یادآوری (اختیاری)',
+          target: `card:${index}:reminderTime`,
+          mode: 'time',
+          value: draft.reminderTime ?? '',
+          inputs,
+        },
         h,
       ),
     ],
@@ -312,7 +358,8 @@ const reminderStructural = (
   const repeat = draft.repeat
   const kind = repeat?._tag ?? 'daily'
   const time =
-    repeat !== undefined && (repeat._tag === 'daily' || repeat._tag === 'weekly')
+    repeat !== undefined &&
+    (repeat._tag === 'daily' || repeat._tag === 'weekly')
       ? repeat.time
       : ''
   const maybeFireParts =
@@ -322,7 +369,7 @@ const reminderStructural = (
   return h.div(
     [h.Class('grid gap-2')],
     [
-      selectField(
+      choiceField(
         'تکرار',
         kind,
         [
@@ -331,7 +378,7 @@ const reminderStructural = (
           { value: 'weekly', label: 'روزهای انتخابی' },
           { value: 'interval', label: 'هر چند ساعت' },
         ],
-        (value) =>
+        value =>
           Message.SelectedReminderRepeat({
             index,
             kind: reminderRepeatKind(value),
@@ -339,11 +386,15 @@ const reminderStructural = (
         h,
       ),
       repeat?._tag === 'daily' || repeat?._tag === 'weekly'
-        ? timeField(
-            'ساعت',
-            time,
-            (value) =>
-              Message.UpdatedCardField({ index, field: 'repeat.time', value }),
+        ? pickerField(
+            {
+              id: `reminder-repeat-time-${index}`,
+              label: 'ساعت',
+              target: `card:${index}:repeat.time`,
+              mode: 'time',
+              value: time,
+              inputs,
+            },
             h,
           )
         : h.empty,
@@ -356,7 +407,9 @@ const reminderStructural = (
             repeat.hours,
             1,
             24,
-            (value) => Message.ChangedNumberField({ index, field: 'hours', value }),
+            digitsOf(inputs.display),
+            value =>
+              Message.ChangedNumberField({ index, field: 'hours', value }),
             h,
           )
         : h.empty,
@@ -364,38 +417,28 @@ const reminderStructural = (
         ? h.div(
             [h.Class('grid gap-2 sm:grid-cols-2')],
             [
-              dateField(
-                'روز',
-                maybeFireParts?.date ?? '',
-                (value) => {
-                  if (value === '') {
-                    return Message.UpdatedCardField({ index, field: 'fireAt', value: '' })
-                  }
-                  const instant = localDateTimeToInstant(
-                    value,
-                    maybeFireParts?.time ?? '09:00',
-                    inputs.display.timeZone,
-                  )
-                  return Message.UpdatedCardField({ index, field: 'fireAt', value: instant })
+              pickerField(
+                {
+                  id: `reminder-fire-date-${index}`,
+                  label: 'روز',
+                  target: `card-instant-date:${index}:fireAt`,
+                  mode: 'date',
+                  value: maybeFireParts?.date ?? '',
+                  inputs,
                 },
                 h,
               ),
-              timeField(
-                'ساعت',
-                maybeFireParts?.time ?? '',
-                (value) => {
-                  if (value === '' || maybeFireParts === undefined) {
-                    return Message.UpdatedCardField({ index, field: 'fireAt', value: '' })
-                  }
-                  const instant = localDateTimeToInstant(
-                    maybeFireParts.date,
-                    value,
-                    inputs.display.timeZone,
-                  )
-                  return Message.UpdatedCardField({ index, field: 'fireAt', value: instant })
+              pickerField(
+                {
+                  id: `reminder-fire-time-${index}`,
+                  label: 'ساعت',
+                  target: `card-instant:${index}:fireAt`,
+                  mode: 'time',
+                  value: maybeFireParts?.time ?? '',
+                  inputs,
+                  isDisabled: maybeFireParts === undefined,
                 },
                 h,
-                maybeFireParts === undefined,
               ),
             ],
           )
@@ -420,32 +463,28 @@ const taskStructural = (
   return h.div(
     [h.Class('grid gap-2 sm:grid-cols-2')],
     [
-      dateField(
-        'روز',
-        date,
-        (value) =>
-          Message.UpdatedCardField({ index, field: 'dueDate', value }),
-        h,
-      ),
-      timeField(
-        'ساعت (اختیاری)',
-        maybeParts?.time ?? '',
-        (value) => {
-          if (value === '') {
-            return Message.UpdatedCardField({ index, field: 'dueAt', value: '' })
-          }
-          if (date === '') {
-            return Message.UpdatedCardField({ index, field: 'dueAt', value: '' })
-          }
-          const instant = localDateTimeToInstant(
-            date,
-            value,
-            inputs.display.timeZone,
-          )
-          return Message.UpdatedCardField({ index, field: 'dueAt', value: instant })
+      pickerField(
+        {
+          id: `task-due-date-${index}`,
+          label: 'روز',
+          target: `card:${index}:dueDate`,
+          mode: 'date',
+          value: date,
+          inputs,
         },
         h,
-        date === '',
+      ),
+      pickerField(
+        {
+          id: `task-due-time-${index}`,
+          label: 'ساعت (اختیاری)',
+          target: `card-instant:${index}:dueAt`,
+          mode: 'time',
+          value: maybeParts?.time ?? '',
+          inputs,
+          isDisabled: date === '',
+        },
+        h,
       ),
     ],
   )
@@ -471,18 +510,22 @@ const eventStructural = (
     timing?._tag === 'allDay'
       ? timing.date
       : timing?._tag === 'timed'
-        ? maybeStartParts?.date ?? ''
+        ? (maybeStartParts?.date ?? '')
         : ''
   const start = maybeStartParts?.time ?? ''
   const end = maybeEndParts?.time ?? ''
   return h.div(
     [h.Class('grid gap-2')],
     [
-      dateField(
-        'روز',
-        date,
-        (value) =>
-          Message.UpdatedCardField({ index, field: 'timing.date', value }),
+      pickerField(
+        {
+          id: `event-date-${index}`,
+          label: 'روز',
+          target: `card:${index}:timing.date`,
+          mode: 'date',
+          value: date,
+          inputs,
+        },
         h,
       ),
       date === ''
@@ -490,44 +533,28 @@ const eventStructural = (
         : h.div(
             [h.Class('grid gap-2 sm:grid-cols-2')],
             [
-              timeField(
-                'شروع (اختیاری)',
-                start,
-                (value) => {
-                  if (value === '') {
-                    return Message.UpdatedCardField({ index, field: 'timing.date', value: date })
-                  }
-                  return Message.UpdatedCardField({
-                    index,
-                    field: 'timing.start',
-                    value: localDateTimeToInstant(
-                      date,
-                      value,
-                      inputs.display.timeZone,
-                    ),
-                  })
+              pickerField(
+                {
+                  id: `event-start-${index}`,
+                  label: 'شروع (اختیاری)',
+                  target: `card-instant:${index}:timing.start`,
+                  mode: 'time',
+                  value: start,
+                  inputs,
                 },
                 h,
               ),
-              timeField(
-                'پایان (اختیاری)',
-                end,
-                (value) => {
-                  if (value === '' || start === '') {
-                    return Message.UpdatedCardField({ index, field: 'timing.date', value: date })
-                  }
-                  return Message.UpdatedCardField({
-                    index,
-                    field: 'timing.end',
-                    value: localDateTimeToInstant(
-                      date,
-                      value,
-                      inputs.display.timeZone,
-                    ),
-                  })
+              pickerField(
+                {
+                  id: `event-end-${index}`,
+                  label: 'پایان (اختیاری)',
+                  target: `card-instant:${index}:timing.end`,
+                  mode: 'time',
+                  value: end,
+                  inputs,
+                  isDisabled: start === '',
                 },
                 h,
-                start === '',
               ),
             ],
           ),
@@ -546,8 +573,10 @@ const structuralView = (
   h: HtmlBuilder<Message>,
 ): Html => {
   if (card.draft._tag === 'task') return taskStructural(card, index, inputs, h)
-  if (card.draft._tag === 'event') return eventStructural(card, index, inputs, h)
-  if (card.draft._tag === 'habit') return habitStructural(card, index, inputs, h)
+  if (card.draft._tag === 'event')
+    return eventStructural(card, index, inputs, h)
+  if (card.draft._tag === 'habit')
+    return habitStructural(card, index, inputs, h)
   if (card.draft._tag === 'reminder') {
     return reminderStructural(card, index, inputs, h)
   }
@@ -567,29 +596,17 @@ const instantPicker = (
       ? undefined
       : instantPartsOf(current, inputs.display.timeZone)
   const value = parts === undefined ? '' : `${parts.date}T${parts.time}`
-  return h.input([
-    h.Type('datetime-local'),
-    h.Class(inputClass),
-    h.Value(value),
-    h.OnInput((raw) => {
-      // A datetime-local control may hand back a date without a time while
-      // the user is still picking; ignore that instead of answering with a
-      // partial (or invalid) instant.
-      if (raw.length < 16) return Message.IgnoredInput()
-      const instant = instantOf(
-        raw.slice(0, 10),
-        raw.slice(11, 16),
-        inputs.display.timeZone,
-      )
-      return instant === undefined
-        ? Message.IgnoredInput()
-        : Message.AnsweredNeedsInput({
-            index,
-            field: entry.field,
-            value: instant,
-          })
-    }),
-  ])
+  return pickerField(
+    {
+      id: `needs-datetime-${index}-${entry.field}`,
+      label: entry.question,
+      target: `need-datetime:${index}:${entry.field}`,
+      mode: 'datetime',
+      value,
+      inputs,
+    },
+    h,
+  )
 }
 
 /** Fields whose draft value is a UTC instant, never a bare clock time. */
@@ -668,34 +685,38 @@ const needsInputView = (
 ): Html => {
   if (card.draft.missing.length === 0) return h.empty
   return h.div(
-    [h.Class('grid gap-2 rounded-xl border border-warning/30 bg-warning/8 p-3')],
+    [
+      h.Class(
+        'grid gap-2 rounded-xl border border-warning/30 bg-warning/8 p-3',
+      ),
+    ],
     [
       h.p(
         [h.Class('m-0 text-[0.72rem] font-semibold text-warning-content')],
         ['برای ساخت، این‌ها را کامل کن:'],
       ),
-      ...card.draft.missing.map((entry) => {
+      ...card.draft.missing.map(entry => {
         const question = h.p(
           [h.Class('m-0 text-[0.76rem] leading-6 text-base-content/70')],
           [entry.question],
         )
         if (entry.shape === 'frequency' && card.draft._tag === 'habit') {
-          return h.div([h.Class('grid gap-1')], [
-            question,
-            habitStructural(card, index, inputs, h),
-          ])
+          return h.div(
+            [h.Class('grid gap-1')],
+            [question, habitStructural(card, index, inputs, h)],
+          )
         }
         if (entry.shape === 'repeat' && card.draft._tag === 'reminder') {
-          return h.div([h.Class('grid gap-1')], [
-            question,
-            reminderStructural(card, index, inputs, h),
-          ])
+          return h.div(
+            [h.Class('grid gap-1')],
+            [question, reminderStructural(card, index, inputs, h)],
+          )
         }
         if (entry.shape === 'instant') {
-          return h.div([h.Class('grid gap-1')], [
-            question,
-            instantPicker(entry, card, index, inputs, h),
-          ])
+          return h.div(
+            [h.Class('grid gap-1')],
+            [question, instantPicker(entry, card, index, inputs, h)],
+          )
         }
         if (entry.shape === 'clockTime') {
           const date = isInstantField(entry.field)
@@ -704,40 +725,50 @@ const needsInputView = (
           // A clock time only answers an instant field when the draft already
           // knows the day; otherwise the picker has to collect both.
           if (isInstantField(entry.field) && date === undefined) {
-            return h.div([h.Class('grid gap-1')], [
-              question,
-              instantPicker(entry, card, index, inputs, h),
-            ])
+            return h.div(
+              [h.Class('grid gap-1')],
+              [question, instantPicker(entry, card, index, inputs, h)],
+            )
           }
-          return h.div([h.Class('grid gap-1')], [
+          return h.div(
+            [h.Class('grid gap-1')],
+            [
+              question,
+              pickerField(
+                {
+                  id: `needs-time-${index}-${entry.field}`,
+                  label: entry.question,
+                  target: `need-time:${index}:${entry.field}`,
+                  mode: 'time',
+                  value: draftClockTimeOf(
+                    card,
+                    entry.field,
+                    inputs.display.timeZone,
+                  ),
+                  inputs,
+                },
+                h,
+              ),
+            ],
+          )
+        }
+        return h.div(
+          [h.Class('grid gap-1')],
+          [
             question,
-            timeField(
-              'ساعت',
-              draftClockTimeOf(card, entry.field, inputs.display.timeZone),
-              (value) =>
-                Message.AnsweredNeedsInput({
-                  index,
-                  field: entry.field,
-                  value,
-                }),
+            pickerField(
+              {
+                id: `needs-date-${index}-${entry.field}`,
+                label: entry.question,
+                target: `need-date:${index}:${entry.field}`,
+                mode: 'date',
+                value: '',
+                inputs,
+              },
               h,
             ),
-          ])
-        }
-        return h.div([h.Class('grid gap-1')], [
-          question,
-          dateField(
-            'روز',
-            '',
-            (value) =>
-              Message.AnsweredNeedsInput({
-                index,
-                field: entry.field,
-                value,
-              }),
-            h,
-          ),
-        ])
+          ],
+        )
       }),
     ],
   )
@@ -750,24 +781,29 @@ const cardView = (
   h: HtmlBuilder<Message>,
 ): Html =>
   card.isDiscarded
-    ? h.keyed('article')(card.cardId, [
-        h.Class(
-          'flex items-center justify-between gap-2 rounded-2xl border border-dashed border-base-300 px-4 py-3 text-[0.78rem] text-base-content/45',
-        ),
-      ], [
-        h.span([], [`${TYPE_LABELS[card.draft._tag]} کنار گذاشته شد`]),
-        h.button(
-          [
-            h.Type('button'),
-            h.Class('btn btn-ghost btn-xs'),
-            h.OnClick(Message.ClickedNewCapture()),
-          ],
-          ['شروع دوباره'],
-        ),
-      ])
-    : h.keyed('article')(card.cardId, [
-        h.Class('panel grid gap-3 p-4'),
-      ], [
+    ? h.keyed('article')(
+        card.cardId,
+        [
+          h.Class(
+            'flex items-center justify-between gap-2 rounded-2xl border border-dashed border-base-300 px-4 py-3 text-[0.78rem] text-base-content/45',
+          ),
+        ],
+        [
+          h.span([], [`${TYPE_LABELS[card.draft._tag]} کنار گذاشته شد`]),
+          h.button(
+            [
+              h.Type('button'),
+              h.Class('btn btn-ghost btn-xs'),
+              h.OnClick(Message.ClickedNewCapture()),
+            ],
+            ['شروع دوباره'],
+          ),
+        ],
+      )
+    : h.keyed('article')(
+        card.cardId,
+        [h.Class('panel grid gap-3 p-4')],
+        [
           h.header(
             [h.Class('flex flex-wrap items-start justify-between gap-2')],
             [
@@ -785,21 +821,26 @@ const cardView = (
                         ],
                         [TYPE_LABELS[card.draft._tag] ?? card.draft._tag],
                       ),
-                      h.input([
-                        h.Type('text'),
-                        h.Class(
-                          'field-input min-h-9 w-full rounded-xl border border-base-300 bg-base-100 px-2 text-[0.9rem] font-semibold',
-                        ),
-                        h.AriaLabel('عنوان پیش‌نویس'),
-                        h.Value(card.title),
-                        h.OnInput((value) =>
-                          Message.UpdatedCardTitle({ index, value }),
-                        ),
-                      ]),
+                      inputControlView(
+                        {
+                          id: `capture-card-title-${index}`,
+                          label: 'عنوان پیش‌نویس',
+                          value: card.title,
+                          onInput: value =>
+                            Message.UpdatedCardTitle({ index, value }),
+                          class:
+                            'min-h-9 w-full rounded-xl px-2 text-[0.9rem] font-semibold',
+                        },
+                        h,
+                      ),
                     ],
                   ),
                   h.p(
-                    [h.Class('m-0 text-[0.72rem] leading-5 text-base-content/45')],
+                    [
+                      h.Class(
+                        'm-0 text-[0.72rem] leading-5 text-base-content/45',
+                      ),
+                    ],
                     [`«${card.draft.sourceQuote}»`],
                   ),
                 ],
@@ -842,18 +883,21 @@ const composerView = (
         [h.Class('grid gap-1')],
         [
           fieldLabel('چه چیزی در ذهن داری؟', h),
-          h.textarea([
-            h.Class(
-              'field-input min-h-28 w-full resize-y rounded-xl border border-base-300 bg-base-100 p-3 text-[0.9rem] leading-7',
-            ),
-            h.AriaLabel('متن کپچر'),
-            h.Placeholder(
-              'فردا ساعت ۵ دکتر، یادم باشه قرص رو بگیرم، پنجشنبه مهمونی ساراست…',
-            ),
-            h.Value(model.text),
-            h.Disabled(isBusy),
-            h.OnInput((value) => Message.UpdatedText({ value })),
-          ]),
+          textAreaControlView(
+            {
+              id: 'capture-text',
+              label: 'متن کپچر',
+              value: model.text,
+              rows: 5,
+              isDisabled: isBusy,
+              placeholder:
+                'فردا ساعت ۵ دکتر، یادم باشه قرص رو بگیرم، پنجشنبه مهمونی ساراست…',
+              class:
+                'min-h-28 w-full resize-y rounded-xl p-3 text-[0.9rem] leading-7',
+              onInput: value => Message.UpdatedText({ value }),
+            },
+            h,
+          ),
         ],
       ),
       h.div(
@@ -910,7 +954,7 @@ const composerView = (
         : h.empty,
       Option.match(model.maybeError, {
         onNone: () => h.empty,
-        onSome: (error) => noticeView('error', error, h),
+        onSome: error => noticeView('error', error, h),
       }),
     ],
   )
@@ -922,7 +966,7 @@ const reviewView = (
   h: HtmlBuilder<Message>,
 ): Html => {
   const cards = visibleCards(model)
-  const blocked = cards.filter((card) => card.draft.missing.length > 0)
+  const blocked = cards.filter(card => card.draft.missing.length > 0)
   const isCommitting = model.phase === 'committing'
   const canCommit = cards.length > 0 && blocked.length === 0 && !isCommitting
   return h.section(
@@ -966,7 +1010,7 @@ const reviewView = (
         : h.empty,
       Option.match(model.maybeError, {
         onNone: () => h.empty,
-        onSome: (error) => noticeView('error', error, h),
+        onSome: error => noticeView('error', error, h),
       }),
       ...cards.map((card, index) => cardView(card, index, inputs, h)),
     ],
@@ -980,7 +1024,7 @@ const resultView = (
 ): Html =>
   Option.match(model.maybeResult, {
     onNone: () => h.empty,
-    onSome: (result) =>
+    onSome: result =>
       h.section(
         [h.Class('panel grid gap-3 p-4')],
         [
@@ -998,13 +1042,17 @@ const resultView = (
           h.div(
             [h.Class('flex flex-wrap gap-2')],
             [
-              ...result.created.map((row) =>
-                h.keyed('a')(row.id, [
-                  h.Href(routeForRow(row)),
-                  h.Class(
-                    'badge badge-outline badge-lg min-w-0 max-w-full truncate text-[0.72rem] no-underline',
-                  ),
-                ], [row.title]),
+              ...result.created.map(row =>
+                h.keyed('a')(
+                  row.id,
+                  [
+                    h.Href(routeForRow(row)),
+                    h.Class(
+                      'badge badge-outline badge-lg min-w-0 max-w-full truncate text-[0.72rem] no-underline',
+                    ),
+                  ],
+                  [row.title],
+                ),
               ),
             ],
           ),
@@ -1042,9 +1090,10 @@ const historyRow = (
   h: HtmlBuilder<Message>,
 ): Html => {
   const isExpanded = Option.contains(model.expandedHistoryId, capture.id)
-  return h.keyed('li')(capture.id, [
-    h.Class('grid min-w-0 gap-2 border-b border-base-200 py-3 last:border-0'),
-  ], [
+  return h.keyed('li')(
+    capture.id,
+    [h.Class('grid min-w-0 gap-2 border-b border-base-200 py-3 last:border-0')],
+    [
       h.div(
         [h.Class('flex min-w-0 items-center gap-2')],
         [
@@ -1055,7 +1104,9 @@ const historyRow = (
                 'flex min-w-0 flex-1 items-center justify-between gap-2 overflow-hidden text-right',
               ),
               h.AriaExpanded(isExpanded),
-              h.OnClick(Message.ClickedToggleHistory({ captureId: capture.id })),
+              h.OnClick(
+                Message.ClickedToggleHistory({ captureId: capture.id }),
+              ),
             ],
             [
               h.span(
@@ -1091,7 +1142,9 @@ const historyRow = (
                   h.button(
                     [
                       h.Type('button'),
-                      h.Class('btn btn-ghost btn-xs btn-square hover:text-error'),
+                      h.Class(
+                        'btn btn-ghost btn-xs btn-square hover:text-error',
+                      ),
                       h.AriaLabel('حذف'),
                       h.Title('حذف'),
                       h.OnClick(
@@ -1124,13 +1177,17 @@ const historyRow = (
                 ? h.empty
                 : h.div(
                     [h.Class('flex min-w-0 flex-wrap gap-1.5')],
-                    capture.createdIds.map((row) =>
-                      h.keyed('a')(row.id, [
-                        h.Href(routeForRow(row)),
-                        h.Class(
-                          'badge badge-outline badge-sm min-w-0 max-w-full truncate text-[0.68rem] no-underline',
-                        ),
-                      ], [row.title]),
+                    capture.createdIds.map(row =>
+                      h.keyed('a')(
+                        row.id,
+                        [
+                          h.Href(routeForRow(row)),
+                          h.Class(
+                            'badge badge-outline badge-sm min-w-0 max-w-full truncate text-[0.68rem] no-underline',
+                          ),
+                        ],
+                        [row.title],
+                      ),
                     ),
                   ),
             ],
@@ -1148,10 +1205,7 @@ const historyView = (
   h.section(
     [h.Class('panel grid min-w-0 gap-2 p-4')],
     [
-      h.h2(
-        [h.Class('m-0 text-lg font-bold tracking-tight')],
-        ['کپچرهای اخیر'],
-      ),
+      h.h2([h.Class('m-0 text-lg font-bold tracking-tight')], ['کپچرهای اخیر']),
       model.isHistoryLoading
         ? h.p(
             [h.Class('m-0 text-[0.78rem] text-base-content/50')],
@@ -1160,7 +1214,7 @@ const historyView = (
         : h.empty,
       Option.match(model.maybeHistoryError, {
         onNone: () => h.empty,
-        onSome: (error) => noticeView('error', error, h),
+        onSome: error => noticeView('error', error, h),
       }),
       model.history.length === 0 && !model.isHistoryLoading
         ? h.p(
@@ -1169,9 +1223,7 @@ const historyView = (
           )
         : h.ul(
             [h.Class('m-0 min-w-0 list-none p-0')],
-            model.history.map((capture) =>
-              historyRow(capture, model, inputs, h),
-            ),
+            model.history.map(capture => historyRow(capture, model, inputs, h)),
           ),
     ],
   )
@@ -1205,6 +1257,15 @@ export const captureView = Submodel.defineView<Model, Message, Inputs>(
           : h.empty,
         model.phase === 'result' ? resultView(model, inputs, h) : h.empty,
         historyView(model, inputs, h),
+        pickerDialogView(
+          {
+            model: model.picker,
+            toParentMessage: message => Message.GotPickerMessage({ message }),
+            digits: digitsOf(inputs.display),
+            weekStart: inputs.display.weekStart,
+          },
+          h,
+        ),
       ],
     ),
 )

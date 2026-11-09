@@ -4,7 +4,6 @@ import {
   given,
   role,
   scene,
-  selector,
   text,
   withViewInputs,
 } from 'foldkit/scene'
@@ -34,6 +33,7 @@ const inputs = (overrides: Partial<Inputs> = {}): Inputs => ({
   display: { timeZone: 'Asia/Tehran', weekStart: 'saturday', digits: 'persian' },
   isOnline: true,
   maybeUserId: Option.some(USER_ID),
+  today: '2026-11-09',
   ...overrides,
 })
 
@@ -157,7 +157,7 @@ describe('capture view', () => {
       setup(),
       given(model({ phase: 'review', cards: [cardOf(event)] })),
       expect(text('ساعت شروع؟')).toExist(),
-      expect(selector('input[type="time"]')).toExist(),
+      expect(role('button', { name: 'ساعت شروع؟' })).toExist(),
     )
   })
 

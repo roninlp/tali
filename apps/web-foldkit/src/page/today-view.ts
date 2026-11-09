@@ -18,6 +18,7 @@ import {
 } from '../habits-model'
 import type { TaskRow } from '../mirror'
 import { habitsRouter, notePath, notesRouter, taskAnchorPath } from '../route'
+import { inputControlView } from '../ui/field'
 import { Message } from './today'
 import type { Model, ViewInputs } from './today'
 import {
@@ -77,7 +78,9 @@ const quickAddView = (
 
   return h.form(
     [
-      h.Class('flex items-center gap-3 rounded-2xl border border-primary/25 bg-gradient-to-l from-primary/8 to-base-100 p-3 shadow-sm'),
+      h.Class(
+        'flex items-center gap-3 rounded-2xl border border-primary/25 bg-gradient-to-l from-primary/8 to-base-100 p-3 shadow-sm',
+      ),
       h.OnSubmit(Message.SubmittedQuickAdd()),
     ],
     [
@@ -94,26 +97,32 @@ const quickAddView = (
         [h.Class('grid min-w-0 flex-1 gap-0.5')],
         [
           h.label(
-            [h.For('today-quick-add'), h.Class('text-[0.7rem] font-semibold text-base-content/55')],
+            [
+              h.For('today-quick-add'),
+              h.Class('text-[0.7rem] font-semibold text-base-content/55'),
+            ],
             ['کار تازه برای امروز'],
           ),
-          h.input([
-            h.Id('today-quick-add'),
-            h.Type('text'),
-            h.Value(model.draft),
-            h.Placeholder('مثلاً: خرید نان…'),
-            h.AriaLabel('کار تازه برای امروز'),
-            h.Disabled(!inputs.isStoreReady),
-            h.OnInput(value => Message.UpdatedQuickAddDraft({ value })),
-            h.OnKeyDownPreventDefault(key =>
-              key === 'Enter'
-                ? Option.some(Message.SubmittedQuickAdd())
-                : Option.none(),
-            ),
-            h.Class(
-              'min-h-9 min-w-0 rounded-lg border-0 bg-transparent px-1 text-sm outline-none placeholder:text-base-content/40 focus:ring-0',
-            ),
-          ]),
+          inputControlView(
+            {
+              id: 'today-quick-add',
+              label: 'کار تازه برای امروز',
+              value: model.draft,
+              placeholder: 'مثلاً: خرید نان…',
+              isDisabled: !inputs.isStoreReady,
+              class:
+                'min-h-9 min-w-0 border-0 bg-transparent px-1 text-sm outline-none placeholder:text-base-content/40 focus:ring-0',
+              onInput: value => Message.UpdatedQuickAddDraft({ value }),
+              attributes: [
+                h.OnKeyDownPreventDefault(key =>
+                  key === 'Enter'
+                    ? Option.some(Message.SubmittedQuickAdd())
+                    : Option.none(),
+                ),
+              ],
+            },
+            h,
+          ),
         ],
       ),
       h.button(
@@ -156,7 +165,11 @@ const timelineView = (
         [h.Class('mb-2 flex items-center justify-between gap-2')],
         [
           h.span(
-            [h.Class('text-[0.78rem] font-bold uppercase tracking-wide text-base-content/55')],
+            [
+              h.Class(
+                'text-[0.78rem] font-bold uppercase tracking-wide text-base-content/55',
+              ),
+            ],
             ['نوار زمان امروز'],
           ),
           h.span(
@@ -343,7 +356,11 @@ const tasksLaneView = (
       Array.match(ordered, {
         onEmpty: () =>
           h.div(
-            [h.Class('grid gap-2 rounded-xl border border-dashed border-base-300 bg-base-200/40 px-4 py-5')],
+            [
+              h.Class(
+                'grid gap-2 rounded-xl border border-dashed border-base-300 bg-base-200/40 px-4 py-5',
+              ),
+            ],
             [
               h.p(
                 [h.Class('m-0 text-[0.85rem] leading-7 text-base-content/60')],
@@ -404,7 +421,11 @@ const notesLaneView = (view: TodayView, h: HtmlBuilder<Message>): Html =>
   Array.match(view.notes, {
     onEmpty: () =>
       h.div(
-        [h.Class('grid gap-2 rounded-xl border border-dashed border-base-300 bg-base-200/40 px-4 py-5')],
+        [
+          h.Class(
+            'grid gap-2 rounded-xl border border-dashed border-base-300 bg-base-200/40 px-4 py-5',
+          ),
+        ],
         [
           h.p(
             [h.Class('m-0 text-[0.85rem] leading-7 text-base-content/60')],
@@ -627,7 +648,11 @@ const habitsLaneView = (
       Array.match(habits, {
         onEmpty: () =>
           h.div(
-            [h.Class('grid justify-items-start gap-2 rounded-xl border border-dashed border-base-300 bg-base-200/40 px-4 py-5')],
+            [
+              h.Class(
+                'grid justify-items-start gap-2 rounded-xl border border-dashed border-base-300 bg-base-200/40 px-4 py-5',
+              ),
+            ],
             [
               h.p(
                 [h.Class('m-0 text-[0.85rem] leading-7 text-base-content/60')],
@@ -761,7 +786,9 @@ const sectionPanelView = (
   return h.keyed('section')(
     section,
     [
-      h.Class('overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm'),
+      h.Class(
+        'overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm',
+      ),
       h.DataAttribute('section', section),
       h.AriaLabelledBy(`today-${section}`),
     ],
@@ -821,26 +848,32 @@ const orderPanelView = (
   return h.section(
     [
       h.Id('today-order-panel'),
-      h.Class('rounded-2xl border border-base-300 bg-base-100 p-4 shadow-sm sm:p-5'),
+      h.Class(
+        'rounded-2xl border border-base-300 bg-base-100 p-4 shadow-sm sm:p-5',
+      ),
       h.AriaLabelledBy('today-order-title'),
       h.Role('region'),
     ],
     [
       h.h2(
-        [
-          h.Id('today-order-title'),
-          h.Class('m-0 text-[0.95rem] font-bold'),
-        ],
+        [h.Id('today-order-title'), h.Class('m-0 text-[0.95rem] font-bold')],
         ['ترتیب بخش‌ها'],
       ),
       h.p(
-        [h.Class('m-0 mb-2 mt-1 text-[0.76rem] leading-7 text-base-content/55')],
+        [
+          h.Class(
+            'm-0 mb-2 mt-1 text-[0.76rem] leading-7 text-base-content/55',
+          ),
+        ],
         [
           'جای هر بخش را با دکمه‌های بالا و پایین تغییر دهید؛ تغییر بلافاصله ذخیره می‌شود.',
         ],
       ),
       h.ol(
-        [h.Class('m-0 grid list-none gap-1 p-0'), h.AriaLabel('ترتیب بخش‌های امروز')],
+        [
+          h.Class('m-0 grid list-none gap-1 p-0'),
+          h.AriaLabel('ترتیب بخش‌های امروز'),
+        ],
         Array.map(order, (section, index) =>
           h.keyed('li')(
             section,
@@ -912,7 +945,9 @@ const orderPanelView = (
           h.p(
             [
               h.Role('alert'),
-              h.Class('notice notice-error m-0 mt-2 py-2 text-[0.8rem] leading-7'),
+              h.Class(
+                'notice notice-error m-0 mt-2 py-2 text-[0.8rem] leading-7',
+              ),
             ],
             [message],
           ),
@@ -1003,19 +1038,25 @@ const railView = (
   const bounds = boundsFor(view.timeZone, model.now)
 
   return h.aside(
-    [
-      h.Class('grid gap-4 lg:sticky lg:top-4'),
-      h.AriaLabel('خلاصه‌ی امروز'),
-    ],
+    [h.Class('grid gap-4 lg:sticky lg:top-4'), h.AriaLabel('خلاصه‌ی امروز')],
     [
       h.section(
-        [h.Class('rounded-2xl border border-primary/30 bg-gradient-to-b from-primary/10 to-base-100 p-4 shadow-sm sm:p-5'), h.AriaLabel('کار بعدی')],
+        [
+          h.Class(
+            'rounded-2xl border border-primary/30 bg-gradient-to-b from-primary/10 to-base-100 p-4 shadow-sm sm:p-5',
+          ),
+          h.AriaLabel('کار بعدی'),
+        ],
         [
           h.div(
             [h.Class('mb-2 flex items-center justify-between gap-2')],
             [
               h.span(
-                [h.Class('text-[0.72rem] font-bold uppercase tracking-wide text-base-content/50')],
+                [
+                  h.Class(
+                    'text-[0.72rem] font-bold uppercase tracking-wide text-base-content/50',
+                  ),
+                ],
                 ['بعدی'],
               ),
               Option.match(maybeNext, {
@@ -1060,13 +1101,22 @@ const railView = (
         ],
       ),
       h.section(
-        [h.Class('rounded-2xl border border-base-300 bg-base-100 p-4 shadow-sm sm:p-5'), h.AriaLabel('امروز در یک نگاه')],
+        [
+          h.Class(
+            'rounded-2xl border border-base-300 bg-base-100 p-4 shadow-sm sm:p-5',
+          ),
+          h.AriaLabel('امروز در یک نگاه'),
+        ],
         [
           h.div(
             [h.Class('mb-2 flex items-center justify-between gap-2')],
             [
               h.span(
-                [h.Class('text-[0.72rem] font-bold uppercase tracking-wide text-base-content/50')],
+                [
+                  h.Class(
+                    'text-[0.72rem] font-bold uppercase tracking-wide text-base-content/50',
+                  ),
+                ],
                 ['امروز در یک نگاه'],
               ),
             ],
@@ -1092,9 +1142,16 @@ const railView = (
                       ),
                     ],
                     [
-                      h.span([h.Class('text-warning font-medium')], ['عقب‌افتاده']),
                       h.span(
-                        [h.Class('min-w-7 rounded-full bg-warning/15 px-2 py-0.5 text-center tabular-nums text-warning')],
+                        [h.Class('text-warning font-medium')],
+                        ['عقب‌افتاده'],
+                      ),
+                      h.span(
+                        [
+                          h.Class(
+                            'min-w-7 rounded-full bg-warning/15 px-2 py-0.5 text-center tabular-nums text-warning',
+                          ),
+                        ],
                         [localizeDigits(view.counts.overdue, digits)],
                       ),
                     ],
@@ -1125,13 +1182,22 @@ const railView = (
         ],
       ),
       h.section(
-        [h.Class('rounded-2xl border border-base-300 bg-base-100 p-4 shadow-sm sm:p-5'), h.AriaLabel('هفته‌ی جاری')],
+        [
+          h.Class(
+            'rounded-2xl border border-base-300 bg-base-100 p-4 shadow-sm sm:p-5',
+          ),
+          h.AriaLabel('هفته‌ی جاری'),
+        ],
         [
           h.div(
             [h.Class('mb-2 flex items-center justify-between gap-2')],
             [
               h.span(
-                [h.Class('text-[0.72rem] font-bold uppercase tracking-wide text-base-content/50')],
+                [
+                  h.Class(
+                    'text-[0.72rem] font-bold uppercase tracking-wide text-base-content/50',
+                  ),
+                ],
                 ['این هفته'],
               ),
             ],
@@ -1167,7 +1233,12 @@ const railView = (
         ],
       ),
       h.section(
-        [h.Class('rounded-2xl border border-base-300 bg-base-200/40 p-4 text-[0.8rem] leading-7 text-base-content/55'), h.AriaLabel('منابع')],
+        [
+          h.Class(
+            'rounded-2xl border border-base-300 bg-base-200/40 p-4 text-[0.8rem] leading-7 text-base-content/55',
+          ),
+          h.AriaLabel('منابع'),
+        ],
         [
           h.p([h.Class('m-0')], [SOURCE_QUIET.events]),
           h.p([h.Class('m-0 mt-1')], [SOURCE_QUIET.reminders]),
@@ -1193,7 +1264,11 @@ export const todayPageView = (
     ],
     [
       h.div(
-        [h.Class('page-wrap mx-auto grid max-w-7xl gap-5 px-4 py-5 sm:px-6 lg:py-6')],
+        [
+          h.Class(
+            'page-wrap mx-auto grid max-w-7xl gap-5 px-4 py-5 sm:px-6 lg:py-6',
+          ),
+        ],
         [
           headerView(model, inputs, view, h),
           quickAddView(model, inputs, h),

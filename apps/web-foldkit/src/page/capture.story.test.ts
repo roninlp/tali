@@ -31,6 +31,7 @@ const inputs = (overrides: Partial<Inputs> = {}): Inputs => ({
   display: { timeZone: 'Asia/Tehran', weekStart: 'saturday', digits: 'persian' },
   isOnline: true,
   maybeUserId: Option.some(USER_ID),
+  today: '2026-11-09',
   ...overrides,
 })
 

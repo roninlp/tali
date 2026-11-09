@@ -20,6 +20,7 @@ import * as Auth from './auth'
 import { GuardDecision, guardRoute, landingPath, landingRoute } from './guard'
 import { PushEnvironment } from './lib/push/service-worker'
 import * as Calendar from './page/calendar'
+import { todayIn } from './page/calendar-model'
 import * as Capture from './page/capture'
 import * as Habits from './page/habits'
 import * as Household from './page/household'
@@ -379,14 +380,18 @@ const calendarInputs = (model: Model): Calendar.Inputs => ({
 })
 
 /** Capture reads the display preference and the live connectivity state. */
-const captureInputs = (model: Model): Capture.Inputs => ({
-  display: Preferences.currentDisplayFields(model.preferences),
-  isOnline: model.sync.isOnline,
-  maybeUserId: Option.map(
-    Auth.maybeSession(model.auth),
-    session => session.user.id,
-  ),
-})
+const captureInputs = (model: Model): Capture.Inputs => {
+  const display = Preferences.currentDisplayFields(model.preferences)
+  return {
+    display,
+    isOnline: model.sync.isOnline,
+    maybeUserId: Option.map(
+      Auth.maybeSession(model.auth),
+      session => session.user.id,
+    ),
+    today: todayIn(display.timeZone, new Date(model.today.now)),
+  }
+}
 
 const authCommand = <E = never, R = never>(
   command: Command.Command<Auth.Message, E, R>,
@@ -1268,8 +1273,7 @@ const foldCapture = Update.foldChild({
 const foldCaptureMessage = (
   model: Model,
   message: Capture.Message,
-): UpdateReturn =>
-  foldCapture(model, { message, inputs: captureInputs(model) })
+): UpdateReturn => foldCapture(model, { message, inputs: captureInputs(model) })
 
 const foldCaptureEntered = Update.foldChildStep({
   update: Capture.entered,

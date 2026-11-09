@@ -1,5 +1,6 @@
-import { Button } from '@foldkit/ui'
 import type { Html, HtmlBuilder } from 'foldkit/html'
+
+import { Button } from '@foldkit/ui'
 
 import { classNames } from './class-names'
 
@@ -49,6 +50,7 @@ const SIZE_CLASS: Readonly<Record<ButtonSize, string>> = {
 
 export type ButtonConfig<Message> = Readonly<{
   children: ReadonlyArray<Child>
+  id?: string
   onClick?: Message
   variant?: ButtonVariant
   size?: ButtonSize
@@ -77,17 +79,19 @@ export const buttonView = <Message>(
       ? [h.span([h.Class('spinner spinner-xs')]), ...config.children]
       : config.children
 
-  return Button.view<Message>({
-    type: config.type ?? 'button',
-    ...(isInactive || config.onClick === undefined
-      ? {}
-      : { onClick: config.onClick }),
-    ...(isInactive ? { isDisabled: true } : {}),
-    ...(config.isAutofocus === true ? { isAutofocus: true } : {}),
+  return Button.view<Message>(
+    {
+      type: config.type ?? 'button',
+      ...(isInactive || config.onClick === undefined
+        ? {}
+        : { onClick: config.onClick }),
+      ...(isInactive ? { isDisabled: true } : {}),
+      ...(config.isAutofocus === true ? { isAutofocus: true } : {}),
       toView: (attributes: Button.ButtonAttributes<Message>) =>
         h.button(
           [
             ...attributes.button,
+            ...(config.id === undefined ? [] : [h.Id(config.id)]),
             ...(config.ariaLabel === undefined
               ? []
               : [h.AriaLabel(config.ariaLabel)]),

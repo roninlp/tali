@@ -42,6 +42,7 @@ import type { DisplayFields } from '../preferences-model'
 import { LocalStoreResource } from '../sync/local-store'
 import type { LocalStoreService } from '../sync/local-store'
 import type { ConfirmSpec } from '../ui/confirm'
+import * as Picker from '../ui/picker'
 import { Toast, ToastUndo } from '../ui/toast'
 import { habitsPageView } from './habits-view'
 
@@ -99,6 +100,7 @@ export const Model = Schema.Struct({
   maybePendingDelete: Schema.Option(PendingHabitDelete),
   confirmDialog: Dialog.Model,
   toast: Toast.Model,
+  picker: Picker.Model,
 })
 export type Model = typeof Model.Type
 
@@ -124,6 +126,7 @@ export const initialModel = (now: number): Model =>
     maybePendingDelete: Option.none(),
     confirmDialog: Dialog.init({ id: 'habits-delete-dialog' }),
     toast: Toast.init({ id: 'habits-toast' }),
+    picker: Picker.init({ id: 'habits-picker' }),
   })
 
 /** Everything the screen reads from its siblings on each dispatch. */
@@ -189,6 +192,7 @@ export const Message = defineMessageUnion({
   PressedNextHeatMonth: {},
   ClickedCurrentHeatMonth: {},
   GotToastMessage: { message: Toast.Message },
+  GotPickerMessage: { message: Picker.Message },
 })
 export type Message = typeof Message.Type
 
@@ -617,12 +621,45 @@ const foldToast = Update.foldChild({
   foldOutMessage: () => stepModel => ({ model: stepModel }),
 })
 
+const foldPickerOutMessage = Picker.OutMessage.match<
+  Update.Step<Model, Message>
+>({
+  PickedValue:
+    ({ target, value }) =>
+    stepModel => ({
+      model:
+        target === 'habit:reminderTime'
+          ? modifyFields(stepModel, { reminderTime: () => value })
+          : stepModel,
+    }),
+  ClearedValue:
+    ({ target }) =>
+    stepModel => ({
+      model:
+        target === 'habit:reminderTime'
+          ? modifyFields(stepModel, { reminderTime: () => '' })
+          : stepModel,
+    }),
+})
+
+const foldPicker = Update.foldChild({
+  update: Picker.update,
+  read: (model: Model) => Option.some(model.picker),
+  write: (model, nextPicker) =>
+    modifyFields(model, { picker: () => nextPicker }),
+  toParentMessage: message => Message.GotPickerMessage({ message }),
+  foldOutMessage: foldPickerOutMessage,
+})
+
 export const update = (
   model: Model,
   message: Message,
   inputs: Inputs,
 ): UpdateReturn =>
   Message.match<UpdateReturn>(message, {
+    GotPickerMessage: ({ message: pickerMessage }) =>
+      foldPicker(model, pickerMessage),
+
     TickedClock: ({ now }) => ({
       model: modifyFields(model, { now: () => now }),
     }),

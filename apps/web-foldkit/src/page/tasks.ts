@@ -21,6 +21,7 @@ import type { MirrorSnapshot, TaskRow } from '../mirror'
 import type { DisplayFields } from '../preferences-model'
 import { LocalStoreResource } from '../sync/local-store'
 import type { LocalStoreService } from '../sync/local-store'
+import * as Picker from '../ui/picker'
 import {
   DEFAULT_TASK_VIEW,
   ProjectFilter,
@@ -173,6 +174,7 @@ export const Model = Schema.Struct({
   maybeUserId: Schema.Option(Schema.String),
   settings: TaskViewSettings,
   isFiltersOpen: Schema.Boolean,
+  isHistoryOpen: Schema.Boolean,
   newProjectTitle: Schema.String,
   newTagName: Schema.String,
   quickAdd: QuickAddDraft,
@@ -188,6 +190,7 @@ export const Model = Schema.Struct({
   dateListbox: Listbox.Model,
   sortListbox: Listbox.Model,
   quickAddProjectListbox: Listbox.Model,
+  picker: Picker.Model,
 })
 export type Model = typeof Model.Type
 
@@ -219,6 +222,7 @@ export const initialModel = (options: InitOptions): Model =>
     maybeUserId: options.maybeUserId,
     settings: Option.getOrElse(options.maybeSettings, () => DEFAULT_TASK_VIEW),
     isFiltersOpen: false,
+    isHistoryOpen: false,
     newProjectTitle: '',
     newTagName: '',
     quickAdd: initialQuickAdd(),
@@ -236,6 +240,7 @@ export const initialModel = (options: InitOptions): Model =>
     quickAddProjectListbox: Listbox.init({
       id: 'tasks-quick-add-project-listbox',
     }),
+    picker: Picker.init({ id: 'tasks-picker' }),
   })
 
 /** Everything the page reads from its siblings on each dispatch. */
@@ -255,8 +260,10 @@ export type ViewInputs = Inputs
 export const Message = defineMessageUnion({
   TickedClock: { now: Schema.Number },
   CompletedScrollToTaskAnchor: {},
+  GotPickerMessage: { message: Picker.Message },
 
   ClickedToggleFilters: {},
+  ClickedToggleHistory: {},
 
   SelectedProjectFilter: { project: ProjectFilter },
   SelectedPriorityFilter: { priority: TaskPriorityFilter },
@@ -570,7 +577,8 @@ export const SetTaskVisibility = Command.define('SetTaskVisibility', {
       const now = yield* currentIso
 
       yield* Effect.tryPromise({
-        try: () => setVisibilityInMirror(store, 'task', taskId, visibility, now),
+        try: () =>
+          setVisibilityInMirror(store, 'task', taskId, visibility, now),
         catch: storeFailureMessage,
       })
 
@@ -1061,8 +1069,7 @@ const foldQuickAddProjectListboxOutMessage = (
         handleUpdate(
           stepModel,
           Message.SelectedQuickAddProject({
-            maybeProjectId:
-              value === '' ? Option.none() : Option.some(value),
+            maybeProjectId: value === '' ? Option.none() : Option.some(value),
           }),
           inputs,
         ),
@@ -1198,6 +1205,60 @@ const toggleEditor = (model: Model, taskId: string, inputs: Inputs): Model => {
       })
 }
 
+const setQuickAddDueDate = (model: Model, value: string): Model =>
+  updateQuickAdd(model, draft =>
+    modifyFields(draft, {
+      dueTouched: () => true,
+      maybeDueDate: () => (value === '' ? Option.none() : Option.some(value)),
+      hasSaved: () => false,
+    }),
+  )
+
+const setEditorDueDate = (model: Model, taskId: string, value: string): Model =>
+  modifyFields(model, {
+    editors: () =>
+      model.editors.map(editor =>
+        editor.taskId === taskId
+          ? modifyFields(editor, { dueDate: () => value })
+          : editor,
+      ),
+  })
+
+const applyPickerValue = (
+  model: Model,
+  target: string,
+  value: string,
+): Model => {
+  if (target === 'quickAdd:due') {
+    return setQuickAddDueDate(model, value)
+  }
+  if (target.startsWith('task:') && target.endsWith(':due')) {
+    const taskId = target.slice('task:'.length, -':due'.length)
+    return setEditorDueDate(model, taskId, value)
+  }
+  return model
+}
+
+const foldPickerOutMessage = Picker.OutMessage.match<
+  Update.Step<Model, Message>
+>({
+  PickedValue:
+    ({ target, value }) =>
+    stepModel => ({ model: applyPickerValue(stepModel, target, value) }),
+  ClearedValue:
+    ({ target }) =>
+    stepModel => ({ model: applyPickerValue(stepModel, target, '') }),
+})
+
+const foldPicker = Update.foldChild({
+  update: Picker.update,
+  read: (model: Model) => Option.some(model.picker),
+  write: (model, nextPicker) =>
+    modifyFields(model, { picker: () => nextPicker }),
+  toParentMessage: message => Message.GotPickerMessage({ message }),
+  foldOutMessage: foldPickerOutMessage,
+})
+
 export const update = (
   model: Model,
   message: Message,
@@ -1307,6 +1368,9 @@ export const update = (
   })
 
   return Message.match<UpdateReturn>(message, {
+    GotPickerMessage: ({ message: pickerMessage }) =>
+      foldPicker(model, pickerMessage),
+
     TickedClock: ({ now }) => ({
       model: modifyFields(model, { now: () => now }),
     }),
@@ -1315,6 +1379,12 @@ export const update = (
 
     ClickedToggleFilters: () => ({
       model: modifyFields(model, { isFiltersOpen: () => !model.isFiltersOpen }),
+    }),
+
+    ClickedToggleHistory: () => ({
+      model: modifyFields(model, {
+        isHistoryOpen: () => !model.isHistoryOpen,
+      }),
     }),
 
     SelectedProjectFilter: ({ project }) =>

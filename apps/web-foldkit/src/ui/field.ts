@@ -1,5 +1,11 @@
 import { Option } from 'effect'
-import type { Html, HtmlBuilder } from 'foldkit/html'
+import type {
+  Attribute,
+  ChildAttribute,
+  Html,
+  HtmlBuilder,
+  TextareaAttribute,
+} from 'foldkit/html'
 
 import { Input, Textarea } from '@foldkit/ui'
 
@@ -23,7 +29,7 @@ export type TextInputConfig<Message> = Readonly<{
   value: string
   onInput: (value: string) => Message
   hint?: string
-  type?: 'text' | 'email' | 'password' | 'search' | 'tel' | 'url' | 'date'
+  type?: 'text' | 'email' | 'password' | 'search' | 'tel' | 'url'
   name?: string
   autoComplete?: string
   dir?: 'ltr' | 'rtl' | 'auto'
@@ -46,9 +52,7 @@ export const textInputView = <Message>(
     {
       id: config.id,
       value: config.value,
-      ...(config.onInput === undefined
-        ? {}
-        : { onInput: config.onInput }),
+      ...(config.onInput === undefined ? {} : { onInput: config.onInput }),
       type: config.type ?? 'text',
       ...(config.placeholder === undefined
         ? {}
@@ -73,9 +77,7 @@ export const textInputView = <Message>(
                 ? []
                 : [h.Autocomplete(config.autoComplete)]),
               ...(config.dir === undefined ? [] : [h.Dir(config.dir)]),
-              ...(config.listId === undefined
-                ? []
-                : [h.List(config.listId)]),
+              ...(config.listId === undefined ? [] : [h.List(config.listId)]),
               ...(config.isRequired === true ? [h.Required(true)] : []),
             ]),
             ...(hasHint
@@ -156,6 +158,106 @@ export const textAreaFieldView = <Message>(
     h,
   )
 }
+
+export type InputControlConfig<Message> = Readonly<{
+  id: string
+  label: string
+  value: string
+  onInput: (value: string) => Message
+  type?: 'text' | 'email' | 'password' | 'search' | 'tel' | 'url'
+  name?: string
+  autoComplete?: string
+  placeholder?: string
+  dir?: 'ltr' | 'rtl' | 'auto'
+  isDisabled?: boolean
+  isRequired?: boolean
+  isInvalid?: boolean
+  class?: string
+  /** Extra attributes appended after the accessible ones, such as key handlers. */
+  attributes?: ReadonlyArray<Attribute<Message> | ChildAttribute>
+}>
+
+/** A labelled-by-call-site input: the caller owns the visible label, this
+ *  renders the `@foldkit/ui` input control with its ARIA hooks. Use it inside
+ *  compact rows and toolbars where the standard stacked field is too tall. */
+export const inputControlView = <Message>(
+  config: InputControlConfig<Message>,
+  h: HtmlBuilder<Message>,
+): Html =>
+  Input.view(
+    {
+      id: config.id,
+      value: config.value,
+      onInput: config.onInput,
+      type: config.type ?? 'text',
+      ...(config.placeholder === undefined
+        ? {}
+        : { placeholder: config.placeholder }),
+      ...(config.name === undefined ? {} : { name: config.name }),
+      ...(config.isDisabled === true ? { isDisabled: true } : {}),
+      ...(config.isInvalid === true ? { isInvalid: true } : {}),
+      toView: attributes =>
+        h.input([
+          ...attributes.input,
+          h.AriaLabel(config.label),
+          h.Class(classNames('field-input', config.class)),
+          ...(config.autoComplete === undefined
+            ? []
+            : [h.Autocomplete(config.autoComplete)]),
+          ...(config.dir === undefined ? [] : [h.Dir(config.dir)]),
+          ...(config.isRequired === true ? [h.Required(true)] : []),
+          ...(config.attributes ?? []),
+        ]),
+    },
+    h,
+  )
+
+export type TextAreaControlConfig<Message> = Readonly<{
+  id: string
+  label: string
+  value: string
+  onInput: (value: string) => Message
+  rows?: number
+  placeholder?: string
+  name?: string
+  isDisabled?: boolean
+  isInvalid?: boolean
+  spellcheck?: boolean
+  class?: string
+  /** Extra attributes appended after the accessible ones, such as key handlers. */
+  attributes?: ReadonlyArray<TextareaAttribute<Message> | ChildAttribute>
+}>
+
+/** The textarea counterpart of {@link inputControlView}. */
+export const textAreaControlView = <Message>(
+  config: TextAreaControlConfig<Message>,
+  h: HtmlBuilder<Message>,
+): Html =>
+  Textarea.view(
+    {
+      id: config.id,
+      value: config.value,
+      onInput: config.onInput,
+      rows: config.rows ?? 4,
+      ...(config.placeholder === undefined
+        ? {}
+        : { placeholder: config.placeholder }),
+      ...(config.name === undefined ? {} : { name: config.name }),
+      ...(config.isDisabled === true ? { isDisabled: true } : {}),
+      ...(config.isInvalid === true ? { isInvalid: true } : {}),
+      toView: attributes =>
+        h.textarea([
+          ...attributes.textarea,
+          h.AriaLabel(config.label),
+          h.Class(classNames('field-input', config.class)),
+          ...(config.spellcheck === undefined
+            ? []
+            : [h.Spellcheck(config.spellcheck)]),
+          ...(config.attributes ?? []),
+        ]),
+    },
+    h,
+  )
 
 export const formErrorView = <Message>(
   maybeMessage: Option.Option<string>,

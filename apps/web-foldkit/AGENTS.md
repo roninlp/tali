@@ -145,10 +145,19 @@ subtree_prompted: true
   plus the `page-wrap`, `panel`, `soft-note`, and `section-head` utilities.
   Page-level styling never goes back into `styles.css`. Interactive behaviour
   and ARIA come from `@foldkit/ui` components (`Button`, `Input`, `Listbox`,
-  `Menu`, `Popover`, `Dialog`, `Toast`, `RadioGroup`, `Nav`). Vazirmatn ships
-  in `src/fonts/` with its OFL licence and Vite fingerprints it on build. The
-  theme toggle is device-local and restores from `public/theme-boot.js`, which
-  accepts only the two house theme ids, before first paint.
+  `Menu`, `Popover`, `Dialog`, `Toast`, `RadioGroup`, `Nav`). Raw text and
+  textarea controls go through `src/ui/field.ts`'s `inputControlView` /
+  `textAreaControlView` (or its labelled `textInputView` / `textAreaFieldView`
+  pair), never a bare `h.input`/`h.textarea`. Date and time fields go through
+  `src/ui/picker.ts`: each screen owns one `Picker.Model` field, routes its
+  `GotPickerMessage`, and renders `pickerTriggerView` at the field plus one
+  `pickerDialogView` at the page root. The picker renders a Jalali month grid
+  and a scroll-snap clock wheel with hour, minute, and ق.ظ/ب.ظ columns on the
+  Foldkit `Dialog`/`Button` primitives; `@foldkit/ui`'s own DatePicker is
+  Gregorian-only and is not used. Vazirmatn
+  ships in `src/fonts/` with its OFL licence and Vite fingerprints it on build.
+  The theme toggle is device-local and restores from `public/theme-boot.js`,
+  which accepts only the two house theme ids, before first paint.
 - **Migration record.** The completed Phase 2 slices and acceptance criteria
   live in `../../docs/plans/foldkit-migration.md`. Keep this file's notes
   project-specific.

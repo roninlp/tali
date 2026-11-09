@@ -17,6 +17,7 @@ import {
 import { listsRouter } from '../route'
 import { buttonView } from '../ui/button'
 import { confirmDialogView } from '../ui/confirm'
+import { inputControlView } from '../ui/field'
 import { formErrorView } from '../ui/field'
 import { listboxViewInputs } from '../ui/listbox'
 import { toastStackView } from '../ui/toast'
@@ -136,15 +137,21 @@ const headerView = (
                     [h.Class('text-[0.76rem] text-base-content/55')],
                     ['عنوان فهرست'],
                   ),
-                  h.input([
-                    h.Name('listTitle'),
-                    h.Type('text'),
-                    h.Class('field-input text-lg font-semibold'),
-                    h.Value(titleValue),
-                    h.Maxlength(120),
-                    h.OnInput(value => Message.UpdatedTitleDraft({ value })),
-                    h.OnBlur(Message.BlurredTitleInput()),
-                  ]),
+                  inputControlView(
+                    {
+                      id: 'list-title',
+                      label: 'عنوان فهرست',
+                      name: 'listTitle',
+                      value: titleValue,
+                      class: 'text-lg font-semibold',
+                      onInput: value => Message.UpdatedTitleDraft({ value }),
+                      attributes: [
+                        h.Maxlength(120),
+                        h.OnBlur(Message.BlurredTitleInput()),
+                      ],
+                    },
+                    h,
+                  ),
                 ],
               ),
               h.div(
@@ -312,19 +319,21 @@ const addItemSectionView = (
           h.OnSubmit(Message.SubmittedAddItem()),
         ],
         [
-          h.input([
-            h.Id('lists-item-draft'),
-            h.Name('itemName'),
-            h.Type('text'),
-            h.Class('field-input min-w-0 flex-1'),
-            h.AriaLabel('نام مورد تازه'),
-            h.Placeholder('مورد تازه… (Enter برای مورد بعد)'),
-            h.Autocomplete('off'),
-            h.Maxlength(200),
-            h.Value(model.itemDraft),
-            h.Disabled(!isStoreReady),
-            h.OnInput(value => Message.UpdatedItemDraft({ value })),
-          ]),
+          inputControlView(
+            {
+              id: 'lists-item-draft',
+              label: 'نام مورد تازه',
+              name: 'itemName',
+              value: model.itemDraft,
+              placeholder: 'مورد تازه… (Enter برای مورد بعد)',
+              autoComplete: 'off',
+              isDisabled: !isStoreReady,
+              class: 'min-w-0 flex-1',
+              onInput: value => Message.UpdatedItemDraft({ value }),
+              attributes: [h.Maxlength(200)],
+            },
+            h,
+          ),
           buttonView(
             {
               type: 'submit',
