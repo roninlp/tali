@@ -817,7 +817,7 @@ const cardView = (
             ? h.p(
                 [
                   h.Class(
-                    'm-0 whitespace-pre-wrap rounded-xl bg-base-200/50 p-3 text-[0.8rem] leading-6 text-base-content/70',
+                    'm-0 overflow-hidden whitespace-pre-wrap rounded-xl bg-base-200/50 p-3 text-[0.8rem] leading-6 break-words text-base-content/70',
                   ),
                 ],
                 [card.draft.body ?? ''],
@@ -1001,7 +1001,7 @@ const resultView = (
                 h.keyed('a')(row.id, [
                   h.Href(routeForRow(row)),
                   h.Class(
-                    'badge badge-outline badge-lg text-[0.72rem] no-underline',
+                    'badge badge-outline badge-lg min-w-0 max-w-full truncate text-[0.72rem] no-underline',
                   ),
                 ], [row.title]),
               ),
@@ -1042,23 +1042,27 @@ const historyRow = (
 ): Html => {
   const isExpanded = Option.contains(model.expandedHistoryId, capture.id)
   return h.keyed('li')(capture.id, [
-    h.Class('grid gap-2 border-b border-base-200 py-3 last:border-0'),
+    h.Class('grid min-w-0 gap-2 border-b border-base-200 py-3 last:border-0'),
   ], [
       h.div(
-        [h.Class('flex items-center gap-2')],
+        [h.Class('flex min-w-0 items-center gap-2')],
         [
           h.button(
             [
               h.Type('button'),
               h.Class(
-                'flex min-w-0 flex-1 items-center justify-between gap-2 text-right',
+                'flex min-w-0 flex-1 items-center justify-between gap-2 overflow-hidden text-right',
               ),
               h.AriaExpanded(isExpanded),
               h.OnClick(Message.ClickedToggleHistory({ captureId: capture.id })),
             ],
             [
               h.span(
-                [h.Class('min-w-0 flex-1 truncate text-[0.82rem]')],
+                [
+                  h.Class(
+                    'line-clamp-2 min-w-0 flex-1 text-[0.82rem] leading-6 break-words',
+                  ),
+                ],
                 [capture.text],
               ),
               h.span(
@@ -1091,7 +1095,7 @@ const historyRow = (
               h.p(
                 [
                   h.Class(
-                    'm-0 whitespace-pre-wrap rounded-xl bg-base-200/50 p-3 text-[0.8rem] leading-6 text-base-content/70',
+                    'm-0 overflow-hidden whitespace-pre-wrap rounded-xl bg-base-200/50 p-3 text-[0.8rem] leading-6 break-words text-base-content/70',
                   ),
                 ],
                 [capture.text],
@@ -1099,11 +1103,13 @@ const historyRow = (
               capture.createdIds.length === 0
                 ? h.empty
                 : h.div(
-                    [h.Class('flex flex-wrap gap-1.5')],
+                    [h.Class('flex min-w-0 flex-wrap gap-1.5')],
                     capture.createdIds.map((row) =>
                       h.keyed('a')(row.id, [
                         h.Href(routeForRow(row)),
-                        h.Class('badge badge-outline badge-sm text-[0.68rem] no-underline'),
+                        h.Class(
+                          'badge badge-outline badge-sm min-w-0 max-w-full truncate text-[0.68rem] no-underline',
+                        ),
                       ], [row.title]),
                     ),
                   ),
@@ -1120,7 +1126,7 @@ const historyView = (
   h: HtmlBuilder<Message>,
 ): Html =>
   h.section(
-    [h.Class('panel grid gap-2 p-4')],
+    [h.Class('panel grid min-w-0 gap-2 p-4')],
     [
       h.h2(
         [h.Class('m-0 text-lg font-bold tracking-tight')],
@@ -1142,7 +1148,7 @@ const historyView = (
             ['هنوز کپچری ثبت نشده است.'],
           )
         : h.ul(
-            [h.Class('m-0 list-none p-0')],
+            [h.Class('m-0 min-w-0 list-none p-0')],
             model.history.map((capture) =>
               historyRow(capture, model, inputs, h),
             ),
@@ -1153,7 +1159,7 @@ const historyView = (
 export const captureView = Submodel.defineView<Model, Message, Inputs>(
   (model, inputs, h) =>
     h.section(
-      [h.Class('page-wrap grid grid-cols-1 max-w-3xl gap-4')],
+      [h.Class('page-wrap grid w-full max-w-3xl min-w-0 grid-cols-1 gap-4')],
       [
         h.header(
           [h.Class('grid gap-1')],
