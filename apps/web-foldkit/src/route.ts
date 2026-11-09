@@ -26,6 +26,7 @@ export const AppRoute = defineRouteUnion({
   Habits: {},
   Calendar: {},
   Reminders: {},
+  Capture: {},
   Settings: {},
   Household: {},
   PushHealth: {},
@@ -93,6 +94,8 @@ export const remindersRouter = pipe(
   mapTo(AppRoute.Reminders),
 )
 
+export const captureRouter = pipe(literal('capture'), mapTo(AppRoute.Capture))
+
 export const settingsRouter = pipe(
   literal('settings'),
   mapTo(AppRoute.Settings),
@@ -117,6 +120,7 @@ const routeParser = oneOf(
   habitsRouter,
   calendarRouter,
   remindersRouter,
+  captureRouter,
   settingsRouter,
   householdRouter,
   pushHealthRouter,

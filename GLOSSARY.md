@@ -412,3 +412,73 @@ result capped at 100%. It answers "how fully", while the **Streak** answers "did
 you keep it up at all". The two may disagree on purpose. It is computed for the
 current unit and is `null` when no period qualifies — the UI then shows the open
 period's progress.
+
+## Capture
+
+The free-text entry point: type a thought, get proposed rows back, approve them.
+See [ADR-0012](docs/adr/0012-capture-drafts-then-commit.md).
+
+### Capture
+
+One free-text submission and its stored record: the text, its **Capture Status**,
+the **Capture Drafts** it produced, and the rows its **Capture Commit** created.
+The row is the server's record of what was typed and what the model proposed, so
+a bad **Dissect** can still be read afterwards. It is owner-only, does **not**
+ride the sync feed, and needs the network — a capture cannot be taken offline.
+
+_Avoid:_ "inbox" for this — that word belongs to the **Missed Inbox**. Avoid
+"note", "entry" and "item" for the stored row.
+
+### Capture Status
+
+The lifecycle of a **Capture**: `pending` while the **Dissect** runs, `parsed`
+when drafts await review, `failed` when the model call did not finish (the text
+is kept and may be retried), and `committed` once a **Capture Commit** has
+written its drafts.
+
+### Dissect
+
+The single model run that reads a **Capture**'s text and calls the draft tools.
+A **Dissect** writes nothing: every call is validated and collected as a
+**Capture Draft**. It is not a conversation — there is no chat surface and no
+follow-up turn.
+
+_Avoid:_ "parse", "extract" and "analyse" as nouns; "chat", "assistant" and
+"agent" for the run.
+
+### Capture Draft
+
+One proposed row produced by a **Dissect** — a task, event, reminder, habit or
+note — carrying the fields it could fill, the verbatim **Source Quote** it came
+from, and its **Needs Input** questions. A draft is not a row: it has no id, no
+resolved visibility and no sync version until a **Capture Commit** turns it into
+one through the normal create service.
+
+_Avoid:_ "suggestion", "proposal row", "candidate" for the draft.
+
+### Source Quote
+
+The verbatim slice of a **Capture**'s text that a **Capture Draft** was built
+from. It is shown on the review card so the user can see which words produced the
+draft; the model never rewrites it.
+
+### Needs Input
+
+A **Capture Draft** field that the text does not supply and the model may not
+invent — a date, a time, a recurrence, a reminder fire time. The card renders a
+typed picker for it (never a free-text answer, never a second model call), and a
+**Capture Commit** is blocked while any visible draft still has one.
+
+_Avoid:_ "missing field", "clarification", "question to the user" — nothing is
+sent to the user; the question is answered on the card.
+
+### Capture Commit
+
+The one write step that turns approved **Capture Drafts** into rows: every draft
+is validated against its real create schema first, then applied in order through
+the existing create services, each with a deterministic replay key so a retry
+cannot duplicate a row. It is **not** a database transaction: a failure part-way
+reports what landed and the rest is replayed idempotently.
+
+_Avoid:_ "apply", "import" and "save" for this step; and "sync push" — a commit
+is a server-side write, not an outbox drain.

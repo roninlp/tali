@@ -52,6 +52,7 @@ jobs:
         env:
           CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           VAPID_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          CAPTURE_KEY: ${{ secrets.OPENCODE_API_KEY }}
         run: |
           missing=""
           [ -z "$CF_TOKEN" ] && missing="$missing CLOUDFLARE_API_TOKEN"
@@ -59,6 +60,9 @@ jobs:
           if [ -n "$missing" ]; then
             echo "::warning::Deploy skipped; missing secrets:$missing. Run pnpm stack:ci and set the VAPID secrets (see infra/README.md)."
             echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -z "$CAPTURE_KEY" ]; then
+            echo "::warning::OPENCODE_API_KEY is not set; Capture will be inert (Dissect fails typed)."
           fi
 
       # The Cloudflare token is minted and written to this repository's secrets
@@ -74,4 +78,7 @@ jobs:
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
           VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          CAPTURE_BASE_URL: ${{ vars.CAPTURE_BASE_URL }}
+          CAPTURE_MODEL: ${{ vars.CAPTURE_MODEL }}
           TALI_BACKUPS: ${{ vars.TALI_BACKUPS || 'on' }}

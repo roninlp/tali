@@ -1,0 +1,598 @@
+[
+  {
+    "text": "فردا ساعت ۵ دکتر دارم",
+    "drafts": [
+      {
+        "_tag": "event",
+        "title": "نوبت دکتر",
+        "sourceQuote": "فردا ساعت ۵ دکتر دارم",
+        "missing": [],
+        "timing": {
+          "_tag": "timed",
+          "start": "2026-11-09T13:30:00.000Z",
+          "end": "2026-11-09T14:30:00.000Z"
+        },
+        "timeZone": "Asia/Tehran"
+      }
+    ],
+    "expectedTags": [
+      "event"
+    ],
+    "expectedMissing": [],
+    "neverInventDate": false
+  },
+  {
+    "text": "یادم باشه قرص رو بگیرم",
+    "drafts": [
+      {
+        "_tag": "reminder",
+        "title": "قرص",
+        "sourceQuote": "یادم باشه قرص رو بگیرم",
+        "missing": [
+          {
+            "field": "repeat",
+            "shape": "repeat",
+            "question": "این یادآور هر چند وقت تکرار شود؟"
+          }
+        ],
+        "kind": "medication"
+      }
+    ],
+    "expectedTags": [
+      "reminder"
+    ],
+    "expectedMissing": [
+      "repeat"
+    ],
+    "neverInventDate": true
+  },
+  {
+    "text": "فردا ساعت ۵ دکتر دارم و یادم باشه قرص رو بگیرم",
+    "drafts": [
+      {
+        "_tag": "event",
+        "title": "نوبت دکتر",
+        "sourceQuote": "فردا ساعت ۵ دکتر دارم",
+        "missing": [],
+        "timing": {
+          "_tag": "timed",
+          "start": "2026-11-09T13:30:00.000Z",
+          "end": "2026-11-09T14:30:00.000Z"
+        },
+        "timeZone": "Asia/Tehran"
+      },
+      {
+        "_tag": "reminder",
+        "title": "قرص",
+        "sourceQuote": "یادم باشه قرص رو بگیرم",
+        "missing": [
+          {
+            "field": "repeat",
+            "shape": "repeat",
+            "question": "این یادآور هر چند وقت تکرار شود؟"
+          }
+        ],
+        "kind": "medication"
+      }
+    ],
+    "expectedTags": [
+      "event",
+      "reminder"
+    ],
+    "expectedMissing": [
+      "repeat"
+    ],
+    "neverInventDate": true
+  },
+  {
+    "text": "پنجشنبه مهمونی ساراست و باید کادو بخرم",
+    "drafts": [
+      {
+        "_tag": "event",
+        "title": "مهمانی سارا",
+        "sourceQuote": "پنجشنبه مهمونی ساراست",
+        "missing": [
+          {
+            "field": "timing",
+            "shape": "localDate",
+            "question": "مهمانی چه روزی است؟"
+          }
+        ]
+      },
+      {
+        "_tag": "task",
+        "title": "خرید کادو",
+        "sourceQuote": "باید کادو بخرم",
+        "missing": []
+      }
+    ],
+    "expectedTags": [
+      "event",
+      "task"
+    ],
+    "expectedMissing": [
+      "timing"
+    ],
+    "neverInventDate": true
+  },
+  {
+    "text": "هر روز صبح بیست دقیقه پیاده‌روی کنم",
+    "drafts": [
+      {
+        "_tag": "habit",
+        "title": "پیاده‌روی",
+        "sourceQuote": "هر روز صبح بیست دقیقه پیاده‌روی کنم",
+        "missing": [],
+        "frequency": {
+          "_tag": "daily"
+        }
+      }
+    ],
+    "expectedTags": [
+      "habit"
+    ],
+    "expectedMissing": [],
+    "neverInventDate": false
+  },
+  {
+    "text": "هفته‌ای سه بار ورزش",
+    "drafts": [
+      {
+        "_tag": "habit",
+        "title": "ورزش",
+        "sourceQuote": "هفته‌ای سه بار ورزش",
+        "missing": [],
+        "frequency": {
+          "_tag": "weekly",
+          "times": 3
+        }
+      }
+    ],
+    "expectedTags": [
+      "habit"
+    ],
+    "expectedMissing": [],
+    "neverInventDate": false
+  },
+  {
+    "text": "شنبه‌ها و دوشنبه‌ها کلاس زبان",
+    "drafts": [
+      {
+        "_tag": "habit",
+        "title": "کلاس زبان",
+        "sourceQuote": "شنبه‌ها و دوشنبه‌ها کلاس زبان",
+        "missing": [],
+        "frequency": {
+          "_tag": "weekdays",
+          "days": [
+            6,
+            1
+          ]
+        }
+      }
+    ],
+    "expectedTags": [
+      "habit"
+    ],
+    "expectedMissing": [],
+    "neverInventDate": false
+  },
+  {
+    "text": "یک ایده‌ی تازه برای پروژه",
+    "drafts": [
+      {
+        "_tag": "note",
+        "title": "ایده‌ی تازه",
+        "body": "یک ایده‌ی تازه برای پروژه",
+        "sourceQuote": "یک ایده‌ی تازه برای پروژه",
+        "missing": []
+      }
+    ],
+    "expectedTags": [
+      "note"
+    ],
+    "expectedMissing": [],
+    "neverInventDate": false
+  },
+  {
+    "text": "خرید نان",
+    "drafts": [
+      {
+        "_tag": "task",
+        "title": "خرید نان",
+        "sourceQuote": "خرید نان",
+        "missing": []
+      }
+    ],
+    "expectedTags": [
+      "task"
+    ],
+    "expectedMissing": [],
+    "neverInventDate": false
+  },
+  {
+    "text": "فردا نان بخر",
+    "drafts": [
+      {
+        "_tag": "task",
+        "title": "خرید نان",
+        "sourceQuote": "فردا نان بخر",
+        "missing": [],
+        "dueDate": "2026-11-09"
+      }
+    ],
+    "expectedTags": [
+      "task"
+    ],
+    "expectedMissing": [],
+    "neverInventDate": false
+  },
+  {
+    "text": "ساعت ۸ قرص فشار",
+    "drafts": [
+      {
+        "_tag": "reminder",
+        "title": "قرص فشار",
+        "sourceQuote": "ساعت ۸ قرص فشار",
+        "missing": [
+          {
+            "field": "fireAt",
+            "shape": "instant",
+            "question": "این یادآور چه زمانی باشد؟"
+          }
+        ],
+        "kind": "medication",
+        "repeat": {
+          "_tag": "once"
+        }
+      }
+    ],
+    "expectedTags": [
+      "reminder"
+    ],
+    "expectedMissing": [
+      "fireAt"
+    ],
+    "neverInventDate": true
+  },
+  {
+    "text": "فردا ساعت ۹ جلسه با تیم",
+    "drafts": [
+      {
+        "_tag": "event",
+        "title": "جلسه با تیم",
+        "sourceQuote": "فردا ساعت ۹ جلسه با تیم",
+        "missing": [],
+        "timing": {
+          "_tag": "timed",
+          "start": "2026-11-09T05:30:00.000Z",
+          "end": "2026-11-09T06:30:00.000Z"
+        },
+        "timeZone": "Asia/Tehran"
+      }
+    ],
+    "expectedTags": [
+      "event"
+    ],
+    "expectedMissing": [],
+    "neverInventDate": false
+  },
+  {
+    "text": "ماه بعد تولد مامان",
+    "drafts": [
+      {
+        "_tag": "event",
+        "title": "تولد مامان",
+        "sourceQuote": "ماه بعد تولد مامان",
+        "missing": [
+          {
+            "field": "timing",
+            "shape": "localDate",
+            "question": "تولد مامان چه روزی است؟"
+          }
+        ]
+      }
+    ],
+    "expectedTags": [
+      "event"
+    ],
+    "expectedMissing": [
+      "timing"
+    ],
+    "neverInventDate": true
+  },
+  {
+    "text": "یادم باشه شیر بخرم",
+    "drafts": [
+      {
+        "_tag": "task",
+        "title": "خرید شیر",
+        "sourceQuote": "یادم باشه شیر بخرم",
+        "missing": []
+      }
+    ],
+    "expectedTags": [
+      "task"
+    ],
+    "expectedMissing": [],
+    "neverInventDate": false
+  },
+  {
+    "text": "هر شب ساعت ۱۰ کتاب بخونم",
+    "drafts": [
+      {
+        "_tag": "habit",
+        "title": "کتاب خواندن",
+        "sourceQuote": "هر شب ساعت ۱۰ کتاب بخونم",
+        "missing": [],
+        "frequency": {
+          "_tag": "daily"
+        },
+        "reminderTime": "22:00"
+      }
+    ],
+    "expectedTags": [
+      "habit"
+    ],
+    "expectedMissing": [],
+    "neverInventDate": false
+  },
+  {
+    "text": "جمعه ساعت ۴ عصر فوتبال",
+    "drafts": [
+      {
+        "_tag": "event",
+        "title": "فوتبال",
+        "sourceQuote": "جمعه ساعت ۴ عصر فوتبال",
+        "missing": [],
+        "timing": {
+          "_tag": "timed",
+          "start": "2026-11-13T12:30:00.000Z",
+          "end": "2026-11-13T14:00:00.000Z"
+        },
+        "timeZone": "Asia/Tehran"
+      }
+    ],
+    "expectedTags": [
+      "event"
+    ],
+    "expectedMissing": [],
+    "neverInventDate": false
+  },
+  {
+    "text": "پنجشنبه مهمونی",
+    "drafts": [
+      {
+        "_tag": "event",
+        "title": "مهمانی",
+        "sourceQuote": "پنجشنبه مهمونی",
+        "missing": [
+          {
+            "field": "timing",
+            "shape": "localDate",
+            "question": "مهمانی چه روزی است؟"
+          }
+        ]
+      }
+    ],
+    "expectedTags": [
+      "event"
+    ],
+    "expectedMissing": [
+      "timing"
+    ],
+    "neverInventDate": true
+  },
+  {
+    "text": "خرید کادو برای سارا",
+    "drafts": [
+      {
+        "_tag": "task",
+        "title": "خرید کادو برای سارا",
+        "sourceQuote": "خرید کادو برای سارا",
+        "missing": []
+      }
+    ],
+    "expectedTags": [
+      "task"
+    ],
+    "expectedMissing": [],
+    "neverInventDate": false
+  },
+  {
+    "text": "هر ۸ ساعت دارو",
+    "drafts": [
+      {
+        "_tag": "reminder",
+        "title": "دارو",
+        "sourceQuote": "هر ۸ ساعت دارو",
+        "missing": [],
+        "kind": "medication",
+        "repeat": {
+          "_tag": "interval",
+          "hours": 8
+        }
+      }
+    ],
+    "expectedTags": [
+      "reminder"
+    ],
+    "expectedMissing": [],
+    "neverInventDate": false
+  },
+  {
+    "text": "فردا ساعت ۵ دکتر و پنجشنبه مهمونی",
+    "drafts": [
+      {
+        "_tag": "event",
+        "title": "نوبت دکتر",
+        "sourceQuote": "فردا ساعت ۵ دکتر",
+        "missing": [],
+        "timing": {
+          "_tag": "timed",
+          "start": "2026-11-09T13:30:00.000Z",
+          "end": "2026-11-09T14:30:00.000Z"
+        },
+        "timeZone": "Asia/Tehran"
+      },
+      {
+        "_tag": "event",
+        "title": "مهمانی",
+        "sourceQuote": "پنجشنبه مهمونی",
+        "missing": [
+          {
+            "field": "timing",
+            "shape": "localDate",
+            "question": "مهمانی چه روزی است؟"
+          }
+        ]
+      }
+    ],
+    "expectedTags": [
+      "event",
+      "event"
+    ],
+    "expectedMissing": [
+      "timing"
+    ],
+    "neverInventDate": true
+  },
+  {
+    "text": "یک یادداشت: ایده‌ی اپلیکیشن",
+    "drafts": [
+      {
+        "_tag": "note",
+        "title": "ایده‌ی اپلیکیشن",
+        "body": "یک یادداشت: ایده‌ی اپلیکیشن",
+        "sourceQuote": "یک یادداشت: ایده‌ی اپلیکیشن",
+        "missing": []
+      }
+    ],
+    "expectedTags": [
+      "note"
+    ],
+    "expectedMissing": [],
+    "neverInventDate": false
+  },
+  {
+    "text": "سه بار در هفته باشگاه",
+    "drafts": [
+      {
+        "_tag": "habit",
+        "title": "باشگاه",
+        "sourceQuote": "سه بار در هفته باشگاه",
+        "missing": [],
+        "frequency": {
+          "_tag": "weekly",
+          "times": 3
+        }
+      }
+    ],
+    "expectedTags": [
+      "habit"
+    ],
+    "expectedMissing": [],
+    "neverInventDate": false
+  },
+  {
+    "text": "شنبه ساعت ۱۰ قرار",
+    "drafts": [
+      {
+        "_tag": "event",
+        "title": "قرار",
+        "sourceQuote": "شنبه ساعت ۱۰ قرار",
+        "missing": [
+          {
+            "field": "timing",
+            "shape": "localDate",
+            "question": "این قرار چه روزی است؟"
+          }
+        ]
+      }
+    ],
+    "expectedTags": [
+      "event"
+    ],
+    "expectedMissing": [
+      "timing"
+    ],
+    "neverInventDate": true
+  },
+  {
+    "text": "قرص رو یادم باشه",
+    "drafts": [
+      {
+        "_tag": "reminder",
+        "title": "قرص",
+        "sourceQuote": "قرص رو یادم باشه",
+        "missing": [
+          {
+            "field": "repeat",
+            "shape": "repeat",
+            "question": "این یادآور هر چند وقت تکرار شود؟"
+          }
+        ],
+        "kind": "medication"
+      }
+    ],
+    "expectedTags": [
+      "reminder"
+    ],
+    "expectedMissing": [
+      "repeat"
+    ],
+    "neverInventDate": true
+  },
+  {
+    "text": "فردا ساعت ۵ دکتر دارم و یادم باشه قرص رو بگیرم و پنجشنبه مهمونی ساراست",
+    "drafts": [
+      {
+        "_tag": "event",
+        "title": "نوبت دکتر",
+        "sourceQuote": "فردا ساعت ۵ دکتر دارم",
+        "missing": [],
+        "timing": {
+          "_tag": "timed",
+          "start": "2026-11-09T13:30:00.000Z",
+          "end": "2026-11-09T14:30:00.000Z"
+        },
+        "timeZone": "Asia/Tehran"
+      },
+      {
+        "_tag": "reminder",
+        "title": "قرص",
+        "sourceQuote": "یادم باشه قرص رو بگیرم",
+        "missing": [
+          {
+            "field": "repeat",
+            "shape": "repeat",
+            "question": "این یادآور هر چند وقت تکرار شود؟"
+          }
+        ],
+        "kind": "medication"
+      },
+      {
+        "_tag": "event",
+        "title": "مهمانی سارا",
+        "sourceQuote": "پنجشنبه مهمونی ساراست",
+        "missing": [
+          {
+            "field": "timing",
+            "shape": "localDate",
+            "question": "مهمانی چه روزی است؟"
+          }
+        ]
+      }
+    ],
+    "expectedTags": [
+      "event",
+      "reminder",
+      "event"
+    ],
+    "expectedMissing": [
+      "repeat",
+      "timing"
+    ],
+    "neverInventDate": true
+  }
+]

@@ -2,6 +2,13 @@ import { Schema } from "effect"
 import { Rpc, RpcClient, RpcGroup } from "effect/rpc"
 import type { RpcClientError } from "effect/rpc/RpcClientError"
 import {
+  Capture,
+  CommitCaptureInput,
+  CaptureCommitResult,
+  CaptureServiceError,
+  DeleteCaptureInput,
+  DissectCaptureInput,
+  ListCapturesInput,
   Event,
   EventCreateInput,
   EventId,
@@ -561,6 +568,41 @@ class PrepareOccasionTask extends Rpc.make("PrepareOccasionTask", {
   error: OccasionRpcError
 }) {}
 
+// ── Capture (ticket #101; ADR-0012) ──────────────────────────────────────
+
+const CaptureRpcError = Schema.Union([CaptureServiceError, Unauthorized])
+
+/** Run the Dissect and return the stored Capture with its drafts. */
+class DissectCapture extends Rpc.make("DissectCapture", {
+  payload: DissectCaptureInput,
+  success: Capture,
+  error: CaptureRpcError
+}) {}
+
+/**
+ * Validate every reviewed draft, then apply them through the create services.
+ * A mid-way failure is a success result that reports what landed.
+ */
+class CommitCapture extends Rpc.make("CommitCapture", {
+  payload: CommitCaptureInput,
+  success: CaptureCommitResult,
+  error: CaptureRpcError
+}) {}
+
+/** The history screen: one owner's captures, newest first. */
+class ListCaptures extends Rpc.make("ListCaptures", {
+  payload: ListCapturesInput,
+  success: Schema.Array(Capture),
+  error: CaptureRpcError
+}) {}
+
+/** Drop one owned history row; the deleted Capture is echoed back. */
+class DeleteCapture extends Rpc.make("DeleteCapture", {
+  payload: DeleteCaptureInput,
+  success: Capture,
+  error: CaptureRpcError
+}) {}
+
 export const ApiRpcs = RpcGroup.make(
   CreateList,
   GetList,
@@ -630,7 +672,11 @@ export const ApiRpcs = RpcGroup.make(
   ListOccasionOccurrences,
   ListOccasionReminders,
   MaterialiseOccasionReminders,
-  PrepareOccasionTask
+  PrepareOccasionTask,
+  DissectCapture,
+  CommitCapture,
+  ListCaptures,
+  DeleteCapture
 )
 
 /** The derived, shared client type the web app imports. */

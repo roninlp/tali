@@ -2,6 +2,7 @@ import { Context, Effect, Layer, Option, Schema } from "effect"
 import {
   type HouseholdId,
   type LocalDate,
+  type WeekStart,
   Project,
   type ProjectId,
   ProjectCreateInput,
@@ -108,6 +109,8 @@ export interface TaskViewer {
   readonly householdId: HouseholdId
   /** Preferences time zone, falling back to the profile zone at the RPC edge. */
   readonly timeZone: string
+  /** The display week start, used by the Capture prompt (ADR-0012 §8). */
+  readonly weekStart?: WeekStart
   /** Global checked-item default, adopted by a new list (#39). */
   readonly defaultCheckedPlacement?: "inPlace" | "bottom"
 }

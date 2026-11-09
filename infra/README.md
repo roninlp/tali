@@ -59,6 +59,9 @@ repository:
 | `VAPID_PRIVATE_KEY` | the existing Web Push identity (base64url) |
 | `VAPID_PUBLIC_KEY` | optional; derived from the private key when omitted |
 | `VAPID_SUBJECT` | a real `mailto:`/`https:` contact URI |
+| `OPENCODE_API_KEY` | an OpenCode Go key for Capture; without it the feature is inert |
+| `CAPTURE_BASE_URL` | optional; the Go OpenAI-compatible root (defaults in code) |
+| `CAPTURE_MODEL` | optional; the paid model id (defaults in code) |
 | `TALI_BACKUPS` | `off` deploys without R2/backups (default on) |
 
 **Why it used to fail out of the box.** Three separate things:
@@ -176,6 +179,14 @@ with `pnpm exec web-push generate-vapid-keys`; no key pair is committed to this
 repository. Without them the deploy fails instead of shipping an inbox-only app.
 `alchemy dev` reads the shell environment, not `.dev.vars`, so export the key
 before `pnpm dev`. See `docs/web-push-local.md` §1.
+
+Capture (ADR-0012) uses `OPENCODE_API_KEY` (a Workers **secret**) plus optional
+`CAPTURE_BASE_URL` / `CAPTURE_MODEL` vars. The base URL must be the OpenCode
+**Go** root, `https://opencode.ai/inference/go/openai/v1`; the pay-as-you-go
+root is a different path. A deploy without the key still succeeds and warns:
+the feature is inert and every Dissect fails with a typed `ModelUnavailable`.
+Set the key as a repository secret (`gh secret set OPENCODE_API_KEY --body …`)
+for the deploy workflow.
 
 ## Notes
 

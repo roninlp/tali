@@ -1,6 +1,12 @@
 import { Array, Option } from 'effect'
 
-import { extractNotePlainText } from '@tali/domain'
+import {
+  type NoteParagraph,
+  type NoteTextDocument,
+  type NoteTextNode,
+  extractNotePlainText,
+  plainTextToNoteBody,
+} from '@tali/domain'
 
 /**
  * Note body ⇄ editor text, ported from `apps/web/src/lib/notes/body.ts`.
@@ -16,36 +22,11 @@ import { extractNotePlainText } from '@tali/domain'
  * Newlines become paragraph boundaries, so plain-text notes round-trip.
  */
 
-export interface NoteTextNode {
-  readonly type: 'text'
-  readonly text: string
-}
+export type { NoteParagraph, NoteTextDocument, NoteTextNode }
+export type NoteDocument = NoteTextDocument
 
-export interface NoteParagraph {
-  readonly type: 'paragraph'
-  readonly content: ReadonlyArray<NoteTextNode>
-}
-
-export interface NoteDocument {
-  readonly type: 'doc'
-  readonly content: ReadonlyArray<NoteParagraph>
-}
-
-const EMPTY_DOCUMENT: NoteDocument = { type: 'doc', content: [] }
-
-export const textToNoteBody = (text: string): NoteDocument => {
-  if (text === '') {
-    return EMPTY_DOCUMENT
-  }
-
-  return {
-    type: 'doc',
-    content: text.split('\n').map(line => ({
-      type: 'paragraph',
-      content: line === '' ? [] : [{ type: 'text', text: line }],
-    })),
-  }
-}
+export const textToNoteBody = (text: string): NoteDocument =>
+  plainTextToNoteBody(text)
 
 const blockText = (block: unknown): Option.Option<string> => {
   if (block === null || typeof block !== 'object') {

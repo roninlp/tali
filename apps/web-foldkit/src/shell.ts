@@ -7,6 +7,7 @@ import { Nav } from '@foldkit/ui'
 import {
   AppRoute,
   calendarRouter,
+  captureRouter,
   habitsRouter,
   listsRouter,
   notesRouter,
@@ -23,6 +24,7 @@ import {
   notesIcon,
   remindersIcon,
   settingsIcon,
+  sparklesIcon,
   tasksIcon,
   todayIcon,
 } from './ui/icons'
@@ -44,6 +46,7 @@ export type AppSection =
   | 'Lists'
   | 'Notes'
   | 'Reminders'
+  | 'Capture'
   | 'Settings'
 
 type NavItem = Readonly<{
@@ -96,6 +99,12 @@ const NAV_ITEMS: Readonly<Record<AppSection, NavItem>> = {
     label: 'یادآورها',
     icon: remindersIcon,
   },
+  Capture: {
+    section: 'Capture',
+    href: captureRouter(),
+    label: 'کپچر',
+    icon: sparklesIcon,
+  },
   Settings: {
     section: 'Settings',
     href: settingsRouter(),
@@ -112,6 +121,7 @@ const DESKTOP_SECTIONS: ReadonlyArray<AppSection> = [
   'Lists',
   'Notes',
   'Reminders',
+  'Capture',
   'Settings',
 ]
 
@@ -137,6 +147,7 @@ export const sectionForRoute = (route: AppRoute): Option.Option<AppSection> =>
     Habits: () => Option.some('Habits'),
     Calendar: () => Option.some('Calendar'),
     Reminders: () => Option.some('Reminders'),
+    Capture: () => Option.some('Capture'),
     Settings: () => Option.some('Settings'),
     Household: () => Option.none(),
     PushHealth: () => Option.none(),

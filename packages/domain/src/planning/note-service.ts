@@ -178,6 +178,46 @@ export type NoteListInput = Schema.Schema.Type<typeof NoteListInput>
 
 // ── Body helpers (shared by the service and the editor) ──────────────────
 
+/** One text run inside a paragraph-shaped note document. */
+export interface NoteTextNode {
+  readonly type: "text"
+  readonly text: string
+}
+
+/** One paragraph of a note document. */
+export interface NoteParagraph {
+  readonly type: "paragraph"
+  readonly content: ReadonlyArray<NoteTextNode>
+}
+
+/** The minimal ProseMirror/TipTap document a plain-text note stores. */
+export interface NoteTextDocument {
+  readonly type: "doc"
+  readonly content: ReadonlyArray<NoteParagraph>
+}
+
+const EMPTY_NOTE_DOCUMENT: NoteTextDocument = { type: "doc", content: [] }
+
+/**
+ * Wrap plain text into the minimal ProseMirror document the note aggregate
+ * stores. Newlines become paragraph boundaries, so plain-text notes round-trip
+ * through the editor.
+ *
+ * The API's Capture Commit calls this (ADR-0012 §8: the model authors plain
+ * text, never a ProseMirror tree) and the web editor delegates to it, so both
+ * write paths agree on the shape.
+ */
+export const plainTextToNoteBody = (text: string): NoteTextDocument =>
+  text === ""
+    ? EMPTY_NOTE_DOCUMENT
+    : {
+      type: "doc",
+      content: text.split("\n").map((line) => ({
+        type: "paragraph",
+        content: line === "" ? [] : [{ type: "text", text: line }]
+      }))
+    }
+
 /**
  * Extract text from a structured note body. It walks the ProseMirror/TipTap
  * `content`/`text` shape, so the current paragraph-doc fallback and a future

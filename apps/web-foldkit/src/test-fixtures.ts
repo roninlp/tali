@@ -6,6 +6,7 @@ import type { AuthFailure } from './lib/auth-api'
 import { Model } from './main'
 import { emptyMirrorSnapshot } from './mirror'
 import * as Calendar from './page/calendar'
+import * as Capture from './page/capture'
 import * as Habits from './page/habits'
 import * as Household from './page/household'
 import * as Lists from './page/lists'
@@ -183,6 +184,7 @@ export const modelAt = (
     habits: Habits.initialModel(TODAY_NOW),
     calendar: Calendar.initialModel(TODAY_NOW),
     reminders: Reminders.initialModel(),
+    capture: Capture.initialModel({ maybeUserId: Option.some(USER_ID) }),
     settings: Settings.initialModel(),
     morePopover: Popover.init({ id: 'mobile-more-menu' }),
   })

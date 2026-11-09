@@ -124,6 +124,30 @@ describe("nightly maintenance cron", () => {
     expect(r2.objects.size).toBe(0)
   })
 
+  it("purges capture rows after the 90-day retention window", async () => {
+    const db = makeDatabase()
+    const now = "2026-11-08T03:17:00.000Z"
+    const old = "2026-08-01T00:00:00.000Z"
+    const fresh = "2026-11-01T00:00:00.000Z"
+    const insert = db.prepare(
+      `INSERT INTO capture
+        (id, owner_id, text, status, drafts, created_ids, error, dedupe_key,
+         created_at, committed_at)
+       VALUES (?, 'user-a', 'متن', 'committed', '[]', '[]', NULL, ?, ?, NULL)`
+    )
+    insert.run("old-capture", "old", old)
+    insert.run("fresh-capture", "fresh", fresh)
+    const fake = new FakeD1(db)
+    const r2 = new FakeR2()
+
+    await runScheduled(CRON.purge, now, scheduledEnv(fake, r2))
+
+    expect(count(db, "SELECT COUNT(*) AS n FROM capture WHERE id = 'old-capture'"))
+      .toBe(0)
+    expect(count(db, "SELECT COUNT(*) AS n FROM capture WHERE id = 'fresh-capture'"))
+      .toBe(1)
+  })
+
   it("prunes the aged feed once a night and keeps the newest row", async () => {
     const db = makeDatabase()
     const now = "2026-10-23T03:17:00.000Z"
