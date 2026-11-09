@@ -417,3 +417,35 @@ describe("CaptureService.list", () => {
     expect(rows[0]?.ownerId).toBe(USER_A)
   })
 })
+
+describe("CaptureService.remove", () => {
+  it("drops the owner's history row", async () => {
+    const h = makeHarness(replayLayer(FIVE_TEXT, fiveDrafts))
+    const capture = await h.svc((svc) => svc.dissect(viewer, { text: FIVE_TEXT }, NOW))
+
+    const removed = await h.svc((svc) =>
+      svc.remove(viewer, { captureId: capture.id })
+    )
+
+    expect(removed.id).toBe(capture.id)
+    expect(h.count("capture")).toBe(0)
+    expect(await h.svc((svc) => svc.list(viewer, {}))).toEqual([])
+  })
+
+  it("refuses another owner's capture and keeps it", async () => {
+    const h = makeHarness(replayLayer(FIVE_TEXT, fiveDrafts))
+    const capture = await h.svc((svc) => svc.dissect(viewer, { text: FIVE_TEXT }, NOW))
+
+    const error = await h.svc((svc) =>
+      Effect.flip(
+        svc.remove(
+          { ...viewer, userId: "user-b" as UserId },
+          { captureId: capture.id }
+        )
+      )
+    )
+
+    expect(error._tag).toBe("CaptureNotFound")
+    expect(h.count("capture")).toBe(1)
+  })
+})

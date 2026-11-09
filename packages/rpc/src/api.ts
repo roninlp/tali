@@ -6,6 +6,7 @@ import {
   CommitCaptureInput,
   CaptureCommitResult,
   CaptureServiceError,
+  DeleteCaptureInput,
   DissectCaptureInput,
   ListCapturesInput,
   Event,
@@ -595,6 +596,13 @@ class ListCaptures extends Rpc.make("ListCaptures", {
   error: CaptureRpcError
 }) {}
 
+/** Drop one owned history row; the deleted Capture is echoed back. */
+class DeleteCapture extends Rpc.make("DeleteCapture", {
+  payload: DeleteCaptureInput,
+  success: Capture,
+  error: CaptureRpcError
+}) {}
+
 export const ApiRpcs = RpcGroup.make(
   CreateList,
   GetList,
@@ -667,7 +675,8 @@ export const ApiRpcs = RpcGroup.make(
   PrepareOccasionTask,
   DissectCapture,
   CommitCapture,
-  ListCaptures
+  ListCaptures,
+  DeleteCapture
 )
 
 /** The derived, shared client type the web app imports. */

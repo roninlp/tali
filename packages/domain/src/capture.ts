@@ -270,6 +270,12 @@ export const ListCapturesInput = Schema.Struct({
 })
 export type ListCapturesInput = Schema.Schema.Type<typeof ListCapturesInput>
 
+/** `DeleteCapture` payload: one history row to drop. */
+export const DeleteCaptureInput = Schema.Struct({
+  captureId: CaptureId
+})
+export type DeleteCaptureInput = Schema.Schema.Type<typeof DeleteCaptureInput>
+
 /** A mid-way service failure, reported without discarding what landed. */
 export const CaptureCommitFailure = Schema.Struct({
   draftIndex: Schema.Int,

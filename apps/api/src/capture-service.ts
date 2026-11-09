@@ -16,6 +16,7 @@ import {
   CaptureNotFound,
   CaptureRateLimited,
   CaptureTooLong,
+  type DeleteCaptureInput,
   DraftIncomplete,
   type DissectCaptureInput,
   type HouseholdId,
@@ -79,6 +80,11 @@ export interface CaptureServiceApi {
     viewer: CaptureViewer,
     input: ListCapturesInput
   ) => Effect.Effect<ReadonlyArray<Capture>, CaptureServiceError>
+  /** Drop one owned history row (the UI offers it on failed entries). */
+  readonly remove: (
+    viewer: CaptureViewer,
+    input: DeleteCaptureInput
+  ) => Effect.Effect<Capture, CaptureServiceError>
 }
 
 export class CaptureService extends Context.Service<CaptureService>()("CaptureService", {
@@ -395,7 +401,26 @@ export class CaptureService extends Context.Service<CaptureService>()("CaptureSe
         .listByOwner({ ownerId: viewer.userId, limit: input.limit ?? 20 })
         .pipe(Effect.orDie)
 
-    return { dissect, commit, list } as const
+    /**
+     * Remove one owned history row. Another owner's row is indistinguishable
+     * from a missing one, exactly like `readOwned`.
+     */
+    const remove = (
+      viewer: CaptureViewer,
+      input: DeleteCaptureInput
+    ): Effect.Effect<Capture, CaptureServiceError> =>
+      Effect.gen(function*() {
+        const capture = yield* readOwned(viewer, input.captureId)
+        const removed = yield* captures
+          .remove({ id: capture.id, ownerId: viewer.userId })
+          .pipe(Effect.orDie)
+        if (!removed) {
+          return yield* Effect.fail(new CaptureNotFound({ id: input.captureId }))
+        }
+        return capture
+      })
+
+    return { dissect, commit, list, remove } as const
   })
 }) {}
 

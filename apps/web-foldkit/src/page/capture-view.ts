@@ -20,6 +20,7 @@ import {
   taskAnchorPath,
 } from '../route'
 import type { DisplayFields } from '../preferences-model'
+import { retryIcon, trashIcon } from '../ui/icons'
 import {
   type CaptureCard,
   type Inputs,
@@ -1072,15 +1073,34 @@ const historyRow = (
             ],
           ),
           capture.status === 'failed'
-            ? h.button(
+            ? h.div(
+                [h.Class('flex shrink-0 items-center gap-1')],
                 [
-                  h.Type('button'),
-                  h.Class('btn btn-ghost btn-xs shrink-0'),
-                  h.OnClick(
-                    Message.ClickedRetryHistory({ captureId: capture.id }),
+                  h.button(
+                    [
+                      h.Type('button'),
+                      h.Class('btn btn-ghost btn-xs btn-square'),
+                      h.AriaLabel('تلاش دوباره'),
+                      h.Title('تلاش دوباره'),
+                      h.OnClick(
+                        Message.ClickedRetryHistory({ captureId: capture.id }),
+                      ),
+                    ],
+                    [retryIcon('size-4')],
+                  ),
+                  h.button(
+                    [
+                      h.Type('button'),
+                      h.Class('btn btn-ghost btn-xs btn-square hover:text-error'),
+                      h.AriaLabel('حذف'),
+                      h.Title('حذف'),
+                      h.OnClick(
+                        Message.ClickedDeleteHistory({ captureId: capture.id }),
+                      ),
+                    ],
+                    [trashIcon('size-4')],
                   ),
                 ],
-                ['تلاش دوباره'],
               )
             : h.empty,
         ],

@@ -447,6 +447,61 @@ describe('capture review', () => {
     )
   })
 
+  test('deleting a failed history row drops it from the list', () => {
+    const failed = captureOf({ status: 'failed', drafts: [] })
+    const kept = captureOf({
+      id: CaptureId.make('0192f0a0-0000-7000-8000-000000000011'),
+      status: 'committed',
+    })
+    story(
+      update(),
+      given({
+        ...initial(),
+        history: [failed, kept],
+        expandedHistoryId: Option.some(failed.id),
+      }),
+      message(
+        CapturePage.Message.ClickedDeleteHistory({ captureId: failed.id }),
+      ),
+      Command.expectExact(CapturePage.DeleteCapture({ captureId: failed.id })),
+      Command.resolve(
+        CapturePage.DeleteCapture,
+        CapturePage.Message.CompletedDeleteHistory({ capture: failed }),
+      ),
+      model((current) => {
+        expect(current.history.map((row) => row.id)).toEqual([kept.id])
+        expect(current.expandedHistoryId).toEqual(Option.none())
+      }),
+    )
+  })
+
+  test('a failed delete surfaces the history error', () => {
+    const failed = captureOf({ status: 'failed', drafts: [] })
+    story(
+      update(),
+      given({ ...initial(), history: [failed] }),
+      message(
+        CapturePage.Message.ClickedDeleteHistory({ captureId: failed.id }),
+      ),
+      Command.expectExact(CapturePage.DeleteCapture({ captureId: failed.id })),
+      Command.resolve(
+        CapturePage.DeleteCapture,
+        CapturePage.Message.FailedDeleteHistory({
+          failure: {
+            code: 'Network',
+            message: 'ارتباط با سرور برقرار نشد.',
+          },
+        }),
+      ),
+      model((current) => {
+        expect(current.history.map((row) => row.id)).toEqual([failed.id])
+        expect(Option.getOrThrow(current.maybeHistoryError)).toContain(
+          'ارتباط',
+        )
+      }),
+    )
+  })
+
   test('committing sends the reviewed drafts with the capture id', () => {
     story(
       update(),

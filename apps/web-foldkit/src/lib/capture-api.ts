@@ -96,6 +96,9 @@ export const commitCapture = (input: {
 export const listCaptures = (input: { readonly limit?: number } = {}) =>
   run(withRpcClient((client) => client.ListCaptures(input)))
 
+export const deleteCapture = (input: { readonly captureId: CaptureId }) =>
+  run(withRpcClient((client) => client.DeleteCapture(input)))
+
 /** The result strip's rows are links; the page maps the type to a route. */
 export type CaptureCreatedRow = Capture['createdIds'][number]
 export type CaptureCommitOutcome = CaptureCommitResult

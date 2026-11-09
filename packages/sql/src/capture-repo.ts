@@ -108,6 +108,20 @@ export class CaptureRepo extends Context.Service<CaptureRepo>()("CaptureRepo", {
         (rows) => toCapture(rows[0]!)
       )
 
+    /**
+     * Drop one owner's history row. Capture sits outside sync, so there is no
+     * tombstone or feed entry — the row is simply gone.
+     */
+    const remove = (input: { readonly id: CaptureId; readonly ownerId: UserId }) =>
+      Effect.map(
+        sql<{ readonly id: string }>`
+          DELETE FROM capture
+          WHERE id = ${input.id} AND owner_id = ${input.ownerId}
+          RETURNING id
+        `,
+        (rows) => rows.length > 0
+      )
+
     const update = (capture: Capture) =>
       Effect.map(
         sql<CaptureRow>`
@@ -177,6 +191,7 @@ export class CaptureRepo extends Context.Service<CaptureRepo>()("CaptureRepo", {
       listByOwner,
       findRecentByDedupe,
       insert,
+      remove,
       update,
       setStatus,
       purge,

@@ -447,5 +447,8 @@ export const RpcHandlers = ApiRpcs.toLayer({
       CaptureService.pipe(Effect.flatMap((svc) => svc.commit(viewer, input)))),
   ListCaptures: (input, { headers }) =>
     withCaptureViewer(headers, (viewer) =>
-      CaptureService.pipe(Effect.flatMap((svc) => svc.list(viewer, input))))
+      CaptureService.pipe(Effect.flatMap((svc) => svc.list(viewer, input)))),
+  DeleteCapture: (input, { headers }) =>
+    withCaptureViewer(headers, (viewer) =>
+      CaptureService.pipe(Effect.flatMap((svc) => svc.remove(viewer, input))))
 })

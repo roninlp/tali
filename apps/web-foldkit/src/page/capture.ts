@@ -14,6 +14,7 @@ import {
 import {
   CaptureFailure,
   commitCapture,
+  deleteCapture,
   dissectCapture,
   listCaptures,
 } from '../lib/capture-api'
@@ -163,6 +164,9 @@ export const Message = defineMessageUnion({
   FailedLoadHistory: { generation: Schema.Int, failure: CaptureFailure },
   ClickedToggleHistory: { captureId: Schema.String },
   ClickedRetryHistory: { captureId: Schema.String },
+  ClickedDeleteHistory: { captureId: Schema.String },
+  CompletedDeleteHistory: { capture: Capture },
+  FailedDeleteHistory: { failure: CaptureFailure },
   CompletedCacheText: {},
   IgnoredInput: {},
 })
@@ -209,6 +213,19 @@ export const LoadHistory = Command.define('LoadHistory', {
         result.ok
           ? Message.CompletedLoadHistory({ generation, captures: result.value })
           : Message.FailedLoadHistory({ generation, failure: result.error }),
+      ),
+    ),
+})
+
+export const DeleteCapture = Command.define('DeleteCapture', {
+  args: { captureId: Schema.String },
+  messages: [Message.CompletedDeleteHistory, Message.FailedDeleteHistory],
+  execute: ({ captureId }) =>
+    deleteCapture({ captureId: CaptureId.make(captureId) }).pipe(
+      Effect.map((result) =>
+        result.ok
+          ? Message.CompletedDeleteHistory({ capture: result.value })
+          : Message.FailedDeleteHistory({ failure: result.error }),
       ),
     ),
 })
@@ -848,6 +865,29 @@ export const update = (
      * fresh Dissect starts. Failed rows are excluded from the text dedupe, so
      * this runs the model again instead of replaying the failure.
      */
+    ClickedDeleteHistory: ({ captureId }) => ({
+      model,
+      commands: [DeleteCapture({ captureId })],
+    }),
+
+    CompletedDeleteHistory: ({ capture }) => ({
+      model: modifyFields(model, {
+        history: () =>
+          model.history.filter((row) => row.id !== capture.id),
+        expandedHistoryId: () =>
+          Option.contains(model.expandedHistoryId, capture.id)
+            ? Option.none()
+            : model.expandedHistoryId,
+        maybeHistoryError: () => Option.none(),
+      }),
+    }),
+
+    FailedDeleteHistory: ({ failure }) => ({
+      model: modifyFields(model, {
+        maybeHistoryError: () => Option.some(failure.message),
+      }),
+    }),
+
     ClickedRetryHistory: ({ captureId }) => {
       const capture = model.history.find((row) => row.id === captureId)
       if (capture === undefined) return { model }

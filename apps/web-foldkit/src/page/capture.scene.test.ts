@@ -178,6 +178,7 @@ describe('capture view', () => {
       expect(text('ناموفق')).toExist(),
       expect(text('مدل در ۶۰ ثانیه پاسخ نداد')).toExist(),
       expect(role('button', { name: 'تلاش دوباره' })).toExist(),
+      expect(role('button', { name: 'حذف' })).toExist(),
     )
   })
 
