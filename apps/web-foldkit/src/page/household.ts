@@ -303,7 +303,7 @@ const dividerView = (h: HtmlBuilder<Message>): Html =>
   h.div(
     [
       h.Role('separator'),
-      h.Class('flex items-center gap-2.5 text-base-content/50'),
+      h.Class('flex items-center gap-2.5 text-base-content/70'),
     ],
     [
       h.span([h.Class('h-px flex-1 bg-base-300')]),
@@ -385,7 +385,7 @@ const invitePanelView = (
     [
       h.h2([h.Class('m-0 text-[0.95rem] font-semibold')], ['خانه ساخته شد']),
       h.p(
-        [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+        [h.Class('m-0 text-sm leading-7 text-base-content/70')],
         [
           `کد دعوت «${summary.name}» را برای نفر دوم بفرستید. او با این کد به خانه می‌پیوندد.`,
         ],
@@ -441,7 +441,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
                     onNone: () => h.empty,
                     onSome: name =>
                       h.p(
-                        [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+                        [h.Class('m-0 text-sm leading-7 text-base-content/70')],
                         [`خوش آمدید، ${name}.`],
                       ),
                   }),

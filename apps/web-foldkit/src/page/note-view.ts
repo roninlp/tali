@@ -338,7 +338,7 @@ export const noteEditorView = (
                 [
                   h.Role('status'),
                   h.Class(
-                    'm-0 flex items-center gap-2 text-sm text-base-content/55',
+                    'm-0 flex items-center gap-2 text-sm text-base-content/70',
                   ),
                 ],
                 [

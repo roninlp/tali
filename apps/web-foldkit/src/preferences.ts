@@ -712,11 +712,11 @@ export const settingsView = Submodel.defineView<Model, Message>((model, h) => {
             ],
           ),
           h.p(
-            [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+            [h.Class('m-0 text-sm leading-7 text-base-content/70')],
             ['تقویم شمسی، شروع هفته و شکل اعداد را اینجا تغییر دهید.'],
           ),
           h.p(
-            [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/50')],
+            [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/70')],
             [source.hint],
           ),
         ],

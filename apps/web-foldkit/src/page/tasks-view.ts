@@ -89,7 +89,7 @@ const TAG_CLASS: string = [
 ].join(' ')
 
 const CHIP_CLASS: string = [
-  'inline-flex max-w-full items-center gap-1 rounded-full border border-base-300 bg-base-200 px-2 py-0.5 text-[0.7rem] leading-6 text-base-content/65 wrap-anywhere',
+  'inline-flex max-w-full items-center gap-1 rounded-full border border-base-300 bg-base-200 px-2 py-0.5 text-[0.7rem] leading-6 text-base-content/70 wrap-anywhere',
   'data-[tone=overdue]:border-warning/35 data-[tone=overdue]:bg-warning/12 data-[tone=overdue]:text-warning',
   'data-[tone=high]:border-error/30 data-[tone=high]:bg-error/10 data-[tone=high]:text-error',
   'data-[tone=pending]:border-warning/30 data-[tone=pending]:bg-warning/12 data-[tone=pending]:text-warning',
@@ -110,7 +110,7 @@ const CHIP_ROW_CLASS = 'flex min-w-0 flex-wrap items-center gap-1.5'
 
 const INLINE_CREATE_CLASS = 'flex flex-wrap items-center gap-1.5'
 
-const QUIET_CLASS = 'm-0 text-[0.78rem] leading-7 text-base-content/55'
+const QUIET_CLASS = 'm-0 text-[0.78rem] leading-7 text-base-content/70'
 
 const FIELD_CLASS = 'grid min-w-0 gap-1'
 
@@ -372,7 +372,7 @@ const quickAddPanelView = (
             [h.Class(FIELD_CLASS)],
             [
               h.span(
-                [h.Class('text-[0.76rem] text-base-content/60')],
+                [h.Class('text-[0.76rem] text-base-content/70')],
                 ['پروژه'],
               ),
               h.submodel({
@@ -467,7 +467,7 @@ const quickAddStatusView = (
             [
               h.Role('status'),
               h.AriaLive('polite'),
-              h.Class('m-0 text-[0.76rem] leading-6 text-base-content/55'),
+              h.Class('m-0 text-[0.76rem] leading-6 text-base-content/70'),
             ],
             ['ذخیره شد؛ در صف همگام‌سازی.'],
           )
@@ -645,7 +645,7 @@ const projectButtonView = (
         ? h.span(
             [
               h.Class(
-                'flex-none text-[0.72rem] text-base-content/50 tabular-nums',
+                'flex-none text-[0.72rem] text-base-content/70 tabular-nums',
               ),
             ],
             [localizeDigits(count, digits)],
@@ -672,7 +672,7 @@ const filterPanelView = (
         [
           h.Type('button'),
           h.Class(
-            'ms-auto inline-flex min-h-10 items-center justify-center rounded-full border border-base-300 bg-base-100 px-3.5 py-1 text-[0.8rem] text-base-content/60 transition-colors hover:border-base-content/20 hover:text-base-content lg:hidden',
+            'ms-auto inline-flex min-h-10 items-center justify-center rounded-full border border-base-300 bg-base-100 px-3.5 py-1 text-[0.8rem] text-base-content/70 transition-colors hover:border-base-content/20 hover:text-base-content lg:hidden',
           ),
           h.OnClick(Message.ClickedToggleFilters()),
         ],
@@ -683,7 +683,7 @@ const filterPanelView = (
         [
           h.h2([h.Class('m-0 text-[0.95rem] font-bold')], ['فیلتر و مرتب‌سازی']),
           h.p(
-            [h.Class('m-0 text-[0.78rem] leading-6 text-base-content/50')],
+            [h.Class('m-0 text-[0.78rem] leading-6 text-base-content/70')],
             [
               `${localizeDigits(view.total, digits)} کار · امروز ${localizeDigits(
                 view.counts.today,
@@ -702,7 +702,7 @@ const filterPanelView = (
           h.h3(
             [
               h.Id('tasks-filter-projects'),
-              h.Class('m-0 text-[0.82rem] font-medium text-base-content/55'),
+              h.Class('m-0 text-[0.82rem] font-medium text-base-content/70'),
             ],
             ['پروژه‌ها'],
           ),
@@ -794,7 +794,7 @@ const filterPanelView = (
           h.h3(
             [
               h.Id('tasks-filter-tags'),
-              h.Class('m-0 text-[0.82rem] font-medium text-base-content/55'),
+              h.Class('m-0 text-[0.82rem] font-medium text-base-content/70'),
             ],
             [
               model.settings.filters.tagIds.length > 0
@@ -995,7 +995,7 @@ const filterPanelView = (
           )
         : h.empty,
       h.p(
-        [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/40')],
+        [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/70')],
         ['فیلترها و مرتب‌سازی روی همین دستگاه ذخیره می‌شوند.'],
       ),
     ],
@@ -1022,7 +1022,7 @@ const moveButton = (
     [
       h.Type('button'),
       h.Class(
-        'inline-flex min-h-8 items-center rounded-full border border-base-300 bg-base-100 px-2.5 text-[0.68rem] text-base-content/60 transition-colors hover:border-primary hover:bg-primary/8 hover:text-primary',
+        'inline-flex min-h-8 items-center rounded-full border border-base-300 bg-base-100 px-2.5 text-[0.68rem] text-base-content/70 transition-colors hover:border-primary hover:bg-primary/8 hover:text-primary',
       ),
       h.OnClick(
         Message.ClickedMoveTask({
@@ -1189,7 +1189,7 @@ const editorView = (
       h.div(
         [h.Role('group'), h.AriaLabel('برچسب‌ها'), h.Class(FIELD_CLASS)],
         [
-          h.span([h.Class('text-[0.76rem] text-base-content/60')], ['برچسب‌ها']),
+          h.span([h.Class('text-[0.76rem] text-base-content/70')], ['برچسب‌ها']),
           Array.match(inputs.mirror.tags, {
             onEmpty: () =>
               h.p([h.Class(QUIET_CLASS)], ['هنوز برچسبی ساخته نشده است.']),
@@ -1363,7 +1363,7 @@ const taskCardView = (
               h.AriaHidden(true),
               h.Title('بکشید تا به روز دیگری برود'),
               h.Class(
-                'hidden cursor-grab select-none px-0.5 py-1 text-[0.9rem] text-base-content/35 lg:inline-flex',
+                'hidden cursor-grab select-none px-0.5 py-1 text-[0.9rem] text-base-content/70 lg:inline-flex',
               ),
               h.OnDragStart(Message.StartedTaskDrag({ taskId: task.id })),
               h.OnDragEnd(Message.EndedTaskDrag()),
@@ -1408,7 +1408,7 @@ const taskCardView = (
         ? h.p(
             [
               h.Class(
-                'm-0 text-[0.82rem] leading-7 text-base-content/60 wrap-anywhere',
+                'm-0 text-[0.82rem] leading-7 text-base-content/70 wrap-anywhere',
               ),
             ],
             [task.description],
@@ -1420,7 +1420,7 @@ const taskCardView = (
         ? h.span(
             [
               h.Class(
-                'min-h-[1.2em] text-[0.72rem] leading-6 text-base-content/55 data-[state=saved]:text-success data-[state=error]:text-error',
+                'min-h-[1.2em] text-[0.72rem] leading-6 text-base-content/70 data-[state=saved]:text-success data-[state=error]:text-error',
               ),
               h.DataAttribute('state', editor.saveState),
               h.Role('status'),
@@ -1495,14 +1495,14 @@ const boardView = (
         ],
       ),
       h.p(
-        [h.Class('m-0 text-[0.76rem] leading-6 text-base-content/55')],
+        [h.Class('m-0 text-[0.76rem] leading-6 text-base-content/70')],
         [copy.subtitle],
       ),
       board.count === 0
         ? h.p(
             [
               h.Class(
-                'm-0 rounded-xl border border-dashed border-base-300 px-3 py-6 text-center text-[0.82rem] leading-7 text-base-content/50',
+                'm-0 rounded-xl border border-dashed border-base-300 px-3 py-6 text-center text-[0.82rem] leading-7 text-base-content/70',
               ),
             ],
             [copy.empty],
@@ -1519,7 +1519,7 @@ const boardView = (
                     : h.h3(
                         [
                           h.Class(
-                            'mt-1 mb-0 text-[0.78rem] font-medium text-base-content/50',
+                            'mt-1 mb-0 text-[0.78rem] font-medium text-base-content/70',
                           ),
                         ],
                         [GROUP_TITLES[group.key]],
@@ -1578,7 +1578,7 @@ const historyView = (
           h.span(
             [
               h.Class(
-                'ms-auto text-base-content/40 transition-transform data-[open=true]:rotate-180',
+                'ms-auto text-base-content/70 transition-transform data-[open=true]:rotate-180',
               ),
               h.DataAttribute('open', model.isHistoryOpen ? 'true' : 'false'),
             ],
@@ -1592,7 +1592,7 @@ const historyView = (
           h.p(
             [
               h.Class(
-                'mt-1 mb-2 text-[0.76rem] leading-6 text-base-content/50',
+                'mt-1 mb-2 text-[0.76rem] leading-6 text-base-content/70',
               ),
             ],
             ['تا هفت روز قابل بازگردانی است؛ پس از آن بایگانی می‌شود.'],
@@ -1618,13 +1618,13 @@ const historyView = (
                       h.p(
                         [
                           h.Class(
-                            'm-0 min-w-0 flex-1 text-[0.85rem] text-base-content/55 line-through wrap-anywhere',
+                            'm-0 min-w-0 flex-1 text-[0.85rem] text-base-content/70 line-through wrap-anywhere',
                           ),
                         ],
                         [task.title],
                       ),
                       h.span(
-                        [h.Class('text-[0.72rem] text-base-content/50')],
+                        [h.Class('text-[0.72rem] text-base-content/70')],
                         [
                           task.completedAt === null
                             ? ''
@@ -1639,7 +1639,7 @@ const historyView = (
                         [
                           h.Type('button'),
                           h.Class(
-                            'min-h-10 flex-none rounded-full px-3 text-[0.76rem] text-base-content/65 transition-colors hover:bg-base-content/5 hover:text-primary sm:min-h-8',
+                            'min-h-10 flex-none rounded-full px-3 text-[0.76rem] text-base-content/70 transition-colors hover:bg-base-content/5 hover:text-primary sm:min-h-8',
                           ),
                           h.AriaLabel(`بازگرداندن ${task.title}`),
                           h.OnClick(
@@ -1712,7 +1712,7 @@ const headerView = (inputs: ViewInputs, h: HtmlBuilder<Message>): Html =>
         ['کارها'],
       ),
       h.p(
-        [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+        [h.Class('m-0 text-sm leading-7 text-base-content/70')],
         [
           'هر تغییر اول روی همین دستگاه ذخیره می‌شود؛ بعد در پس‌زمینه همگام می‌شود.',
         ],
@@ -1733,7 +1733,7 @@ const headerView = (inputs: ViewInputs, h: HtmlBuilder<Message>): Html =>
             [
               h.Role('status'),
               h.AriaLive('polite'),
-              h.Class('m-0 text-[0.78rem] leading-6 text-base-content/50'),
+              h.Class('m-0 text-[0.78rem] leading-6 text-base-content/70'),
             ],
             [
               `${localizeDigits(inputs.pending, inputs.display.digits)} تغییر در صف همگام‌سازی است.`,
@@ -1830,7 +1830,7 @@ export const tasksPageView = (
                 : h.p(
                     [
                       h.Class(
-                        'm-0 flex items-center gap-2 text-sm text-base-content/55',
+                        'm-0 flex items-center gap-2 text-sm text-base-content/70',
                       ),
                     ],
                     [

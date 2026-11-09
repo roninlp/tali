@@ -48,7 +48,7 @@ export const notesTrashView = (
                     ['سطل زباله'],
                   ),
                   h.p(
-                    [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+                    [h.Class('m-0 text-sm leading-7 text-base-content/70')],
                     [
                       'یادداشت‌های حذف‌شده تا ۳۰ روز اینجا می‌مانند و بعد از آن پاک می‌شوند.',
                     ],
@@ -72,7 +72,7 @@ export const notesTrashView = (
                 ],
                 [
                   h.p(
-                    [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+                    [h.Class('m-0 text-sm leading-7 text-base-content/70')],
                     ['سطل زباله خالی است.'],
                   ),
                 ],
@@ -105,7 +105,7 @@ export const notesTrashView = (
                             ? h.span(
                                 [
                                   h.Class(
-                                    'text-sm leading-7 break-words text-base-content/55',
+                                    'text-sm leading-7 break-words text-base-content/70',
                                   ),
                                 ],
                                 [note.excerpt],

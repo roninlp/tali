@@ -1697,7 +1697,7 @@ const placeholderNoteView = (h: HtmlBuilder<Message>): Html =>
   h.p(
     [
       h.Class(
-        'm-0 grid justify-items-center gap-2 rounded-2xl border border-dashed border-base-300 px-6 py-10 text-center text-sm leading-7 text-base-content/55',
+        'm-0 grid justify-items-center gap-2 rounded-2xl border border-dashed border-base-300 px-6 py-10 text-center text-sm leading-7 text-base-content/70',
       ),
     ],
     ['این صفحه در گام بعدی ساخته می‌شود.'],
@@ -1732,11 +1732,11 @@ const homeView = (h: HtmlBuilder<Message>): Html =>
         ['تالی'],
       ),
       h.p(
-        [h.Class('m-0 text-sm leading-7 text-base-content/60')],
+        [h.Class('m-0 text-sm leading-7 text-base-content/70')],
         ['برنامه‌ریز مشترک خانه‌ی شما.'],
       ),
       h.p(
-        [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/50')],
+        [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/70')],
         ['در حال هدایت به جای درست…'],
       ),
     ],
@@ -1762,7 +1762,7 @@ const notFoundView = (h: HtmlBuilder<Message>): Html =>
             ['صفحه پیدا نشد'],
           ),
           h.p(
-            [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+            [h.Class('m-0 text-sm leading-7 text-base-content/70')],
             ['نشانی‌ای که باز کردید وجود ندارد.'],
           ),
           h.a(
@@ -1804,7 +1804,7 @@ const remindersPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
             ['یادآورها'],
           ),
           h.p(
-            [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+            [h.Class('m-0 text-sm leading-7 text-base-content/70')],
             ['اعلان‌های این دستگاه و یادآورهایی که مرورگر آن‌ها را ندیده است.'],
           ),
         ],
@@ -1836,7 +1836,7 @@ const settingsPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
             ['تنظیمات'],
           ),
           h.p(
-            [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+            [h.Class('m-0 text-sm leading-7 text-base-content/70')],
             ['ظاهر برنامه، تقویم و منطقه‌ی زمانی، و امنیت حساب.'],
           ),
         ],
@@ -2112,7 +2112,7 @@ const moreMenuView = (
         [
           ...config.render.button,
           h.Class(
-            'flex w-full cursor-pointer flex-col items-center gap-0.5 py-2 text-[0.68rem] font-medium text-base-content/55',
+            'flex w-full cursor-pointer flex-col items-center gap-0.5 py-2 text-[0.68rem] font-medium text-base-content/70',
           ),
         ],
         [

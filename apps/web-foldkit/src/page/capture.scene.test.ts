@@ -156,7 +156,7 @@ describe('capture view', () => {
       setup(),
       given(model({ phase: 'review', cards: [cardOf(event)] })),
       expect(text('ساعت شروع؟')).toExist(),
-      expect(role('button', { name: 'ساعت شروع؟' })).toExist(),
+      expect(role('button', { name: /^ساعت شروع؟/ })).toExist(),
     )
   })
 

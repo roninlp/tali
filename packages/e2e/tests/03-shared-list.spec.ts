@@ -25,35 +25,33 @@ test('flow 3: a shared list updates live across devices', async ({
   await expect(alicePage).toHaveURL(/\/lists\/[0-9a-z-]+$/)
   const listId = new URL(alicePage.url()).pathname.split('/').pop()!
   // The default is household-shared; assert it instead of trusting the form.
-  await expect(alicePage.getByLabel('دسترسی')).toHaveValue('shared')
+  await expect(alicePage.getByRole('button', { name: 'دسترسی' })).toContainText(
+    'مشترک با خانه',
+  )
 
   await alicePage.getByLabel('نام مورد تازه').fill(itemName)
   await alicePage.getByRole('button', { name: 'افزودن', exact: true }).click()
   await expect(
-    alicePage.getByRole('checkbox', { name: `تیک زدن ${itemName}` }),
+    alicePage.getByRole('checkbox', { name: itemName }),
   ).toBeVisible()
 
   // ── B opens the same list from the index (pulled, not deep-linked) ─────
   await bobPage.goto('/lists')
-  const card = bobPage
-    .locator('article.lists-index-card')
-    .filter({ hasText: listTitle })
+  const card = bobPage.locator('article').filter({ hasText: listTitle })
   await expect(card).toBeVisible()
   await card.getByRole('link').click()
 
   await expect(bobPage).toHaveURL(new RegExp(`/lists/${listId}$`))
   await expect(
-    bobPage.locator(`li.lists-item`, { hasText: itemName }),
+    bobPage.locator(`li[data-done]`, { hasText: itemName }),
   ).toBeVisible()
 
   // ── A checks it; B updates without a reload ────────────────────────────
-  await alicePage.getByRole('checkbox', { name: `تیک زدن ${itemName}` }).click()
+  await alicePage.getByRole('checkbox', { name: itemName }).click()
   await expect(alicePage.getByText(`تیک خورد: ${itemName}`)).toBeVisible()
 
-  const bobRow = bobPage.locator('li.lists-item', { hasText: itemName })
-  await expect(
-    bobPage.getByRole('checkbox', { name: `برداشتن تیک ${itemName}` }),
-  ).toBeVisible()
+  const bobRow = bobPage.locator('li[data-done]', { hasText: itemName })
+  await expect(bobPage.getByRole('checkbox', { name: itemName })).toBeVisible()
   await expect(bobRow).toHaveAttribute('data-done', 'true')
   await expect(bobRow).toContainText('توسط همخانه به‌روزرسانی شد')
 

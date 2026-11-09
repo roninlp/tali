@@ -729,7 +729,7 @@ const TONE_CLASS: Readonly<
   ok: { text: 'text-success', dot: 'bg-success' },
   warn: { text: 'text-warning', dot: 'bg-warning' },
   bad: { text: 'text-error', dot: 'bg-error' },
-  muted: { text: 'text-base-content/55', dot: 'bg-base-content/35' },
+  muted: { text: 'text-base-content/70', dot: 'bg-base-content/35' },
 }
 
 const PERMISSION_COPY: Readonly<
@@ -801,7 +801,7 @@ const statusRowView = <Message>(
         onNone: () => h.empty,
         onSome: hint =>
           h.span(
-            [h.Class('text-[0.72rem] leading-6 text-base-content/50')],
+            [h.Class('text-[0.72rem] leading-6 text-base-content/70')],
             [hint],
           ),
       }),
@@ -831,7 +831,7 @@ export const healthView = Submodel.defineView<Model, Message>((model, h) => {
             ['وضعیت اعلان‌ها'],
           ),
           h.p(
-            [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+            [h.Class('m-0 text-sm leading-7 text-base-content/70')],
             [
               'یادآورها از طریق Web Push به همین دستگاه می‌رسند. این بخش آمادگی دستگاه را نشان می‌دهد.',
             ],
@@ -986,7 +986,7 @@ export const healthView = Submodel.defineView<Model, Message>((model, h) => {
         ],
       ),
       h.p(
-        [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/50')],
+        [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/70')],
         [
           'راهنمای ارسال یک اعلان آزمایشی روی همین دستگاه: ',
           h.code([h.Dir('ltr')], ['docs/web-push-local.md']),

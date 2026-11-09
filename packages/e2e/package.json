@@ -12,9 +12,11 @@
     "test:smoke:foldkit:sync": "node scripts/smoke-foldkit-sync.mjs"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@playwright/test": "^1.64.1",
+    "@tali/tsconfig": "workspace:*",
     "@types/node": "catalog:",
-    "typescript": "catalog:",
-    "@tali/tsconfig": "workspace:*"
+    "axe-core": "^4.14.0",
+    "typescript": "catalog:"
   }
 }

@@ -33,13 +33,13 @@ const SWATCH_CLASS =
   'size-9 flex-none cursor-pointer rounded-full p-0 ring-1 ring-base-300 ring-inset transition-shadow aria-pressed:ring-2 aria-pressed:ring-base-content'
 
 const ICON_CHOICE_CLASS =
-  'inline-flex size-10 flex-none items-center justify-center rounded-full border border-base-300 bg-base-100 p-0 text-[1.05rem] text-base-content/65 transition-colors hover:border-base-content/25 data-[active=true]:border-primary data-[active=true]:bg-primary/10 data-[active=true]:text-primary'
+  'inline-flex size-10 flex-none items-center justify-center rounded-full border border-base-300 bg-base-100 p-0 text-[1.05rem] text-base-content/70 transition-colors hover:border-base-content/25 data-[active=true]:border-primary data-[active=true]:bg-primary/10 data-[active=true]:text-primary'
 
 const DANGER_BUTTON_CLASS =
   'inline-flex min-h-10 flex-none items-center rounded-full border border-error/35 bg-error/8 px-3 py-0.5 text-[0.78rem] font-medium text-error transition-colors hover:bg-error/12 disabled:opacity-55 sm:min-h-8'
 
 const EMPTY_STATE_CLASS =
-  'm-0 rounded-2xl border border-dashed border-base-300 px-6 py-10 text-center text-sm leading-7 text-base-content/55'
+  'm-0 rounded-2xl border border-dashed border-base-300 px-6 py-10 text-center text-sm leading-7 text-base-content/70'
 
 const listCardView = (
   entry: ListSummary,
@@ -84,7 +84,7 @@ const listCardView = (
           h.p(
             [
               h.Class(
-                'm-0 text-[0.8rem] leading-6 break-words text-base-content/55',
+                'm-0 text-[0.8rem] leading-6 break-words text-base-content/70',
               ),
             ],
             [
@@ -100,7 +100,7 @@ const listCardView = (
               h.ul(
                 [
                   h.Class(
-                    'm-0 list-disc ps-[1.1em] text-[0.8rem] leading-6 text-base-content/50',
+                    'm-0 list-disc ps-[1.1em] text-[0.8rem] leading-6 text-base-content/70',
                   ),
                 ],
                 Array.map(names, name =>
@@ -164,7 +164,7 @@ const createSectionView = (model: Model, h: HtmlBuilder<Message>): Html =>
             [h.Class('grid gap-1')],
             [
               h.span(
-                [h.Class('text-[0.8rem] text-base-content/55')],
+                [h.Class('text-[0.8rem] text-base-content/70')],
                 ['عنوان'],
               ),
               inputControlView(
@@ -191,7 +191,7 @@ const createSectionView = (model: Model, h: HtmlBuilder<Message>): Html =>
                 [h.Class('m-0 grid gap-1.5 border-0 p-0')],
                 [
                   h.legend(
-                    [h.Class('text-[0.8rem] text-base-content/55')],
+                    [h.Class('text-[0.8rem] text-base-content/70')],
                     ['رنگ'],
                   ),
                   h.div(
@@ -217,7 +217,7 @@ const createSectionView = (model: Model, h: HtmlBuilder<Message>): Html =>
                 [h.Class('m-0 grid gap-1.5 border-0 p-0')],
                 [
                   h.legend(
-                    [h.Class('text-[0.8rem] text-base-content/55')],
+                    [h.Class('text-[0.8rem] text-base-content/70')],
                     ['نماد'],
                   ),
                   h.div(
@@ -322,7 +322,7 @@ const allListsSectionView = (
             ['همه‌ی فهرست‌ها'],
           ),
           h.span(
-            [h.Class('text-[0.8rem] text-base-content/50')],
+            [h.Class('text-[0.8rem] text-base-content/70')],
             [`${localizeDigits(summaries.length, digits)} فهرست`],
           ),
         ],
@@ -374,7 +374,7 @@ export const listsIndexView = (
                 ['فهرست‌ها'],
               ),
               h.p(
-                [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+                [h.Class('m-0 text-sm leading-7 text-base-content/70')],
                 [
                   'فهرست خرید، کارهای خانه یا هر چک‌لیست مشترک. هر تغییر اول روی همین دستگاه ذخیره می‌شود.',
                 ],
@@ -392,7 +392,7 @@ export const listsIndexView = (
                     [
                       h.Role('status'),
                       h.AriaLive('polite'),
-                      h.Class('m-0 text-[0.78rem] text-base-content/50'),
+                      h.Class('m-0 text-[0.78rem] text-base-content/70'),
                     ],
                     [
                       `${localizeDigits(

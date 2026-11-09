@@ -207,7 +207,7 @@ const desktopNavView = (maybeActiveSection: Option.Option<AppSection>): Html =>
                           'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[0.82rem] font-medium transition-colors',
                           item.isCurrent
                             ? 'bg-primary/12 text-primary'
-                            : 'text-base-content/60 hover:bg-base-content/[0.04] hover:text-base-content',
+                            : 'text-base-content/70 hover:bg-base-content/[0.04] hover:text-base-content',
                         ),
                       ),
                     ],
@@ -237,7 +237,7 @@ const mobileLinkView = <Message>(
       h.Class(
         classNames(
           'flex flex-col items-center gap-0.5 py-2 text-[0.68rem] font-medium',
-          isActive ? 'text-primary' : 'text-base-content/55',
+          isActive ? 'text-primary' : 'text-base-content/70',
         ),
       ),
       ...(isActive ? [h.AriaCurrent('page')] : []),
@@ -360,7 +360,7 @@ export const view = <Message>(
                   h.span(
                     [
                       h.Class(
-                        'me-1 hidden max-w-32 truncate text-[0.72rem] text-base-content/45 lg:inline',
+                        'me-1 hidden max-w-32 truncate text-[0.72rem] text-base-content/70 lg:inline',
                       ),
                     ],
                     [displayName],

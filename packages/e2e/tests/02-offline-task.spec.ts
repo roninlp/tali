@@ -33,7 +33,9 @@ test('flow 2: offline quick-adds survive a reload and converge on both devices',
   await expect(composer).toBeEnabled()
   await composer.fill(syncedTitle)
   await composer.press('Enter')
-  await expect(alicePage.locator('.today-list')).toContainText(syncedTitle)
+  await expect(
+    alicePage.getByRole('list', { name: 'کارهای امروز' }),
+  ).toContainText(syncedTitle)
   await expect(syncStatus(alicePage)).not.toContainText('در انتظار ارسال')
 
   // ── The device goes offline; the page reloads from the local mirror ────
@@ -57,25 +59,33 @@ test('flow 2: offline quick-adds survive a reload and converge on both devices',
   )
   await alicePage.reload()
 
-  await expect(alicePage.locator('p.today-source')).toHaveAttribute(
+  await expect(alicePage.locator('[data-today-source]')).toHaveAttribute(
     'data-offline',
     'true',
   )
-  await expect(alicePage.locator('p.today-source')).toContainText('آفلاین')
+  await expect(alicePage.locator('[data-today-source]')).toContainText('آفلاین')
   // The acknowledged row survived because it was in IndexedDB, not memory.
-  await expect(alicePage.locator('.today-list')).toContainText(syncedTitle)
+  await expect(
+    alicePage.getByRole('list', { name: 'کارهای امروز' }),
+  ).toContainText(syncedTitle)
 
   // ── A second task is queued while offline, then survives another reload ─
   await composer.fill(offlineTitle)
   await composer.press('Enter')
-  await expect(alicePage.locator('.today-list')).toContainText(offlineTitle)
+  await expect(
+    alicePage.getByRole('list', { name: 'کارهای امروز' }),
+  ).toContainText(offlineTitle)
   // The pill reports the outage, not the queue depth: while offline it reads
   // "آفلاین", and the queued rows are proven by surviving the reload below.
   await expect(syncStatus(alicePage)).toHaveText('آفلاین')
 
   await alicePage.reload()
-  await expect(alicePage.locator('.today-list')).toContainText(syncedTitle)
-  await expect(alicePage.locator('.today-list')).toContainText(offlineTitle)
+  await expect(
+    alicePage.getByRole('list', { name: 'کارهای امروز' }),
+  ).toContainText(syncedTitle)
+  await expect(
+    alicePage.getByRole('list', { name: 'کارهای امروز' }),
+  ).toContainText(offlineTitle)
   await expect(syncStatus(alicePage)).toHaveText('آفلاین')
 
   // ── Reconnect: the outbox drains and B pulls both rows ─────────────────

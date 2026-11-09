@@ -123,7 +123,7 @@ const searchResultView = (
       ),
       Array.isReadonlyArrayNonEmpty(hit.segments)
         ? h.p(
-            [h.Class('m-0 text-sm leading-7 break-words text-base-content/55')],
+            [h.Class('m-0 text-sm leading-7 break-words text-base-content/70')],
             [markedView(snippetSegments(model, inputs, hit), h)],
           )
         : h.empty,
@@ -145,7 +145,7 @@ const searchResultsView = (
       Array.match(model.searchHits, {
         onEmpty: () =>
           h.p(
-            [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+            [h.Class('m-0 text-sm leading-7 text-base-content/70')],
             ['چیزی پیدا نشد.'],
           ),
         onNonEmpty: hits =>
@@ -178,7 +178,7 @@ const searchSectionView = (model: Model, h: HtmlBuilder<Message>): Html =>
               ),
             ],
             [
-              searchIcon('size-4 shrink-0 text-base-content/40'),
+              searchIcon('size-4 shrink-0 text-base-content/70'),
               inputControlView(
                 {
                   id: 'note-search',
@@ -221,7 +221,7 @@ const searchSectionView = (model: Model, h: HtmlBuilder<Message>): Html =>
             [
               h.Role('status'),
               h.Class(
-                'm-0 flex items-center gap-2 text-sm text-base-content/55',
+                'm-0 flex items-center gap-2 text-sm text-base-content/70',
               ),
             ],
             [h.span([h.Class('spinner spinner-xs')]), 'در حال جست‌وجو…'],
@@ -352,7 +352,7 @@ const noteRowView = (
       ),
       note.excerpt !== ''
         ? h.p(
-            [h.Class('m-0 text-sm leading-7 break-words text-base-content/55')],
+            [h.Class('m-0 text-sm leading-7 break-words text-base-content/70')],
             [note.excerpt],
           )
         : h.empty,
@@ -376,7 +376,7 @@ const noteSectionView = (
       Array.match(notes, {
         onEmpty: () =>
           h.p(
-            [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+            [h.Class('m-0 text-sm leading-7 text-base-content/70')],
             [emptyCopy],
           ),
         onNonEmpty: rows =>
@@ -414,7 +414,7 @@ const archiveSectionView = (
         ? Array.match(sections.archived, {
             onEmpty: () =>
               h.p(
-                [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+                [h.Class('m-0 text-sm leading-7 text-base-content/70')],
                 ['آرشیو خالی است.'],
               ),
             onNonEmpty: rows =>
@@ -482,7 +482,7 @@ export const notesIndexView = (
                   ['هنوز یادداشتی ندارید.'],
                 ),
                 h.p(
-                  [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+                  [h.Class('m-0 text-sm leading-7 text-base-content/70')],
                   [
                     'از هر صفحه با دکمه‌ی «یادداشت تازه» یا Alt+N شروع کنید؛ همان لحظه باز می‌شود.',
                   ],
@@ -541,7 +541,7 @@ export const notesIndexView = (
                     ['یادداشت‌ها'],
                   ),
                   h.p(
-                    [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+                    [h.Class('m-0 text-sm leading-7 text-base-content/70')],
                     [
                       'جست‌وجو، پین، آرشیو و برچسب — همه روی همین دستگاه اول ذخیره می‌شوند.',
                     ],

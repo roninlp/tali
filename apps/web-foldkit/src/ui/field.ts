@@ -21,7 +21,7 @@ import { classNames } from './class-names'
  */
 
 const LABEL_CLASS = 'text-sm font-medium text-base-content/70'
-const HINT_CLASS = 'text-xs text-base-content/50'
+const HINT_CLASS = 'text-xs text-base-content/70'
 
 type OptionalFieldConfig = {
   placeholder?: string

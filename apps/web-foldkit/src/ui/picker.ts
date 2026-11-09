@@ -479,7 +479,7 @@ export const update = (model: Model, message: Message) =>
 const PANEL_CLASS =
   'float-card grid w-full max-w-[23.5rem] max-h-[calc(100dvh-2rem)] gap-3 overflow-y-auto rounded-b-none rounded-t-3xl p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:rounded-2xl'
 
-const NAV_BUTTON_CLASS = 'text-base-content/60'
+const NAV_BUTTON_CLASS = 'text-base-content/70'
 
 const WEEKDAY_ORDER: Readonly<Record<WeekStart, ReadonlyArray<number>>> = {
   saturday: [5, 6, 0, 1, 2, 3, 4],
@@ -505,7 +505,7 @@ const dayClass = (
       ? 'bg-primary font-bold text-primary-content shadow-sm'
       : inMonth
         ? 'text-base-content hover:bg-base-200'
-        : 'text-base-content/30 hover:bg-base-200/70',
+        : 'text-base-content/70 hover:bg-base-200/70',
     isToday && !isSelected ? 'ring-1 ring-primary/45' : '',
   ]
     .filter(value => value !== '')
@@ -525,7 +525,7 @@ const weekdaysHeadView = <ParentMessage>(
         [
           h.AriaHidden(true),
           h.Class(
-            'py-1 text-center text-[0.66rem] font-medium text-base-content/40',
+            'py-1 text-center text-[0.66rem] font-medium text-base-content/70',
           ),
         ],
         [label],
@@ -675,7 +675,7 @@ const wheelColumnView = <ParentMessage>(
                     'flex h-10 w-full shrink-0 snap-center items-center justify-center rounded-lg px-1 text-[0.95rem] tabular-nums transition-colors',
                     item.isSelected
                       ? 'font-bold text-primary'
-                      : 'text-base-content/35 hover:text-base-content/65',
+                      : 'text-base-content/70 hover:text-base-content/70',
                   ].join(' '),
                 ),
                 h.OnClick(config.onClick(item.value)),
@@ -908,7 +908,7 @@ const timeView = <ParentMessage>(
         [h.Class('flex items-center justify-between gap-2')],
         [
           h.span(
-            [h.Class('text-[0.72rem] font-medium text-base-content/50')],
+            [h.Class('text-[0.72rem] font-medium text-base-content/70')],
             ['ساعت'],
           ),
           h.span(
@@ -933,7 +933,7 @@ const timeView = <ParentMessage>(
       h.p(
         [
           h.AriaHidden(true),
-          h.Class('m-0 text-center text-[0.66rem] text-base-content/40'),
+          h.Class('m-0 text-center text-[0.66rem] text-base-content/70'),
         ],
         ['هر ستون را بکشید تا مقدار تازه انتخاب شود.'],
       ),
@@ -984,7 +984,7 @@ const pickerDialogPanel = <ParentMessage>(
                       ...render.closeButton,
                       h.AriaLabel('بستن'),
                       h.Class(
-                        'grid size-8 place-items-center rounded-lg text-base-content/50 transition-colors hover:bg-base-200 hover:text-base-content',
+                        'grid size-8 place-items-center rounded-lg text-base-content/70 transition-colors hover:bg-base-200 hover:text-base-content',
                       ),
                     ],
                     [closeIcon('size-4')],
@@ -1074,7 +1074,7 @@ const pickerDialogPanel = <ParentMessage>(
                           size: 'sm',
                           onClick: toParentMessage(Message.ClickedClear()),
                           children: ['پاک کردن'],
-                          class: 'text-base-content/50',
+                          class: 'text-base-content/70',
                         },
                         h,
                       ),
@@ -1193,16 +1193,25 @@ export const pickerTriggerView = <ParentMessage>(
   h: HtmlBuilder<ParentMessage>,
 ): Html => {
   const maybeDisplay = formatTriggerValue(config)
+  const display = Option.getOrElse(
+    maybeDisplay,
+    () => config.placeholder ?? 'انتخاب کنید',
+  )
 
   const icon =
     config.mode === 'time'
-      ? clockIcon('size-4 shrink-0 text-base-content/45')
-      : calendarIcon('size-4 shrink-0 text-base-content/45')
+      ? clockIcon('size-4 shrink-0 text-base-content/70')
+      : calendarIcon('size-4 shrink-0 text-base-content/70')
 
   const triggerButtonConfig = {
     id: config.id,
     variant: 'outline',
-    ariaLabel: config.label,
+    // The accessible name must contain the visible value (axe
+    // `label-content-name-mismatch`), so the field label leads and the value
+    // follows instead of the label replacing it.
+    ariaLabel: Option.isSome(maybeDisplay)
+      ? `${config.label}، ${display}`
+      : config.label,
     onClick: config.toParentMessage(
       Message.RequestedOpen({
         target: config.target,
@@ -1223,15 +1232,10 @@ export const pickerTriggerView = <ParentMessage>(
           h.Class(
             Option.isSome(maybeDisplay)
               ? 'truncate text-[0.84rem] text-base-content'
-              : 'truncate text-[0.84rem] text-base-content/40',
+              : 'truncate text-[0.84rem] text-base-content/70',
           ),
         ],
-        [
-          Option.getOrElse(
-            maybeDisplay,
-            () => config.placeholder ?? 'انتخاب کنید',
-          ),
-        ],
+        [display],
       ),
       icon,
     ],
@@ -1248,7 +1252,7 @@ export const pickerTriggerView = <ParentMessage>(
       h.label(
         [
           h.For(config.id),
-          h.Class('text-[0.76rem] leading-6 text-base-content/55'),
+          h.Class('text-[0.76rem] leading-6 text-base-content/70'),
         ],
         [config.label],
       ),
@@ -1257,7 +1261,7 @@ export const pickerTriggerView = <ParentMessage>(
         ? []
         : [
             h.span(
-              [h.Class('text-[0.68rem] leading-5 text-base-content/45')],
+              [h.Class('text-[0.68rem] leading-5 text-base-content/70')],
               [config.hint],
             ),
           ]),

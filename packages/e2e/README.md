@@ -1,8 +1,10 @@
 # Gate flows (E2E)
 
-The five end-to-end flows from the verification strategy
-([#81](https://github.com/roninlp/tali/issues/81), [#84](https://github.com/roninlp/tali/issues/84)),
-run by Playwright against a real local stack.
+The five end-to-end flows and the accessibility pass from the verification
+strategy ([#81](https://github.com/roninlp/tali/issues/81),
+[#84](https://github.com/roninlp/tali/issues/84),
+[#86](https://github.com/roninlp/tali/issues/86)), run by Playwright against a
+real local stack. Procedure and sign-off: `docs/verification.md`.
 
 ```sh
 pnpm --filter @tali/e2e install:browsers   # once
@@ -25,6 +27,17 @@ The five flows:
 | `03-shared-list.spec.ts`     | item checked on A appears live on B                                        |
 | `04-reminder.spec.ts`        | medication reminder fires → Done from the notification → inbox shows it    |
 | `05-recurring-event.spec.ts` | recurring event in week/month → "this and following" split                 |
+| `06-a11y.spec.ts`            | one axe run per primary route + both guest screens, zero A/AA violations   |
+
+### Selectors
+
+The flows target the accessibility tree (`getByRole`, `getByLabel`) wherever the
+markup has a name, and a `data-` attribute only where it does not
+(`[data-today-source]`, `li[data-done]`, `[data-calendar-*]`). Class names are
+not a contract: the Tailwind refactor removed `.today-list`, `.lists-item` and
+`.lists-index-card`, and the suite went red until the selectors moved. If a flow
+needs a hook that does not exist, add a real `aria-label` first — the a11y pass
+then benefits too — and a `data-` attribute only as a last resort.
 
 ## Auth and sync smoke checks
 

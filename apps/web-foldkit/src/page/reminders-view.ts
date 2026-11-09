@@ -44,7 +44,7 @@ const loadingView = (h: HtmlBuilder<Message>): Html =>
   h.p(
     [
       h.Class(
-        'm-0 flex items-center gap-2 text-sm leading-7 text-base-content/55',
+        'm-0 flex items-center gap-2 text-sm leading-7 text-base-content/70',
       ),
     ],
     [h.span([h.Class('spinner spinner-sm')]), 'در حال خواندن دفتر ارسال…'],
@@ -54,7 +54,7 @@ const emptyView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.p(
     [
       h.Class(
-        'm-0 grid justify-items-center gap-2 rounded-2xl border border-dashed border-base-300 px-6 py-10 text-center text-sm leading-7 text-base-content/55',
+        'm-0 grid justify-items-center gap-2 rounded-2xl border border-dashed border-base-300 px-6 py-10 text-center text-sm leading-7 text-base-content/70',
       ),
     ],
     [emptyText(model)],
@@ -103,7 +103,7 @@ const metadataView = (
         onNone: () => h.empty,
         onSome: note =>
           h.span(
-            [h.Class('text-[0.78rem] leading-6 text-base-content/55')],
+            [h.Class('text-[0.78rem] leading-6 text-base-content/70')],
             [note],
           ),
       }),
@@ -220,7 +220,7 @@ const inboxActionsView = (
 
 const answeredView = (item: ReminderInboxItem, h: HtmlBuilder<Message>): Html =>
   h.p(
-    [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/50')],
+    [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/70')],
     [
       `${responseCopy(item.dispatch.response)} · ${formatRespondedAt(item.dispatch.respondedAt)}`,
     ],
@@ -251,7 +251,7 @@ const rowView = (
             [item.title],
           ),
           h.span(
-            [h.Class('text-[0.72rem] leading-6 text-base-content/50')],
+            [h.Class('text-[0.72rem] leading-6 text-base-content/70')],
             [formatReminderInstant(item.dispatch.scheduledFor)],
           ),
         ],
@@ -302,7 +302,7 @@ export const remindersPageView = (
         Array.map(model.items, item => rowView(model, item, h)),
       ),
       h.p(
-        [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/50')],
+        [h.Class('m-0 text-[0.72rem] leading-6 text-base-content/70')],
         [
           'این فهرست از دفتر ارسال سرور خوانده می‌شود؛ اگر مرورگر بسته باشد یا اعلان نرسد، یادآوری پس از ۲۴ ساعت به تاریخچه می‌رود و هرگز حذف نمی‌شود.',
         ],

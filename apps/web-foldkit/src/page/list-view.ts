@@ -66,16 +66,16 @@ const DANGER_BUTTON_CLASS =
   'inline-flex min-h-10 flex-none items-center rounded-full border border-error/35 bg-error/8 px-3 py-0.5 text-[0.78rem] font-medium text-error transition-colors hover:bg-error/12 disabled:opacity-55 sm:min-h-8'
 
 const MINI_BUTTON_CLASS =
-  'inline-flex min-h-10 min-w-10 flex-none items-center justify-center rounded-full border border-base-300 bg-base-100 px-2 py-0.5 text-[0.78rem] text-base-content/65 transition-colors hover:border-secondary hover:text-secondary sm:min-h-8 sm:min-w-8'
+  'inline-flex min-h-10 min-w-10 flex-none items-center justify-center rounded-full border border-base-300 bg-base-100 px-2 py-0.5 text-[0.78rem] text-base-content/70 transition-colors hover:border-secondary hover:text-secondary sm:min-h-8 sm:min-w-8'
 
 const EMPTY_STATE_CLASS =
-  'm-0 rounded-2xl border border-dashed border-base-300 px-6 py-10 text-center text-sm leading-7 text-base-content/55'
+  'm-0 rounded-2xl border border-dashed border-base-300 px-6 py-10 text-center text-sm leading-7 text-base-content/70'
 
 const backLinkView = (h: HtmlBuilder<Message>): Html =>
   h.a(
     [
       h.Class(
-        'inline-flex min-h-10 flex-none items-center rounded-full border border-base-300 bg-base-100 px-3 py-0.5 text-[0.78rem] text-base-content/65 transition-colors hover:border-primary hover:text-primary sm:min-h-8',
+        'inline-flex min-h-10 flex-none items-center rounded-full border border-base-300 bg-base-100 px-3 py-0.5 text-[0.78rem] text-base-content/70 transition-colors hover:border-primary hover:text-primary sm:min-h-8',
       ),
       h.Href(listsRouter()),
     ],
@@ -136,7 +136,7 @@ const headerView = (
                 [h.Class('grid min-w-0 flex-1 gap-0.5')],
                 [
                   h.span(
-                    [h.Class('text-[0.76rem] text-base-content/55')],
+                    [h.Class('text-[0.76rem] text-base-content/70')],
                     ['عنوان فهرست'],
                   ),
                   inputControlView(
@@ -190,7 +190,7 @@ const headerView = (
           h.div(
             [
               h.Class(
-                'flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.72rem] text-base-content/50',
+                'flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.72rem] text-base-content/70',
               ),
               h.AriaLive('polite'),
             ],
@@ -410,7 +410,7 @@ const itemRowView = (
                   [
                     ...attributes.label,
                     h.Class(
-                      'relative inline-block max-w-full min-w-0 break-words leading-7 transition-colors after:absolute after:start-0 after:top-1/2 after:h-px after:w-0 after:bg-current after:transition-[width] after:duration-200 group-data-[done=true]:text-base-content/45 group-data-[done=true]:after:w-full',
+                      'relative inline-block max-w-full min-w-0 break-words leading-7 transition-colors after:absolute after:start-0 after:top-1/2 after:h-px after:w-0 after:bg-current after:transition-[width] after:duration-200 group-data-[done=true]:text-base-content/70 group-data-[done=true]:after:w-full',
                     ),
                   ],
                   [item.name],
@@ -418,7 +418,7 @@ const itemRowView = (
                 h.div(
                   [
                     h.Class(
-                      'flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.72rem] text-base-content/50',
+                      'flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.72rem] text-base-content/70',
                     ),
                   ],
                   [

@@ -266,7 +266,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
             ['گذرواژه'],
           ),
           h.p(
-            [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+            [h.Class('m-0 text-sm leading-7 text-base-content/70')],
             [
               'گذرواژه فقط در همین مرورگر به کلید ورود تبدیل می‌شود و به سرور نمی‌رسد.',
             ],

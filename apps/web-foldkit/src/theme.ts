@@ -421,7 +421,7 @@ export const pickerView = Submodel.defineView<Model, Message>((model, h) => {
             ['ظاهر'],
           ),
           h.p(
-            [h.Class('m-0 text-sm leading-7 text-base-content/55')],
+            [h.Class('m-0 text-sm leading-7 text-base-content/70')],
             [
               'حالت روشن، تیره یا سیستم را انتخاب کنید. این انتخاب فقط روی همین دستگاه ذخیره می‌شود.',
             ],
