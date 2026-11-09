@@ -1,9 +1,10 @@
-import { Context, Duration, Effect, Layer, Ref, Schedule } from "effect"
+import { Context, Duration, Effect, Layer, Ref, Result, Schedule } from "effect"
 import { chat as aiChat } from "@tanstack/ai-effect"
 import { openaiCompatibleText } from "@tanstack/ai-openai/compatible"
 import {
   CAPTURE_MAX_DRAFTS,
   type CaptureDraft,
+  type CaptureId,
   type CaptureServiceError,
   ModelTimeout,
   ModelUnavailable,
@@ -77,6 +78,8 @@ export const captureConfigOf = (env: CaptureEnv): CaptureConfigValue => ({
 
 export interface ExtractInput {
   readonly userId: UserId
+  /** The owning Capture row, for tracing only. */
+  readonly captureId: CaptureId
   readonly text: string
   /** The Dissect's "now", an ISO instant. */
   readonly now: string
@@ -228,21 +231,48 @@ export const ExtractorLive = Layer.effect(
             systemPrompts: [captureSystemPrompt(input)],
             tools,
             stream: false as const,
-            wrapFetch: captureFetchWrapper({ apiKey, sessionId })
+            wrapFetch: captureFetchWrapper({ apiKey, sessionId }),
+            // The SDK's error logger prints tool-call `rawArguments`, which are
+            // the model's draft payloads: user titles, bodies, quotes, and
+            // questions. Workers Logs would keep them for a week. Typed errors
+            // and the spans below carry the diagnosis without the text.
+            debug: false
           })
 
           return yield* Ref.get(collector)
         })
 
-        const drafts = yield* attempt.pipe(
+        const [modelDuration, modelOutcome] = yield* attempt.pipe(
           // One retry inside a single 60-second total budget (ADR-0012 §9).
           Effect.retry(Schedule.recurs(1)),
           Effect.timeout(Duration.seconds(CAPTURE_TIMEOUT_SECONDS)),
-          Effect.mapError(toModelError)
+          Effect.mapError(toModelError),
+          Effect.result,
+          Effect.timed
         )
 
-        return ensureCaptureDrafts(input.text, drafts)
-      })
+        const drafts = Result.isSuccess(modelOutcome)
+          ? ensureCaptureDrafts(input.text, modelOutcome.success)
+          : []
+
+        yield* Effect.annotateCurrentSpan({
+          "capture.outcome": Result.isSuccess(modelOutcome) ? "ok" : "failed",
+          "capture.model.duration_ms": Math.round(Duration.toMillis(modelDuration)),
+          "capture.proposal_count": drafts.length
+        })
+
+        if (Result.isFailure(modelOutcome)) {
+          return yield* Effect.fail(modelOutcome.failure)
+        }
+        return drafts
+      }).pipe(
+        Effect.withSpan("capture.model.call", {
+          attributes: {
+            "capture.id": input.captureId,
+            "capture.model.name": config.model
+          }
+        })
+      )
 
     return { dissect } as const
   })

@@ -1,5 +1,5 @@
-import { Layer } from "effect"
-import { HttpRouter, HttpServerResponse } from "effect/http"
+import { Layer, Tracer } from "effect"
+import { HttpMiddleware, HttpRouter, HttpServerResponse } from "effect/http"
 import { RpcServer, RpcSerialization } from "effect/rpc"
 import { ApiRpcs } from "@tali/rpc"
 import {
@@ -121,6 +121,20 @@ export interface AppOptions {
    * the feature is inert until an API key is supplied.
    */
   readonly capture?: CaptureConfigValue
+  /**
+   * The tracing backend. Tests omit it, so no request span is created and the
+   * in-memory default tracer is left untouched.
+   */
+  readonly tracer?: Tracer.Tracer
+}
+
+/** Name a server span by method and route path; never the query string. */
+const serverSpanName = (request: { readonly method: string; readonly url: string }): string => {
+  try {
+    return `${request.method} ${new URL(request.url, "http://localhost").pathname}`
+  } catch {
+    return request.method
+  }
 }
 
 /**
@@ -145,7 +159,19 @@ export const makeAppLayer = (options: AppOptions = {}) => {
     ReminderRoutes,
     RpcLayer
   )
-  return (options.devRoutes === true ? Layer.merge(app, DevReminderRoutes) : app).pipe(
+  const routes = options.devRoutes === true ? Layer.merge(app, DevReminderRoutes) : app
+  const traced = options.tracer === undefined
+    ? routes
+    : Layer.mergeAll(
+      routes,
+      // Global middleware, so every route (RPC, sync, auth, health, dev) gets
+      // one server span and continues the browser's traceparent.
+      HttpRouter.middleware(HttpMiddleware.tracer, { global: true }),
+      Layer.succeed(HttpMiddleware.SpanNameGenerator)(serverSpanName),
+      Layer.succeed(Tracer.Tracer, options.tracer)
+    )
+
+  return traced.pipe(
     // The sweep runs inside the app so the local-only dev trigger can drive a
     // tick without a second Worker or a second D1 layer.
     Layer.provide(ReminderSweepLive.pipe(Layer.provide(ServiceLayers))),

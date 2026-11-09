@@ -192,9 +192,89 @@ const resolveCapture = () => {
   return { apiKey, baseUrl, model }
 }
 
+/**
+ * Workers Observability (ticket #102 follow-up).
+ *
+ * Traces are head-sampled at the edge. This is a household app, so 10% keeps
+ * the Capture flow inspectable without paying for every polling request;
+ * `TALI_TRACE_SAMPLE_RATE` raises or lowers it. Each captured request keeps its
+ * whole waterfall: browser -> api server span -> Capture spans -> model fetch
+ * and every D1 statement Cloudflare auto-instruments.
+ *
+ * Trace retention is seven days in Workers Observability. Stored traces start
+ * contributing to Cloudflare's ingestion and storage billing on
+ * 2026-12-01; sampling is the lever.
+ *
+ * `TALI_TRACE_PROPAGATION=accept` asks Cloudflare to adopt the browser's
+ * incoming `traceparent`, so the browser Command spans and the api spans share
+ * one trace ID. That feature must be enabled on the account first; it is off by
+ * default because an account without it rejects the setting.
+ */
+const TRACE_DEFAULT_SAMPLE_RATE = 0.1
+
+const resolveTraceSampleRate = (): number => {
+  const raw = process.env.TALI_TRACE_SAMPLE_RATE?.trim()
+  if (raw === undefined || raw === "") return TRACE_DEFAULT_SAMPLE_RATE
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    throw new Error(
+      `TALI_TRACE_SAMPLE_RATE must be a number from 0 to 1 (got "${raw}")`
+    )
+  }
+  return parsed
+}
+
+const resolveTracePropagation = (): "accept" | "authenticated" | undefined => {
+  const raw = process.env.TALI_TRACE_PROPAGATION?.trim().toLowerCase()
+  if (raw === undefined || raw === "") return undefined
+  if (raw !== "accept" && raw !== "authenticated") {
+    throw new Error(
+      `TALI_TRACE_PROPAGATION must be "accept" or "authenticated" (got "${raw}")`
+    )
+  }
+  return raw
+}
+
+/**
+ * Optional OTLP export. Every value is opt-in and no endpoint or token is
+ * committed; when a URL is absent no destination exists and the Worker keeps
+ * dashboard-only observability.
+ */
+const otlpHeaders = (
+  raw: string | undefined,
+  variable: string
+): Record<string, Redacted.Redacted<string>> | undefined => {
+  if (raw === undefined || raw.trim() === "") return undefined
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error(`${variable} must be a JSON object of header names to values`)
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${variable} must be a JSON object of header names to values`)
+  }
+  const headers: Record<string, Redacted.Redacted<string>> = {}
+  for (const [key, value] of Object.entries(parsed)) {
+    if (typeof value !== "string") {
+      throw new Error(`${variable}.${key} must be a string`)
+    }
+    headers[key] = Redacted.make(value)
+  }
+  return headers
+}
+
+interface ObservabilityOptions {
+  readonly headSamplingRate: number
+  readonly propagationPolicy?: "accept" | "authenticated"
+  readonly traceDestinations: ReadonlyArray<string>
+  readonly logDestinations: ReadonlyArray<string>
+}
+
 const defineApi = (
   vapid: ReturnType<typeof resolveVapid>,
-  capture: ReturnType<typeof resolveCapture>
+  capture: ReturnType<typeof resolveCapture>,
+  observability: ObservabilityOptions
 ) =>
   Cloudflare.Worker("TaliApi", {
   main: join(repoRoot, "apps/api/src/index.ts"),
@@ -205,6 +285,31 @@ const defineApi = (
   // ~11 sequential statements, so a cross-region hop is paid eleven times.
   placement: { mode: "smart" },
   dev: { port: 8787, strictPort: true },
+  observability: {
+    enabled: true,
+    // Query strings are not part of the Capture flow and can carry user input.
+    redactQueryString: true,
+    logs: {
+      enabled: true,
+      invocationLogs: true,
+      ...(observability.logDestinations.length === 0
+        ? {}
+        : { destinations: [...observability.logDestinations] })
+    },
+    traces: {
+      enabled: true,
+      headSamplingRate: observability.headSamplingRate,
+      // Keep the waterfall in the Workers dashboard; an OTLP destination is an
+      // additional copy, not a replacement.
+      persist: true,
+      ...(observability.propagationPolicy === undefined
+        ? {}
+        : { propagationPolicy: observability.propagationPolicy }),
+      ...(observability.traceDestinations.length === 0
+        ? {}
+        : { destinations: [...observability.traceDestinations] })
+    }
+  },
   crons: backupsEnabled
     ? [...CRON_EXPRESSIONS]
     : [CRON.reminder, CRON.purge],
@@ -236,7 +341,46 @@ export default Alchemy.Stack(
   "tali",
   { providers: Cloudflare.providers(), state },
   Effect.gen(function* () {
-    const Api = defineApi(resolveVapid(), resolveCapture())
+    const tracesUrl = process.env.TALI_OTLP_TRACES_URL?.trim()
+    const logsUrl = process.env.TALI_OTLP_LOGS_URL?.trim()
+
+    const tracesDestination = tracesUrl === undefined || tracesUrl === ""
+      ? undefined
+      : yield* Cloudflare.Workers.ObservabilityDestination("TaliOtlpTraces", {
+          url: tracesUrl,
+          headers: otlpHeaders(
+            process.env.TALI_OTLP_TRACES_HEADERS,
+            "TALI_OTLP_TRACES_HEADERS"
+          ),
+          logpushDataset: "opentelemetry-traces",
+          skipPreflightCheck: process.env.TALI_OTLP_TRACES_SKIP_PREFLIGHT === "1"
+        })
+
+    const logsDestination = logsUrl === undefined || logsUrl === ""
+      ? undefined
+      : yield* Cloudflare.Workers.ObservabilityDestination("TaliOtlpLogs", {
+          url: logsUrl,
+          headers: otlpHeaders(
+            process.env.TALI_OTLP_LOGS_HEADERS,
+            "TALI_OTLP_LOGS_HEADERS"
+          ),
+          logpushDataset: "opentelemetry-logs",
+          skipPreflightCheck: process.env.TALI_OTLP_LOGS_SKIP_PREFLIGHT === "1"
+        })
+
+    const traceDestinations = tracesDestination === undefined
+      ? []
+      : [yield* yield* tracesDestination.slug]
+    const logDestinations = logsDestination === undefined
+      ? []
+      : [yield* yield* logsDestination.slug]
+
+    const Api = defineApi(resolveVapid(), resolveCapture(), {
+      headSamplingRate: resolveTraceSampleRate(),
+      propagationPolicy: resolveTracePropagation(),
+      traceDestinations,
+      logDestinations
+    })
     const database = yield* Database
     const backups = Backups === undefined ? undefined : yield* Backups
     const api = yield* Api
@@ -294,6 +438,8 @@ export default Alchemy.Stack(
     return {
       database: database.databaseName,
       backupBucket: backups?.bucketName,
+      captureTracesDestination: tracesDestination?.slug,
+      captureLogsDestination: logsDestination?.slug,
       apiUrl: api.url,
       webUrl: web.url
     }

@@ -19,6 +19,7 @@
     "@tali/domain": "workspace:*",
     "@tali/rpc": "workspace:*",
     "@tali/sync-client": "workspace:*",
+    "@tali/telemetry": "workspace:*",
     "effect": "catalog:",
     "foldkit": "0.170.0"
   },

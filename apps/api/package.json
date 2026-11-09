@@ -17,11 +17,13 @@
     "@tali/domain": "workspace:*",
     "@tali/rpc": "workspace:*",
     "@tali/sql": "workspace:*",
+    "@tali/telemetry": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "catalog:",
     "@cloudflare/workers-types": "catalog:",
+    "@types/node": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }
