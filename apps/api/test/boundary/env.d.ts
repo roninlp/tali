@@ -1,4 +1,4 @@
-import type { D1Migration } from "@cloudflare/vitest-plugin"
+import type { D1Migration } from '@cloudflare/vitest-plugin'
 
 /**
  * The bindings this test-only Worker config declares. Production bindings live
@@ -14,7 +14,7 @@ declare global {
     }
 
     interface GlobalProps {
-      mainModule: typeof import("../../src/index.js")
+      mainModule: typeof import('../../src/index.js')
     }
   }
 }

@@ -1,6 +1,6 @@
-import { AsyncLocalStorage } from "node:async_hooks"
-import { Cause, Exit, Option, Tracer } from "effect"
-import { exportableSpanAttribute } from "@tali/telemetry"
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { Cause, Exit, Option, Tracer } from 'effect'
+import { exportableSpanAttribute } from '@tali/telemetry'
 
 /**
  * An Effect `Tracer` backed by Cloudflare Workers Observability.
@@ -21,10 +21,10 @@ import { exportableSpanAttribute } from "@tali/telemetry"
  * Workers Observability.
  */
 
-type SpanOptions = Parameters<Tracer.Tracer["span"]>[0]
+type SpanOptions = Parameters<Tracer.Tracer['span']>[0]
 type RunInContext = ReturnType<typeof AsyncLocalStorage.snapshot>
-type CloudflareWorkers = typeof import("cloudflare:workers")
-type CloudflareSpan = ReturnType<CloudflareWorkers["tracing"]["startSpan"]>
+type CloudflareWorkers = typeof import('cloudflare:workers')
+type CloudflareSpan = ReturnType<CloudflareWorkers['tracing']['startSpan']>
 
 /**
  * Started at module evaluation, matching Alchemy's own tracer: on workerd the
@@ -32,19 +32,18 @@ type CloudflareSpan = ReturnType<CloudflareWorkers["tracing"]["startSpan"]>
  * deploy tooling) it rejects and the tracer simply keeps spans Effect-local.
  * The rejection is handled here so it can never surface as an unhandled one.
  */
-const cloudflareWorkers: Promise<CloudflareWorkers | undefined> = import(
-  "cloudflare:workers"
-).catch(() => undefined)
+const cloudflareWorkers: Promise<CloudflareWorkers | undefined> =
+  import('cloudflare:workers').catch(() => undefined)
 
 class CloudflareWorkerSpan extends Tracer.NativeSpan {
   constructor(
     options: SpanOptions,
     readonly runInContext: RunInContext,
-    private readonly cloudflareSpan?: CloudflareSpan
+    private readonly cloudflareSpan?: CloudflareSpan,
   ) {
     super({
       ...options,
-      sampled: options.sampled && (cloudflareSpan?.isTraced ?? false)
+      sampled: options.sampled && (cloudflareSpan?.isTraced ?? false),
     })
   }
 
@@ -61,11 +60,15 @@ class CloudflareWorkerSpan extends Tracer.NativeSpan {
     if (this.cloudflareSpan === undefined) return
     const failed = Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)
     this.cloudflareSpan.setAttribute(
-      "effect.exit",
-      Exit.isSuccess(exit) ? "success" : Cause.hasInterruptsOnly(exit.cause) ? "interrupted" : "failure"
+      'effect.exit',
+      Exit.isSuccess(exit)
+        ? 'success'
+        : Cause.hasInterruptsOnly(exit.cause)
+          ? 'interrupted'
+          : 'failure',
     )
     if (failed) {
-      this.cloudflareSpan.setStatus({ code: "error" })
+      this.cloudflareSpan.setStatus({ code: 'error' })
     }
     this.cloudflareSpan.end()
   }
@@ -77,7 +80,7 @@ export const makeCloudflareTracer = async (): Promise<Tracer.Tracer> => {
   const invocationContext = AsyncLocalStorage.snapshot()
   const contextFor = (span: Tracer.AnySpan | undefined): RunInContext => {
     let current = span
-    while (current?._tag === "Span") {
+    while (current?._tag === 'Span') {
       if (current instanceof CloudflareWorkerSpan) return current.runInContext
       current = Option.getOrUndefined(current.parent)
     }
@@ -97,12 +100,19 @@ export const makeCloudflareTracer = async (): Promise<Tracer.Tracer> => {
       return parentContext(() =>
         tracing.startActiveSpan(
           options.name,
-          (span) => new CloudflareWorkerSpan(options, AsyncLocalStorage.snapshot(), span)
-        )
+          span =>
+            new CloudflareWorkerSpan(
+              options,
+              AsyncLocalStorage.snapshot(),
+              span,
+            ),
+        ),
       )
     },
     context(primitive, fiber) {
-      return contextFor(fiber.cache.span)(() => primitive["~effect/Effect/evaluate"](fiber))
-    }
+      return contextFor(fiber.cache.span)(() =>
+        primitive['~effect/Effect/evaluate'](fiber),
+      )
+    },
   })
 }

@@ -1,7 +1,7 @@
-import { Schema } from "effect"
-import { Model } from "effect/schema"
-import { Visibility } from "../common.js"
-import { RecurrenceRule } from "../recurrence.js"
+import { Schema } from 'effect'
+import { Model } from 'effect/schema'
+import { Visibility } from '../common.js'
+import { RecurrenceRule } from '../recurrence.js'
 import {
   commonItemFields,
   EventExceptionId,
@@ -9,8 +9,8 @@ import {
   LocalDate,
   OccasionId,
   TimeZone,
-  TimestampUtc
-} from "./common.js"
+  TimestampUtc,
+} from './common.js'
 
 /**
  * `Event` aggregate (FR-CAL-01, docs/domain-model-draft.md §3.3).
@@ -65,23 +65,25 @@ import {
  */
 export const EventTiming = Schema.Union([
   Schema.Struct({
-    _tag: Schema.Literal("timed"),
+    _tag: Schema.Literal('timed'),
     /** Start instant (UTC, ISO-8601). */
     start: TimestampUtc,
     /** End instant (UTC, ISO-8601). Never earlier than `start`. */
-    end: TimestampUtc
+    end: TimestampUtc,
   }),
   Schema.Struct({
-    _tag: Schema.Literal("allDay"),
+    _tag: Schema.Literal('allDay'),
     /** Local calendar date `YYYY-MM-DD`, in the event's `timeZone`. */
-    date: LocalDate
-  })
+    date: LocalDate,
+  }),
 ])
 export type EventTiming = Schema.Schema.Type<typeof EventTiming>
 
 /** What an exception does to its occurrence. */
-export const EventExceptionAction = Schema.Literals(["delete", "override"])
-export type EventExceptionAction = Schema.Schema.Type<typeof EventExceptionAction>
+export const EventExceptionAction = Schema.Literals(['delete', 'override'])
+export type EventExceptionAction = Schema.Schema.Type<
+  typeof EventExceptionAction
+>
 
 /**
  * The fields an `override` exception replaces. Every field is optional: an
@@ -95,9 +97,11 @@ export const EventExceptionOverrides = Schema.Struct({
   /** The occurrence's own timing (timed instants or an all-day date). */
   timing: Schema.optional(EventTiming),
   /** The occurrence's own zone; inherits the event's when omitted. */
-  timeZone: Schema.optional(TimeZone)
+  timeZone: Schema.optional(TimeZone),
 })
-export type EventExceptionOverrides = Schema.Schema.Type<typeof EventExceptionOverrides>
+export type EventExceptionOverrides = Schema.Schema.Type<
+  typeof EventExceptionOverrides
+>
 
 /**
  * One occurrence of a recurring series that deviates from the rule.
@@ -113,12 +117,12 @@ export const EventException = Schema.Struct({
   action: EventExceptionAction,
   /** Only meaningful with `action = "override"`. */
   overrides: Schema.NullOr(EventExceptionOverrides),
-  createdAt: TimestampUtc
+  createdAt: TimestampUtc,
 })
 export type EventException = Schema.Schema.Type<typeof EventException>
 
-export class Event extends Model.Class<Event>("Event")({
-  ...commonItemFields("event", EventId),
+export class Event extends Model.Class<Event>('Event')({
+  ...commonItemFields('event', EventId),
   /** Resolved from the event's `shareable` policy (ADR-0011). */
   visibility: Visibility,
   /**
@@ -143,5 +147,5 @@ export class Event extends Model.Class<Event>("Event")({
   /** Per-occurrence exceptions ("this occurrence only"). */
   exceptions: Schema.Array(EventException),
   /** The annual date this event comes from — reserved for #59. */
-  occasionId: Schema.NullOr(OccasionId)
+  occasionId: Schema.NullOr(OccasionId),
 }) {}

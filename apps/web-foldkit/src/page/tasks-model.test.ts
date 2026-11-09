@@ -85,6 +85,7 @@ describe('board grouping', () => {
 
   test('uses the viewer zone at a day boundary (Tehran, not UTC)', () => {
     const rows = [makeTask({ title: 'تهران فردا', dueDate: '2026-10-22' })]
+
     const tehran = buildTaskView(rows, {
       timeZone: 'Asia/Tehran',
       now: '2026-10-21T22:30:00.000Z',
@@ -114,6 +115,7 @@ describe('filters', () => {
   const projectB = '22222222-2222-7222-8222-222222222222'
   const tagA = '33333333-3333-7333-8333-333333333333'
   const tagB = '44444444-4444-7444-8444-444444444444'
+
   const rows = [
     makeTask({
       title: 'الف',
@@ -200,6 +202,7 @@ describe('sorting', () => {
 
   test('sorts by title and flips direction', () => {
     const sameDay = rows.map(row => ({ ...row, dueDate: '2026-10-21' }))
+
     const group = (direction: 'asc' | 'desc') =>
       view(sameDay, {}, { by: 'title', direction }).today.groups[1]?.tasks ?? []
 
@@ -220,6 +223,7 @@ describe('sorting', () => {
       makeTask({ title: 'دیروز', dueDate: '2026-10-20' }),
       makeTask({ title: 'پریروز', dueDate: '2026-10-19' }),
     ]
+
     expect(titles(view(overdue).today.groups[0]?.tasks ?? [])).toEqual([
       'پریروز',
       'دیروز',
@@ -232,6 +236,7 @@ describe('sorting', () => {
       title: 'هم',
       dueDate: '2026-10-21',
     })
+
     const second = makeTask({
       id: '0192f0a0-0000-7000-8000-000000000002',
       title: 'هم',
@@ -267,6 +272,7 @@ describe('completion history', () => {
       status: 'done',
       completedAt: '2026-10-20T10:00:00.000Z',
     })
+
     const older = makeTask({
       title: 'قدیمی',
       status: 'done',
@@ -274,6 +280,7 @@ describe('completion history', () => {
         Date.parse(NOW) - COMPLETED_TASK_RETENTION_MS - 1000,
       ).toISOString(),
     })
+
     const live = makeTask({ title: 'باز' })
 
     expect(titles(recentCompletions([fresh, older, live], NOW))).toEqual([

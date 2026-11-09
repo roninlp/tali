@@ -65,6 +65,7 @@ export const StoreStatus = defineTaggedUnion({
   Ready: {},
   Failed: { message: Schema.String },
 })
+
 export type StoreStatus = typeof StoreStatus.Type
 
 const Snapshot = {
@@ -96,6 +97,7 @@ export const Model = Schema.Struct({
   mirror: MirrorSnapshot,
   pendingKeys: Schema.Array(Schema.String),
 })
+
 export type Model = typeof Model.Type
 
 // MESSAGE
@@ -118,6 +120,7 @@ export const Message = defineMessageUnion({
   },
   RequestedMirrorRefresh: {},
 })
+
 export type Message = typeof Message.Type
 
 // COMMAND
@@ -129,8 +132,11 @@ class SyncOperationFailure extends Data.TaggedError('SyncOperationFailure')<{
 
 const operationMessage = (cause: unknown): string => {
   if (cause instanceof SyncOperationFailure) return cause.message
+
   if (cause instanceof Error) return cause.message
+
   if (typeof cause === 'string') return cause
+
   if (
     typeof cause === 'object' &&
     cause !== null &&
@@ -138,6 +144,7 @@ const operationMessage = (cause: unknown): string => {
   ) {
     return 'حافظه‌ی محلی هنوز آماده نیست'
   }
+
   return 'عملیات محلی ناموفق بود'
 }
 
@@ -171,6 +178,7 @@ export const ReadMirror = Command.define('ReadMirror', {
       const store = yield* LocalStoreResource.get
       const pending = yield* tryStore(() => store.pendingCount())
       const now = yield* Clock.currentTimeMillis
+
       const maybeFailed = shouldRefreshFailed(
         pendingBefore,
         pending,
@@ -179,6 +187,7 @@ export const ReadMirror = Command.define('ReadMirror', {
       )
         ? Option.some(yield* tryStore(() => store.failedCount()))
         : Option.none()
+
       const mirror = yield* tryStore(() => readMirrorSnapshot(store))
       const queued = yield* tryStore(() => store.pending())
 
@@ -217,6 +226,7 @@ export const RunSyncPass = Command.define('RunSyncPass', {
       })
       const pending = yield* tryStore(() => store.pendingCount())
       const now = yield* Clock.currentTimeMillis
+
       const maybeFailed = shouldRefreshFailed(
         pendingBefore,
         pending,
@@ -225,6 +235,7 @@ export const RunSyncPass = Command.define('RunSyncPass', {
       )
         ? Option.some(yield* tryStore(() => store.failedCount()))
         : Option.none()
+
       const mirror = yield* tryStore(() => readMirrorSnapshot(store))
       const queued = yield* tryStore(() => store.pending())
 
@@ -309,6 +320,7 @@ export const applySession = (
     hasHousehold: () => hasHousehold,
     status: () => {
       if (Option.isNone(maybeUserId)) return model.status
+
       return StoreStatus.match(model.status, {
         Idle: () => StoreStatus.Opening(),
         Opening: () => model.status,
@@ -451,6 +463,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 
     ChangedVisibility: ({ isVisible }) => {
       const next = modifyFields(model, { isVisible: () => isVisible })
+
       return isVisible ? beginSync(next) : { model: next }
     },
 
@@ -458,11 +471,13 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 
     TickedSyncSchedule: () => {
       const next = modifyFields(model, { tick: () => model.tick + 1 })
+
       return beginSync(next)
     },
 
     SucceededReadMirror: snapshot => {
       const next = applySnapshot(model, snapshot)
+
       return syncAfterMirror(next)
     },
 
@@ -472,6 +487,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 
     SucceededSyncPass: snapshot => {
       const shouldTrail = model.wakePending
+
       const next = modifyFields(applySnapshot(model, snapshot), {
         isSyncing: () => false,
         wakePending: () => false,
@@ -624,6 +640,7 @@ export const subscriptions = Subscription.make<Model, Message>()(entry => ({
             Effect.gen(function* () {
               const now = yield* Clock.currentTimeMillis
               const sample = yield* Random.next
+
               const delay = syncDelayMs(
                 {
                   failures: dependencies.failures,
@@ -633,7 +650,9 @@ export const subscriptions = Subscription.make<Model, Message>()(entry => ({
                 },
                 () => sample,
               )
+
               yield* Effect.sleep(Duration.millis(delay))
+
               return Message.TickedSyncSchedule()
             }),
           ),

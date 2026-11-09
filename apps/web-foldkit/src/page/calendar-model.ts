@@ -62,9 +62,11 @@ import type { DisplayFields } from '../preferences-model'
  */
 
 export const CalendarViewName = Schema.Literals(['week', 'month'])
+
 export type CalendarViewName = typeof CalendarViewName.Type
 
 export const CalendarSource = Schema.Literals(['server', 'mirror'])
+
 export type CalendarSource = typeof CalendarSource.Type
 
 export const CalendarFetchState = defineTaggedUnion({
@@ -73,6 +75,7 @@ export const CalendarFetchState = defineTaggedUnion({
   Offline: {},
   Error: {},
 })
+
 export type CalendarFetchState = typeof CalendarFetchState.Type
 
 export type CalendarView = Readonly<{
@@ -97,6 +100,7 @@ export type CalendarReadInputs = Readonly<{
 const validTimeZone = (timeZone: string): string => {
   try {
     new Intl.DateTimeFormat('en-US', { timeZone })
+
     return timeZone
   } catch {
     return DEFAULT_TIME_ZONE
@@ -295,6 +299,7 @@ export const overlayOccasionSources = (input: {
   const byId = new Map(
     input.base.map(occasion => [occasion.id, occasion] as const),
   )
+
   const mirrorById = new Map(
     input.mirror.map(occasion => [occasion.id, occasion] as const),
   )
@@ -378,6 +383,7 @@ export const calendarViewOf = (input: {
     weekStart,
     timeZone,
   })
+
   const mirrorMonth = monthFromMirror({
     tasks: mirror.tasks,
     events: mirror.events,
@@ -393,15 +399,19 @@ export const calendarViewOf = (input: {
     'task',
     input.dirtyTaskIds,
   )
+
   const eventOverlayIds = unionIds(
     input.inputs.pendingKeys,
     'event',
     input.dirtyEventIds,
   )
+
   const occasionOverlayIds = idsWithPrefix(input.inputs.pendingKeys, 'occasion')
+
   const deletedEventIds = new Set(
     Array.map(mirror.trashedEvents, row => row.id),
   )
+
   const deletedOccasionIds = new Set(
     Array.map(mirror.trashedOccasions, row => row.id),
   )
@@ -416,6 +426,7 @@ export const calendarViewOf = (input: {
     Option.isSome(input.maybeServerWeek) && weekHasServer
       ? (() => {
           const server = input.maybeServerWeek.value
+
           return weekFromSources({
             tasks: overlayCalendarSources({
               base: server.tasks,
@@ -452,6 +463,7 @@ export const calendarViewOf = (input: {
     Option.isSome(input.maybeServerMonth) && monthHasServer
       ? (() => {
           const server = input.maybeServerMonth.value
+
           return monthFromSources({
             tasks: overlayCalendarSources({
               base: server.tasks,
@@ -485,6 +497,7 @@ export const calendarViewOf = (input: {
     to: month.end,
     timeZone: month.timeZone,
   })
+
   const monthEvents = new Map<string, Array<EventOccurrence>>()
 
   for (const occurrence of monthEventOccurrences) {

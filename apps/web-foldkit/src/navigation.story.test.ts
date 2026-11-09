@@ -1,11 +1,11 @@
 import { Option } from 'effect'
-import { Dialog } from '@foldkit/ui'
 import { UrlRequest } from 'foldkit/navigation'
 import { Command, given, message, model, story } from 'foldkit/story'
 import { modifyFields } from 'foldkit/struct'
 import { fromString, toString as urlToString } from 'foldkit/url'
 import { describe, expect, test } from 'vitest'
 
+import { Dialog } from '@foldkit/ui'
 import { ListId, NoteId } from '@tali/domain'
 
 import { COLOR_CHOICES, ICON_CHOICES } from './lists-model'
@@ -280,10 +280,7 @@ describe('lists navigation', () => {
           }),
         }),
       ),
-      Command.resolve(
-        Dialog.ShowDialog,
-        Dialog.Message.SucceededShowDialog(),
-      ),
+      Command.resolve(Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()),
       message(
         Message.GotListsMessage({
           message: Lists.Message.ConfirmedDeleteList(),

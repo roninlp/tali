@@ -1,5 +1,8 @@
-import { Context, Exit, Option, Tracer } from "effect"
-import { exportableSpanAttribute, exportableSpanAttributes } from "./redaction.js"
+import { Context, Exit, Option, Tracer } from 'effect'
+import {
+  exportableSpanAttribute,
+  exportableSpanAttributes,
+} from './redaction.js'
 
 /**
  * Wraps a `Tracer` so nothing unsafe reaches its exporter.
@@ -14,21 +17,21 @@ import { exportableSpanAttribute, exportableSpanAttributes } from "./redaction.j
 
 class RedactedFailure extends Error {
   constructor() {
-    super("operation failed; error details are redacted")
-    this.name = "RedactedFailure"
+    super('operation failed; error details are redacted')
+    this.name = 'RedactedFailure'
   }
 }
 
 const redactLinks = (
-  links: ReadonlyArray<Tracer.SpanLink>
+  links: ReadonlyArray<Tracer.SpanLink>,
 ): ReadonlyArray<Tracer.SpanLink> =>
-  links.map((link) => ({
+  links.map(link => ({
     span: link.span,
-    attributes: exportableSpanAttributes(link.attributes) ?? {}
+    attributes: exportableSpanAttributes(link.attributes) ?? {},
   }))
 
 class RedactedSpan implements Tracer.Span {
-  readonly _tag = "Span" as const
+  readonly _tag = 'Span' as const
 
   constructor(private readonly inner: Tracer.Span) {}
 
@@ -73,7 +76,10 @@ class RedactedSpan implements Tracer.Span {
   }
 
   end(endTime: bigint, exit: Exit.Exit<unknown, unknown>): void {
-    this.inner.end(endTime, Exit.isSuccess(exit) ? exit : Exit.fail(new RedactedFailure()))
+    this.inner.end(
+      endTime,
+      Exit.isSuccess(exit) ? exit : Exit.fail(new RedactedFailure()),
+    )
   }
 
   attribute(key: string, value: unknown): void {
@@ -83,7 +89,11 @@ class RedactedSpan implements Tracer.Span {
     }
   }
 
-  event(name: string, startTime: bigint, attributes?: Record<string, unknown>): void {
+  event(
+    name: string,
+    startTime: bigint,
+    attributes?: Record<string, unknown>,
+  ): void {
     this.inner.event(name, startTime, exportableSpanAttributes(attributes))
   }
 
@@ -95,5 +105,5 @@ class RedactedSpan implements Tracer.Span {
 /** A tracer that forwards only exportable attributes to `inner`. */
 export const redactTracer = (inner: Tracer.Tracer): Tracer.Tracer =>
   Tracer.make({
-    span: (options) => new RedactedSpan(inner.span(options))
+    span: options => new RedactedSpan(inner.span(options)),
   })

@@ -1,14 +1,14 @@
-import { Layer, String as Str } from "effect"
-import { HttpRouter } from "effect/http"
-import { D1Client } from "@effect/sql-d1"
-import { CRON } from "@tali/config"
-import { makeAppLayer } from "./http-layer.js"
-import { makeCloudflareTracer } from "./cloudflare-tracer.js"
-import { captureConfigOf } from "./capture-extractor.js"
-import { runD1Backup } from "./d1-backup.js"
-import { vapidConfigOf } from "./push-gateway.js"
-import { runReminderSweep } from "./reminder-sweep-runner.js"
-import { runTrashPurge } from "./trash-purge-runner.js"
+import { Layer, String as Str } from 'effect'
+import { HttpRouter } from 'effect/http'
+import { D1Client } from '@effect/sql-d1'
+import { CRON } from '@tali/config'
+import { makeAppLayer } from './http-layer.js'
+import { makeCloudflareTracer } from './cloudflare-tracer.js'
+import { captureConfigOf } from './capture-extractor.js'
+import { runD1Backup } from './d1-backup.js'
+import { vapidConfigOf } from './push-gateway.js'
+import { runReminderSweep } from './reminder-sweep-runner.js'
+import { runTrashPurge } from './trash-purge-runner.js'
 
 /**
  * Cloudflare Worker entrypoint.
@@ -63,52 +63,52 @@ interface Env {
  * start it ("Incorrect type for map entry"). Tests read them from
  * `@tali/config` instead.
  */
-const REMINDER_CRON = CRON.reminder
 const PURGE_CRON = CRON.purge
 const BACKUP_CRON = CRON.backup
 
 /** The Vite dev server's origin. `127.0.0.1` is deliberately absent: it is a
  * different site from `localhost` for cookies (`SameSite=Lax`), so a page
  * served there could never send the session anyway. */
-const DEV_ORIGIN = "http://localhost:3001"
+const DEV_ORIGIN = 'http://localhost:3001'
 
 /** Is this Worker itself serving a local dev request? */
 const isLocalRequest = (request: Request): boolean => {
   const hostname = new URL(request.url).hostname
-  return hostname === "localhost" || hostname === "127.0.0.1"
+  return hostname === 'localhost' || hostname === '127.0.0.1'
 }
 
 const allowedOrigin = (request: Request, env: Env): string | undefined => {
-  const origin = request.headers.get("Origin")
+  const origin = request.headers.get('Origin')
   if (origin === null) return undefined
-  const allowed = env.WEB_ORIGIN !== undefined
-    ? [env.WEB_ORIGIN]
-    : isLocalRequest(request)
-      ? [DEV_ORIGIN]
-      : []
+  const allowed =
+    env.WEB_ORIGIN !== undefined
+      ? [env.WEB_ORIGIN]
+      : isLocalRequest(request)
+        ? [DEV_ORIGIN]
+        : []
   return allowed.includes(origin) ? origin : undefined
 }
 
 const corsHeaders = (origin: string): Record<string, string> => ({
-  "access-control-allow-origin": origin,
-  "access-control-allow-credentials": "true",
-  "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+  'access-control-allow-origin': origin,
+  'access-control-allow-credentials': 'true',
+  'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
   // Effect's HTTP client adds B3/trace propagation headers to requests, and the
   // RPC transport posts ndjson; both must pass the browser's preflight.
   // `if-none-match` is not a CORS-safelisted request header, so a cross-origin
   // `/today` revalidation carrying the stored ETag needs it allowed explicitly.
-  "access-control-allow-headers":
-    "content-type, authorization, traceparent, b3, if-none-match",
+  'access-control-allow-headers':
+    'content-type, authorization, traceparent, b3, if-none-match',
   // `etag` is not a CORS-safelisted response header either: without this the
   // browser hands `fetch` a null ETag on the :3001 → :8787 dev split and the
   // dashboard silently never revalidates (200 every time, no 304).
-  "access-control-expose-headers": "etag",
-  "access-control-max-age": "600"
+  'access-control-expose-headers': 'etag',
+  'access-control-max-age': '600',
 })
 
 const preflightResponse = (origin: string): Response => {
   const headers = new Headers(corsHeaders(origin))
-  headers.append("vary", "origin")
+  headers.append('vary', 'origin')
   return new Response(null, { status: 204, headers })
 }
 
@@ -118,41 +118,52 @@ const withCors = (response: Response, origin: string): Response => {
   for (const [key, value] of Object.entries(corsHeaders(origin))) {
     out.headers.set(key, value)
   }
-  out.headers.append("vary", "origin")
+  out.headers.append('vary', 'origin')
   return out
 }
 
 export default {
-  async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: Env,
+    _ctx: ExecutionContext,
+  ): Promise<Response> {
     // Built before the first await so it captures this invocation's Cloudflare
     // trace context; see `cloudflare-tracer.ts`.
     const tracer = await makeCloudflareTracer()
     const origin = allowedOrigin(request, env)
 
     // Browser preflight: answer before the router sees it.
-    if (request.method === "OPTIONS" && request.headers.has("access-control-request-method")) {
-      return origin === undefined ? new Response(null, { status: 403 }) : preflightResponse(origin)
+    if (
+      request.method === 'OPTIONS' &&
+      request.headers.has('access-control-request-method')
+    ) {
+      return origin === undefined
+        ? new Response(null, { status: 403 })
+        : preflightResponse(origin)
     }
 
     const app = makeAppLayer({
       vapid: vapidConfigOf(env),
       // `alchemy dev` sets this; a deployed Worker has no such binding, so the
       // local sweep trigger is not registered at all (ADR-0005 §11).
-      devRoutes: env.DEV_ROUTES === "1",
+      devRoutes: env.DEV_ROUTES === '1',
       // A missing key leaves the feature inert with a typed error at call
       // time; it never prevents the Worker (or its layer) from building.
       capture: captureConfigOf(env),
-      tracer
+      tracer,
     }).pipe(
       Layer.provide(
         D1Client.layer({
           db: env.DB,
           transformQueryNames: Str.camelToSnake,
-          transformResultNames: Str.snakeToCamel
-        })
-      )
+          transformResultNames: Str.snakeToCamel,
+        }),
+      ),
     )
-    const { handler, dispose } = HttpRouter.toWebHandler(app, { disableLogger: true })
+    const { handler, dispose } = HttpRouter.toWebHandler(app, {
+      disableLogger: true,
+    })
     try {
       const response = await handler(request)
       return origin === undefined ? response : withCors(response, origin)
@@ -186,7 +197,7 @@ export default {
   async scheduled(
     controller: ScheduledController,
     env: Env,
-    ctx: ExecutionContext
+    ctx: ExecutionContext,
   ): Promise<void> {
     const now = new Date(controller.scheduledTime).toISOString()
 
@@ -194,18 +205,18 @@ export default {
       controller.noRetry()
       ctx.waitUntil(
         runTrashPurge(env, now)
-          .then((result) => {
-            console.log(JSON.stringify({ event: "trash.purge", ...result }))
+          .then(result => {
+            console.log(JSON.stringify({ event: 'trash.purge', ...result }))
           })
           .catch((error: unknown) => {
             console.error(
               JSON.stringify({
-                event: "trash.purge.failed",
+                event: 'trash.purge.failed',
                 at: now,
-                message: error instanceof Error ? error.message : String(error)
-              })
+                message: error instanceof Error ? error.message : String(error),
+              }),
             )
-          })
+          }),
       )
       return
     }
@@ -214,18 +225,18 @@ export default {
       controller.noRetry()
       ctx.waitUntil(
         runD1Backup(env, now)
-          .then((result) => {
-            console.log(JSON.stringify({ event: "d1.backup", ...result }))
+          .then(result => {
+            console.log(JSON.stringify({ event: 'd1.backup', ...result }))
           })
           .catch((error: unknown) => {
             console.error(
               JSON.stringify({
-                event: "d1.backup.failed",
+                event: 'd1.backup.failed',
                 at: now,
-                message: error instanceof Error ? error.message : String(error)
-              })
+                message: error instanceof Error ? error.message : String(error),
+              }),
             )
-          })
+          }),
       )
       return
     }
@@ -234,18 +245,20 @@ export default {
     // invocation) keeps the pre-#85 reminder behaviour.
     ctx.waitUntil(
       runReminderSweep(env, now)
-        .then((result) => {
-          console.log(JSON.stringify({ event: "reminder.sweep", at: now, ...result }))
+        .then(result => {
+          console.log(
+            JSON.stringify({ event: 'reminder.sweep', at: now, ...result }),
+          )
         })
         .catch((error: unknown) => {
           console.error(
             JSON.stringify({
-              event: "reminder.sweep.failed",
+              event: 'reminder.sweep.failed',
               at: now,
-              message: error instanceof Error ? error.message : String(error)
-            })
+              message: error instanceof Error ? error.message : String(error),
+            }),
           )
-        })
+        }),
     )
-  }
+  },
 }

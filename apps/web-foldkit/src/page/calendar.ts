@@ -99,15 +99,18 @@ export const CalendarEditScope = Schema.Literals([
   'thisOccurrence',
   'thisAndFollowing',
 ])
+
 export type CalendarEditScope = typeof CalendarEditScope.Type
 
 export const CalendarScopeAction = Schema.Literals(['edit', 'delete'])
+
 export type CalendarScopeAction = typeof CalendarScopeAction.Type
 
 export const CalendarTaskDraft = Schema.Struct({
   date: Schema.String,
   value: Schema.String,
 })
+
 export type CalendarTaskDraft = typeof CalendarTaskDraft.Type
 
 export const CalendarQuickEventDraft = Schema.Struct({
@@ -118,12 +121,14 @@ export const CalendarQuickEventDraft = Schema.Struct({
   endTime: Schema.String,
   open: Schema.Boolean,
 })
+
 export type CalendarQuickEventDraft = typeof CalendarQuickEventDraft.Type
 
 export const CalendarEventEditorState = Schema.Struct({
   occurrence: CalendarEventOccurrence,
   draft: CalendarEventDraftSchema,
 })
+
 export type CalendarEventEditorState = typeof CalendarEventEditorState.Type
 
 export const CalendarPendingScope = Schema.Struct({
@@ -132,6 +137,7 @@ export const CalendarPendingScope = Schema.Struct({
   maybeDraft: Schema.Option(CalendarEventDraftSchema),
   maybeIds: Schema.Option(EventScopeIdsSchema),
 })
+
 export type CalendarPendingScope = typeof CalendarPendingScope.Type
 
 export type AdvanceOption = Readonly<{
@@ -150,6 +156,7 @@ export const PlanningPriorityListboxEntry = Schema.Struct({
   taskId: Schema.String,
   listbox: Listbox.Model,
 })
+
 export type PlanningPriorityListboxEntry =
   typeof PlanningPriorityListboxEntry.Type
 
@@ -194,6 +201,7 @@ export const Model = Schema.Struct({
   occasionAnnouncement: Schema.String,
   picker: Picker.Model,
 })
+
 export type Model = typeof Model.Type
 
 /** Everything the screen reads from its siblings on each dispatch. */
@@ -371,11 +379,13 @@ export const Message = defineMessageUnion({
     message: Schema.String,
   },
 })
+
 export type Message = typeof Message.Type
 
 export const OutMessage = defineMessageUnion({
   WroteLocalData: {},
 })
+
 export type OutMessage = typeof OutMessage.Type
 
 // COMMAND
@@ -800,16 +810,19 @@ export const CommitCalendarEventScope = Command.define(
         const store = yield* LocalStoreResource.get
         const now = yield* Clock.currentTimeMillis
         const instant = new Date(now).toISOString()
+
         const record = yield* Effect.tryPromise({
           try: () => store.get('event', occurrence.id),
           catch: storeFailureMessage,
         })
+
         const maybeFallback = Option.flatMap(maybeUserId, userId =>
           Option.map(maybeHouseholdId, householdId => ({
             userId,
             householdId,
           })),
         )
+
         const maybeEvent = Option.flatMap(maybeFallback, fallback =>
           Option.fromNullishOr(
             record === undefined
@@ -824,6 +837,7 @@ export const CommitCalendarEventScope = Command.define(
 
         const event = maybeEvent.value
         const ids = eventScopeIdsOrMint(maybeIds, now)
+
         const overrides = Option.match(maybeDraft, {
           onNone: () => ({}),
           onSome: draft => ({
@@ -834,10 +848,12 @@ export const CommitCalendarEventScope = Command.define(
             }),
           }),
         })
+
         const hasPending = yield* Effect.tryPromise({
           try: () => store.hasPending('event', event.id),
           catch: storeFailureMessage,
         })
+
         const useServer = yield* Effect.try({
           try: () =>
             eventScopeUsesServer({
@@ -901,6 +917,7 @@ export const CommitCalendarEventScope = Command.define(
           scope,
           exceptionId: EventExceptionId.make(ids.exceptionId),
         } as const
+
         const change = yield* withRpcClient(client =>
           action === 'edit'
             ? client.EditEventOccurrence({
@@ -924,6 +941,7 @@ export const CommitCalendarEventScope = Command.define(
         // dirty and let the next sync pull bring both rows into the mirror.
         const hasCompleteSeries =
           typeof change.series.id === 'string' && change.series.id !== ''
+
         const hasCompleteFollowing =
           change.following === null ||
           (typeof change.following.id === 'string' &&
@@ -937,6 +955,7 @@ export const CommitCalendarEventScope = Command.define(
         }
 
         const seriesId = hasCompleteSeries ? change.series.id : event.id
+
         const maybeFollowingId = Option.match(
           Option.fromNullishOr(change.following),
           {
@@ -1020,6 +1039,7 @@ export const SaveCalendarOccasion = Command.define('SaveCalendarOccasion', {
                 { title, originDate, yearly, advanceReminderDays: advanceDays },
                 instant,
               )
+
               return occasionId
             },
           }),
@@ -1080,6 +1100,7 @@ export const PrepareCalendarOccasionTask = Command.define(
       Effect.gen(function* () {
         const store = yield* LocalStoreResource.get
         const now = yield* Clock.currentTimeMillis
+
         const result = yield* Effect.tryPromise({
           try: () =>
             prepareOccasionTaskInMirror(
@@ -1304,6 +1325,7 @@ const planningPriorityListboxOutMessage =
 const startFetch = (model: Model): CommandReturn => {
   const generation = model.refreshGeneration + 1
   const isWeek = model.view === 'week'
+
   const maybeEtag = isWeek
     ? Option.isSome(model.maybeServerWeek)
       ? model.maybeServerWeekEtag
@@ -1487,9 +1509,11 @@ const applyPickerValue = (
 ): Model => {
   if (target.startsWith('quick:')) {
     const [, date, field] = target.split(':')
+
     if (date === undefined || field === undefined) {
       return model
     }
+
     return modifyFields(model, {
       quickEvents: () =>
         quickEventField(model, date, draft =>
@@ -1499,18 +1523,23 @@ const applyPickerValue = (
         ),
     })
   }
+
   if (target === 'event:date') {
     return setEventEditorField(model, 'date', value)
   }
+
   if (target === 'event:startTime') {
     return setEventEditorField(model, 'startTime', value)
   }
+
   if (target === 'event:endTime') {
     return setEventEditorField(model, 'endTime', value)
   }
+
   if (target === 'occasion:originDate') {
     return modifyFields(model, { occasionOriginDate: () => value })
   }
+
   return model
 }
 
@@ -1565,6 +1594,7 @@ export const update = (
 
     TickedCalendar: ({ now }) => {
       const next = modifyFields(model, { now: () => now })
+
       const seeded =
         model.occasionOriginDate === ''
           ? modifyFields(next, {
@@ -1729,6 +1759,7 @@ export const update = (
 
     PressedPreviousWeek: () => {
       const view = calendarView(model, inputs)
+
       const next = modifyFields(model, {
         anchor: () => shiftDay(view.week.start, -7),
       })
@@ -1738,6 +1769,7 @@ export const update = (
 
     PressedNextWeek: () => {
       const view = calendarView(model, inputs)
+
       const next = modifyFields(model, {
         anchor: () => shiftDay(view.week.start, 7),
       })
@@ -2698,6 +2730,7 @@ const clockEvents: Stream.Stream<Message> = Stream.fromEffectRepeat(
   Effect.gen(function* () {
     yield* Effect.sleep(Duration.seconds(60))
     const now = yield* Clock.currentTimeMillis
+
     return Message.TickedCalendar({ now })
   }),
 )

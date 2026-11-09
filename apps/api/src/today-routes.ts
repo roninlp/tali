@@ -1,21 +1,21 @@
-import { Effect, Schema } from "effect"
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { Effect, Schema } from 'effect'
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from 'effect/http'
 import {
   type DashboardSectionOrder,
   normalizeDashboardSectionOrder,
   TodayReadModel,
-  Unauthorized
-} from "@tali/domain"
-import { AuthService } from "./auth-service.js"
-import { SESSION_COOKIE } from "./auth-routes.js"
-import { PreferencesService } from "./preferences-service.js"
+  Unauthorized,
+} from '@tali/domain'
+import { AuthService } from './auth-service.js'
+import { SESSION_COOKIE } from './auth-routes.js'
+import { PreferencesService } from './preferences-service.js'
 import {
   cacheHeaders,
   etagOf,
   fail,
-  matchesIfNoneMatch
-} from "./read-model-http.js"
-import { TodayService, type TodayViewer } from "./today-service.js"
+  matchesIfNoneMatch,
+} from './read-model-http.js'
+import { TodayService, type TodayViewer } from './today-service.js'
 
 /**
  * `GET /today` — the aggregated dashboard read model (ticket #42; FR-VIEW-01).
@@ -35,15 +35,15 @@ import { TodayService, type TodayViewer } from "./today-service.js"
  * typed boundary instead of leaking a malformed shape.
  */
 
-export const TodayRoutes = HttpRouter.use((router) =>
-  Effect.gen(function*() {
+export const TodayRoutes = HttpRouter.use(router =>
+  Effect.gen(function* () {
     const auth = yield* AuthService
     const preferences = yield* PreferencesService
     const today = yield* TodayService
 
     /** Resolve the cookie principal into a viewer + its saved display order. */
     const principal = (request: HttpServerRequest.HttpServerRequest) =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const token = request.cookies[SESSION_COOKIE]
         if (token === undefined) {
           return yield* Effect.fail(new Unauthorized())
@@ -52,33 +52,33 @@ export const TodayRoutes = HttpRouter.use((router) =>
         const prefs = yield* preferences.get(context.user.id, {
           timeZone: context.user.timeZone,
           weekStart: context.user.weekStart,
-          digits: context.user.digits
+          digits: context.user.digits,
         })
         return {
           viewer: {
             userId: context.user.id,
             householdId: context.householdId,
-            timeZone: prefs.timeZone
+            timeZone: prefs.timeZone,
           },
           sectionOrder: normalizeDashboardSectionOrder(
-            prefs.dashboardSectionOrder
-          ) as DashboardSectionOrder
+            prefs.dashboardSectionOrder,
+          ) as DashboardSectionOrder,
         }
       })
 
     yield* router.add(
-      "GET",
-      "/today",
-      Effect.gen(function*() {
+      'GET',
+      '/today',
+      Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
         const { viewer: candidate, sectionOrder } = yield* principal(request)
         if (candidate.householdId === null) {
-          return yield* fail(403, "Forbidden", "Join a household to see Today")
+          return yield* fail(403, 'Forbidden', 'Join a household to see Today')
         }
         const viewer: TodayViewer = {
           userId: candidate.userId,
           householdId: candidate.householdId,
-          timeZone: candidate.timeZone
+          timeZone: candidate.timeZone,
         }
 
         const model = yield* today.get(viewer, sectionOrder)
@@ -86,28 +86,31 @@ export const TodayRoutes = HttpRouter.use((router) =>
         // not whatever object the composition happened to build.
         const body = yield* Schema.encodeEffect(TodayReadModel)(model)
         const etag = yield* etagOf(body)
-        const ifNoneMatch = request.headers["if-none-match"]
+        const ifNoneMatch = request.headers['if-none-match']
 
-        if (ifNoneMatch !== undefined && matchesIfNoneMatch(ifNoneMatch, etag)) {
+        if (
+          ifNoneMatch !== undefined &&
+          matchesIfNoneMatch(ifNoneMatch, etag)
+        ) {
           return HttpServerResponse.empty({
             status: 304,
-            headers: cacheHeaders(etag)
+            headers: cacheHeaders(etag),
           })
         }
 
         return yield* HttpServerResponse.json(body, {
           status: 200,
-          headers: cacheHeaders(etag)
+          headers: cacheHeaders(etag),
         })
       }).pipe(
         Effect.catchTags(
           {
-            Unauthorized: () => fail(401, "Unauthorized", "No active session")
+            Unauthorized: () => fail(401, 'Unauthorized', 'No active session'),
           },
           // Encoding a bad payload is a server bug, not client input: 500.
-          () => fail(500, "InternalError", "Unexpected server error", true)
-        )
-      )
+          () => fail(500, 'InternalError', 'Unexpected server error', true),
+        ),
+      ),
     )
-  })
+  }),
 )

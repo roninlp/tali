@@ -36,6 +36,7 @@ export const markMatches = (
     pattern.source,
     pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`,
   )
+
   const segments: Array<NoteSearchSegment> = []
   let cursor = 0
   let match: RegExpExecArray | null = global.exec(text)
@@ -78,6 +79,7 @@ export const excerptAroundMatch = (
     pattern.source,
     pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`,
   )
+
   const first = global.exec(text)
 
   if (first === null) return []

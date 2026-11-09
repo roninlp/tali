@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Context, Effect, Layer, Option } from 'effect'
 import {
   type HouseholdId,
   List,
@@ -28,8 +28,8 @@ import {
   resolveCreateVisibility,
   resolveInheritedVisibility,
   uuidV7,
-  type Visibility
-} from "@tali/domain"
+  type Visibility,
+} from '@tali/domain'
 import {
   ListRepo,
   ListRepoLive,
@@ -39,9 +39,9 @@ import {
   TagRepo,
   TagRepoLive,
   PlanningListItemRepo,
-  PlanningListItemRepoLive
-} from "@tali/sql"
-import { loadAssignableTags } from "./tag-guard.js"
+  PlanningListItemRepoLive,
+} from '@tali/sql'
+import { loadAssignableTags } from './tag-guard.js'
 
 /**
  * `ListService` — the List/ListItem vertical (ticket #39; FR-LIST-01/02/03).
@@ -82,57 +82,65 @@ export interface ListServiceApi {
   readonly create: (
     viewer: ListViewer,
     input: ListCreateInput,
-    now?: string
+    now?: string,
   ) => Effect.Effect<List, ListServiceError>
-  readonly get: (viewer: ListViewer, id: List["id"]) => Effect.Effect<List, ListServiceError>
+  readonly get: (
+    viewer: ListViewer,
+    id: List['id'],
+  ) => Effect.Effect<List, ListServiceError>
   readonly update: (
     viewer: ListViewer,
     input: ListUpdateInput,
-    now?: string
+    now?: string,
   ) => Effect.Effect<List, ListServiceError>
   readonly remove: (
     viewer: ListViewer,
     input: ListMutationInput,
-    now?: string
+    now?: string,
   ) => Effect.Effect<List, ListServiceError>
-  readonly list: (viewer: ListViewer) => Effect.Effect<ReadonlyArray<List>, ListServiceError>
+  readonly list: (
+    viewer: ListViewer,
+  ) => Effect.Effect<ReadonlyArray<List>, ListServiceError>
   readonly listItems: (
     viewer: ListViewer,
-    input: ListItemsQuery
+    input: ListItemsQuery,
   ) => Effect.Effect<ReadonlyArray<ListItem>, ListServiceError>
   readonly createItem: (
     viewer: ListViewer,
     input: ListItemCreateInput,
-    now?: string
+    now?: string,
   ) => Effect.Effect<ListItem, ListServiceError>
   readonly appendItems: (
     viewer: ListViewer,
     input: ListItemsAppendInput,
-    now?: string
+    now?: string,
   ) => Effect.Effect<ReadonlyArray<ListItem>, ListServiceError>
   readonly updateItem: (
     viewer: ListViewer,
     input: ListItemUpdateInput,
-    now?: string
+    now?: string,
   ) => Effect.Effect<ListItem, ListServiceError>
   readonly setItemChecked: (
     viewer: ListViewer,
     input: ListItemCheckInput,
-    now?: string
+    now?: string,
   ) => Effect.Effect<ListItem, ListServiceError>
   readonly deleteItem: (
     viewer: ListViewer,
     input: ListItemMutationInput,
-    now?: string
+    now?: string,
   ) => Effect.Effect<ListItem, ListServiceError>
   readonly reorder: (
     viewer: ListViewer,
     input: ListReorderInput,
-    now?: string
+    now?: string,
   ) => Effect.Effect<ReadonlyArray<ListItem>, ListServiceError>
 }
 
-const invalid = (field: string, message: string): Effect.Effect<never, ListValidationError> =>
+const invalid = (
+  field: string,
+  message: string,
+): Effect.Effect<never, ListValidationError> =>
   Effect.fail(new ListValidationError({ issues: [{ field, message }] }))
 
 const sameTags = (a: ReadonlyArray<TagId>, b: ReadonlyArray<TagId>): boolean =>
@@ -147,22 +155,22 @@ const itemWire = (item: ListItem): Record<string, unknown> => ({
   sortOrder: item.order,
   name: item.name,
   done: item.done,
-  ordering: item.order
+  ordering: item.order,
 })
 
 interface EntityGroup {
   readonly state: SyncEntityState
   readonly expectedVersion: number | null
   readonly clientMutationId: string
-  readonly op?: "upsert" | "delete"
+  readonly op?: 'upsert' | 'delete'
   readonly tagChanges?: {
     readonly previous: ReadonlyArray<TagId>
     readonly next: ReadonlyArray<TagId>
   }
 }
 
-export class ListService extends Context.Service<ListService>()("ListService", {
-  make: Effect.gen(function*() {
+export class ListService extends Context.Service<ListService>()('ListService', {
+  make: Effect.gen(function* () {
     const lists = yield* ListRepo
     const items = yield* PlanningListItemRepo
     const tags = yield* TagRepo
@@ -182,13 +190,14 @@ export class ListService extends Context.Service<ListService>()("ListService", {
      * boundary the sync push uses; the registry writes/reads the column.
      */
     const listState = (list: List, writerId: string): SyncEntityState => {
-      const def = definition("list")
-      const data = def.validate(
-        { ...list } as Record<string, unknown>,
-        { version: list.version, updatedAt: list.updatedAt, deletedAt: list.deletedAt }
-      )
+      const def = definition('list')
+      const data = def.validate({ ...list } as Record<string, unknown>, {
+        version: list.version,
+        updatedAt: list.updatedAt,
+        deletedAt: list.deletedAt,
+      })
       return {
-        entityType: "list",
+        entityType: 'list',
         entityId: list.id,
         householdId: list.householdId,
         ownerId: list.ownerId,
@@ -196,14 +205,14 @@ export class ListService extends Context.Service<ListService>()("ListService", {
         version: list.version,
         updatedAt: list.updatedAt,
         deletedAt: list.deletedAt,
-        data: { ...data, lastWriterId: writerId }
+        data: { ...data, lastWriterId: writerId },
       }
     }
 
     const itemState = (item: ListItem, writerId: string): SyncEntityState => {
-      const def = definition("listItem")
+      const def = definition('listItem')
       return {
-        entityType: "listItem",
+        entityType: 'listItem',
         entityId: item.id,
         householdId: item.householdId,
         ownerId: item.ownerId,
@@ -215,20 +224,26 @@ export class ListService extends Context.Service<ListService>()("ListService", {
           ...def.validate(itemWire(item), {
             version: item.version,
             updatedAt: item.updatedAt,
-            deletedAt: item.deletedAt
+            deletedAt: item.deletedAt,
           }),
-          lastWriterId: writerId
-        }
+          lastWriterId: writerId,
+        },
       }
     }
 
     const appliedMutations = (viewer: ListViewer, ids: ReadonlyArray<string>) =>
       sync
-        .findApplied({ householdId: viewer.householdId, clientMutationIds: ids })
+        .findApplied({
+          householdId: viewer.householdId,
+          clientMutationIds: ids,
+        })
         .pipe(Effect.orDie)
 
-    const reusedMutationIdError = (id: string) =>
-      invalid("clientMutationId", "this mutation id was already applied to a different change")
+    const reusedMutationIdError = (_id: string) =>
+      invalid(
+        'clientMutationId',
+        'this mutation id was already applied to a different change',
+      )
 
     /**
      * One batch over N entity groups. Groups already recorded for this
@@ -238,12 +253,12 @@ export class ListService extends Context.Service<ListService>()("ListService", {
     const commitGroups = (
       viewer: ListViewer,
       groups: ReadonlyArray<EntityGroup>,
-      now: string
+      now: string,
     ) =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const prior = yield* appliedMutations(
           viewer,
-          groups.map((group) => group.clientMutationId)
+          groups.map(group => group.clientMutationId),
         )
         for (const group of groups) {
           const applied = prior.get(group.clientMutationId)
@@ -257,22 +272,22 @@ export class ListService extends Context.Service<ListService>()("ListService", {
         }
 
         const statements = groups
-          .filter((group) => !prior.has(group.clientMutationId))
-          .flatMap((group) => {
+          .filter(group => !prior.has(group.clientMutationId))
+          .flatMap(group => {
             const batch = [
               sync.writeEntity({
                 state: group.state,
-                expectedVersion: group.expectedVersion
+                expectedVersion: group.expectedVersion,
               }),
               sync.appendFeed({
                 householdId: viewer.householdId,
                 entityType: group.state.entityType,
                 entityId: group.state.entityId,
-                op: group.op ?? "upsert",
+                op: group.op ?? 'upsert',
                 version: group.state.version,
                 updatedAt: group.state.updatedAt,
                 ownerId: group.state.ownerId,
-                visibility: group.state.visibility
+                visibility: group.state.visibility,
               }),
               sync.recordApplied({
                 clientMutationId: group.clientMutationId,
@@ -280,8 +295,8 @@ export class ListService extends Context.Service<ListService>()("ListService", {
                 entityType: group.state.entityType,
                 entityId: group.state.entityId,
                 version: group.state.version,
-                createdAt: now
-              })
+                createdAt: now,
+              }),
             ]
             if (
               group.tagChanges !== undefined &&
@@ -289,66 +304,75 @@ export class ListService extends Context.Service<ListService>()("ListService", {
             ) {
               batch.push(
                 items.detachTagsIfVersion({
-                  itemId: group.state.entityId as ListItem["id"],
+                  itemId: group.state.entityId as ListItem['id'],
                   version: group.state.version,
-                  updatedAt: group.state.updatedAt
+                  updatedAt: group.state.updatedAt,
                 }),
-                ...group.tagChanges.next.map((tagId) =>
+                ...group.tagChanges.next.map(tagId =>
                   items.attachTagIfVersion({
-                    itemId: group.state.entityId as ListItem["id"],
+                    itemId: group.state.entityId as ListItem['id'],
                     tagId,
                     householdId: viewer.householdId,
                     createdAt: now,
                     version: group.state.version,
-                    updatedAt: group.state.updatedAt
-                  })
-                )
+                    updatedAt: group.state.updatedAt,
+                  }),
+                ),
               )
             }
             return batch
           })
 
-        if (statements.length > 0) yield* sync.commit(statements).pipe(Effect.orDie)
+        if (statements.length > 0)
+          yield* sync.commit(statements).pipe(Effect.orDie)
         return yield* appliedMutations(
           viewer,
-          groups.map((group) => group.clientMutationId)
+          groups.map(group => group.clientMutationId),
         )
       })
 
     const loadList = (
       viewer: ListViewer,
-      id: List["id"]
+      id: List['id'],
     ): Effect.Effect<List, ListServiceError> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const found = yield* lists.findById(id).pipe(Effect.orDie)
         if (Option.isNone(found) || found.value.deletedAt !== null) {
           return yield* Effect.fail(new ListNotFound({ id }))
         }
         const list = found.value
         if (list.householdId !== viewer.householdId) {
-          return yield* Effect.fail(new ListForbidden({ id, reason: "household" }))
+          return yield* Effect.fail(
+            new ListForbidden({ id, reason: 'household' }),
+          )
         }
-        if (list.visibility === "private" && list.ownerId !== viewer.userId) {
-          return yield* Effect.fail(new ListForbidden({ id, reason: "private" }))
+        if (list.visibility === 'private' && list.ownerId !== viewer.userId) {
+          return yield* Effect.fail(
+            new ListForbidden({ id, reason: 'private' }),
+          )
         }
         return list
       })
 
     const loadItem = (
       viewer: ListViewer,
-      id: ListItem["id"]
+      id: ListItem['id'],
     ): Effect.Effect<ListItem, ListServiceError> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const found = yield* items.findById(id).pipe(Effect.orDie)
         if (Option.isNone(found) || found.value.deletedAt !== null) {
           return yield* Effect.fail(new ListEntryNotFound({ id }))
         }
         const item = found.value
         if (item.householdId !== viewer.householdId) {
-          return yield* Effect.fail(new ListForbidden({ id, reason: "household" }))
+          return yield* Effect.fail(
+            new ListForbidden({ id, reason: 'household' }),
+          )
         }
-        if (item.visibility === "private" && item.ownerId !== viewer.userId) {
-          return yield* Effect.fail(new ListForbidden({ id, reason: "private" }))
+        if (item.visibility === 'private' && item.ownerId !== viewer.userId) {
+          return yield* Effect.fail(
+            new ListForbidden({ id, reason: 'private' }),
+          )
         }
         // The parent list's visibility is a second gate: an item can never be
         // read through a private list owned by the other member.
@@ -358,11 +382,11 @@ export class ListService extends Context.Service<ListService>()("ListService", {
 
     const requireTags = (
       viewer: ListViewer,
-      tagIds: ReadonlyArray<TagId>
+      tagIds: ReadonlyArray<TagId>,
     ): Effect.Effect<void, ListValidationError> =>
       loadAssignableTags(tags, viewer, tagIds).pipe(
-        Effect.mapError((issue) => new ListValidationError({ issues: [issue] })),
-        Effect.asVoid
+        Effect.mapError(issue => new ListValidationError({ issues: [issue] })),
+        Effect.asVoid,
       )
 
     /**
@@ -372,70 +396,81 @@ export class ListService extends Context.Service<ListService>()("ListService", {
      */
     const itemVisibility = (
       parent: List,
-      requested: Visibility | undefined
+      requested: Visibility | undefined,
     ): Effect.Effect<Visibility, ListValidationError> => {
       const resolved = resolveInheritedVisibility(
-        "listItem",
+        'listItem',
         parent.visibility,
-        requested
+        requested,
       )
-      return resolved._tag === "resolved"
+      return resolved._tag === 'resolved'
         ? Effect.succeed(resolved.visibility)
-        : invalid("visibility", "an item cannot be shared inside a private list")
+        : invalid(
+            'visibility',
+            'an item cannot be shared inside a private list',
+          )
     }
 
     /** Replay guard for one list: same mutation id + same row ⇒ stored row. */
     const replayList = (
       viewer: ListViewer,
       clientMutationId: string,
-      expectedId?: List["id"]
+      expectedId?: List['id'],
     ): Effect.Effect<Option.Option<List>, ListServiceError> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const prior = yield* appliedMutations(viewer, [clientMutationId])
         const row = prior.get(clientMutationId)
         if (row === undefined) return Option.none()
-        if (row.entityType !== "list" || (expectedId !== undefined && row.entityId !== expectedId)) {
+        if (
+          row.entityType !== 'list' ||
+          (expectedId !== undefined && row.entityId !== expectedId)
+        ) {
           return yield* reusedMutationIdError(expectedId ?? row.entityId)
         }
-        return yield* Effect.option(loadList(viewer, row.entityId as List["id"]))
+        return yield* Effect.option(
+          loadList(viewer, row.entityId as List['id']),
+        )
       })
 
     const replayItem = (
       viewer: ListViewer,
       clientMutationId: string,
-      expectedId?: ListItem["id"]
+      expectedId?: ListItem['id'],
     ): Effect.Effect<Option.Option<ListItem>, ListServiceError> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const prior = yield* appliedMutations(viewer, [clientMutationId])
         const row = prior.get(clientMutationId)
         if (row === undefined) return Option.none()
         if (
-          row.entityType !== "listItem" ||
+          row.entityType !== 'listItem' ||
           (expectedId !== undefined && row.entityId !== expectedId)
         ) {
           return yield* reusedMutationIdError(expectedId ?? row.entityId)
         }
-        return yield* Effect.option(loadItem(viewer, row.entityId as ListItem["id"]))
+        return yield* Effect.option(
+          loadItem(viewer, row.entityId as ListItem['id']),
+        )
       })
 
     const listItems = (
       viewer: ListViewer,
-      input: ListItemsQuery
+      input: ListItemsQuery,
     ): Effect.Effect<ReadonlyArray<ListItem>, ListServiceError> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         yield* loadList(viewer, input.listId)
         return yield* items
           .listByList({
             listId: input.listId,
             householdId: viewer.householdId,
-            userId: viewer.userId
+            userId: viewer.userId,
           })
           .pipe(Effect.orDie)
       })
 
-    const nextOrder = (listId: List["id"], householdId: string) =>
-      Effect.map(items.listAllForList({ listId, householdId }).pipe(Effect.orDie), (rows) =>
-        rows.reduce((max, item) => Math.max(max, item.order), 0) + 1
+    const nextOrder = (listId: List['id'], householdId: string) =>
+      Effect.map(
+        items.listAllForList({ listId, householdId }).pipe(Effect.orDie),
+        rows => rows.reduce((max, item) => Math.max(max, item.order), 0) + 1,
       )
 
     // ── Lists ────────────────────────────────────────────────────────────
@@ -443,40 +478,49 @@ export class ListService extends Context.Service<ListService>()("ListService", {
     const create = (
       viewer: ListViewer,
       input: ListCreateInput,
-      now: string = new Date().toISOString()
+      now: string = new Date().toISOString(),
     ): Effect.Effect<List, ListServiceError> =>
-      Effect.gen(function*() {
-        const replayed = yield* replayList(viewer, input.clientMutationId, input.id)
+      Effect.gen(function* () {
+        const replayed = yield* replayList(
+          viewer,
+          input.clientMutationId,
+          input.id,
+        )
         if (Option.isSome(replayed)) return replayed.value
 
         const list = new List({
-          id: (input.id ?? uuidV7()) as List["id"],
-          type: "list",
+          id: (input.id ?? uuidV7()) as List['id'],
+          type: 'list',
           title: input.title.trim(),
           description: input.description ?? null,
           ownerId: viewer.userId,
           householdId: viewer.householdId,
-          visibility: resolveCreateVisibility("list", input.visibility),
+          visibility: resolveCreateVisibility('list', input.visibility),
           color: input.color ?? null,
           icon: input.icon ?? null,
-          sort: input.sort ?? "manual",
+          sort: input.sort ?? 'manual',
           checkedPlacement:
-            input.checkedPlacement ?? viewer.defaultCheckedPlacement ?? "bottom",
+            input.checkedPlacement ??
+            viewer.defaultCheckedPlacement ??
+            'bottom',
           createdAt: now,
           updatedAt: now,
           version: 1,
-          deletedAt: null
+          deletedAt: null,
         })
-        if (list.title === "") return yield* invalid("title", "a list needs a title")
+        if (list.title === '')
+          return yield* invalid('title', 'a list needs a title')
 
         const applied = yield* commitGroups(
           viewer,
-          [{
-            state: listState(list, viewer.userId),
-            expectedVersion: null,
-            clientMutationId: input.clientMutationId
-          }],
-          now
+          [
+            {
+              state: listState(list, viewer.userId),
+              expectedVersion: null,
+              clientMutationId: input.clientMutationId,
+            },
+          ],
+          now,
         )
         if (!applied.has(input.clientMutationId)) {
           return yield* Effect.fail(new ListConflict({ id: list.id }))
@@ -484,42 +528,56 @@ export class ListService extends Context.Service<ListService>()("ListService", {
         return list
       })
 
-    const get = (viewer: ListViewer, id: List["id"]): Effect.Effect<List, ListServiceError> =>
-      loadList(viewer, id)
+    const get = (
+      viewer: ListViewer,
+      id: List['id'],
+    ): Effect.Effect<List, ListServiceError> => loadList(viewer, id)
 
     const update = (
       viewer: ListViewer,
       input: ListUpdateInput,
-      now: string = new Date().toISOString()
+      now: string = new Date().toISOString(),
     ): Effect.Effect<List, ListServiceError> =>
-      Effect.gen(function*() {
-        const replayed = yield* replayList(viewer, input.clientMutationId, input.id)
+      Effect.gen(function* () {
+        const replayed = yield* replayList(
+          viewer,
+          input.clientMutationId,
+          input.id,
+        )
         if (Option.isSome(replayed)) return replayed.value
 
         for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
           const current = yield* loadList(viewer, input.id)
           const patch: ListPatch = input.patch
-          if (patch.title !== undefined && patch.title.trim() === "") {
-            return yield* invalid("title", "a list needs a title")
+          if (patch.title !== undefined && patch.title.trim() === '') {
+            return yield* invalid('title', 'a list needs a title')
           }
           // Only the creator can flip a shared list to private; the other
           // member must not be able to lock the owner out.
-          if (patch.visibility === "private" && current.ownerId !== viewer.userId) {
-            return yield* invalid("visibility", "only the list owner can make it private")
+          if (
+            patch.visibility === 'private' &&
+            current.ownerId !== viewer.userId
+          ) {
+            return yield* invalid(
+              'visibility',
+              'only the list owner can make it private',
+            )
           }
           const next = new List({
             ...current,
             title: patch.title?.trim() ?? current.title,
-            description: patch.description !== undefined
-              ? patch.description
-              : current.description,
+            description:
+              patch.description !== undefined
+                ? patch.description
+                : current.description,
             color: patch.color !== undefined ? patch.color : current.color,
             icon: patch.icon !== undefined ? patch.icon : current.icon,
             sort: patch.sort ?? current.sort,
-            checkedPlacement: patch.checkedPlacement ?? current.checkedPlacement,
+            checkedPlacement:
+              patch.checkedPlacement ?? current.checkedPlacement,
             visibility: patch.visibility ?? current.visibility,
             version: current.version + 1,
-            updatedAt: now
+            updatedAt: now,
           })
           if (
             next.title === current.title &&
@@ -534,12 +592,14 @@ export class ListService extends Context.Service<ListService>()("ListService", {
           }
           const applied = yield* commitGroups(
             viewer,
-            [{
-              state: listState(next, viewer.userId),
-              expectedVersion: current.version,
-              clientMutationId: input.clientMutationId
-            }],
-            now
+            [
+              {
+                state: listState(next, viewer.userId),
+                expectedVersion: current.version,
+                clientMutationId: input.clientMutationId,
+              },
+            ],
+            now,
           )
           if (applied.has(input.clientMutationId)) return next
         }
@@ -549,10 +609,14 @@ export class ListService extends Context.Service<ListService>()("ListService", {
     const remove = (
       viewer: ListViewer,
       input: ListMutationInput,
-      now: string = new Date().toISOString()
+      now: string = new Date().toISOString(),
     ): Effect.Effect<List, ListServiceError> =>
-      Effect.gen(function*() {
-        const replayed = yield* replayList(viewer, input.clientMutationId, input.id)
+      Effect.gen(function* () {
+        const replayed = yield* replayList(
+          viewer,
+          input.clientMutationId,
+          input.id,
+        )
         if (Option.isSome(replayed)) return replayed.value
 
         for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
@@ -560,7 +624,10 @@ export class ListService extends Context.Service<ListService>()("ListService", {
           // Cascade the soft delete to every live item, including a spouse's
           // private rows, so nothing outlives the list in their mirror.
           const children = yield* items
-            .listAllForList({ listId: current.id, householdId: viewer.householdId })
+            .listAllForList({
+              listId: current.id,
+              householdId: viewer.householdId,
+            })
             .pipe(Effect.orDie)
           const listId = `${input.clientMutationId}:list`
           const groups: Array<EntityGroup> = [
@@ -570,38 +637,45 @@ export class ListService extends Context.Service<ListService>()("ListService", {
                   ...current,
                   version: current.version + 1,
                   updatedAt: now,
-                  deletedAt: now
+                  deletedAt: now,
                 }),
-                viewer.userId
+                viewer.userId,
               ),
               expectedVersion: current.version,
               clientMutationId: listId,
-              op: "delete"
+              op: 'delete',
             },
-            ...children.map((item) => ({
+            ...children.map(item => ({
               state: itemState(
                 new ListItem({
                   ...item,
                   version: item.version + 1,
                   updatedAt: now,
-                  deletedAt: now
+                  deletedAt: now,
                 }),
-                viewer.userId
+                viewer.userId,
               ),
               expectedVersion: item.version,
               clientMutationId: `${input.clientMutationId}:item:${item.id}`,
-              op: "delete" as const
-            }))
+              op: 'delete' as const,
+            })),
           ]
           const applied = yield* commitGroups(viewer, groups, now)
           if (applied.has(listId)) {
-            return new List({ ...current, version: current.version + 1, updatedAt: now, deletedAt: now })
+            return new List({
+              ...current,
+              version: current.version + 1,
+              updatedAt: now,
+              deletedAt: now,
+            })
           }
         }
         return yield* Effect.fail(new ListConflict({ id: input.id }))
       })
 
-    const list = (viewer: ListViewer): Effect.Effect<ReadonlyArray<List>, ListServiceError> =>
+    const list = (
+      viewer: ListViewer,
+    ): Effect.Effect<ReadonlyArray<List>, ListServiceError> =>
       lists
         .listVisible({ householdId: viewer.householdId, userId: viewer.userId })
         .pipe(Effect.orDie)
@@ -611,26 +685,31 @@ export class ListService extends Context.Service<ListService>()("ListService", {
     const createItem = (
       viewer: ListViewer,
       input: ListItemCreateInput,
-      now: string = new Date().toISOString()
+      now: string = new Date().toISOString(),
     ): Effect.Effect<ListItem, ListServiceError> =>
-      Effect.gen(function*() {
-        const replayed = yield* replayItem(viewer, input.clientMutationId, input.id)
+      Effect.gen(function* () {
+        const replayed = yield* replayItem(
+          viewer,
+          input.clientMutationId,
+          input.id,
+        )
         if (Option.isSome(replayed)) return replayed.value
         const parent = yield* loadList(viewer, input.listId)
         yield* requireTags(viewer, input.tagIds ?? [])
         const name = input.name.trim()
-        if (name === "") return yield* invalid("name", "an item needs a name")
+        if (name === '') return yield* invalid('name', 'an item needs a name')
         // The create schema has no `visibility` (the item inherits the list),
         // so the resolved value is the parent's.
         const visibility = yield* itemVisibility(parent, undefined)
 
         const item = new ListItem({
-          id: (input.id ?? uuidV7()) as ListItem["id"],
-          type: "listItem",
+          id: (input.id ?? uuidV7()) as ListItem['id'],
+          type: 'listItem',
           listId: parent.id,
           name,
           done: false,
-          order: input.order ?? (yield* nextOrder(parent.id, viewer.householdId)),
+          order:
+            input.order ?? (yield* nextOrder(parent.id, viewer.householdId)),
           checkedAt: null,
           tagIds: input.tagIds ?? [],
           ownerId: viewer.userId,
@@ -640,17 +719,19 @@ export class ListService extends Context.Service<ListService>()("ListService", {
           createdAt: now,
           updatedAt: now,
           version: 1,
-          deletedAt: null
+          deletedAt: null,
         })
         const applied = yield* commitGroups(
           viewer,
-          [{
-            state: itemState(item, viewer.userId),
-            expectedVersion: null,
-            clientMutationId: input.clientMutationId,
-            tagChanges: { previous: [], next: item.tagIds }
-          }],
-          now
+          [
+            {
+              state: itemState(item, viewer.userId),
+              expectedVersion: null,
+              clientMutationId: input.clientMutationId,
+              tagChanges: { previous: [], next: item.tagIds },
+            },
+          ],
+          now,
         )
         if (!applied.has(input.clientMutationId)) {
           return yield* Effect.fail(new ListConflict({ id: item.id }))
@@ -661,16 +742,16 @@ export class ListService extends Context.Service<ListService>()("ListService", {
     const appendItems = (
       viewer: ListViewer,
       input: ListItemsAppendInput,
-      now: string = new Date().toISOString()
+      now: string = new Date().toISOString(),
     ): Effect.Effect<ReadonlyArray<ListItem>, ListServiceError> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const parent = yield* loadList(viewer, input.listId)
         if (input.items.length === 0) {
-          return yield* invalid("items", "append at least one item")
+          return yield* invalid('items', 'append at least one item')
         }
         for (const entry of input.items) {
-          if (entry.name.trim() === "") {
-            return yield* invalid("name", "an item needs a name")
+          if (entry.name.trim() === '') {
+            return yield* invalid('name', 'an item needs a name')
           }
         }
         for (const entry of input.items) {
@@ -680,32 +761,34 @@ export class ListService extends Context.Service<ListService>()("ListService", {
         // A lost response replays the same batch key. Child keys are positional
         // so a retry still recognises a batch whose ids the server minted.
         const replayKeys = input.items.map(
-          (_entry, index) => `${input.clientMutationId}:item:${index}`
+          (_entry, index) => `${input.clientMutationId}:item:${index}`,
         )
         const prior = yield* appliedMutations(viewer, replayKeys)
-        if (prior.size > 0) return yield* listItems(viewer, { listId: input.listId })
+        if (prior.size > 0)
+          return yield* listItems(viewer, { listId: input.listId })
 
         const baseOrder = yield* nextOrder(parent.id, viewer.householdId)
         const visibility = yield* itemVisibility(parent, undefined)
-        const created = input.items.map((entry, index) =>
-          new ListItem({
-            id: (entry.id ?? uuidV7()) as ListItem["id"],
-            type: "listItem",
-            listId: parent.id,
-            name: entry.name.trim(),
-            done: false,
-            order: baseOrder + index,
-            checkedAt: null,
-            tagIds: entry.tagIds ?? [],
-            ownerId: viewer.userId,
-            householdId: viewer.householdId,
-            visibility,
-            color: entry.color ?? null,
-            createdAt: now,
-            updatedAt: now,
-            version: 1,
-            deletedAt: null
-          })
+        const created = input.items.map(
+          (entry, index) =>
+            new ListItem({
+              id: (entry.id ?? uuidV7()) as ListItem['id'],
+              type: 'listItem',
+              listId: parent.id,
+              name: entry.name.trim(),
+              done: false,
+              order: baseOrder + index,
+              checkedAt: null,
+              tagIds: entry.tagIds ?? [],
+              ownerId: viewer.userId,
+              householdId: viewer.householdId,
+              visibility,
+              color: entry.color ?? null,
+              createdAt: now,
+              updatedAt: now,
+              version: 1,
+              deletedAt: null,
+            }),
         )
         yield* commitGroups(
           viewer,
@@ -713,9 +796,9 @@ export class ListService extends Context.Service<ListService>()("ListService", {
             state: itemState(item, viewer.userId),
             expectedVersion: null,
             clientMutationId: `${input.clientMutationId}:item:${index}`,
-            tagChanges: { previous: [], next: item.tagIds }
+            tagChanges: { previous: [], next: item.tagIds },
           })),
-          now
+          now,
         )
         return yield* listItems(viewer, { listId: input.listId })
       })
@@ -723,32 +806,44 @@ export class ListService extends Context.Service<ListService>()("ListService", {
     const updateItem = (
       viewer: ListViewer,
       input: ListItemUpdateInput,
-      now: string = new Date().toISOString()
+      now: string = new Date().toISOString(),
     ): Effect.Effect<ListItem, ListServiceError> =>
-      Effect.gen(function*() {
-        const replayed = yield* replayItem(viewer, input.clientMutationId, input.id)
+      Effect.gen(function* () {
+        const replayed = yield* replayItem(
+          viewer,
+          input.clientMutationId,
+          input.id,
+        )
         if (Option.isSome(replayed)) return replayed.value
 
         for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
           const current = yield* loadItem(viewer, input.id)
           const patch: ListItemPatch = input.patch
-          if (patch.name !== undefined && patch.name.trim() === "") {
-            return yield* invalid("name", "an item needs a name")
+          if (patch.name !== undefined && patch.name.trim() === '') {
+            return yield* invalid('name', 'an item needs a name')
           }
-          if (patch.tagIds !== undefined) yield* requireTags(viewer, patch.tagIds)
+          if (patch.tagIds !== undefined)
+            yield* requireTags(viewer, patch.tagIds)
           // Shared means co-edit; un-sharing is the owner's alone (ADR-0011).
-          if (patch.visibility === "private" && current.ownerId !== viewer.userId) {
-            return yield* invalid("visibility", "only the item owner can make it private")
+          if (
+            patch.visibility === 'private' &&
+            current.ownerId !== viewer.userId
+          ) {
+            return yield* invalid(
+              'visibility',
+              'only the item owner can make it private',
+            )
           }
           const parent = yield* loadList(viewer, current.listId)
           // A no-op field edit is still a write: a legacy shared item in a
           // private list must converge to private, exactly as the sync ceiling
           // does, rather than stay shared because the patch omitted visibility.
-          const visibility = patch.visibility !== undefined
-            ? yield* itemVisibility(parent, patch.visibility)
-            : parent.visibility === "private"
-            ? "private"
-            : current.visibility
+          const visibility =
+            patch.visibility !== undefined
+              ? yield* itemVisibility(parent, patch.visibility)
+              : parent.visibility === 'private'
+                ? 'private'
+                : current.visibility
           const next = new ListItem({
             ...current,
             name: patch.name?.trim() ?? current.name,
@@ -757,7 +852,7 @@ export class ListService extends Context.Service<ListService>()("ListService", {
             tagIds: patch.tagIds ?? current.tagIds,
             visibility,
             version: current.version + 1,
-            updatedAt: now
+            updatedAt: now,
           })
           if (
             next.name === current.name &&
@@ -770,13 +865,15 @@ export class ListService extends Context.Service<ListService>()("ListService", {
           }
           const applied = yield* commitGroups(
             viewer,
-            [{
-              state: itemState(next, viewer.userId),
-              expectedVersion: current.version,
-              clientMutationId: input.clientMutationId,
-              tagChanges: { previous: current.tagIds, next: next.tagIds }
-            }],
-            now
+            [
+              {
+                state: itemState(next, viewer.userId),
+                expectedVersion: current.version,
+                clientMutationId: input.clientMutationId,
+                tagChanges: { previous: current.tagIds, next: next.tagIds },
+              },
+            ],
+            now,
           )
           if (applied.has(input.clientMutationId)) return next
         }
@@ -786,10 +883,14 @@ export class ListService extends Context.Service<ListService>()("ListService", {
     const setItemChecked = (
       viewer: ListViewer,
       input: ListItemCheckInput,
-      now: string = new Date().toISOString()
+      now: string = new Date().toISOString(),
     ): Effect.Effect<ListItem, ListServiceError> =>
-      Effect.gen(function*() {
-        const replayed = yield* replayItem(viewer, input.clientMutationId, input.id)
+      Effect.gen(function* () {
+        const replayed = yield* replayItem(
+          viewer,
+          input.clientMutationId,
+          input.id,
+        )
         if (Option.isSome(replayed)) return replayed.value
 
         for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
@@ -802,18 +903,21 @@ export class ListService extends Context.Service<ListService>()("ListService", {
             ...current,
             done: input.checked,
             checkedAt: input.checked ? now : null,
-            visibility: parent.visibility === "private" ? "private" : current.visibility,
+            visibility:
+              parent.visibility === 'private' ? 'private' : current.visibility,
             version: current.version + 1,
-            updatedAt: now
+            updatedAt: now,
           })
           const applied = yield* commitGroups(
             viewer,
-            [{
-              state: itemState(next, viewer.userId),
-              expectedVersion: current.version,
-              clientMutationId: input.clientMutationId
-            }],
-            now
+            [
+              {
+                state: itemState(next, viewer.userId),
+                expectedVersion: current.version,
+                clientMutationId: input.clientMutationId,
+              },
+            ],
+            now,
           )
           if (applied.has(input.clientMutationId)) return next
         }
@@ -823,10 +927,14 @@ export class ListService extends Context.Service<ListService>()("ListService", {
     const deleteItem = (
       viewer: ListViewer,
       input: ListItemMutationInput,
-      now: string = new Date().toISOString()
+      now: string = new Date().toISOString(),
     ): Effect.Effect<ListItem, ListServiceError> =>
-      Effect.gen(function*() {
-        const replayed = yield* replayItem(viewer, input.clientMutationId, input.id)
+      Effect.gen(function* () {
+        const replayed = yield* replayItem(
+          viewer,
+          input.clientMutationId,
+          input.id,
+        )
         if (Option.isSome(replayed)) return replayed.value
 
         for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
@@ -835,17 +943,19 @@ export class ListService extends Context.Service<ListService>()("ListService", {
             ...current,
             version: current.version + 1,
             updatedAt: now,
-            deletedAt: now
+            deletedAt: now,
           })
           const applied = yield* commitGroups(
             viewer,
-            [{
-              state: itemState(next, viewer.userId),
-              expectedVersion: current.version,
-              clientMutationId: input.clientMutationId,
-              op: "delete"
-            }],
-            now
+            [
+              {
+                state: itemState(next, viewer.userId),
+                expectedVersion: current.version,
+                clientMutationId: input.clientMutationId,
+                op: 'delete',
+              },
+            ],
+            now,
           )
           if (applied.has(input.clientMutationId)) return next
         }
@@ -855,12 +965,13 @@ export class ListService extends Context.Service<ListService>()("ListService", {
     const reorder = (
       viewer: ListViewer,
       input: ListReorderInput,
-      now: string = new Date().toISOString()
+      now: string = new Date().toISOString(),
     ): Effect.Effect<ReadonlyArray<ListItem>, ListServiceError> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const listKey = `${input.clientMutationId}:list`
         const prior = yield* appliedMutations(viewer, [listKey])
-        if (prior.has(listKey)) return yield* listItems(viewer, { listId: input.listId })
+        if (prior.has(listKey))
+          return yield* listItems(viewer, { listId: input.listId })
 
         for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
           const currentList = yield* loadList(viewer, input.listId)
@@ -868,17 +979,23 @@ export class ListService extends Context.Service<ListService>()("ListService", {
             .listByList({
               listId: input.listId,
               householdId: viewer.householdId,
-              userId: viewer.userId
+              userId: viewer.userId,
             })
             .pipe(Effect.orDie)
           const all = yield* items
-            .listAllForList({ listId: input.listId, householdId: viewer.householdId })
+            .listAllForList({
+              listId: input.listId,
+              householdId: viewer.householdId,
+            })
             .pipe(Effect.orDie)
-          const visibleIds = new Set(visible.map((item) => item.id))
-          const byId = new Map(all.map((item) => [item.id, item]))
+          const visibleIds = new Set(visible.map(item => item.id))
+          const byId = new Map(all.map(item => [item.id, item]))
           for (const id of input.itemIds) {
             if (!visibleIds.has(id)) {
-              return yield* invalid("itemIds", "every reordered item must belong to this list")
+              return yield* invalid(
+                'itemIds',
+                'every reordered item must belong to this list',
+              )
             }
           }
           // Unknown or duplicate ids would silently drop rows; require a
@@ -887,25 +1004,27 @@ export class ListService extends Context.Service<ListService>()("ListService", {
             new Set(input.itemIds).size !== input.itemIds.length ||
             input.itemIds.length !== visible.length
           ) {
-            return yield* invalid("itemIds", "itemIds must contain every visible item exactly once")
+            return yield* invalid(
+              'itemIds',
+              'itemIds must contain every visible item exactly once',
+            )
           }
           const ordered = [
-            ...input.itemIds.map((id) => byId.get(id)!),
+            ...input.itemIds.map(id => byId.get(id)!),
             ...visible
-              .filter((item) => !input.itemIds.includes(item.id))
-              .map((item) => byId.get(item.id)!)
+              .filter(item => !input.itemIds.includes(item.id))
+              .map(item => byId.get(item.id)!),
           ]
           const hidden = all.filter(
-            (item) => !ordered.some((entry) => entry.id === item.id)
+            item => !ordered.some(entry => entry.id === item.id),
           )
           const final = [...ordered, ...hidden]
 
           const groups: Array<EntityGroup> = []
           final.forEach((item, index) => {
             const order = index + 1
-            const visibility = currentList.visibility === "private"
-              ? "private"
-              : item.visibility
+            const visibility =
+              currentList.visibility === 'private' ? 'private' : item.visibility
             if (item.order === order && item.visibility === visibility) return
             groups.push({
               state: itemState(
@@ -914,12 +1033,12 @@ export class ListService extends Context.Service<ListService>()("ListService", {
                   order,
                   visibility,
                   version: item.version + 1,
-                  updatedAt: now
+                  updatedAt: now,
                 }),
-                viewer.userId
+                viewer.userId,
               ),
               expectedVersion: item.version,
-              clientMutationId: `${input.clientMutationId}:item:${item.id}`
+              clientMutationId: `${input.clientMutationId}:item:${item.id}`,
             })
           })
           // The list's version bumps once per reorder (domain-model §3.8), so a
@@ -929,12 +1048,12 @@ export class ListService extends Context.Service<ListService>()("ListService", {
               new List({
                 ...currentList,
                 version: currentList.version + 1,
-                updatedAt: now
+                updatedAt: now,
               }),
-              viewer.userId
+              viewer.userId,
             ),
             expectedVersion: currentList.version,
-            clientMutationId: listKey
+            clientMutationId: listKey,
           })
 
           const applied = yield* commitGroups(viewer, groups, now)
@@ -957,14 +1076,14 @@ export class ListService extends Context.Service<ListService>()("ListService", {
       updateItem,
       setItemChecked,
       deleteItem,
-      reorder
+      reorder,
     } as const
-  })
+  }),
 }) {}
 
 export const ListServiceLive = Layer.effect(ListService, ListService.make).pipe(
   Layer.provide(ListRepoLive),
   Layer.provide(PlanningListItemRepoLive),
   Layer.provide(TagRepoLive),
-  Layer.provide(SyncRepoLive)
+  Layer.provide(SyncRepoLive),
 )

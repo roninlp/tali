@@ -47,6 +47,7 @@ export const OccasionRow = Schema.Struct({
   version: Schema.Int,
   hasSyncError: Schema.Boolean,
 })
+
 export type OccasionRow = typeof OccasionRow.Type
 
 export const OccasionDraft = Schema.Struct({
@@ -56,6 +57,7 @@ export const OccasionDraft = Schema.Struct({
   yearly: Schema.Boolean,
   advanceReminderDays: Schema.NullOr(Schema.Int),
 })
+
 export type OccasionDraft = typeof OccasionDraft.Type
 
 // PROJECTION
@@ -82,7 +84,8 @@ export const toOccasionRow = (record: MirrorRecord): OccasionRow =>
     color: asNullableString(record.data.color),
     ownerId: asNullableString(record.data.ownerId),
     visibility:
-      record.data.visibility === 'private' || record.data.visibility === 'shared'
+      record.data.visibility === 'private' ||
+      record.data.visibility === 'shared'
         ? record.data.visibility
         : defaultVisibilityFor('occasion'),
     createdAt:
@@ -169,6 +172,7 @@ export const OccasionEditPatch = Schema.Struct({
   yearly: Schema.optional(Schema.Boolean),
   advanceReminderDays: Schema.optional(Schema.NullOr(Schema.Int)),
 })
+
 export type OccasionEditPatch = typeof OccasionEditPatch.Type
 
 export const updateOccasionInMirror = async (
@@ -319,6 +323,7 @@ export const upcomingOccasions = (
     .sort((left, right) => {
       const leftDate = left.occurrence?.date ?? '9999-12-31'
       const rightDate = right.occurrence?.date ?? '9999-12-31'
+
       return (
         leftDate.localeCompare(rightDate) ||
         left.occasion.title.localeCompare(right.occasion.title, 'fa')

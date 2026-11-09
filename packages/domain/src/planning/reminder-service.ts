@@ -1,6 +1,11 @@
-import { Schema } from "effect"
-import { Visibility } from "../common.js"
-import { ReminderDispatchId, ReminderId, TimeZone, TimestampUtc } from "./common.js"
+import { Schema } from 'effect'
+import { Visibility } from '../common.js'
+import {
+  ReminderDispatchId,
+  ReminderId,
+  TimeZone,
+  TimestampUtc,
+} from './common.js'
 import {
   ClockTime,
   DispatchResponse,
@@ -8,9 +13,9 @@ import {
   ReminderDispatch,
   ReminderInboxItem,
   ReminderRepeat,
-  ReminderType
-} from "./reminder.js"
-import { ReminderLink } from "./reminder-link.js"
+  ReminderType,
+} from './reminder.js'
+import { ReminderLink } from './reminder-link.js'
 
 /**
  * `ReminderService` contract (ticket #60; FR-REM-01/03).
@@ -37,7 +42,7 @@ const reminderFields = {
   silencedUntil: Schema.NullOr(TimestampUtc),
   timeZone: TimeZone,
   color: Schema.NullOr(Schema.String),
-  visibility: Visibility
+  visibility: Visibility,
 }
 
 export const ReminderCreateInput = Schema.Struct({
@@ -56,7 +61,7 @@ export const ReminderCreateInput = Schema.Struct({
   silencedUntil: Schema.optional(reminderFields.silencedUntil),
   timeZone: Schema.optional(reminderFields.timeZone),
   color: Schema.optional(reminderFields.color),
-  visibility: Schema.optional(reminderFields.visibility)
+  visibility: Schema.optional(reminderFields.visibility),
 })
 export type ReminderCreateInput = Schema.Schema.Type<typeof ReminderCreateInput>
 
@@ -72,7 +77,7 @@ export const ReminderPatch = Schema.Struct({
   silencedUntil: Schema.optional(reminderFields.silencedUntil),
   timeZone: Schema.optional(reminderFields.timeZone),
   color: Schema.optional(reminderFields.color),
-  visibility: Schema.optional(reminderFields.visibility)
+  visibility: Schema.optional(reminderFields.visibility),
 })
 export type ReminderPatch = Schema.Schema.Type<typeof ReminderPatch>
 
@@ -81,20 +86,22 @@ export const ReminderUpdateInput = Schema.Struct({
   clientMutationId: Schema.String,
   /** Informational; the update re-reads and retries on a lost CAS. */
   baseVersion: Schema.optional(Schema.Int),
-  patch: ReminderPatch
+  patch: ReminderPatch,
 })
 export type ReminderUpdateInput = Schema.Schema.Type<typeof ReminderUpdateInput>
 
 /** Delete carries only the row id plus the replay key. */
 export const ReminderMutationInput = Schema.Struct({
   id: ReminderId,
-  clientMutationId: Schema.String
+  clientMutationId: Schema.String,
 })
-export type ReminderMutationInput = Schema.Schema.Type<typeof ReminderMutationInput>
+export type ReminderMutationInput = Schema.Schema.Type<
+  typeof ReminderMutationInput
+>
 
 export const ReminderListInput = Schema.Struct({
   /** Include trashed rows (the 30-day trash view). */
-  includeDeleted: Schema.optional(Schema.Boolean)
+  includeDeleted: Schema.optional(Schema.Boolean),
 })
 export type ReminderListInput = Schema.Schema.Type<typeof ReminderListInput>
 
@@ -110,28 +117,36 @@ export type ReminderListInput = Schema.Schema.Type<typeof ReminderListInput>
 export const ReminderRespondInput = Schema.Struct({
   dispatchId: ReminderDispatchId,
   response: DispatchResponse,
-  snoozeMinutes: Schema.optional(Schema.Int)
+  snoozeMinutes: Schema.optional(Schema.Int),
 })
-export type ReminderRespondInput = Schema.Schema.Type<typeof ReminderRespondInput>
+export type ReminderRespondInput = Schema.Schema.Type<
+  typeof ReminderRespondInput
+>
 
 /** The answered dispatch, the snooze child (if any), and the on-time verdict. */
 export const ReminderResponseResult = Schema.Struct({
   dispatch: ReminderDispatch,
   child: Schema.NullOr(ReminderDispatch),
-  onTime: Schema.Boolean
+  onTime: Schema.Boolean,
 })
-export type ReminderResponseResult = Schema.Schema.Type<typeof ReminderResponseResult>
+export type ReminderResponseResult = Schema.Schema.Type<
+  typeof ReminderResponseResult
+>
 
 /** `GET /reminders/inbox` payload (the ledger view + reminder summaries). */
 export const ReminderInboxResponse = Schema.Struct({
-  items: Schema.Array(ReminderInboxItem)
+  items: Schema.Array(ReminderInboxItem),
 })
-export type ReminderInboxResponse = Schema.Schema.Type<typeof ReminderInboxResponse>
+export type ReminderInboxResponse = Schema.Schema.Type<
+  typeof ReminderInboxResponse
+>
 
 /** `history=true` asks for the rows that rolled off the inbox view. */
 export const ReminderInboxQuery = Schema.Struct({
   history: Schema.optional(Schema.Boolean),
-  limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 200 })))
+  limit: Schema.optional(
+    Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 200 })),
+  ),
 })
 export type ReminderInboxQuery = Schema.Schema.Type<typeof ReminderInboxQuery>
 
@@ -139,9 +154,11 @@ export type ReminderInboxQuery = Schema.Schema.Type<typeof ReminderInboxQuery>
 export const ReminderRepeatPreset = Schema.Struct({
   id: Schema.String,
   label: Schema.String,
-  repeat: ReminderRepeat
+  repeat: ReminderRepeat,
 })
-export type ReminderRepeatPreset = Schema.Schema.Type<typeof ReminderRepeatPreset>
+export type ReminderRepeatPreset = Schema.Schema.Type<
+  typeof ReminderRepeatPreset
+>
 
 /**
  * The common patterns FR-REM-01 names. Kept in the shared package so the
@@ -152,15 +169,32 @@ export const REMINDER_REPEAT_PRESETS: ReadonlyArray<{
   readonly label: string
   readonly repeat: ReminderRepeat
 }> = [
-  { id: "once", label: "یک‌بار", repeat: { _tag: "once" } },
-  { id: "daily-22", label: "هر روز ۲۲:۰۰", repeat: { _tag: "daily", time: "22:00" } },
-  { id: "daily-08", label: "هر روز ۰۸:۰۰", repeat: { _tag: "daily", time: "08:00" } },
-  { id: "weekly-friday", label: "هر جمعه ۱۰:۰۰", repeat: { _tag: "weekly", days: [5], time: "10:00" } },
-  { id: "interval-8h", label: "هر ۸ ساعت", repeat: { _tag: "interval", hours: 8 } }
+  { id: 'once', label: 'یک‌بار', repeat: { _tag: 'once' } },
+  {
+    id: 'daily-22',
+    label: 'هر روز ۲۲:۰۰',
+    repeat: { _tag: 'daily', time: '22:00' },
+  },
+  {
+    id: 'daily-08',
+    label: 'هر روز ۰۸:۰۰',
+    repeat: { _tag: 'daily', time: '08:00' },
+  },
+  {
+    id: 'weekly-friday',
+    label: 'هر جمعه ۱۰:۰۰',
+    repeat: { _tag: 'weekly', days: [5], time: '10:00' },
+  },
+  {
+    id: 'interval-8h',
+    label: 'هر ۸ ساعت',
+    repeat: { _tag: 'interval', hours: 8 },
+  },
 ]
 
 /** A clock time is a valid local pattern input for the presets/pickers. */
-export const isClockTime = (value: string): value is ClockTime => /^([01]\d|2[0-3]):[0-5]\d$/.test(value)
+export const isClockTime = (value: string): value is ClockTime =>
+  /^([01]\d|2[0-3]):[0-5]\d$/.test(value)
 
 /** A weekday is in the 1..7 ISO range. */
 export const isIsoWeekday = (value: number): value is IsoWeekday =>
@@ -169,48 +203,56 @@ export const isIsoWeekday = (value: number): value is IsoWeekday =>
 // ── Typed errors (`docs/error-model-draft.md` §2) ────────────────────────
 
 /** The reminder does not exist, or is not visible to this viewer. */
-export class ReminderNotFound extends Schema.TaggedError<ReminderNotFound>()("ReminderNotFound", {
-  id: ReminderId
-}) {}
+export class ReminderNotFound extends Schema.TaggedError<ReminderNotFound>()(
+  'ReminderNotFound',
+  {
+    id: ReminderId,
+  },
+) {}
 
 /** The dispatch does not exist, or is not this viewer's to answer. */
 export class ReminderDispatchNotFound extends Schema.TaggedError<ReminderDispatchNotFound>()(
-  "ReminderDispatchNotFound",
-  { id: ReminderDispatchId }
+  'ReminderDispatchNotFound',
+  { id: ReminderDispatchId },
 ) {}
 
 /** The row exists but this viewer may not read/write it. */
 export class ReminderForbidden extends Schema.TaggedError<ReminderForbidden>()(
-  "ReminderForbidden",
+  'ReminderForbidden',
   {
     id: Schema.NullOr(Schema.String),
-    reason: Schema.Literals(["private", "household", "noHousehold"])
-  }
+    reason: Schema.Literals(['private', 'household', 'noHousehold']),
+  },
 ) {}
 
 /** Field-level validation (empty title, missing fire time, bad snooze preset, …). */
 export class ReminderValidationError extends Schema.TaggedError<ReminderValidationError>()(
-  "ReminderValidationError",
+  'ReminderValidationError',
   {
     issues: Schema.Array(
       Schema.Struct({
         field: Schema.String,
-        message: Schema.String
-      })
-    )
-  }
+        message: Schema.String,
+      }),
+    ),
+  },
 ) {}
 
 /** A concurrent writer won the version CAS; the caller may retry. */
-export class ReminderConflict extends Schema.TaggedError<ReminderConflict>()("ReminderConflict", {
-  id: Schema.String
-}) {}
+export class ReminderConflict extends Schema.TaggedError<ReminderConflict>()(
+  'ReminderConflict',
+  {
+    id: Schema.String,
+  },
+) {}
 
 export const ReminderServiceError = Schema.Union([
   ReminderNotFound,
   ReminderDispatchNotFound,
   ReminderForbidden,
   ReminderValidationError,
-  ReminderConflict
+  ReminderConflict,
 ])
-export type ReminderServiceError = Schema.Schema.Type<typeof ReminderServiceError>
+export type ReminderServiceError = Schema.Schema.Type<
+  typeof ReminderServiceError
+>

@@ -35,6 +35,7 @@ export const QueuedReminderAction = Schema.Struct({
   /** ISO-8601 timestamp written by the service worker. */
   at: Schema.String,
 })
+
 export type QueuedReminderAction = typeof QueuedReminderAction.Type
 
 /** The `tali:reminder-action` message the worker broadcasts after a tap. */
@@ -45,6 +46,7 @@ export const ReminderActionMessage = Schema.Struct({
   snoozeMinutes: Schema.optional(Schema.Int),
   at: Schema.String,
 })
+
 export type ReminderActionMessage = typeof ReminderActionMessage.Type
 
 const decodeQueuedAction = Schema.decodeUnknownOption(QueuedReminderAction)
@@ -66,6 +68,7 @@ const openDatabase = (): Effect.Effect<IDBDatabase, PushQueueError> =>
 
         request.onupgradeneeded = () => {
           const db = request.result
+
           if (!db.objectStoreNames.contains(PUSH_ACTIONS_STORE)) {
             db.createObjectStore(PUSH_ACTIONS_STORE, {
               keyPath: 'seq',
@@ -120,6 +123,7 @@ export const readQueuedReminderActions: Effect.Effect<
   }
 
   const rows = yield* withDatabase(readRows)
+
   return Array.getSomes(Array.map(rows, row => decodeQueuedAction(row)))
 }).pipe(Effect.catch(() => Effect.succeed([])))
 
@@ -169,6 +173,7 @@ export const flushQueuedReminderActions = (
               }
 
               const deleted = yield* deleteQueuedReminderAction(seq)
+
               return deleted ? count + 1 : count
             }),
         }),

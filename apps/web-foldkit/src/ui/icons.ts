@@ -151,14 +151,10 @@ export const clockIcon = (className: string): Html =>
   ])
 
 export const chevronLeftIcon = (className: string): Html =>
-  strokeIcon(className, [
-    ih.path([...roundCaps(), ih.D('M15 18l-6-6 6-6')]),
-  ])
+  strokeIcon(className, [ih.path([...roundCaps(), ih.D('M15 18l-6-6 6-6')])])
 
 export const chevronRightIcon = (className: string): Html =>
-  strokeIcon(className, [
-    ih.path([...roundCaps(), ih.D('M9 6l6 6-6 6')]),
-  ])
+  strokeIcon(className, [ih.path([...roundCaps(), ih.D('M9 6l6 6-6 6')])])
 
 export const closeIcon = (className: string): Html =>
   strokeIcon(className, [

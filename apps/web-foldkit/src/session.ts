@@ -19,4 +19,5 @@ export const Session = Schema.Struct({
   }),
   householdId: Schema.NullOr(Schema.String),
 })
+
 export type Session = typeof Session.Type

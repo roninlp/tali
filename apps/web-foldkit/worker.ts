@@ -65,6 +65,7 @@ export default {
     ) {
       const target = new URL(request.url)
       target.pathname = url.pathname.slice(API_PREFIX.length) || '/'
+
       // Passing the original request as the init keeps method, headers, body
       // and the caller's `cf` metadata; only the URL changes.
       return env.API.fetch(new Request(target, request))

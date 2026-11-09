@@ -133,6 +133,7 @@ describe('mirror projection', () => {
 
 it('projects an annual occasion onto this year’s Jalali date', () => {
   const origin = toIsoDate(addJalaliMonths(toJalaliDate(TODAY), -36))
+
   const week = weekFromMirror({
     tasks: [],
     events: [],
@@ -186,6 +187,7 @@ describe('source selection and overlays', () => {
 
   it('overlays a pending local write on the server rows', () => {
     const task = calendarTask({ title: 'محلی' })
+
     const view = weekView({
       maybeServerWeek: weekPayload({
         tasks: [
@@ -215,6 +217,7 @@ describe('source selection and overlays', () => {
 
   it('drops a locally deleted series from the server snapshot', () => {
     const row = eventRow()
+
     const view = weekView({
       maybeServerWeek: weekPayload({
         events: [
@@ -297,6 +300,7 @@ describe('source selection and overlays', () => {
 
   it('drops a locally deleted occasion', () => {
     const row = occasionRow()
+
     const merged = overlayOccasionSources({
       base: [occasionSourceOf(row)],
       mirror: [],

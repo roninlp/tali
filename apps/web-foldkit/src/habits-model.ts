@@ -41,6 +41,7 @@ export const HabitFrequency = Schema.Union([
     times: Schema.Int,
   }),
 ])
+
 export type HabitFrequency = typeof HabitFrequency.Type
 
 const dailyFrequency = (): HabitFrequency => ({ _tag: 'daily' })
@@ -49,6 +50,7 @@ export const HabitFrequencyChange = Schema.Struct({
   effectiveFrom: Schema.String,
   frequency: HabitFrequency,
 })
+
 export type HabitFrequencyChange = typeof HabitFrequencyChange.Type
 
 export const HabitRow = Schema.Struct({
@@ -69,6 +71,7 @@ export const HabitRow = Schema.Struct({
   version: Schema.Int,
   hasSyncError: Schema.Boolean,
 })
+
 export type HabitRow = typeof HabitRow.Type
 
 export const HabitEntryRow = Schema.Struct({
@@ -80,6 +83,7 @@ export const HabitEntryRow = Schema.Struct({
   updatedAt: Schema.String,
   version: Schema.Int,
 })
+
 export type HabitEntryRow = typeof HabitEntryRow.Type
 
 const asString = (value: unknown): string | null =>
@@ -119,6 +123,7 @@ export const parseHabitFrequency = (value: unknown): HabitFrequency => {
 
   if (tag === 'weekly') {
     const times = Reflect.get(value, 'times')
+
     if (
       typeof times === 'number' &&
       Number.isInteger(times) &&
@@ -146,17 +151,20 @@ const parseHistory = (
   }
 
   const seed: Array<HabitFrequencyChange> = []
+
   const eras = Array.reduce(value, seed, (acc, raw) => {
     if (typeof raw !== 'object' || raw === null) {
       return acc
     }
 
     const effectiveFrom = asString(Reflect.get(raw, 'effectiveFrom'))
+
     if (effectiveFrom === null || !/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom)) {
       return acc
     }
 
     const previous = Array.last(acc)
+
     if (Option.exists(previous, era => era.effectiveFrom >= effectiveFrom)) {
       return acc
     }
@@ -195,6 +203,7 @@ export const toHabitRow = (record: MirrorRecord): HabitRow => {
   const frequency = parseHabitFrequency(record.data.frequency)
   const createdAt = asString(record.data.createdAt) ?? record.updatedAt
   const startedOnRaw = asString(record.data.startedOn)
+
   const startedOn =
     startedOnRaw !== null && /^\d{4}-\d{2}-\d{2}$/.test(startedOnRaw)
       ? startedOnRaw
@@ -218,7 +227,8 @@ export const toHabitRow = (record: MirrorRecord): HabitRow => {
     ownerId:
       typeof record.data.ownerId === 'string' ? record.data.ownerId : null,
     visibility:
-      record.data.visibility === 'private' || record.data.visibility === 'shared'
+      record.data.visibility === 'private' ||
+      record.data.visibility === 'shared'
         ? record.data.visibility
         : defaultVisibilityFor('habit'),
     createdAt,
@@ -254,12 +264,14 @@ export const sortHabitRows = (
 ): ReadonlyArray<HabitRow> =>
   [...rows].sort((left, right) => {
     const byCreated = compareText(left.createdAt, right.createdAt)
+
     return byCreated !== 0 ? byCreated : compareText(left.title, right.title)
   })
 
 // ── Streak and rate projection ───────────────────────────────────────────
 
 export const HabitWindowDays = Schema.Literals([7, 30, 90])
+
 export type HabitWindowDays = typeof HabitWindowDays.Type
 
 export const HABIT_WINDOW_DAYS: ReadonlyArray<HabitWindowDays> = [7, 30, 90]
@@ -331,6 +343,7 @@ export const habitFrequencyLabel = (
         [...days].sort((left, right) => {
           const leftIndex = PERSIAN_WEEKDAY_ORDER.indexOf(left)
           const rightIndex = PERSIAN_WEEKDAY_ORDER.indexOf(right)
+
           return leftIndex < rightIndex ? -1 : leftIndex > rightIndex ? 1 : 0
         }),
         weekdayName,
@@ -369,6 +382,7 @@ export const habitBestLabel = (
 ): string => {
   const best =
     result.current.unit === 'week' ? result.best.weeks : result.best.days
+
   const unit = result.current.unit === 'week' ? 'هفته' : 'روز'
 
   return best === 0
@@ -427,16 +441,19 @@ export const habitRateCopy = (
 ): HabitRateCopy => {
   if (result.rate !== null) {
     const percent = Math.round(result.rate * 100)
+
     return { kind: 'rate', label: `${localizeDigits(percent, digits)}٪` }
   }
 
   const progress = habitOpenProgressLabel(result, digits)
+
   if (progress !== null) {
     return { kind: 'progress', label: progress }
   }
 
   if (result.open !== null) {
     const suffix = result.open.unit === 'week' ? 'این هفته' : 'امروز'
+
     return {
       kind: 'progress',
       label: `${localizeDigits(result.open.credit, digits)} از ${localizeDigits(
@@ -546,6 +563,7 @@ export const habitHeatmapMonth = (input: {
   const weekStart = input.weekStart ?? 'saturday'
   const grid = jalaliMonthGrid(input.year, input.month, { weekStart })
   const offset = weekStartOffset(weekStart)
+
   const weekdayLabels = Array.makeBy(7, index =>
     weekdayName(PERSIAN_WEEKDAY_ORDER[(offset + index) % 7] ?? 6),
   )
@@ -606,6 +624,7 @@ export const HabitFrequencyMode = Schema.Literals([
   'weekdays',
   'weekly',
 ])
+
 export type HabitFrequencyMode = typeof HabitFrequencyMode.Type
 
 export const HABIT_COLORS: ReadonlyArray<

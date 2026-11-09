@@ -1,18 +1,18 @@
-import { Schema } from "effect"
-import { Temporal } from "temporal-polyfill/full"
-import { WeekStart } from "../common.js"
+import { Schema } from 'effect'
+import { Temporal } from 'temporal-polyfill/full'
+import { WeekStart } from '../common.js'
 import {
   jalaliMonthGrid,
   jalaliWeek,
   toIsoDate,
   toJalaliDate,
-  toJalaliDateInZone
-} from "../jalali.js"
+  toJalaliDateInZone,
+} from '../jalali.js'
 import {
   occurrenceDates,
   RecurrenceRule,
-  TaskRecurrenceMode
-} from "../recurrence.js"
+  TaskRecurrenceMode,
+} from '../recurrence.js'
 import {
   EventId,
   LocalDate,
@@ -20,19 +20,19 @@ import {
   Priority,
   TaskId,
   TaskStatus,
-  TimeZone
-} from "./common.js"
-import { EventException, EventTiming } from "./event.js"
+  TimeZone,
+} from './common.js'
+import { EventException, EventTiming } from './event.js'
 import {
   eventOccurrences,
   EventOccurrence,
-  type EventOccurrenceSource
-} from "./event-recurrence.js"
+  type EventOccurrenceSource,
+} from './event-recurrence.js'
 import {
   occasionOccurrences,
   OccasionOccurrence,
-  type OccasionSource
-} from "./occasion-projection.js"
+  type OccasionSource,
+} from './occasion-projection.js'
 
 /**
  * Week and month read models (ticket #43; FR-VIEW-02/03).
@@ -94,7 +94,7 @@ export const CalendarLaneCounts = Schema.Struct({
   events: Schema.Int,
   occasions: Schema.Int,
   reminders: Schema.Int,
-  habits: Schema.Int
+  habits: Schema.Int,
 })
 export type CalendarLaneCounts = Schema.Schema.Type<typeof CalendarLaneCounts>
 
@@ -103,7 +103,7 @@ export const CalendarLaneEmpty = Schema.Struct({
   events: Schema.Boolean,
   occasions: Schema.Boolean,
   reminders: Schema.Boolean,
-  habits: Schema.Boolean
+  habits: Schema.Boolean,
 })
 export type CalendarLaneEmpty = Schema.Schema.Type<typeof CalendarLaneEmpty>
 
@@ -124,7 +124,7 @@ export const CalendarTaskItem = Schema.Struct({
   date: LocalDate,
   projected: Schema.Boolean,
   /** True when the item belongs to a recurring series (projected or real). */
-  recurring: Schema.Boolean
+  recurring: Schema.Boolean,
 })
 export type CalendarTaskItem = Schema.Schema.Type<typeof CalendarTaskItem>
 
@@ -143,7 +143,7 @@ export const CalendarSourceTask = Schema.Struct({
   dueDate: Schema.NullOr(LocalDate),
   dueAt: Schema.NullOr(Schema.String),
   recurrence: Schema.NullOr(RecurrenceRule),
-  recurrenceMode: Schema.NullOr(TaskRecurrenceMode)
+  recurrenceMode: Schema.NullOr(TaskRecurrenceMode),
 })
 export type CalendarSourceTask = Schema.Schema.Type<typeof CalendarSourceTask>
 
@@ -166,7 +166,7 @@ export const CalendarSourceEvent = Schema.Struct({
   timing: EventTiming,
   timeZone: TimeZone,
   recurrence: Schema.NullOr(RecurrenceRule),
-  exceptions: Schema.Array(EventException)
+  exceptions: Schema.Array(EventException),
 })
 export type CalendarSourceEvent = Schema.Schema.Type<typeof CalendarSourceEvent>
 
@@ -182,9 +182,11 @@ export const CalendarSourceOccasion = Schema.Struct({
   originDate: LocalDate,
   timeZone: TimeZone,
   yearly: Schema.Boolean,
-  advanceReminderDays: Schema.NullOr(Schema.Int)
+  advanceReminderDays: Schema.NullOr(Schema.Int),
 })
-export type CalendarSourceOccasion = Schema.Schema.Type<typeof CalendarSourceOccasion>
+export type CalendarSourceOccasion = Schema.Schema.Type<
+  typeof CalendarSourceOccasion
+>
 
 export const CalendarDayView = Schema.Struct({
   date: LocalDate,
@@ -194,7 +196,7 @@ export const CalendarDayView = Schema.Struct({
   /** The occasion lane, projected from the origin date alone (#59/#62). */
   occasions: Schema.Array(OccasionOccurrence),
   counts: CalendarLaneCounts,
-  empty: CalendarLaneEmpty
+  empty: CalendarLaneEmpty,
 })
 export type CalendarDayView = Schema.Schema.Type<typeof CalendarDayView>
 
@@ -210,7 +212,7 @@ export const WeekReadModel = Schema.Struct({
   /** The live rows this week was projected from (for local-first overlays). */
   tasks: Schema.Array(CalendarSourceTask),
   events: Schema.Array(CalendarSourceEvent),
-  occasions: Schema.Array(CalendarSourceOccasion)
+  occasions: Schema.Array(CalendarSourceOccasion),
 })
 export type WeekReadModel = Schema.Schema.Type<typeof WeekReadModel>
 
@@ -230,7 +232,7 @@ export const MonthDaySummary = Schema.Struct({
   /** Busy day marks count annual occasions too (#62). */
   occasions: Schema.Int,
   busyLevel: Schema.Int,
-  counts: CalendarLaneCounts
+  counts: CalendarLaneCounts,
 })
 export type MonthDaySummary = Schema.Schema.Type<typeof MonthDaySummary>
 
@@ -247,14 +249,14 @@ export const MonthReadModel = Schema.Struct({
     busyDays: Schema.Int,
     tasks: Schema.Int,
     events: Schema.Int,
-    occasions: Schema.Int
+    occasions: Schema.Int,
   }),
   /** The live rows this month was projected from (for local-first overlays). */
   tasks: Schema.Array(CalendarSourceTask),
   events: Schema.Array(CalendarSourceEvent),
   occasions: Schema.Array(CalendarSourceOccasion),
   /** Drill-down for the requested day; `null` when none was asked for. */
-  day: Schema.NullOr(CalendarDayView)
+  day: Schema.NullOr(CalendarDayView),
 })
 export type MonthReadModel = Schema.Schema.Type<typeof MonthReadModel>
 
@@ -297,40 +299,44 @@ export interface CalendarRange {
 // ── Calendar ranges ──────────────────────────────────────────────────────
 
 const asLocalDate = (value: string | Temporal.PlainDate): LocalDate =>
-  (typeof value === "string" ? toIsoDate(toJalaliDate(value)) : toIsoDate(value)) as LocalDate
+  (typeof value === 'string'
+    ? toIsoDate(toJalaliDate(value))
+    : toIsoDate(value)) as LocalDate
 
 /** The seven days of `anchor`'s configured week, in display order. */
 export const weekDates = (
   anchor: string | Temporal.PlainDate,
-  weekStart: WeekStart
+  weekStart: WeekStart,
 ): ReadonlyArray<LocalDate> =>
-  jalaliWeek(toJalaliDate(anchor), weekStart).map((date) =>
-    toIsoDate(date)
+  jalaliWeek(toJalaliDate(anchor), weekStart).map(date =>
+    toIsoDate(date),
   ) as ReadonlyArray<LocalDate>
 
 export const weekRange = (
   anchor: string | Temporal.PlainDate,
-  weekStart: WeekStart
+  weekStart: WeekStart,
 ): CalendarRange => {
   const days = weekDates(anchor, weekStart)
   return {
     start: days[0]!,
     end: days[days.length - 1]!,
     endExclusive: toIsoDate(
-      Temporal.PlainDate.from(days[days.length - 1]!).add({ days: 1 })
-    ) as LocalDate
+      Temporal.PlainDate.from(days[days.length - 1]!).add({ days: 1 }),
+    ) as LocalDate,
   }
 }
 
 /** The single-day range a month drill-down is projected over. */
-export const singleDayRange = (date: string | Temporal.PlainDate): CalendarRange => {
+export const singleDayRange = (
+  date: string | Temporal.PlainDate,
+): CalendarRange => {
   const day = asLocalDate(date)
   return {
     start: day,
     end: day,
     endExclusive: toIsoDate(
-      Temporal.PlainDate.from(day).add({ days: 1 })
-    ) as LocalDate
+      Temporal.PlainDate.from(day).add({ days: 1 }),
+    ) as LocalDate,
   }
 }
 
@@ -341,7 +347,7 @@ export interface JalaliMonthKey {
 
 /** The Jalali year/month containing `anchor`. */
 export const jalaliMonthOf = (
-  anchor: string | Temporal.PlainDate
+  anchor: string | Temporal.PlainDate,
 ): JalaliMonthKey => {
   const jalali = toJalaliDate(anchor)
   return { year: jalali.year, month: jalali.month }
@@ -351,26 +357,34 @@ export const jalaliMonthOf = (
 export const monthRange = (
   year: number,
   month: number,
-  weekStart: WeekStart
-): CalendarRange & { readonly days: ReadonlyArray<{ readonly date: LocalDate; readonly inMonth: boolean }> } => {
+  weekStart: WeekStart,
+): CalendarRange & {
+  readonly days: ReadonlyArray<{
+    readonly date: LocalDate
+    readonly inMonth: boolean
+  }>
+} => {
   const grid = jalaliMonthGrid(year, month, { weekStart })
-  const days = grid.weeks.flatMap((week) =>
-    week.days.map((day) => ({
+  const days = grid.weeks.flatMap(week =>
+    week.days.map(day => ({
       date: toIsoDate(day.date) as LocalDate,
-      inMonth: day.inMonth
-    }))
+      inMonth: day.inMonth,
+    })),
   )
   return {
     start: days[0]!.date,
     end: days[days.length - 1]!.date,
     endExclusive: toIsoDate(grid.end.add({ days: 1 })) as LocalDate,
-    days
+    days,
   }
 }
 
 // ── Occurrence expansion ─────────────────────────────────────────────────
 
-const localDateOfInstant = (instant: string, timeZone: string): string | null => {
+const localDateOfInstant = (
+  instant: string,
+  timeZone: string,
+): string | null => {
   const millis = Date.parse(instant)
   if (!Number.isFinite(millis)) return null
   return toIsoDate(toJalaliDateInZone(new Date(millis), timeZone))
@@ -380,13 +394,13 @@ const priorityRank: Record<Priority, number> = { high: 0, medium: 1, low: 2 }
 
 const compareItems = (a: CalendarTaskItem, b: CalendarTaskItem): number =>
   priorityRank[a.priority] - priorityRank[b.priority] ||
-  a.title.localeCompare(b.title, "fa") ||
+  a.title.localeCompare(b.title, 'fa') ||
   a.key.localeCompare(b.key)
 
 const item = (
   source: CalendarTaskSource,
   date: LocalDate,
-  projected: boolean
+  projected: boolean,
 ): CalendarTaskItem => ({
   key: projected ? `${source.id}@${date}` : source.id,
   id: source.id as TaskId,
@@ -395,7 +409,7 @@ const item = (
   priority: source.priority,
   date,
   projected,
-  recurring: source.recurrence !== null
+  recurring: source.recurrence !== null,
 })
 
 const inRange = (date: string, range: CalendarRange): boolean =>
@@ -423,10 +437,12 @@ export const taskOccurrences = (input: {
   for (const task of input.tasks) byId.set(task.id, task)
 
   for (const task of byId.values()) {
-    if (task.status === "done") continue
-    const dueDate = task.dueDate ?? (
-      task.dueAt === null ? null : localDateOfInstant(task.dueAt, input.timeZone)
-    )
+    if (task.status === 'done') continue
+    const dueDate =
+      task.dueDate ??
+      (task.dueAt === null
+        ? null
+        : localDateOfInstant(task.dueAt, input.timeZone))
     if (dueDate === null) continue
 
     if (inRange(dueDate, input.range)) {
@@ -439,14 +455,14 @@ export const taskOccurrences = (input: {
 
     if (
       task.recurrence === null ||
-      (task.recurrenceMode ?? "onDueDate") === "onCompletion"
+      (task.recurrenceMode ?? 'onDueDate') === 'onCompletion'
     ) {
       continue
     }
 
     const projected = occurrenceDates(task.recurrence, dueDate, {
       from: input.range.start,
-      to: input.range.end
+      to: input.range.end,
     })
     for (const date of projected) {
       if (date === dueDate) continue
@@ -458,7 +474,7 @@ export const taskOccurrences = (input: {
   }
 
   return occurrences.sort(
-    (a, b) => a.date.localeCompare(b.date) || compareItems(a, b)
+    (a, b) => a.date.localeCompare(b.date) || compareItems(a, b),
   )
 }
 
@@ -469,27 +485,27 @@ const EMPTY_COUNTS: CalendarLaneCounts = {
   events: 0,
   occasions: 0,
   reminders: 0,
-  habits: 0
+  habits: 0,
 }
 
 const emptyFlags = (
   tasks: number,
   events: number,
-  occasions: number
+  occasions: number,
 ): CalendarLaneEmpty => ({
   tasks: tasks === 0,
   events: events === 0,
   occasions: occasions === 0,
   // Quiet until the reminder/habit lanes get their own screens (#61/#66).
   reminders: true,
-  habits: true
+  habits: true,
 })
 
 const dayViewFrom = (
   date: LocalDate,
   items: ReadonlyArray<CalendarTaskItem>,
   events: ReadonlyArray<EventOccurrence>,
-  occasions: ReadonlyArray<OccasionOccurrence>
+  occasions: ReadonlyArray<OccasionOccurrence>,
 ): CalendarDayView => ({
   date,
   tasks: items,
@@ -499,13 +515,13 @@ const dayViewFrom = (
     ...EMPTY_COUNTS,
     tasks: items.length,
     events: events.length,
-    occasions: occasions.length
+    occasions: occasions.length,
   },
-  empty: emptyFlags(items.length, events.length, occasions.length)
+  empty: emptyFlags(items.length, events.length, occasions.length),
 })
 
 const itemsByDate = (
-  occurrences: ReadonlyArray<CalendarTaskItem>
+  occurrences: ReadonlyArray<CalendarTaskItem>,
 ): ReadonlyMap<string, ReadonlyArray<CalendarTaskItem>> => {
   const map = new Map<string, Array<CalendarTaskItem>>()
   for (const occurrence of occurrences) {
@@ -517,7 +533,7 @@ const itemsByDate = (
 }
 
 const eventsByDate = (
-  occurrences: ReadonlyArray<EventOccurrence>
+  occurrences: ReadonlyArray<EventOccurrence>,
 ): ReadonlyMap<string, ReadonlyArray<EventOccurrence>> => {
   const map = new Map<string, Array<EventOccurrence>>()
   for (const occurrence of occurrences) {
@@ -529,7 +545,7 @@ const eventsByDate = (
 }
 
 const occasionsByDate = (
-  occurrences: ReadonlyArray<OccasionOccurrence>
+  occurrences: ReadonlyArray<OccasionOccurrence>,
 ): ReadonlyMap<string, ReadonlyArray<OccasionOccurrence>> => {
   const map = new Map<string, Array<OccasionOccurrence>>()
   for (const occurrence of occurrences) {
@@ -542,11 +558,11 @@ const occasionsByDate = (
 
 /** Deduped source rows, in the wire shape the client overlays. */
 const sourceRows = (
-  tasks: ReadonlyArray<CalendarTaskSource>
+  tasks: ReadonlyArray<CalendarTaskSource>,
 ): ReadonlyArray<CalendarSourceTask> => {
   const byId = new Map<string, CalendarTaskSource>()
   for (const task of tasks) byId.set(task.id, task)
-  return [...byId.values()].map((task) => ({
+  return [...byId.values()].map(task => ({
     id: task.id as TaskId,
     title: task.title,
     status: task.status,
@@ -554,17 +570,17 @@ const sourceRows = (
     dueDate: task.dueDate as LocalDate | null,
     dueAt: task.dueAt,
     recurrence: task.recurrence,
-    recurrenceMode: task.recurrenceMode
+    recurrenceMode: task.recurrenceMode,
   }))
 }
 
 /** Deduped event rows, in the wire shape the client overlays. */
 const sourceEvents = (
-  events: ReadonlyArray<CalendarEventSource>
+  events: ReadonlyArray<CalendarEventSource>,
 ): ReadonlyArray<CalendarSourceEvent> => {
   const byId = new Map<string, CalendarEventSource>()
   for (const event of events) byId.set(event.id, event)
-  return [...byId.values()].map((event) => ({
+  return [...byId.values()].map(event => ({
     id: event.id as EventId,
     title: event.title,
     description: event.description,
@@ -575,36 +591,36 @@ const sourceEvents = (
     timing: event.timing,
     timeZone: event.timeZone as TimeZone,
     recurrence: event.recurrence,
-    exceptions: [...event.exceptions]
+    exceptions: [...event.exceptions],
   }))
 }
 
 /** Deduped occasion rows, in the wire shape the client overlays. */
 const sourceOccasions = (
-  occasions: ReadonlyArray<CalendarOccasionSource>
+  occasions: ReadonlyArray<CalendarOccasionSource>,
 ): ReadonlyArray<CalendarSourceOccasion> => {
   const byId = new Map<string, CalendarOccasionSource>()
   for (const occasion of occasions) byId.set(occasion.id, occasion)
-  return [...byId.values()].map((occasion) => ({
+  return [...byId.values()].map(occasion => ({
     id: occasion.id as OccasionId,
     title: occasion.title,
     color: occasion.color,
     originDate: occasion.originDate as LocalDate,
     timeZone: occasion.timeZone as TimeZone,
     yearly: occasion.yearly,
-    advanceReminderDays: occasion.advanceReminderDays
+    advanceReminderDays: occasion.advanceReminderDays,
   }))
 }
 
 const addCounts = (
   total: CalendarLaneCounts,
-  day: CalendarLaneCounts
+  day: CalendarLaneCounts,
 ): CalendarLaneCounts => ({
   tasks: total.tasks + day.tasks,
   events: total.events + day.events,
   occasions: total.occasions + day.occasions,
   reminders: total.reminders + day.reminders,
-  habits: total.habits + day.habits
+  habits: total.habits + day.habits,
 })
 
 /**
@@ -634,32 +650,32 @@ export const buildWeekReadModel = (input: BuildWeekInput): WeekReadModel => {
   const occurrences = taskOccurrences({
     tasks: input.tasks,
     range,
-    timeZone: input.timeZone
+    timeZone: input.timeZone,
   })
   const events = eventOccurrences({
     events: input.events ?? [],
     from: range.start,
     to: range.end,
-    timeZone: input.timeZone
+    timeZone: input.timeZone,
   })
   const occasions = occasionOccurrences({
     occasions: input.occasions ?? [],
-    range: { from: range.start, to: range.end }
+    range: { from: range.start, to: range.end },
   })
   const grouped = itemsByDate(occurrences)
   const eventsGrouped = eventsByDate(events)
   const occasionsGrouped = occasionsByDate(occasions)
-  const days = weekDates(input.anchor, input.weekStart).map((date) =>
+  const days = weekDates(input.anchor, input.weekStart).map(date =>
     dayViewFrom(
       date,
       grouped.get(date) ?? [],
       eventsGrouped.get(date) ?? [],
-      occasionsGrouped.get(date) ?? []
-    )
+      occasionsGrouped.get(date) ?? [],
+    ),
   )
   const totals = days.reduce(
     (sum, day) => addCounts(sum, day.counts),
-    EMPTY_COUNTS
+    EMPTY_COUNTS,
   )
   return {
     start: range.start,
@@ -671,7 +687,7 @@ export const buildWeekReadModel = (input: BuildWeekInput): WeekReadModel => {
     empty: emptyFlags(totals.tasks, totals.events, totals.occasions),
     tasks: sourceRows(input.tasks),
     events: sourceEvents(input.events ?? []),
-    occasions: sourceOccasions(input.occasions ?? [])
+    occasions: sourceOccasions(input.occasions ?? []),
   }
 }
 
@@ -695,22 +711,22 @@ export const buildMonthReadModel = (input: BuildMonthInput): MonthReadModel => {
   const occurrences = taskOccurrences({
     tasks: input.tasks,
     range,
-    timeZone: input.timeZone
+    timeZone: input.timeZone,
   })
   const events = eventOccurrences({
     events: input.events ?? [],
     from: range.start,
     to: range.end,
-    timeZone: input.timeZone
+    timeZone: input.timeZone,
   })
   const occasions = occasionOccurrences({
     occasions: input.occasions ?? [],
-    range: { from: range.start, to: range.end }
+    range: { from: range.start, to: range.end },
   })
   const grouped = itemsByDate(occurrences)
   const eventsGrouped = eventsByDate(events)
   const occasionsGrouped = occasionsByDate(occasions)
-  const days: Array<MonthDaySummary> = range.days.map((cell) => {
+  const days: Array<MonthDaySummary> = range.days.map(cell => {
     const tasks = grouped.get(cell.date)?.length ?? 0
     const dayEvents = eventsGrouped.get(cell.date)?.length ?? 0
     const dayOccasions = occasionsGrouped.get(cell.date)?.length ?? 0
@@ -719,7 +735,7 @@ export const buildMonthReadModel = (input: BuildMonthInput): MonthReadModel => {
       ...EMPTY_COUNTS,
       tasks,
       events: dayEvents,
-      occasions: dayOccasions
+      occasions: dayOccasions,
     }
     return {
       date: cell.date,
@@ -729,38 +745,38 @@ export const buildMonthReadModel = (input: BuildMonthInput): MonthReadModel => {
       events: dayEvents,
       occasions: dayOccasions,
       busyLevel: busyLevelOf(busy),
-      counts
+      counts,
     }
   })
 
-  const inMonthDays = days.filter((day) => day.inMonth)
+  const inMonthDays = days.filter(day => day.inMonth)
   const totals = {
-    busyDays: inMonthDays.filter((day) => day.isBusy).length,
+    busyDays: inMonthDays.filter(day => day.isBusy).length,
     tasks: inMonthDays.reduce((sum, day) => sum + day.tasks, 0),
     events: inMonthDays.reduce((sum, day) => sum + day.events, 0),
-    occasions: inMonthDays.reduce((sum, day) => sum + day.occasions, 0)
+    occasions: inMonthDays.reduce((sum, day) => sum + day.occasions, 0),
   }
 
   let day: CalendarDayView | null = null
-  if (input.day !== undefined && input.day !== null && input.day !== "") {
+  if (input.day !== undefined && input.day !== null && input.day !== '') {
     const drillRange = singleDayRange(input.day)
     day = dayViewFrom(
       drillRange.start,
       taskOccurrences({
         tasks: input.tasks,
         range: drillRange,
-        timeZone: input.timeZone
+        timeZone: input.timeZone,
       }),
       eventOccurrences({
         events: input.events ?? [],
         from: drillRange.start,
         to: drillRange.end,
-        timeZone: input.timeZone
+        timeZone: input.timeZone,
       }),
       occasionOccurrences({
         occasions: input.occasions ?? [],
-        range: { from: drillRange.start, to: drillRange.end }
-      })
+        range: { from: drillRange.start, to: drillRange.end },
+      }),
     )
   }
 
@@ -776,6 +792,6 @@ export const buildMonthReadModel = (input: BuildMonthInput): MonthReadModel => {
     tasks: sourceRows(input.tasks),
     events: sourceEvents(input.events ?? []),
     occasions: sourceOccasions(input.occasions ?? []),
-    day
+    day,
   }
 }

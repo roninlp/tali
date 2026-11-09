@@ -1,6 +1,10 @@
-import { Context, Effect, Layer, Option } from "effect"
-import { SqlClient } from "effect/sql"
-import { type DashboardSection, UserPreferences, type UserId } from "@tali/domain"
+import { Context, Effect, Layer, Option } from 'effect'
+import { SqlClient } from 'effect/sql'
+import {
+  type DashboardSection,
+  UserPreferences,
+  type UserId,
+} from '@tali/domain'
 
 /**
  * D1-backed repository for `UserPreferences` (ticket #35).
@@ -17,23 +21,29 @@ const PREFERENCE_COLUMNS =
   `checked_item_placement AS checkedItemPlacement, ` +
   `created_at AS createdAt, updated_at AS updatedAt`
 
-interface PreferencesRow extends Omit<UserPreferences, "dashboardSectionOrder"> {
+interface PreferencesRow extends Omit<
+  UserPreferences,
+  'dashboardSectionOrder'
+> {
   readonly dashboardSectionOrder: string
 }
 
 const toPreferences = (row: PreferencesRow): UserPreferences =>
   new UserPreferences({
     ...row,
-    dashboardSectionOrder: JSON.parse(row.dashboardSectionOrder) as ReadonlyArray<DashboardSection>
+    dashboardSectionOrder: JSON.parse(
+      row.dashboardSectionOrder,
+    ) as ReadonlyArray<DashboardSection>,
   })
 
-const encodeSectionOrder = (sections: ReadonlyArray<DashboardSection>): string =>
-  JSON.stringify(sections)
+const encodeSectionOrder = (
+  sections: ReadonlyArray<DashboardSection>,
+): string => JSON.stringify(sections)
 
 export class UserPreferencesRepo extends Context.Service<UserPreferencesRepo>()(
-  "UserPreferencesRepo",
+  'UserPreferencesRepo',
   {
-    make: Effect.gen(function*() {
+    make: Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient
 
       const findByUser = (userId: UserId) =>
@@ -43,7 +53,7 @@ export class UserPreferencesRepo extends Context.Service<UserPreferencesRepo>()(
             FROM user_preferences
             WHERE user_id = ${userId}
           `,
-          (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toPreferences)
+          rows => Option.map(Option.fromUndefinedOr(rows[0]), toPreferences),
         )
 
       /**
@@ -72,15 +82,15 @@ export class UserPreferencesRepo extends Context.Service<UserPreferencesRepo>()(
               updated_at = excluded.updated_at
             RETURNING ${sql.literal(PREFERENCE_COLUMNS)}
           `,
-          (rows) => toPreferences(rows[0]!)
+          rows => toPreferences(rows[0]!),
         )
 
       return { findByUser, upsert } as const
-    })
-  }
+    }),
+  },
 ) {}
 
 export const UserPreferencesRepoLive = Layer.effect(
   UserPreferencesRepo,
-  UserPreferencesRepo.make
+  UserPreferencesRepo.make,
 )

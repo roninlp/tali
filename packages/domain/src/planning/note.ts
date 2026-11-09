@@ -1,7 +1,7 @@
-import { Schema } from "effect"
-import { Model } from "effect/schema"
-import { Visibility } from "../common.js"
-import { commonItemFields, NoteId, TagIds } from "./common.js"
+import { Schema } from 'effect'
+import { Model } from 'effect/schema'
+import { Visibility } from '../common.js'
+import { commonItemFields, NoteId, TagIds } from './common.js'
 
 /**
  * `Note` aggregate (FR-NOTE-01/03, docs/domain-model-draft.md §3.7).
@@ -11,8 +11,8 @@ import { commonItemFields, NoteId, TagIds } from "./common.js"
  * it so full-text search (#41) never has to walk the document at query time.
  * Trash is a soft delete (`deletedAt`) with a 30-day purge.
  */
-export class Note extends Model.Class<Note>("Note")({
-  ...commonItemFields("note", NoteId),
+export class Note extends Model.Class<Note>('Note')({
+  ...commonItemFields('note', NoteId),
   /** Resolved from the note's `shareable` policy (ADR-0011); default `private`. */
   visibility: Visibility,
   title: Schema.String,
@@ -22,7 +22,7 @@ export class Note extends Model.Class<Note>("Note")({
   isPinned: Schema.Boolean,
   isArchived: Schema.Boolean,
   /** Denormalized tag ids; `item_tags` remains the source of truth. */
-  tagIds: TagIds
+  tagIds: TagIds,
 }) {}
 
 export const NoteCreate = Schema.Struct({
@@ -33,6 +33,6 @@ export const NoteCreate = Schema.Struct({
   isArchived: Schema.optional(Schema.Boolean),
   tagIds: Schema.optional(TagIds),
   color: Schema.optional(Schema.NullOr(Schema.String)),
-  visibility: Schema.optional(Visibility)
+  visibility: Schema.optional(Visibility),
 })
 export type NoteCreate = Schema.Schema.Type<typeof NoteCreate>

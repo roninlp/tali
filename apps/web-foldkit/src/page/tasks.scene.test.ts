@@ -583,6 +583,7 @@ describe('task visibility control', () => {
     ownerId: USER_ID,
     visibility: 'private' as const,
   }
+
   const ownerInputs = {
     mirror: { ...defaultInputs().mirror, tasks: [ownerTask] },
   }

@@ -1,4 +1,4 @@
-import type { SyncEntityType, SyncOp, SyncPushEntry } from "@tali/domain"
+import type { SyncEntityType, SyncOp, SyncPushEntry } from '@tali/domain'
 
 /**
  * The local-first client store types.
@@ -124,8 +124,13 @@ export interface LocalStore {
    * Soft-deleted rows for the trash view. Trash is a tombstone in the mirror,
    * not a separate store: the same row can be restored in place.
    */
-  listTrashed: (entityType: SyncEntityType) => Promise<ReadonlyArray<MirrorRecord>>
-  get: (entityType: SyncEntityType, entityId: string) => Promise<MirrorRecord | undefined>
+  listTrashed: (
+    entityType: SyncEntityType,
+  ) => Promise<ReadonlyArray<MirrorRecord>>
+  get: (
+    entityType: SyncEntityType,
+    entityId: string,
+  ) => Promise<MirrorRecord | undefined>
 
   /**
    * Apply a local mutation: write the mirror row **and** append the outbox
@@ -165,7 +170,9 @@ export interface LocalStore {
    * so a fold either lands before the mark (and travels here) or sees
    * `sent === true` and queues its own entry.
    */
-  markSent: (clientMutationIds: ReadonlyArray<string>) => Promise<ReadonlyArray<OutboxRecord>>
+  markSent: (
+    clientMutationIds: ReadonlyArray<string>,
+  ) => Promise<ReadonlyArray<OutboxRecord>>
 
   /**
    * Apply server-authoritative rows. Rows with a pending local mutation are
@@ -191,7 +198,7 @@ export interface LocalStore {
     clientMutationIds: ReadonlyArray<string>,
     rows?: ReadonlyArray<ServerRow>,
     failures?: ReadonlyArray<SyncFailure & EntityRef>,
-    resolved?: ReadonlyArray<EntityRef>
+    resolved?: ReadonlyArray<EntityRef>,
   ) => Promise<void>
 
   /**
@@ -203,7 +210,7 @@ export interface LocalStore {
    */
   retryFailed: (
     entityType: SyncEntityType,
-    entityId: string
+    entityId: string,
   ) => Promise<MirrorRecord | undefined>
 
   /**
@@ -212,7 +219,10 @@ export interface LocalStore {
    * purge), which is "remove from mirror", not a soft delete
    * (`docs/sync-protocol-draft.md` §3.1/DP-9).
    */
-  removeFromMirror: (entityType: SyncEntityType, entityId: string) => Promise<void>
+  removeFromMirror: (
+    entityType: SyncEntityType,
+    entityId: string,
+  ) => Promise<void>
 
   /**
    * Empty the mirror without touching the outbox, cursor or drafts. Used by

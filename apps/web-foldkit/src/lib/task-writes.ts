@@ -81,6 +81,7 @@ export const TaskEditPatch = Schema.Struct({
   projectId: Schema.optional(Schema.NullOr(Schema.String)),
   tagIds: Schema.optional(Schema.Array(Schema.String)),
 })
+
 export type TaskEditPatch = typeof TaskEditPatch.Type
 
 const localTaskPatch = (

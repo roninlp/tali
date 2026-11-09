@@ -1,7 +1,7 @@
-import { env } from "cloudflare:workers"
-import fc from "fast-check"
-import { describe, expect, it } from "vitest"
-import { uuidV7 } from "@tali/domain"
+import { env } from 'cloudflare:workers'
+import fc from 'fast-check'
+import { describe, expect, it } from 'vitest'
+import { uuidV7 } from '@tali/domain'
 import {
   assertAcknowledgements,
   assertConverged,
@@ -15,16 +15,16 @@ import {
   syncConcurrently,
   syncDevice,
   type Account,
-  type Device
-} from "./harness"
-import { resolveLabMode } from "./mode"
+  type Device,
+} from './harness'
+import { resolveLabMode } from './mode'
 import {
   decodeWriteToken,
   TOKEN,
   TOKEN_COUNT,
   WRITE_TOKEN_COUNT,
-  type WriteKind
-} from "./program"
+  type WriteKind,
+} from './program'
 
 /**
  * The conflict simulator (ticket #83 / the #81 verification strategy).
@@ -44,7 +44,7 @@ import {
 const NUM_RUNS = LAB_MODE.numRuns
 const MAX_STEPS = LAB_MODE.maxSteps
 
-type EntityType = "task" | "listItem" | "note"
+type EntityType = 'task' | 'listItem' | 'note'
 
 /** A fixed pool of rows the two devices can address. */
 interface Slot {
@@ -53,12 +53,12 @@ interface Slot {
 }
 
 const makeSlots = (): ReadonlyArray<Slot> => [
-  { entityType: "task", id: uuidV7() },
-  { entityType: "task", id: uuidV7() },
-  { entityType: "listItem", id: uuidV7() },
-  { entityType: "listItem", id: uuidV7() },
-  { entityType: "note", id: uuidV7() },
-  { entityType: "note", id: uuidV7() }
+  { entityType: 'task', id: uuidV7() },
+  { entityType: 'task', id: uuidV7() },
+  { entityType: 'listItem', id: uuidV7() },
+  { entityType: 'listItem', id: uuidV7() },
+  { entityType: 'note', id: uuidV7() },
+  { entityType: 'note', id: uuidV7() },
 ]
 
 const title = (step: number): string => `عنوان-${step}`
@@ -73,15 +73,20 @@ const writeToken = async (
   slot: Slot,
   kind: WriteKind,
   step: number,
-  run: string
+  run: string,
 ): Promise<void> => {
   const current = await device.store.get(slot.entityType, slot.id)
 
   if (kind === 2) {
     await queueWrite(
       device,
-      { entityType: slot.entityType, entityId: slot.id, op: "delete", patch: {} },
-      `${run}-${device.label}-${step}-delete`
+      {
+        entityType: slot.entityType,
+        entityId: slot.id,
+        op: 'delete',
+        patch: {},
+      },
+      `${run}-${device.label}-${step}-delete`,
     )
     return
   }
@@ -94,10 +99,10 @@ const writeToken = async (
       {
         entityType: slot.entityType,
         entityId: slot.id,
-        op: "upsert",
-        patch: { title: title(step) }
+        op: 'upsert',
+        patch: { title: title(step) },
       },
-      `${run}-${device.label}-${step}-revive`
+      `${run}-${device.label}-${step}-revive`,
     )
     return
   }
@@ -108,31 +113,31 @@ const writeToken = async (
     }
     const choice = step % 3
     switch (slot.entityType) {
-      case "task":
+      case 'task':
         return choice === 0
           ? { title: title(step) }
           : choice === 1
-          ? { status: step % 2 === 0 ? "done" : "todo" }
-          : { priority: step % 2 === 0 ? "high" : "low" }
-      case "listItem":
+            ? { status: step % 2 === 0 ? 'done' : 'todo' }
+            : { priority: step % 2 === 0 ? 'high' : 'low' }
+      case 'listItem':
         return choice === 0
           ? { title: title(step) }
           : choice === 1
-          ? { checked: step % 2 === 0 }
-          : { sortOrder: step }
-      case "note":
+            ? { checked: step % 2 === 0 }
+            : { sortOrder: step }
+      case 'note':
         return choice === 0
           ? { title: title(step) }
           : choice === 1
-          ? { plainText: `متن-${step}` }
-          : { isPinned: step % 2 === 0 }
+            ? { plainText: `متن-${step}` }
+            : { isPinned: step % 2 === 0 }
     }
   })()
 
   await queueWrite(
     device,
-    { entityType: slot.entityType, entityId: slot.id, op: "upsert", patch },
-    `${run}-${device.label}-${step}-write`
+    { entityType: slot.entityType, entityId: slot.id, op: 'upsert', patch },
+    `${run}-${device.label}-${step}-write`,
   )
 }
 
@@ -144,7 +149,7 @@ const past = (offsetMs: number): string =>
 
 interface Probe {
   readonly id: string
-  readonly field: "title" | "priority"
+  readonly field: 'title' | 'priority'
   readonly expected: string
 }
 
@@ -156,20 +161,20 @@ interface Probe {
 const runDisjointProbe = async (
   devices: readonly [Device, Device],
   step: number,
-  run: string
+  run: string,
 ): Promise<Probe> => {
   const id = uuidV7()
   const expectedTitle = `probe-a-${step}`
   await queueWrite(
     devices[0],
     {
-      entityType: "task",
+      entityType: 'task',
       entityId: id,
-      op: "upsert",
-      patch: { title: "probe", priority: "medium" },
-      now: future(0)
+      op: 'upsert',
+      patch: { title: 'probe', priority: 'medium' },
+      now: future(0),
     },
-    `${run}-probe${step}-create`
+    `${run}-probe${step}-create`,
   )
   await syncDevice(devices[0])
   await syncDevice(devices[1])
@@ -177,27 +182,27 @@ const runDisjointProbe = async (
   await queueWrite(
     devices[0],
     {
-      entityType: "task",
+      entityType: 'task',
       entityId: id,
-      op: "upsert",
+      op: 'upsert',
       patch: { title: expectedTitle },
-      now: future(10_000)
+      now: future(10_000),
     },
-    `${run}-probe${step}-title`
+    `${run}-probe${step}-title`,
   )
   await queueWrite(
     devices[1],
     {
-      entityType: "task",
+      entityType: 'task',
       entityId: id,
-      op: "upsert",
-      patch: { priority: "high" },
-      now: future(11_000)
+      op: 'upsert',
+      patch: { priority: 'high' },
+      now: future(11_000),
     },
-    `${run}-probe${step}-priority`
+    `${run}-probe${step}-priority`,
   )
   await syncConcurrently(devices)
-  return { id, field: "title", expected: expectedTitle }
+  return { id, field: 'title', expected: expectedTitle }
 }
 
 /**
@@ -208,20 +213,20 @@ const runDisjointProbe = async (
 const runLwwProbe = async (
   devices: readonly [Device, Device],
   step: number,
-  run: string
+  run: string,
 ): Promise<Probe> => {
   const id = uuidV7()
   const newer = `lww-newer-${step}`
   await queueWrite(
     devices[0],
     {
-      entityType: "task",
+      entityType: 'task',
       entityId: id,
-      op: "upsert",
-      patch: { title: "base" },
-      now: future(0)
+      op: 'upsert',
+      patch: { title: 'base' },
+      now: future(0),
     },
-    `${run}-lww${step}-create`
+    `${run}-lww${step}-create`,
   )
   await syncDevice(devices[0])
   await syncDevice(devices[1])
@@ -231,35 +236,35 @@ const runLwwProbe = async (
   await queueWrite(
     devices[0],
     {
-      entityType: "task",
+      entityType: 'task',
       entityId: id,
-      op: "upsert",
+      op: 'upsert',
       patch: { title: newer },
-      now: future(10_000)
+      now: future(10_000),
     },
-    `${run}-lww${step}-newer`
+    `${run}-lww${step}-newer`,
   )
   // Land the newer edit before the older one is even written.
   await settle([devices[0]])
   await queueWrite(
     devices[1],
     {
-      entityType: "task",
+      entityType: 'task',
       entityId: id,
-      op: "upsert",
+      op: 'upsert',
       patch: { title: `lww-older-${step}` },
-      now: past(0)
+      now: past(0),
     },
-    `${run}-lww${step}-older`
+    `${run}-lww${step}-older`,
   )
   await settle([devices[1]])
-  return { id, field: "title", expected: newer }
+  return { id, field: 'title', expected: newer }
 }
 
 const runProgram = async (
   devices: readonly [Device, Device],
   slots: ReadonlyArray<Slot>,
-  tokens: ReadonlyArray<number>
+  tokens: ReadonlyArray<number>,
 ): Promise<ReadonlyArray<Probe>> => {
   const probes: Array<Probe> = []
   // `applied_mutations` is keyed only by `clientMutationId`, so ids must be
@@ -271,7 +276,13 @@ const runProgram = async (
     const token = tokens[step]!
     if (token < WRITE_TOKEN_COUNT) {
       const write = decodeWriteToken(token)
-      await writeToken(devices[write.device], slots[write.slot]!, write.kind, step, run)
+      await writeToken(
+        devices[write.device],
+        slots[write.slot]!,
+        write.kind,
+        step,
+        run,
+      )
       continue
     }
     switch (token) {
@@ -317,11 +328,11 @@ const runProgram = async (
 /** The probes are semantic oracles: convergence alone cannot catch a clobber. */
 const assertProbes = async (
   probes: ReadonlyArray<Probe>,
-  account: Account
+  account: Account,
 ): Promise<void> => {
   if (probes.length === 0) return
   const rows = new Map(
-    (await serverSnapshot(account)).map((row) => [row.entityId, row])
+    (await serverSnapshot(account)).map(row => [row.entityId, row]),
   )
   for (const probe of probes) {
     const row = rows.get(probe.id)
@@ -331,23 +342,23 @@ const assertProbes = async (
     const actual = row.data[probe.field]
     if (actual !== probe.expected) {
       throw new Error(
-        `probe ${probe.id} expected ${probe.field}=${probe.expected}, got ${String(actual)}`
+        `probe ${probe.id} expected ${probe.field}=${probe.expected}, got ${String(actual)}`,
       )
     }
-    if (probe.field === "title") {
+    if (probe.field === 'title') {
       const priority = row.data.priority
       // The disjoint probe also requires the *other* device's field to survive.
-      if (probe.expected.startsWith("probe-a-") && priority !== "high") {
+      if (probe.expected.startsWith('probe-a-') && priority !== 'high') {
         throw new Error(
-          `probe ${probe.id} lost the concurrent priority write (got ${String(priority)})`
+          `probe ${probe.id} lost the concurrent priority write (got ${String(priority)})`,
         )
       }
     }
   }
 }
 
-describe("two-device convergence", () => {
-  it("converges over arbitrary interleavings of writes, pulls and pushes", async () => {
+describe('two-device convergence', () => {
+  it('converges over arbitrary interleavings of writes, pulls and pushes', async () => {
     // The run length must follow the CLI flag, not a `process.env` read that
     // workerd cannot see (that silently made nightly == PR CI).
     expect(LAB_MODE).toEqual(resolveLabMode(env.CONFLICT_LAB_NIGHTLY))
@@ -356,14 +367,14 @@ describe("two-device convergence", () => {
       fc.asyncProperty(
         fc.array(fc.integer({ min: 0, max: TOKEN_COUNT - 1 }), {
           minLength: 1,
-          maxLength: MAX_STEPS
+          maxLength: MAX_STEPS,
         }),
-        async (tokens) => {
-          const account = await registerAccount("sim")
+        async tokens => {
+          const account = await registerAccount('sim')
           await createHousehold(account)
           const devices: readonly [Device, Device] = [
-            await openDevice(account, "A"),
-            await openDevice(account, "B")
+            await openDevice(account, 'A'),
+            await openDevice(account, 'B'),
           ]
           try {
             const probes = await runProgram(devices, makeSlots(), tokens)
@@ -374,13 +385,13 @@ describe("two-device convergence", () => {
           } finally {
             for (const device of devices) device.store.close()
           }
-        }
+        },
       ),
       {
         numRuns: NUM_RUNS,
         endOnFailure: true,
-        verbose: true
-      }
+        verbose: true,
+      },
     )
   })
 })

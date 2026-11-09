@@ -37,6 +37,7 @@ export const Model = Schema.Struct({
   hasSucceeded: Schema.Boolean,
   isSubmitting: Schema.Boolean,
 })
+
 export type Model = typeof Model.Type
 
 export const initialModel = (): Model =>
@@ -64,6 +65,7 @@ export const Message = defineMessageUnion({
   SucceededChangePassword: {},
   FailedChangePassword: { failure: AuthFailure },
 })
+
 export type Message = typeof Message.Type
 
 // COMMAND
@@ -105,6 +107,7 @@ export const ChangePassword = Command.define('ChangePassword', {
         currentPassword,
         maybeEmail.value,
       )
+
       const maybeNewLoginKey = yield* requestLoginKey(
         newPassword,
         maybeEmail.value,

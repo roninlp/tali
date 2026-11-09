@@ -1,8 +1,14 @@
-import { Schema } from "effect"
-import { Model } from "effect/schema"
-import { Visibility } from "../common.js"
-import { commonItemFields, ReminderDispatchId, ReminderId, TimeZone, TimestampUtc } from "./common.js"
-import { ReminderLink } from "./reminder-link.js"
+import { Schema } from 'effect'
+import { Model } from 'effect/schema'
+import { Visibility } from '../common.js'
+import {
+  commonItemFields,
+  ReminderDispatchId,
+  ReminderId,
+  TimeZone,
+  TimestampUtc,
+} from './common.js'
+import { ReminderLink } from './reminder-link.js'
 
 /**
  * `Reminder` aggregate (FR-REM-01, docs/domain-model-draft.md §3.6).
@@ -44,7 +50,12 @@ import { ReminderLink } from "./reminder-link.js"
  * does not shift the pattern — the pattern's local time already is the fire
  * time. The service derives `fireAt` from the repeat + link at write time.
  */
-export const ReminderType = Schema.Literals(["medication", "exercise", "chore", "general"])
+export const ReminderType = Schema.Literals([
+  'medication',
+  'exercise',
+  'chore',
+  'general',
+])
 export type ReminderType = Schema.Schema.Type<typeof ReminderType>
 
 /**
@@ -52,7 +63,7 @@ export type ReminderType = Schema.Schema.Type<typeof ReminderType>
  * "critical = medication"; #13 §2.2 settles that only medication is critical
  * in the MVP.
  */
-export const ReminderTier = Schema.Literals(["normal", "critical"])
+export const ReminderTier = Schema.Literals(['normal', 'critical'])
 export type ReminderTier = Schema.Schema.Type<typeof ReminderTier>
 
 /**
@@ -60,46 +71,48 @@ export type ReminderTier = Schema.Schema.Type<typeof ReminderTier>
  * missed inbox and the reminder list say the same thing.
  */
 export const REMINDER_KIND_LABELS: Readonly<Record<ReminderType, string>> = {
-  medication: "دارو",
-  exercise: "ورزش",
-  chore: "کار خانه",
-  general: "یادآوری"
+  medication: 'دارو',
+  exercise: 'ورزش',
+  chore: 'کار خانه',
+  general: 'یادآوری',
 }
 
 /** Local wall-clock time `HH:mm` (00:00–23:59), interpreted in the reminder's zone. */
 export const ClockTime = Schema.String.check(
-  Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/)
+  Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/),
 )
 export type ClockTime = Schema.Schema.Type<typeof ClockTime>
 
 /** ISO weekday, 1 = Monday … 7 = Sunday — the numbering the recurrence engine uses. */
-export const IsoWeekday = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 7 }))
+export const IsoWeekday = Schema.Int.check(
+  Schema.isBetween({ minimum: 1, maximum: 7 }),
+)
 export type IsoWeekday = Schema.Schema.Type<typeof IsoWeekday>
 
 export const ReminderRepeat = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal("once") }),
+  Schema.Struct({ _tag: Schema.Literal('once') }),
   Schema.Struct({
-    _tag: Schema.Literal("daily"),
+    _tag: Schema.Literal('daily'),
     /** Local `HH:mm` in the reminder's zone. */
-    time: ClockTime
+    time: ClockTime,
   }),
   Schema.Struct({
-    _tag: Schema.Literal("weekly"),
+    _tag: Schema.Literal('weekly'),
     /** The weekdays it repeats on. */
     days: Schema.Array(IsoWeekday).check(Schema.isMinLength(1)),
     /** Local `HH:mm` in the reminder's zone. */
-    time: ClockTime
+    time: ClockTime,
   }),
   Schema.Struct({
-    _tag: Schema.Literal("interval"),
+    _tag: Schema.Literal('interval'),
     /** "Every N hours" — the medication pattern. */
-    hours: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))
-  })
+    hours: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+  }),
 ])
 export type ReminderRepeat = Schema.Schema.Type<typeof ReminderRepeat>
 
-export class Reminder extends Model.Class<Reminder>("Reminder")({
-  ...commonItemFields("reminder", ReminderId),
+export class Reminder extends Model.Class<Reminder>('Reminder')({
+  ...commonItemFields('reminder', ReminderId),
   /** Resolved from the reminder's `shareable` policy (ADR-0011); default `private`. */
   visibility: Visibility,
   /** The reminder's own heading ("داروی فشار"). */
@@ -118,18 +131,23 @@ export class Reminder extends Model.Class<Reminder>("Reminder")({
   /** Series-level silence ("silence until"): pauses every fire before it. */
   silencedUntil: Schema.NullOr(TimestampUtc),
   /** The IANA zone the repeat's local time is read in. */
-  timeZone: TimeZone
+  timeZone: TimeZone,
 }) {}
 
 /** The answer a dispatch can receive (#13 §2.3). */
-export const DispatchResponse = Schema.Literals(["done", "snooze", "dismiss"])
+export const DispatchResponse = Schema.Literals(['done', 'snooze', 'dismiss'])
 export type DispatchResponse = Schema.Schema.Type<typeof DispatchResponse>
 
 /** Where a ledger row came from: a schedule claim or a snooze of another row. */
 export const DispatchOrigin = Schema.String
 
 /** Push lifecycle of a claimed dispatch. `accepted` means the push service took it, not that a device saw it. */
-export const PushOutcome = Schema.Literals(["pending", "accepted", "failed", "expired"])
+export const PushOutcome = Schema.Literals([
+  'pending',
+  'accepted',
+  'failed',
+  'expired',
+])
 export type PushOutcome = Schema.Schema.Type<typeof PushOutcome>
 
 /**
@@ -140,7 +158,9 @@ export type PushOutcome = Schema.Schema.Type<typeof PushOutcome>
  * `response` is the log the adherence metric reads; `rootScheduledFor` keeps
  * the on-time window anchored to the original fire across snoozes.
  */
-export class ReminderDispatch extends Model.Class<ReminderDispatch>("ReminderDispatch")({
+export class ReminderDispatch extends Model.Class<ReminderDispatch>(
+  'ReminderDispatch',
+)({
   id: Model.UuidV7Insert(ReminderDispatchId),
   reminderId: ReminderId,
   /** The owner whose devices should receive it (never a household-wide broadcast). */
@@ -160,7 +180,7 @@ export class ReminderDispatch extends Model.Class<ReminderDispatch>("ReminderDis
   response: Schema.NullOr(DispatchResponse),
   respondedAt: Schema.NullOr(TimestampUtc),
   snoozedUntil: Schema.NullOr(TimestampUtc),
-  createdAt: TimestampUtc
+  createdAt: TimestampUtc,
 }) {}
 
 /**
@@ -180,6 +200,6 @@ export const ReminderInboxItem = Schema.Struct({
   /** The reminder's resolved visibility, so the inbox can offer Share/Unshare. */
   visibility: Visibility,
   /** `inbox` = unanswered and under 24 h old; `history` = everything else. */
-  state: Schema.Literals(["inbox", "history"])
+  state: Schema.Literals(['inbox', 'history']),
 })
 export type ReminderInboxItem = Schema.Schema.Type<typeof ReminderInboxItem>

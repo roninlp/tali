@@ -7,7 +7,7 @@
  */
 
 const HEX: ReadonlyArray<string> = Array.from({ length: 256 }, (_, i) =>
-  i.toString(16).padStart(2, "0")
+  i.toString(16).padStart(2, '0'),
 )
 
 /**
@@ -35,11 +35,25 @@ export const uuidV7 = (now: number = Date.now()): string => {
 
   const hex = HEX
   return (
-    hex[bytes[0]!]! + hex[bytes[1]!]! + hex[bytes[2]!]! + hex[bytes[3]!]! + "-" +
-    hex[bytes[4]!]! + hex[bytes[5]!]! + "-" +
-    hex[bytes[6]!]! + hex[bytes[7]!]! + "-" +
-    hex[bytes[8]!]! + hex[bytes[9]!]! + "-" +
-    hex[bytes[10]!]! + hex[bytes[11]!]! + hex[bytes[12]!]! + hex[bytes[13]!]! +
-    hex[bytes[14]!]! + hex[bytes[15]!]!
+    hex[bytes[0]!]! +
+    hex[bytes[1]!]! +
+    hex[bytes[2]!]! +
+    hex[bytes[3]!]! +
+    '-' +
+    hex[bytes[4]!]! +
+    hex[bytes[5]!]! +
+    '-' +
+    hex[bytes[6]!]! +
+    hex[bytes[7]!]! +
+    '-' +
+    hex[bytes[8]!]! +
+    hex[bytes[9]!]! +
+    '-' +
+    hex[bytes[10]!]! +
+    hex[bytes[11]!]! +
+    hex[bytes[12]!]! +
+    hex[bytes[13]!]! +
+    hex[bytes[14]!]! +
+    hex[bytes[15]!]!
   )
 }

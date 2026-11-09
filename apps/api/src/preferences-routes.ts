@@ -1,9 +1,18 @@
-import { Effect, Schema } from "effect"
-import { HttpRouter, HttpServerError, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { PreferencesPatch, Unauthorized, type PreferenceDefaults } from "@tali/domain"
-import { AuthService } from "./auth-service.js"
-import { SESSION_COOKIE } from "./auth-routes.js"
-import { PreferencesService } from "./preferences-service.js"
+import { Effect, Schema } from 'effect'
+import {
+  HttpRouter,
+  HttpServerError,
+  HttpServerRequest,
+  HttpServerResponse,
+} from 'effect/http'
+import {
+  PreferencesPatch,
+  Unauthorized,
+  type PreferenceDefaults,
+} from '@tali/domain'
+import { AuthService } from './auth-service.js'
+import { SESSION_COOKIE } from './auth-routes.js'
+import { PreferencesService } from './preferences-service.js'
 
 /**
  * Per-user preferences over plain HTTP (ticket #35).
@@ -19,26 +28,28 @@ import { PreferencesService } from "./preferences-service.js"
 
 const json = (
   status: number,
-  body: unknown
+  body: unknown,
 ): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
   HttpServerResponse.json(body, { status }).pipe(
-    Effect.map(HttpServerResponse.setHeader("cache-control", "no-store")),
-    Effect.orDie
+    Effect.map(HttpServerResponse.setHeader('cache-control', 'no-store')),
+    Effect.orDie,
   )
 
 const fail = (
   status: number,
-  code: "Unauthorized" | "BadRequest" | "InternalError",
+  code: 'Unauthorized' | 'BadRequest' | 'InternalError',
   message: string,
-  retryable = false
+  retryable = false,
 ): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
   json(status, { error: { code, message, retryable, details: {} } })
 
 /** Malformed preferences are the client's fault (400); anything else is a 500. */
-const unexpectedFailure = (error: unknown): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
+const unexpectedFailure = (
+  error: unknown,
+): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
   Schema.isSchemaError(error) || HttpServerError.isHttpServerError(error)
-    ? fail(400, "BadRequest", "Malformed preferences")
-    : fail(500, "InternalError", "Unexpected server error", true)
+    ? fail(400, 'BadRequest', 'Malformed preferences')
+    : fail(500, 'InternalError', 'Unexpected server error', true)
 
 /** The profile values a user has never overridden in preferences. */
 const profileDefaults = (context: {
@@ -46,17 +57,17 @@ const profileDefaults = (context: {
 }): PreferenceDefaults => ({
   timeZone: context.user.timeZone,
   weekStart: context.user.weekStart,
-  digits: context.user.digits
+  digits: context.user.digits,
 })
 
-export const PreferencesRoutes = HttpRouter.use((router) =>
-  Effect.gen(function*() {
+export const PreferencesRoutes = HttpRouter.use(router =>
+  Effect.gen(function* () {
     const auth = yield* AuthService
     const preferences = yield* PreferencesService
 
     /** Resolve the cookie's principal; preferences never accept a user id. */
     const authenticate = (request: HttpServerRequest.HttpServerRequest) =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const token = request.cookies[SESSION_COOKIE]
         if (token === undefined) {
           return yield* Effect.fail(new Unauthorized())
@@ -65,44 +76,47 @@ export const PreferencesRoutes = HttpRouter.use((router) =>
       })
 
     yield* router.add(
-      "GET",
-      "/preferences",
-      Effect.gen(function*() {
+      'GET',
+      '/preferences',
+      Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
         const context = yield* authenticate(request)
-        const current = yield* preferences.get(context.user.id, profileDefaults(context))
+        const current = yield* preferences.get(
+          context.user.id,
+          profileDefaults(context),
+        )
         return yield* json(200, { preferences: current })
       }).pipe(
         Effect.catchTags(
           {
-            Unauthorized: () => fail(401, "Unauthorized", "No active session")
+            Unauthorized: () => fail(401, 'Unauthorized', 'No active session'),
           },
-          unexpectedFailure
-        )
-      )
+          unexpectedFailure,
+        ),
+      ),
     )
 
     yield* router.add(
-      "PATCH",
-      "/preferences",
-      Effect.gen(function*() {
+      'PATCH',
+      '/preferences',
+      Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
         const context = yield* authenticate(request)
         const patch = yield* HttpServerRequest.schemaBodyJson(PreferencesPatch)
         const current = yield* preferences.update(
           context.user.id,
           patch,
-          profileDefaults(context)
+          profileDefaults(context),
         )
         return yield* json(200, { preferences: current })
       }).pipe(
         Effect.catchTags(
           {
-            Unauthorized: () => fail(401, "Unauthorized", "No active session")
+            Unauthorized: () => fail(401, 'Unauthorized', 'No active session'),
           },
-          unexpectedFailure
-        )
-      )
+          unexpectedFailure,
+        ),
+      ),
     )
-  })
+  }),
 )

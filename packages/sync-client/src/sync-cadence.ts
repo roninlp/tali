@@ -22,7 +22,7 @@
  * delay, so the table is testable without a clock or a browser.
  */
 
-export type SyncVisibility = "visible" | "hidden"
+export type SyncVisibility = 'visible' | 'hidden'
 
 export const ACTIVE_INTERVAL_MS = 10_000
 export const IDLE_INTERVAL_MS = 30_000
@@ -59,7 +59,7 @@ const failureBaseMs = (failures: number): number =>
  */
 export const syncDelayMs = (
   state: SyncCadenceState,
-  random: () => number = Math.random
+  random: () => number = Math.random,
 ): number => {
   if (state.failures > 0) {
     const base = failureBaseMs(state.failures)
@@ -68,7 +68,7 @@ export const syncDelayMs = (
     // a retry can take, not about the pre-jitter number.
     return Math.round(Math.min(MAX_RETRY_MS, jittered))
   }
-  if (state.visibility === "hidden") return HIDDEN_INTERVAL_MS
+  if (state.visibility === 'hidden') return HIDDEN_INTERVAL_MS
   const active = state.now - state.lastActivity < ACTIVITY_WINDOW_MS
   return active ? ACTIVE_INTERVAL_MS : IDLE_INTERVAL_MS
 }

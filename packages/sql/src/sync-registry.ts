@@ -1,5 +1,5 @@
-import { Schema } from "effect"
-import { type SqlClient, Statement } from "effect/sql"
+import { Schema } from 'effect'
+import { type SqlClient, Statement } from 'effect/sql'
 import {
   Event,
   Habit,
@@ -27,8 +27,8 @@ import {
   type SyncEntityType,
   type Visibility,
   type VisibilityAggregate,
-  visibilityPolicyOf
-} from "@tali/domain"
+  visibilityPolicyOf,
+} from '@tali/domain'
 
 /**
  * The sync entity registry (ticket #34).
@@ -129,9 +129,9 @@ export interface SyncScopeColumns {
 }
 
 export const SYNC_SCOPE_COLUMNS: SyncScopeColumns = {
-  householdId: "household_id",
-  ownerId: "owner_id",
-  visibility: "visibility"
+  householdId: 'household_id',
+  ownerId: 'owner_id',
+  visibility: 'visibility',
 }
 
 export interface SyncEntityDefinition {
@@ -157,21 +157,21 @@ export interface SyncEntityDefinition {
   /** Data for an offline insert, before validation. */
   readonly defaults: (
     patch: Record<string, unknown>,
-    context: SyncCreateContext
+    context: SyncCreateContext,
   ) => Record<string, unknown>
   /** D1 row → data payload (best-effort: tombstones may not satisfy the model). */
   readonly hydrate: (row: SyncRawRow) => Record<string, unknown>
   /** Strict decode boundary for client-authored data; throws a `SchemaError`. */
   readonly validate: (
     data: Record<string, unknown>,
-    meta: SyncEntityMeta
+    meta: SyncEntityMeta,
   ) => Record<string, unknown>
   /** Merge a patch into the stored data (§6 LWW + completion). */
   readonly merge: (input: SyncMergeInput) => Record<string, unknown>
   readonly insert: (state: SyncEntityState) => Statement.Statement<unknown>
   readonly update: (
     state: SyncEntityState,
-    expectedVersion: number
+    expectedVersion: number,
   ) => Statement.Statement<unknown>
   /**
    * Optional statements that maintain a derived index next to the row (the
@@ -187,7 +187,9 @@ export interface SyncEntityDefinition {
    * removes statements; it never weakens the version/timestamp gate on the
    * statements that still run.
    */
-  readonly index?: (input: SyncIndexInput) => ReadonlyArray<Statement.Statement<unknown>>
+  readonly index?: (
+    input: SyncIndexInput,
+  ) => ReadonlyArray<Statement.Statement<unknown>>
   /**
    * Optional statements for a hard delete (the 30-day trash purge, #85).
    *
@@ -197,7 +199,9 @@ export interface SyncEntityDefinition {
    * rule as `index`: a concurrent restore must survive, so a cleanup of the
    * row's own derived state checks that the row is not live.
    */
-  readonly purge?: (input: SyncPurgeInput) => ReadonlyArray<Statement.Statement<unknown>>
+  readonly purge?: (
+    input: SyncPurgeInput,
+  ) => ReadonlyArray<Statement.Statement<unknown>>
   /**
    * Optional parent row this entity belongs to (a habit entry logs a habit).
    *
@@ -242,7 +246,7 @@ export interface SyncParentRule {
    * - `ceiling` — a private parent forces private; a shared parent lets the
    *   child stay narrower (a private item inside a shared list).
    */
-  readonly visibility: "copy" | "ceiling"
+  readonly visibility: 'copy' | 'ceiling'
   /**
    * Whether a missing parent id is acceptable. Default `false` (required).
    * Only the legacy `listItem` wire shape that never had a list id may omit
@@ -287,7 +291,9 @@ export interface SyncSpawn {
   /** Gated child INSERT; must run immediately before the child feed append. */
   readonly insert: (state: SyncEntityState) => Statement.Statement<unknown>
   /** Child `item_tags` joins, run after the feed/ledger (gated on the child row). */
-  readonly joins?: (state: SyncEntityState) => ReadonlyArray<Statement.Statement<unknown>>
+  readonly joins?: (
+    state: SyncEntityState,
+  ) => ReadonlyArray<Statement.Statement<unknown>>
 }
 
 export interface SyncRegistry {
@@ -299,28 +305,31 @@ export interface SyncRegistry {
 
 /** A JSON array/object column or a JSON scalar; stored as TEXT. */
 const encodeJson = (value: unknown): string => JSON.stringify(value ?? null)
-const encodeText = (value: unknown): string => (typeof value === "string" ? value : "")
+const encodeText = (value: unknown): string =>
+  typeof value === 'string' ? value : ''
 const encodeNullableText = (value: unknown): string | null =>
-  typeof value === "string" ? value : null
+  typeof value === 'string' ? value : null
 const encodeInt = (value: unknown): number =>
-  typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : 0
+  typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : 0
 const encodeBit = (value: unknown): number => (value === true ? 1 : 0)
 const encodeJsonOrNull = (value: unknown): string | null =>
   value === null || value === undefined ? null : encodeJson(value)
 
 const asBit = (value: unknown): boolean => value === true || value === 1
 const asText = (value: unknown): string | null =>
-  typeof value === "string" ? value : null
+  typeof value === 'string' ? value : null
 const isVisibility = (value: unknown): value is Visibility =>
-  value === "private" || value === "shared"
+  value === 'private' || value === 'shared'
 
 /**
  * A row's stored visibility. Writes always supply one; this is the read-side
  * fallback, and it falls back to the aggregate's policy default rather than
  * silently biasing every unknown value to `shared`.
  */
-const storedVisibility = (aggregate: VisibilityAggregate, value: unknown): Visibility =>
-  isVisibility(value) ? value : defaultVisibilityFor(aggregate)
+const storedVisibility = (
+  aggregate: VisibilityAggregate,
+  value: unknown,
+): Visibility => (isVisibility(value) ? value : defaultVisibilityFor(aggregate))
 
 /**
  * The visibility an insert writes.
@@ -330,12 +339,20 @@ const storedVisibility = (aggregate: VisibilityAggregate, value: unknown): Visib
  * the parent value the sync engine resolved before `defaults` ran, falling back
  * to the policy default only for a delete-only tombstone with no parent.
  */
-const createdVisibility = (aggregate: VisibilityAggregate, value: unknown): Visibility =>
-  visibilityPolicyOf(aggregate)._tag === "inherited"
-    ? (isVisibility(value) ? value : defaultVisibilityFor(aggregate))
-    : resolveCreateVisibility(aggregate, isVisibility(value) ? value : undefined)
+const createdVisibility = (
+  aggregate: VisibilityAggregate,
+  value: unknown,
+): Visibility =>
+  visibilityPolicyOf(aggregate)._tag === 'inherited'
+    ? isVisibility(value)
+      ? value
+      : defaultVisibilityFor(aggregate)
+    : resolveCreateVisibility(
+        aggregate,
+        isVisibility(value) ? value : undefined,
+      )
 const parseJson = (value: unknown): unknown => {
-  if (typeof value !== "string") return value ?? null
+  if (typeof value !== 'string') return value ?? null
   try {
     return JSON.parse(value)
   } catch {
@@ -344,10 +361,12 @@ const parseJson = (value: unknown): unknown => {
 }
 const asStringArray = (value: unknown): ReadonlyArray<string> => {
   const parsed = parseJson(value)
-  return Array.isArray(parsed) ? parsed.filter((entry) => typeof entry === "string") : []
+  return Array.isArray(parsed)
+    ? parsed.filter(entry => typeof entry === 'string')
+    : []
 }
 const asNullableInt = (value: unknown): number | null =>
-  typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : null
+  typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : null
 /** The occasion offset column: `null`, or 0…365 whole days. */
 const encodeAdvanceDays = (value: unknown): number | null => {
   const days = asNullableInt(value)
@@ -356,41 +375,50 @@ const encodeAdvanceDays = (value: unknown): number | null => {
 
 // ── Field guards (client patches) ─────────────────────────────────────────
 
-const isString: SyncFieldGuard = (value) => typeof value === "string"
-const isNullableString: SyncFieldGuard = (value) =>
-  value === null || typeof value === "string"
-const isBoolean: SyncFieldGuard = (value) => typeof value === "boolean"
-const isInt: SyncFieldGuard = (value) => typeof value === "number" && Number.isInteger(value)
-const isStringArray: SyncFieldGuard = (value) =>
-  Array.isArray(value) && value.every((entry) => typeof entry === "string")
-const isOneOf = (...allowed: ReadonlyArray<string>): SyncFieldGuard => (value) =>
-  typeof value === "string" && allowed.includes(value)
-const isNullableOneOf = (...allowed: ReadonlyArray<string>): SyncFieldGuard => (value) =>
-  value === null || (typeof value === "string" && allowed.includes(value))
-const isJson: SyncFieldGuard = (value) => {
+const isString: SyncFieldGuard = value => typeof value === 'string'
+const isNullableString: SyncFieldGuard = value =>
+  value === null || typeof value === 'string'
+const isBoolean: SyncFieldGuard = value => typeof value === 'boolean'
+const isInt: SyncFieldGuard = value =>
+  typeof value === 'number' && Number.isInteger(value)
+const isStringArray: SyncFieldGuard = value =>
+  Array.isArray(value) && value.every(entry => typeof entry === 'string')
+const isOneOf =
+  (...allowed: ReadonlyArray<string>): SyncFieldGuard =>
+  value =>
+    typeof value === 'string' && allowed.includes(value)
+const isNullableOneOf =
+  (...allowed: ReadonlyArray<string>): SyncFieldGuard =>
+  value =>
+    value === null || (typeof value === 'string' && allowed.includes(value))
+const isJson: SyncFieldGuard = value => {
   if (value === null || value === undefined) return true
   const kind = typeof value
-  return kind === "string" || kind === "number" || kind === "boolean" || kind === "object"
+  return (
+    kind === 'string' ||
+    kind === 'number' ||
+    kind === 'boolean' ||
+    kind === 'object'
+  )
 }
-const isJsonArray: SyncFieldGuard = (value) => Array.isArray(value)
+const isJsonArray: SyncFieldGuard = value => Array.isArray(value)
 /** Local calendar date `YYYY-MM-DD` (a habit entry's day). */
-const isLocalDate: SyncFieldGuard = (value) =>
-  typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
-const isNullableIntInRange = (
-  minimum: number,
-  maximum: number
-): SyncFieldGuard => (value) =>
-  value === null ||
-  (typeof value === "number" &&
-    Number.isInteger(value) &&
-    value >= minimum &&
-    value <= maximum)
+const isLocalDate: SyncFieldGuard = value =>
+  typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+const isNullableIntInRange =
+  (minimum: number, maximum: number): SyncFieldGuard =>
+  value =>
+    value === null ||
+    (typeof value === 'number' &&
+      Number.isInteger(value) &&
+      value >= minimum &&
+      value <= maximum)
 
 // ── Generic merge / hydrate helpers ───────────────────────────────────────
 
 const mergeFields = (
-  definition: Pick<SyncEntityDefinition, "completion">,
-  input: SyncMergeDefaults
+  definition: Pick<SyncEntityDefinition, 'completion'>,
+  input: SyncMergeDefaults,
 ): Record<string, unknown> => {
   const next: Record<string, unknown> = { ...input.current }
   // A fast-path patch is authoritative (the client wrote against the version we
@@ -399,12 +427,15 @@ const mergeFields = (
   if (!input.conflict || input.incomingNewer) Object.assign(next, input.patch)
   if (input.conflict && definition.completion !== undefined) {
     const { field, value } = definition.completion
-    if (input.current[field] === value || input.patch[field] === value) next[field] = value
+    if (input.current[field] === value || input.patch[field] === value)
+      next[field] = value
   }
   return next
 }
 
-const stripServerFields = (data: Record<string, unknown>): Record<string, unknown> => {
+const stripServerFields = (
+  data: Record<string, unknown>,
+): Record<string, unknown> => {
   const copy = { ...data }
   delete copy.version
   delete copy.updatedAt
@@ -423,31 +454,36 @@ const stripServerFields = (data: Record<string, unknown>): Record<string, unknow
  */
 const withSchema = <A>(
   schema: Schema.Top,
-  normalize: (row: SyncRawRow) => Record<string, unknown>
-): Pick<SyncEntityDefinition, "hydrate" | "validate"> => {
+  normalize: (row: SyncRawRow) => Record<string, unknown>,
+): Pick<SyncEntityDefinition, 'hydrate' | 'validate'> => {
   const encode = (value: A): Record<string, unknown> =>
-    stripServerFields(Schema.encodeSync(schema as never)(value as never) as Record<string, unknown>)
+    stripServerFields(
+      Schema.encodeSync(schema as never)(value as never) as Record<
+        string,
+        unknown
+      >,
+    )
   const metaOf = (row: SyncRawRow): SyncEntityMeta => ({
     version: encodeInt(row.version),
     updatedAt: encodeText(row.updatedAt),
-    deletedAt: asText(row.deletedAt)
+    deletedAt: asText(row.deletedAt),
   })
   return {
     validate: (data, meta) => {
       const decoded = Schema.decodeUnknownSync(schema as never)({
         ...data,
-        ...meta
+        ...meta,
       } as never) as A
       return encode(decoded)
     },
-    hydrate: (row) => {
+    hydrate: row => {
       const data = normalize(row)
       const decoded = Schema.decodeUnknownOption(schema as never)({
         ...data,
-        ...metaOf(row)
+        ...metaOf(row),
       } as never)
-      return decoded._tag === "Some" ? encode(decoded.value as A) : data
-    }
+      return decoded._tag === 'Some' ? encode(decoded.value as A) : data
+    },
   }
 }
 
@@ -458,36 +494,36 @@ const withSchema = <A>(
  * "not live": the hook runs before the row delete, so a row restored between
  * the purge selection and the batch keeps its joins.
  */
-const purgeItemTagJoins = (
-  sql: SqlClient.SqlClient,
-  entityType: SyncEntityType,
-  table: string
-): NonNullable<SyncEntityDefinition["purge"]> =>
-  (input) => [
+const purgeItemTagJoins =
+  (
+    sql: SqlClient.SqlClient,
+    entityType: SyncEntityType,
+    table: string,
+  ): NonNullable<SyncEntityDefinition['purge']> =>
+  input => [
     sql`
       DELETE FROM item_tags
       WHERE item_type = ${entityType}
-        AND ${sql.in("item_id", input.ids)}
+        AND ${sql.in('item_id', input.ids)}
         AND NOT EXISTS (
           SELECT 1 FROM ${sql.literal(table)} AS live
           WHERE live.id = item_tags.item_id AND live.deleted_at IS NULL
         )
-    `
+    `,
   ]
 
 /** Drop a note's FTS5 row when the note is hard-deleted (same "not live" gate). */
-const purgeNoteSearch = (
-  sql: SqlClient.SqlClient
-): NonNullable<SyncEntityDefinition["purge"]> =>
-  (input) => [
+const purgeNoteSearch =
+  (sql: SqlClient.SqlClient): NonNullable<SyncEntityDefinition['purge']> =>
+  input => [
     sql`
       DELETE FROM notes_fts
-      WHERE ${sql.in("note_id", input.ids)}
+      WHERE ${sql.in('note_id', input.ids)}
         AND NOT EXISTS (
           SELECT 1 FROM notes AS live
           WHERE live.id = notes_fts.note_id AND live.deleted_at IS NULL
         )
-    `
+    `,
   ]
 
 /**
@@ -499,24 +535,26 @@ const purgeNoteSearch = (
  * the update is about to write. `json_group_array` returns NULL for an empty
  * set, hence the `COALESCE(..., '[]')`.
  */
-const purgeTagReferences = (
-  sql: SqlClient.SqlClient
-): NonNullable<SyncEntityDefinition["purge"]> =>
-  (input) => {
-    const tables: ReadonlyArray<{ readonly table: string; readonly entityType: SyncEntityType }> = [
-      { table: "tasks", entityType: "task" },
-      { table: "notes", entityType: "note" },
-      { table: "list_items", entityType: "listItem" }
+const purgeTagReferences =
+  (sql: SqlClient.SqlClient): NonNullable<SyncEntityDefinition['purge']> =>
+  input => {
+    const tables: ReadonlyArray<{
+      readonly table: string
+      readonly entityType: SyncEntityType
+    }> = [
+      { table: 'tasks', entityType: 'task' },
+      { table: 'notes', entityType: 'note' },
+      { table: 'list_items', entityType: 'listItem' },
     ]
     return tables.flatMap(({ table, entityType }) => {
       const tableRef = sql.literal(table)
       const hasTag = sql`EXISTS (
         SELECT 1 FROM json_each(${tableRef}.tag_ids)
-        WHERE ${sql.in("value", input.ids)}
+        WHERE ${sql.in('value', input.ids)}
       )`
       const tagNotLive = sql`NOT EXISTS (
         SELECT 1 FROM tags
-        WHERE ${sql.in("id", input.ids)} AND deleted_at IS NULL
+        WHERE ${sql.in('id', input.ids)} AND deleted_at IS NULL
       )`
       return [
         sql`
@@ -532,12 +570,12 @@ const purgeTagReferences = (
           SET tag_ids = COALESCE((
                 SELECT json_group_array(value)
                 FROM json_each(${tableRef}.tag_ids)
-                WHERE NOT (${sql.in("value", input.ids)})
+                WHERE NOT (${sql.in('value', input.ids)})
               ), '[]'),
               version = version + 1,
               updated_at = ${input.now}
           WHERE deleted_at IS NULL AND ${hasTag} AND ${tagNotLive}
-        `
+        `,
       ]
     })
   }
@@ -549,13 +587,12 @@ const purgeTagReferences = (
  * the feed rows from the current row state, then update the rows in the same
  * batch, before the project delete.
  */
-const purgeProjectReferences = (
-  sql: SqlClient.SqlClient
-): NonNullable<SyncEntityDefinition["purge"]> =>
-  (input) => {
+const purgeProjectReferences =
+  (sql: SqlClient.SqlClient): NonNullable<SyncEntityDefinition['purge']> =>
+  input => {
     const projectNotLive = sql`NOT EXISTS (
       SELECT 1 FROM projects
-      WHERE ${sql.in("id", input.ids)} AND deleted_at IS NULL
+      WHERE ${sql.in('id', input.ids)} AND deleted_at IS NULL
     )`
     return [
       sql`
@@ -564,13 +601,13 @@ const purgeProjectReferences = (
         SELECT household_id, 'task', id, 'upsert', version + 1, ${input.now},
                owner_id, visibility
         FROM tasks
-        WHERE deleted_at IS NULL AND ${sql.in("project_id", input.ids)} AND ${projectNotLive}
+        WHERE deleted_at IS NULL AND ${sql.in('project_id', input.ids)} AND ${projectNotLive}
       `,
       sql`
         UPDATE tasks
         SET project_id = NULL, version = version + 1, updated_at = ${input.now}
-        WHERE deleted_at IS NULL AND ${sql.in("project_id", input.ids)} AND ${projectNotLive}
-      `
+        WHERE deleted_at IS NULL AND ${sql.in('project_id', input.ids)} AND ${projectNotLive}
+      `,
     ]
   }
 
@@ -589,9 +626,9 @@ const TASK_COLUMNS =
   `recurrence, recurrence_mode AS recurrenceMode, ` +
   `started_at AS startedAt, completed_at AS completedAt, created_at AS createdAt`
 
-const taskCodec = withSchema<Task>(Task, (row) => ({
+const taskCodec = withSchema<Task>(Task, row => ({
   id: String(row.id),
-  type: "task",
+  type: 'task',
   title: encodeText(row.title),
   description: asText(row.description),
   status: encodeText(row.status),
@@ -608,8 +645,8 @@ const taskCodec = withSchema<Task>(Task, (row) => ({
   completedAt: asText(row.completedAt),
   ownerId: encodeText(row.ownerId),
   householdId: encodeText(row.householdId),
-  visibility: storedVisibility("task", row.visibility),
-  createdAt: encodeText(row.createdAt)
+  visibility: storedVisibility('task', row.visibility),
+  createdAt: encodeText(row.createdAt),
 }))
 
 /**
@@ -623,7 +660,7 @@ const insertSpawnedTask = (
   sql: SqlClient.SqlClient,
   state: SyncEntityState,
   parentId: string,
-  parentVersion: number
+  parentVersion: number,
 ) => sql`
   INSERT INTO tasks
     (id, type, title, description, owner_id, household_id, visibility,
@@ -654,32 +691,32 @@ const insertSpawnedTask = (
 `
 
 const TASK_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
-  ["title", isString],
-  ["description", isNullableString],
-  ["status", isOneOf("todo", "doing", "done")],
-  ["priority", isOneOf("high", "medium", "low")],
-  ["dueAt", isNullableString],
-  ["dueDate", isNullableString],
-  ["timeZone", isString],
-  ["projectId", isNullableString],
-  ["tagIds", isStringArray],
-  ["color", isNullableString],
+  ['title', isString],
+  ['description', isNullableString],
+  ['status', isOneOf('todo', 'doing', 'done')],
+  ['priority', isOneOf('high', 'medium', 'low')],
+  ['dueAt', isNullableString],
+  ['dueDate', isNullableString],
+  ['timeZone', isString],
+  ['projectId', isNullableString],
+  ['tagIds', isStringArray],
+  ['color', isNullableString],
   // The rule object is validated structurally by the Task schema below; the
   // guard only rejects non-JSON scalars.
-  ["recurrence", isJson],
-  ["recurrenceMode", isNullableOneOf("onCompletion", "onDueDate")],
-  ["visibility", isOneOf("private", "shared")]
+  ['recurrence', isJson],
+  ['recurrenceMode', isNullableOneOf('onCompletion', 'onDueDate')],
+  ['visibility', isOneOf('private', 'shared')],
 ])
 
 /** Tag joins for a freshly spawned successor, gated on the inserted row. */
 const spawnedTaskTagJoins = (
   sql: SqlClient.SqlClient,
-  state: SyncEntityState
+  state: SyncEntityState,
 ): ReadonlyArray<Statement.Statement<unknown>> =>
   state.householdId === null
     ? []
-    : asStringArray(state.data.tagIds).flatMap((tagId) => [
-      sql`
+    : asStringArray(state.data.tagIds).flatMap(tagId => [
+        sql`
         INSERT INTO item_tags (item_id, item_type, tag_id, household_id, created_at)
         SELECT ${state.entityId}, 'task', ${tagId}, ${state.householdId}, ${state.updatedAt}
         WHERE EXISTS (
@@ -690,49 +727,51 @@ const spawnedTaskTagJoins = (
         )
         AND EXISTS (SELECT 1 FROM tags WHERE id = ${tagId})
         ON CONFLICT DO NOTHING
-      `
-    ])
+      `,
+      ])
 
 // A completed task beats a concurrent rename, like a checked list item.
-const TASK_COMPLETION = { field: "status", value: "done" } as const
+const TASK_COMPLETION = { field: 'status', value: 'done' } as const
 
 const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
-  entityType: "task",
-  table: "tasks",
+  entityType: 'task',
+  table: 'tasks',
   select: TASK_COLUMNS,
   scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: "deleted_at",
+  softDeleteColumn: 'deleted_at',
   writable: TASK_WRITABLE,
   completion: TASK_COMPLETION,
-  purge: purgeItemTagJoins(sql, "task", "tasks"),
+  purge: purgeItemTagJoins(sql, 'task', 'tasks'),
   ...taskCodec,
   defaults: (patch, context) => ({
     id: context.entityId,
-    type: "task",
+    type: 'task',
     title: encodeText(patch.title),
     description: asText(patch.description),
-    status: encodeText(patch.status) || "todo",
-    priority: encodeText(patch.priority) || "medium",
+    status: encodeText(patch.status) || 'todo',
+    priority: encodeText(patch.priority) || 'medium',
     dueAt: asText(patch.dueAt),
     dueDate: asText(patch.dueDate),
-    timeZone: encodeText(patch.timeZone) || "UTC",
+    timeZone: encodeText(patch.timeZone) || 'UTC',
     projectId: asText(patch.projectId),
     tagIds: Array.isArray(patch.tagIds) ? patch.tagIds : [],
     color: asText(patch.color),
     recurrence: patch.recurrence ?? null,
-    recurrenceMode: patch.recurrence === null || patch.recurrence === undefined
-      ? null
-      : patch.recurrenceMode === "onCompletion" || patch.recurrenceMode === "onDueDate"
-      ? patch.recurrenceMode
-      : "onDueDate",
+    recurrenceMode:
+      patch.recurrence === null || patch.recurrence === undefined
+        ? null
+        : patch.recurrenceMode === 'onCompletion' ||
+            patch.recurrenceMode === 'onDueDate'
+          ? patch.recurrenceMode
+          : 'onDueDate',
     startedAt: null,
     completedAt: null,
     ownerId: context.userId,
     householdId: context.householdId,
-    visibility: createdVisibility("task", patch.visibility),
-    createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
+    visibility: createdVisibility('task', patch.visibility),
+    createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
-  merge: (input) => {
+  merge: input => {
     const next = mergeFields({ completion: TASK_COMPLETION }, input)
     // Recurrence rule and mode are one unit: a rule without a mode defaults to
     // the fixed schedule, and clearing the rule clears the mode. This keeps a
@@ -740,17 +779,21 @@ const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     if (next.recurrence === null || next.recurrence === undefined) {
       next.recurrence = null
       next.recurrenceMode = null
-    } else if (next.recurrenceMode !== "onCompletion" && next.recurrenceMode !== "onDueDate") {
-      next.recurrenceMode = "onDueDate"
+    } else if (
+      next.recurrenceMode !== 'onCompletion' &&
+      next.recurrenceMode !== 'onDueDate'
+    ) {
+      next.recurrenceMode = 'onDueDate'
     }
     // Lifecycle stamps are server-side (FR-TASK-02). #36 owns the task
     // service; sync keeps the same rule so an offline completion is coherent.
-    if (next.status === "done") {
+    if (next.status === 'done') {
       if (next.completedAt === null) next.completedAt = input.now
     } else {
       next.completedAt = null
     }
-    if (next.status === "doing" && next.startedAt === null) next.startedAt = input.now
+    if (next.status === 'doing' && next.startedAt === null)
+      next.startedAt = input.now
     return next
   },
   /**
@@ -762,19 +805,20 @@ const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   spawn: ({ previous, next, now }) => {
     if (next.deletedAt !== null) return undefined
     if (previous === undefined) return undefined
-    if (previous.data.status === "done" || next.data.status !== "done") return undefined
+    if (previous.data.status === 'done' || next.data.status !== 'done')
+      return undefined
 
     const completed = new Task({
       ...next.data,
       id: next.entityId,
       version: next.version,
       updatedAt: next.updatedAt,
-      deletedAt: next.deletedAt
+      deletedAt: next.deletedAt,
     } as never)
     const child = successorTask(completed, now)
     if (child === null) return undefined
     const state: SyncEntityState = {
-      entityType: "task",
+      entityType: 'task',
       entityId: child.id,
       householdId: child.householdId,
       ownerId: child.ownerId,
@@ -782,20 +826,22 @@ const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
       version: child.version,
       updatedAt: child.updatedAt,
       deletedAt: null,
-      data: taskCodec.validate(
-        { ...child } as Record<string, unknown>,
-        { version: child.version, updatedAt: child.updatedAt, deletedAt: null }
-      )
+      data: taskCodec.validate({ ...child } as Record<string, unknown>, {
+        version: child.version,
+        updatedAt: child.updatedAt,
+        deletedAt: null,
+      }),
     }
     return {
       parentId: next.entityId,
       parentVersion: next.version,
       state,
-      insert: (childState) => insertSpawnedTask(sql, childState, next.entityId, next.version),
-      joins: (childState) => spawnedTaskTagJoins(sql, childState)
+      insert: childState =>
+        insertSpawnedTask(sql, childState, next.entityId, next.version),
+      joins: childState => spawnedTaskTagJoins(sql, childState),
     }
   },
-  insert: (state) => sql`
+  insert: state => sql`
     INSERT INTO tasks
       (id, type, title, description, owner_id, household_id, visibility,
        status, priority, due_at, due_date, time_zone, project_id, tag_ids,
@@ -838,34 +884,33 @@ const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
       version = ${state.version},
       deleted_at = ${state.deletedAt}
     WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `
+  `,
 })
 
 // ── Project ───────────────────────────────────────────────────────────────
 
-const PROJECT_COLUMNS =
-  `${META_COLUMNS}, type, title, color, created_at AS createdAt`
+const PROJECT_COLUMNS = `${META_COLUMNS}, type, title, color, created_at AS createdAt`
 
-const projectCodec = withSchema<Project>(Project, (row) => ({
+const projectCodec = withSchema<Project>(Project, row => ({
   id: String(row.id),
-  type: "project",
+  type: 'project',
   title: encodeText(row.title),
   ownerId: encodeText(row.ownerId),
   householdId: encodeText(row.householdId),
-  visibility: storedVisibility("project", row.visibility),
+  visibility: storedVisibility('project', row.visibility),
   color: asText(row.color),
-  createdAt: encodeText(row.createdAt)
+  createdAt: encodeText(row.createdAt),
 }))
 
 const projectDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
-  entityType: "project",
-  table: "projects",
+  entityType: 'project',
+  table: 'projects',
   select: PROJECT_COLUMNS,
   scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: "deleted_at",
+  softDeleteColumn: 'deleted_at',
   writable: new Map([
-    ["title", isString],
-    ["color", isNullableString]
+    ['title', isString],
+    ['color', isNullableString],
   ]),
   // Household visibility is fixed (ADR-0011): a patch that tries to choose one
   // is rejected by the sync service's policy guard before this definition runs.
@@ -873,16 +918,16 @@ const projectDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   ...projectCodec,
   defaults: (patch, context) => ({
     id: context.entityId,
-    type: "project",
+    type: 'project',
     title: encodeText(patch.title),
     ownerId: context.userId,
     householdId: context.householdId,
-    visibility: createdVisibility("project", patch.visibility),
+    visibility: createdVisibility('project', patch.visibility),
     color: asText(patch.color),
-    createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
+    createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
-  merge: (input) => mergeFields({}, input),
-  insert: (state) => sql`
+  merge: input => mergeFields({}, input),
+  insert: state => sql`
     INSERT INTO projects
       (id, type, title, owner_id, household_id, visibility, color,
        created_at, updated_at, version, deleted_at)
@@ -903,58 +948,58 @@ const projectDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
       version = ${state.version},
       deleted_at = ${state.deletedAt}
     WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `
+  `,
 })
 
 // ── Tag ───────────────────────────────────────────────────────────────────
 
 const TAG_COLUMNS = `${META_COLUMNS}, type, name, color, created_at AS createdAt`
 
-const tagCodec = withSchema<Tag>(Tag, (row) => ({
+const tagCodec = withSchema<Tag>(Tag, row => ({
   id: String(row.id),
-  type: "tag",
+  type: 'tag',
   name: encodeText(row.name),
   ownerId: encodeText(row.ownerId),
   householdId: encodeText(row.householdId),
-  visibility: storedVisibility("tag", row.visibility),
+  visibility: storedVisibility('tag', row.visibility),
   color: asText(row.color),
-  createdAt: encodeText(row.createdAt)
+  createdAt: encodeText(row.createdAt),
 }))
 
 const tagDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
-  entityType: "tag",
-  table: "tags",
+  entityType: 'tag',
+  table: 'tags',
   select: TAG_COLUMNS,
   scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: "deleted_at",
+  softDeleteColumn: 'deleted_at',
   writable: new Map([
-    ["name", isString],
-    ["color", isNullableString]
+    ['name', isString],
+    ['color', isNullableString],
   ]),
-  purge: (input) => [
+  purge: input => [
     ...purgeTagReferences(sql)(input),
     sql`
       DELETE FROM item_tags
-      WHERE ${sql.in("tag_id", input.ids)}
+      WHERE ${sql.in('tag_id', input.ids)}
         AND NOT EXISTS (
           SELECT 1 FROM tags AS live
           WHERE live.id = item_tags.tag_id AND live.deleted_at IS NULL
         )
-    `
+    `,
   ],
   ...tagCodec,
   defaults: (patch, context) => ({
     id: context.entityId,
-    type: "tag",
+    type: 'tag',
     name: encodeText(patch.name),
     ownerId: context.userId,
     householdId: context.householdId,
-    visibility: createdVisibility("tag", patch.visibility),
+    visibility: createdVisibility('tag', patch.visibility),
     color: asText(patch.color),
-    createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
+    createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
-  merge: (input) => mergeFields({}, input),
-  insert: (state) => sql`
+  merge: input => mergeFields({}, input),
+  insert: state => sql`
     INSERT INTO tags
       (id, type, name, owner_id, household_id, visibility, color,
        created_at, updated_at, version, deleted_at)
@@ -975,7 +1020,7 @@ const tagDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
       version = ${state.version},
       deleted_at = ${state.deletedAt}
     WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `
+  `,
 })
 
 // ── List ──────────────────────────────────────────────────────────────────
@@ -985,19 +1030,19 @@ const LIST_COLUMNS =
   `checked_placement AS checkedPlacement, last_writer_id AS lastWriterId, ` +
   `created_at AS createdAt`
 
-const listSchemaCodec = withSchema<List>(List, (row) => ({
+const listSchemaCodec = withSchema<List>(List, row => ({
   id: String(row.id),
-  type: "list",
+  type: 'list',
   title: encodeText(row.title),
   description: asText(row.description),
   ownerId: encodeText(row.ownerId),
   householdId: encodeText(row.householdId),
-  visibility: storedVisibility("list", row.visibility),
+  visibility: storedVisibility('list', row.visibility),
   color: asText(row.color),
   icon: asText(row.icon),
   sort: encodeText(row.sort),
   checkedPlacement: encodeText(row.checkedPlacement),
-  createdAt: encodeText(row.createdAt)
+  createdAt: encodeText(row.createdAt),
 }))
 
 /**
@@ -1006,53 +1051,56 @@ const listSchemaCodec = withSchema<List>(List, (row) => ({
  * the client-writable allowlist, so a patch can never forge it.
  */
 const listCodec = {
-  validate: (data: Record<string, unknown>, meta: SyncEntityMeta): Record<string, unknown> => {
+  validate: (
+    data: Record<string, unknown>,
+    meta: SyncEntityMeta,
+  ): Record<string, unknown> => {
     const encoded = listSchemaCodec.validate(data, meta)
     // The List model has no attribution field; keep the server-managed value
     // across the codec so a merge of an untouched row is still a no-op.
-    return typeof data.lastWriterId === "string"
+    return typeof data.lastWriterId === 'string'
       ? { ...encoded, lastWriterId: data.lastWriterId }
       : encoded
   },
   hydrate: (row: SyncRawRow): Record<string, unknown> => ({
     ...listSchemaCodec.hydrate(row),
-    lastWriterId: asText(row.lastWriterId)
-  })
+    lastWriterId: asText(row.lastWriterId),
+  }),
 }
 
 const listDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
-  entityType: "list",
-  table: "lists",
+  entityType: 'list',
+  table: 'lists',
   select: LIST_COLUMNS,
   scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: "deleted_at",
+  softDeleteColumn: 'deleted_at',
   writable: new Map([
-    ["title", isString],
-    ["description", isNullableString],
-    ["color", isNullableString],
-    ["icon", isNullableString],
-    ["sort", isOneOf("manual", "alpha", "status")],
-    ["checkedPlacement", isOneOf("inPlace", "bottom")],
-    ["visibility", isOneOf("private", "shared")]
+    ['title', isString],
+    ['description', isNullableString],
+    ['color', isNullableString],
+    ['icon', isNullableString],
+    ['sort', isOneOf('manual', 'alpha', 'status')],
+    ['checkedPlacement', isOneOf('inPlace', 'bottom')],
+    ['visibility', isOneOf('private', 'shared')],
   ]),
   ...listCodec,
   defaults: (patch, context) => ({
     id: context.entityId,
-    type: "list",
+    type: 'list',
     title: encodeText(patch.title),
     description: asText(patch.description),
     ownerId: context.userId,
     householdId: context.householdId,
-    visibility: createdVisibility("list", patch.visibility),
+    visibility: createdVisibility('list', patch.visibility),
     color: asText(patch.color),
     icon: asText(patch.icon),
-    sort: encodeText(patch.sort) || "manual",
-    checkedPlacement: encodeText(patch.checkedPlacement) || "bottom",
+    sort: encodeText(patch.sort) || 'manual',
+    checkedPlacement: encodeText(patch.checkedPlacement) || 'bottom',
     lastWriterId: context.userId,
-    createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
+    createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
-  merge: (input) => mergeFields({}, input),
-  insert: (state) => sql`
+  merge: input => mergeFields({}, input),
+  insert: state => sql`
     INSERT INTO lists
       (id, type, title, description, owner_id, household_id, visibility,
        color, icon, sort, checked_placement, last_writer_id,
@@ -1082,7 +1130,7 @@ const listDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
       version = ${state.version},
       deleted_at = ${state.deletedAt}
     WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `
+  `,
 })
 
 // ── ListItem (legacy wire shape, dual-write) ──────────────────────────────
@@ -1099,21 +1147,23 @@ const LIST_ITEM_COLUMNS =
  * the legacy mirror/sync shape.
  */
 const listItemTitle = (data: Record<string, unknown>): string =>
-  typeof data.title === "string"
+  typeof data.title === 'string'
     ? data.title
-    : typeof data.name === "string"
-    ? data.name
-    : ""
+    : typeof data.name === 'string'
+      ? data.name
+      : ''
 
 const listItemChecked = (data: Record<string, unknown>): boolean =>
-  typeof data.checked === "boolean" ? data.checked : data.done === true
+  typeof data.checked === 'boolean' ? data.checked : data.done === true
 
 const listItemOrder = (data: Record<string, unknown>): number =>
-  typeof data.sortOrder === "number" && Number.isInteger(data.sortOrder)
+  typeof data.sortOrder === 'number' && Number.isInteger(data.sortOrder)
     ? data.sortOrder
     : encodeInt(data.ordering)
 
-const normalizeListItem = (data: Record<string, unknown>): Record<string, unknown> => {
+const normalizeListItem = (
+  data: Record<string, unknown>,
+): Record<string, unknown> => {
   const title = listItemTitle(data)
   const checked = listItemChecked(data)
   const order = listItemOrder(data)
@@ -1124,7 +1174,7 @@ const normalizeListItem = (data: Record<string, unknown>): Record<string, unknow
     checked,
     done: checked,
     sortOrder: order,
-    ordering: order
+    ordering: order,
   }
 }
 
@@ -1133,11 +1183,15 @@ const normalizeListItem = (data: Record<string, unknown>): Record<string, unknow
  * runs, so done-wins still sees `checked: true` even when a client wrote
  * `done: true`.
  */
-const normalizeListItemPatch = (patch: Record<string, unknown>): Record<string, unknown> => {
+const normalizeListItemPatch = (
+  patch: Record<string, unknown>,
+): Record<string, unknown> => {
   const next = { ...patch }
-  if (next.title === undefined && typeof next.name === "string") next.title = next.name
-  if (next.checked === undefined && typeof next.done === "boolean") next.checked = next.done
-  if (next.sortOrder === undefined && typeof next.ordering === "number") {
+  if (next.title === undefined && typeof next.name === 'string')
+    next.title = next.name
+  if (next.checked === undefined && typeof next.done === 'boolean')
+    next.checked = next.done
+  if (next.sortOrder === undefined && typeof next.ordering === 'number') {
     next.sortOrder = next.ordering
   }
   return next
@@ -1152,7 +1206,7 @@ const normalizeListItemPatch = (patch: Record<string, unknown>): Record<string, 
 const listItemNormalize = (row: SyncRawRow): Record<string, unknown> =>
   normalizeListItem({
     id: String(row.id),
-    type: "listItem",
+    type: 'listItem',
     title: encodeText(row.title),
     checked: asBit(row.checked),
     sortOrder: encodeInt(row.sortOrder),
@@ -1162,36 +1216,36 @@ const listItemNormalize = (row: SyncRawRow): Record<string, unknown> =>
     tagIds: asStringArray(row.tagIds),
     lastWriterId: asText(row.lastWriterId),
     ownerId: encodeText(row.ownerId),
-    visibility: storedVisibility("listItem", row.visibility),
-    createdAt: encodeText(row.createdAt)
+    visibility: storedVisibility('listItem', row.visibility),
+    createdAt: encodeText(row.createdAt),
   })
 
-const LIST_ITEM_COMPLETION = { field: "checked", value: true } as const
+const LIST_ITEM_COMPLETION = { field: 'checked', value: true } as const
 
 const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
   // `validate` is identity: the scaffold wire shape predates the #33 model and
   // its rows may not have a `list_id` (see the compatibility note above).
   const validateIdentity = (
-    data: Record<string, unknown>
+    data: Record<string, unknown>,
   ): Record<string, unknown> => data
   return {
-    entityType: "listItem",
-    table: "list_items",
+    entityType: 'listItem',
+    table: 'list_items',
     select: LIST_ITEM_COLUMNS,
     scope: SYNC_SCOPE_COLUMNS,
-    softDeleteColumn: "deleted_at",
+    softDeleteColumn: 'deleted_at',
     writable: new Map([
-      ["title", isString],
-      ["checked", isBoolean],
-      ["sortOrder", isInt],
+      ['title', isString],
+      ['checked', isBoolean],
+      ['sortOrder', isInt],
       // #39 real-aggregate aliases; both vocabularies are accepted.
-      ["name", isString],
-      ["done", isBoolean],
-      ["ordering", isInt],
-      ["listId", isNullableString],
-      ["color", isNullableString],
-      ["tagIds", isStringArray],
-      ["visibility", isOneOf("private", "shared")]
+      ['name', isString],
+      ['done', isBoolean],
+      ['ordering', isInt],
+      ['listId', isNullableString],
+      ['color', isNullableString],
+      ['tagIds', isStringArray],
+      ['visibility', isOneOf('private', 'shared')],
     ]),
     // Checklist done-wins: "I ticked it" beats "I renamed it" (§6.3).
     completion: LIST_ITEM_COMPLETION,
@@ -1200,14 +1254,14 @@ const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
     // when it is absent the sync service forces the item private (owner-only)
     // rather than letting a missing parent choose a visibility.
     parent: {
-      entityType: "list",
-      field: "listId",
-      column: "list_id",
-      visibility: "ceiling",
+      entityType: 'list',
+      field: 'listId',
+      column: 'list_id',
+      visibility: 'ceiling',
       optional: true,
-      cascade: false
+      cascade: false,
     },
-    purge: purgeItemTagJoins(sql, "listItem", "list_items"),
+    purge: purgeItemTagJoins(sql, 'listItem', 'list_items'),
     defaults: (patch, context) => {
       const raw = normalizeListItemPatch(patch)
       const title = listItemTitle(raw)
@@ -1215,7 +1269,7 @@ const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
       const order = listItemOrder(raw)
       return normalizeListItem({
         id: context.entityId,
-        type: "listItem",
+        type: 'listItem',
         title,
         checked,
         sortOrder: order,
@@ -1225,28 +1279,31 @@ const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
         tagIds: Array.isArray(raw.tagIds) ? raw.tagIds : [],
         lastWriterId: context.userId,
         ownerId: context.userId,
-        visibility: createdVisibility("listItem", raw.visibility),
-        createdAt: asText(raw.createdAt) ?? context.clientUpdatedAt
+        visibility: createdVisibility('listItem', raw.visibility),
+        createdAt: asText(raw.createdAt) ?? context.clientUpdatedAt,
       })
     },
-    hydrate: (row) => listItemNormalize(row),
+    hydrate: row => listItemNormalize(row),
     validate: validateIdentity,
-    merge: (input) => {
+    merge: input => {
       const current = normalizeListItem(input.current)
       const patch = normalizeListItemPatch(input.patch)
       const next = mergeFields(
         { completion: LIST_ITEM_COMPLETION },
-        { ...input, current, patch }
+        { ...input, current, patch },
       )
       // Mirror the checked flag onto the real completion audit column. On a
       // ticked-wins conflict the original `checkedAt` is preserved.
-      next.checkedAt = next.checked === true
-        ? (current.checked === true ? current.checkedAt ?? null : input.now)
-        : null
+      next.checkedAt =
+        next.checked === true
+          ? current.checked === true
+            ? (current.checkedAt ?? null)
+            : input.now
+          : null
       return normalizeListItem(next)
     },
     // Dual-write: scaffold columns (wire) + real ListItem columns (#33/#39).
-    insert: (state) => sql`
+    insert: state => sql`
       INSERT INTO list_items
         (id, title, checked, sort_order, version, created_at, updated_at, deleted_at,
          owner_id, visibility, household_id,
@@ -1282,7 +1339,7 @@ const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
         tag_ids = ${encodeJson(state.data.tagIds)},
         last_writer_id = ${encodeNullableText(state.data.lastWriterId)}
       WHERE id = ${state.entityId} AND version = ${expectedVersion}
-    `
+    `,
   }
 }
 
@@ -1293,60 +1350,60 @@ const NOTE_COLUMNS =
   `is_pinned AS isPinned, is_archived AS isArchived, tag_ids AS tagIds, ` +
   `created_at AS createdAt`
 
-const noteCodec = withSchema<Note>(Note, (row) => ({
+const noteCodec = withSchema<Note>(Note, row => ({
   id: String(row.id),
-  type: "note",
+  type: 'note',
   title: encodeText(row.title),
   body: parseJson(row.body),
   plainText: encodeText(row.plainText),
   ownerId: encodeText(row.ownerId),
   householdId: encodeText(row.householdId),
-  visibility: storedVisibility("note", row.visibility),
+  visibility: storedVisibility('note', row.visibility),
   color: asText(row.color),
   isPinned: asBit(row.isPinned),
   isArchived: asBit(row.isArchived),
   tagIds: asStringArray(row.tagIds),
-  createdAt: encodeText(row.createdAt)
+  createdAt: encodeText(row.createdAt),
 }))
 
 const noteDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
-  entityType: "note",
-  table: "notes",
+  entityType: 'note',
+  table: 'notes',
   select: NOTE_COLUMNS,
   scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: "deleted_at",
+  softDeleteColumn: 'deleted_at',
   writable: new Map([
-    ["title", isString],
-    ["body", isJson],
-    ["plainText", isString],
-    ["color", isNullableString],
-    ["isPinned", isBoolean],
-    ["isArchived", isBoolean],
-    ["tagIds", isStringArray],
-    ["visibility", isOneOf("private", "shared")]
+    ['title', isString],
+    ['body', isJson],
+    ['plainText', isString],
+    ['color', isNullableString],
+    ['isPinned', isBoolean],
+    ['isArchived', isBoolean],
+    ['tagIds', isStringArray],
+    ['visibility', isOneOf('private', 'shared')],
   ]),
-  purge: (input) => [
+  purge: input => [
     ...purgeNoteSearch(sql)(input),
-    ...purgeItemTagJoins(sql, "note", "notes")(input)
+    ...purgeItemTagJoins(sql, 'note', 'notes')(input),
   ],
   ...noteCodec,
   defaults: (patch, context) => ({
     id: context.entityId,
-    type: "note",
+    type: 'note',
     title: encodeText(patch.title),
     body: patch.body === undefined ? null : patch.body,
     plainText: encodeText(patch.plainText),
     ownerId: context.userId,
     householdId: context.householdId,
-    visibility: createdVisibility("note", patch.visibility),
+    visibility: createdVisibility('note', patch.visibility),
     color: asText(patch.color),
     isPinned: patch.isPinned === true,
     isArchived: patch.isArchived === true,
     tagIds: Array.isArray(patch.tagIds) ? patch.tagIds : [],
-    createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
+    createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
-  merge: (input) => mergeFields({}, input),
-  insert: (state) => sql`
+  merge: input => mergeFields({}, input),
+  insert: state => sql`
     INSERT INTO notes
       (id, type, title, body, plain_text, owner_id, household_id, visibility,
        color, is_pinned, is_archived, tag_ids, created_at, updated_at, version, deleted_at)
@@ -1418,9 +1475,9 @@ const noteDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
       sql`
         INSERT INTO notes_fts (note_id, search_title, search_body)
         SELECT ${noteId}, ${title}, ${body} WHERE ${landed}
-      `
+      `,
     ]
-  }
+  },
 })
 
 // ── Event ─────────────────────────────────────────────────────────────────
@@ -1439,10 +1496,10 @@ const EVENT_COLUMNS =
  */
 const eventTimingOfRow = (row: SyncRawRow): Record<string, unknown> => {
   const allDayDate = asText(row.allDayDate)
-  if (allDayDate !== null) return { _tag: "allDay", date: allDayDate }
+  if (allDayDate !== null) return { _tag: 'allDay', date: allDayDate }
   const createdAt = encodeText(row.createdAt)
   const start = asText(row.startAt) ?? createdAt
-  return { _tag: "timed", start, end: asText(row.endAt) ?? start }
+  return { _tag: 'timed', start, end: asText(row.endAt) ?? start }
 }
 
 /**
@@ -1455,27 +1512,27 @@ const eventTimingOfRow = (row: SyncRawRow): Record<string, unknown> => {
  */
 const eventTimingOfPatch = (
   value: unknown,
-  fallbackDate: string
+  fallbackDate: string,
 ): Record<string, unknown> => {
-  if (typeof value === "object" && value !== null) {
+  if (typeof value === 'object' && value !== null) {
     const record = value as Record<string, unknown>
     if (
-      record._tag === "timed" &&
-      typeof record.start === "string" &&
-      typeof record.end === "string"
+      record._tag === 'timed' &&
+      typeof record.start === 'string' &&
+      typeof record.end === 'string'
     ) {
-      return { _tag: "timed", start: record.start, end: record.end }
+      return { _tag: 'timed', start: record.start, end: record.end }
     }
-    if (record._tag === "allDay" && typeof record.date === "string") {
-      return { _tag: "allDay", date: record.date }
+    if (record._tag === 'allDay' && typeof record.date === 'string') {
+      return { _tag: 'allDay', date: record.date }
     }
   }
-  return { _tag: "allDay", date: fallbackDate.slice(0, 10) }
+  return { _tag: 'allDay', date: fallbackDate.slice(0, 10) }
 }
 
-const eventCodec = withSchema<Event>(Event, (row) => ({
+const eventCodec = withSchema<Event>(Event, row => ({
   id: String(row.id),
-  type: "event",
+  type: 'event',
   title: encodeText(row.title),
   description: asText(row.description),
   location: asText(row.location),
@@ -1488,29 +1545,29 @@ const eventCodec = withSchema<Event>(Event, (row) => ({
   occasionId: asText(row.occasionId),
   ownerId: encodeText(row.ownerId),
   householdId: encodeText(row.householdId),
-  visibility: storedVisibility("event", row.visibility),
+  visibility: storedVisibility('event', row.visibility),
   color: asText(row.color),
-  createdAt: encodeText(row.createdAt)
+  createdAt: encodeText(row.createdAt),
 }))
 
 const EVENT_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
-  ["title", isString],
-  ["description", isNullableString],
-  ["location", isNullableString],
-  ["category", isNullableString],
-  ["color", isNullableString],
-  ["people", isStringArray],
+  ['title', isString],
+  ['description', isNullableString],
+  ['location', isNullableString],
+  ['category', isNullableString],
+  ['color', isNullableString],
+  ['people', isStringArray],
   // The timing is one unit: a patch replaces the whole union, so a row can
   // never end up with an instant *and* an all-day date. The shape itself is
   // validated by the Event schema below.
-  ["timing", isJson],
-  ["timeZone", isString],
+  ['timing', isJson],
+  ['timeZone', isString],
   // The rule object is validated structurally by the Event schema below; the
   // guard only rejects non-JSON scalars.
-  ["recurrence", isJson],
-  ["exceptions", isJsonArray],
-  ["occasionId", isNullableString],
-  ["visibility", isOneOf("private", "shared")]
+  ['recurrence', isJson],
+  ['exceptions', isJsonArray],
+  ['occasionId', isNullableString],
+  ['visibility', isOneOf('private', 'shared')],
 ])
 
 /**
@@ -1520,42 +1577,42 @@ const EVENT_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
  * or the local date — never to both.
  */
 const eventTimingColumns = (
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
 ): {
   readonly startAt: string | null
   readonly endAt: string | null
   readonly allDayDate: string | null
 } => {
   const timing = data.timing
-  if (typeof timing === "object" && timing !== null) {
+  if (typeof timing === 'object' && timing !== null) {
     const record = timing as Record<string, unknown>
-    if (record._tag === "allDay") {
+    if (record._tag === 'allDay') {
       return {
         startAt: null,
         endAt: null,
-        allDayDate: typeof record.date === "string" ? record.date : null
+        allDayDate: typeof record.date === 'string' ? record.date : null,
       }
     }
     return {
-      startAt: typeof record.start === "string" ? record.start : null,
-      endAt: typeof record.end === "string" ? record.end : null,
-      allDayDate: null
+      startAt: typeof record.start === 'string' ? record.start : null,
+      endAt: typeof record.end === 'string' ? record.end : null,
+      allDayDate: null,
     }
   }
   return { startAt: null, endAt: null, allDayDate: null }
 }
 
 const eventDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
-  entityType: "event",
-  table: "events",
+  entityType: 'event',
+  table: 'events',
   select: EVENT_COLUMNS,
   scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: "deleted_at",
+  softDeleteColumn: 'deleted_at',
   writable: EVENT_WRITABLE,
   ...eventCodec,
   defaults: (patch, context) => ({
     id: context.entityId,
-    type: "event",
+    type: 'event',
     title: encodeText(patch.title),
     description: asText(patch.description),
     location: asText(patch.location),
@@ -1563,14 +1620,14 @@ const eventDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     color: asText(patch.color),
     people: asStringArray(patch.people),
     timing: eventTimingOfPatch(patch.timing, context.clientUpdatedAt),
-    timeZone: encodeText(patch.timeZone) || "UTC",
+    timeZone: encodeText(patch.timeZone) || 'UTC',
     recurrence: patch.recurrence ?? null,
     exceptions: Array.isArray(patch.exceptions) ? patch.exceptions : [],
     occasionId: asText(patch.occasionId),
     ownerId: context.userId,
     householdId: context.householdId,
-    visibility: createdVisibility("event", patch.visibility),
-    createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
+    visibility: createdVisibility('event', patch.visibility),
+    createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
   /**
    * The shared field-level LWW merge — the same one every other aggregate
@@ -1586,8 +1643,8 @@ const eventDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
    * would let a stale offline device move an event to another day, which is
    * exactly the data loss the LWW rule exists to prevent.
    */
-  merge: (input) => mergeFields({}, input),
-  insert: (state) => {
+  merge: input => mergeFields({}, input),
+  insert: state => {
     const timing = eventTimingColumns(state.data)
     return sql`
       INSERT INTO events
@@ -1636,7 +1693,7 @@ const eventDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
         deleted_at = ${state.deletedAt}
       WHERE id = ${state.entityId} AND version = ${expectedVersion}
     `
-  }
+  },
 })
 
 // ── Habit + HabitEntry (ticket #63; FR-HAB-01/02) ─────────────────────────
@@ -1646,78 +1703,79 @@ const HABIT_COLUMNS =
   `frequency, frequency_history AS frequencyHistory, reminder_time AS reminderTime, ` +
   `time_zone AS timeZone, created_at AS createdAt`
 
-const habitCodec = withSchema<Habit>(Habit, (row) => {
+const habitCodec = withSchema<Habit>(Habit, row => {
   const history = parseJson(row.frequencyHistory)
   return {
     id: String(row.id),
-    type: "habit",
+    type: 'habit',
     title: encodeText(row.title),
     description: asText(row.description),
     icon: asText(row.icon),
     ownerId: encodeText(row.ownerId),
     householdId: encodeText(row.householdId),
-    visibility: storedVisibility("habit", row.visibility),
+    visibility: storedVisibility('habit', row.visibility),
     color: asText(row.color),
     startedOn: encodeText(row.startedOn),
-    frequency: parseJson(row.frequency) ?? { _tag: "daily" },
+    frequency: parseJson(row.frequency) ?? { _tag: 'daily' },
     frequencyHistory: Array.isArray(history) ? history : [],
     reminderTime: asText(row.reminderTime),
-    timeZone: encodeText(row.timeZone) || "UTC",
-    createdAt: encodeText(row.createdAt)
+    timeZone: encodeText(row.timeZone) || 'UTC',
+    createdAt: encodeText(row.createdAt),
   }
 })
 
 const HABIT_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
-  ["title", isString],
-  ["description", isNullableString],
-  ["color", isNullableString],
-  ["icon", isNullableString],
+  ['title', isString],
+  ['description', isNullableString],
+  ['color', isNullableString],
+  ['icon', isNullableString],
   // The union is one unit: a patch replaces the whole frequency, and the shape
   // is validated by the Habit schema below. `frequencyHistory` is deliberately
   // absent — it is server-managed, so a client patch can never rewrite the
   // history the stats are computed from.
-  ["frequency", isJson],
-  ["reminderTime", isNullableString],
-  ["timeZone", isString],
-  ["visibility", isOneOf("private", "shared")]
+  ['frequency', isJson],
+  ['reminderTime', isNullableString],
+  ['timeZone', isString],
+  ['visibility', isOneOf('private', 'shared')],
 ])
 
 /** The habit's frequency as the union the model expects; `daily` only when absent. */
 const habitFrequencyOfPatch = (value: unknown): Record<string, unknown> =>
   value === undefined || value === null
-    ? { _tag: "daily" }
+    ? { _tag: 'daily' }
     : (value as Record<string, unknown>)
 
 const habitDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
-  entityType: "habit",
-  table: "habits",
+  entityType: 'habit',
+  table: 'habits',
   select: HABIT_COLUMNS,
   scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: "deleted_at",
+  softDeleteColumn: 'deleted_at',
   writable: HABIT_WRITABLE,
   ...habitCodec,
   defaults: (patch, context) => {
-    const timeZone = encodeText(patch.timeZone) || "UTC"
-    const frequency = habitFrequencyOfPatch(patch.frequency) as unknown as HabitFrequency
+    const timeZone = encodeText(patch.timeZone) || 'UTC'
+    const frequency = habitFrequencyOfPatch(
+      patch.frequency,
+    ) as unknown as HabitFrequency
     // The habit began on the owner's local creation day. The client's creation
     // instant is the edit time (a validated ISO string); a malformed custom
     // `createdAt` falls back to it, then to the commit instant, so a bad value
     // can never throw inside the batch planner.
     const createdAt = asText(patch.createdAt)
-    const startedOn = (createdAt !== null
-      ? localDateInOption(createdAt, timeZone)
-      : null) ??
+    const startedOn =
+      (createdAt !== null ? localDateInOption(createdAt, timeZone) : null) ??
       localDateInOption(context.clientUpdatedAt, timeZone) ??
-      localDateIn(context.now, "UTC")
+      localDateIn(context.now, 'UTC')
     return {
       id: context.entityId,
-      type: "habit",
+      type: 'habit',
       title: encodeText(patch.title),
       description: asText(patch.description),
       icon: asText(patch.icon),
       ownerId: context.userId,
       householdId: context.householdId,
-      visibility: createdVisibility("habit", patch.visibility),
+      visibility: createdVisibility('habit', patch.visibility),
       color: asText(patch.color),
       startedOn,
       frequency,
@@ -1726,7 +1784,7 @@ const habitDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
       frequencyHistory: [{ effectiveFrom: startedOn, frequency }],
       reminderTime: asText(patch.reminderTime),
       timeZone,
-      createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
+      createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
     }
   },
   /**
@@ -1739,9 +1797,11 @@ const habitDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
    * instant in the habit's zone — never from `clientUpdatedAt` — so a change
    * can never be back-dated behind the era it replaces (#65).
    */
-  merge: (input) => {
+  merge: input => {
     const next = mergeFields({}, input)
-    const currentFrequency = input.current.frequency as HabitFrequency | undefined
+    const currentFrequency = input.current.frequency as
+      | HabitFrequency
+      | undefined
     const nextFrequency = next.frequency as HabitFrequency | undefined
     if (nextFrequency !== undefined) {
       // Decode before comparing: the schema strips unknown keys and the
@@ -1749,7 +1809,7 @@ const habitDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
       // (`{_tag:"daily", days:[1]}`) cannot grow a phantom era. An invalid
       // union is left as-is and rejected by `validate` below.
       const decoded = Schema.decodeUnknownOption(HabitFrequency)(nextFrequency)
-      if (decoded._tag === "None") return next
+      if (decoded._tag === 'None') return next
       const frequency = decoded.value
       next.frequency = frequency
       if (
@@ -1759,17 +1819,19 @@ const habitDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
         const history = Array.isArray(next.frequencyHistory)
           ? (next.frequencyHistory as ReadonlyArray<HabitFrequencyChange>)
           : []
-        const timeZone = encodeText(next.timeZone) || "UTC"
+        const timeZone = encodeText(next.timeZone) || 'UTC'
         next.frequencyHistory = habitFrequencyHistoryAfter({
           history,
           frequency,
-          changeDate: localDateInOption(input.now, timeZone) ?? localDateIn(input.now, "UTC")
+          changeDate:
+            localDateInOption(input.now, timeZone) ??
+            localDateIn(input.now, 'UTC'),
         })
       }
     }
     return next
   },
-  insert: (state) => sql`
+  insert: state => sql`
     INSERT INTO habits
       (id, type, title, description, icon, owner_id, household_id, visibility,
        color, started_on, frequency, frequency_history, reminder_time, time_zone,
@@ -1784,7 +1846,7 @@ const habitDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
        ${encodeJson(state.data.frequency)},
        ${encodeJson(state.data.frequencyHistory)},
        ${encodeNullableText(state.data.reminderTime)},
-       ${encodeText(state.data.timeZone) || "UTC"},
+       ${encodeText(state.data.timeZone) || 'UTC'},
        ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
        ${state.updatedAt}, ${state.version}, ${state.deletedAt})
     ON CONFLICT DO NOTHING
@@ -1799,79 +1861,82 @@ const habitDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
       frequency = ${encodeJson(state.data.frequency)},
       frequency_history = ${encodeJson(state.data.frequencyHistory)},
       reminder_time = ${encodeNullableText(state.data.reminderTime)},
-      time_zone = ${encodeText(state.data.timeZone) || "UTC"},
+      time_zone = ${encodeText(state.data.timeZone) || 'UTC'},
       updated_at = ${state.updatedAt},
       version = ${state.version},
       deleted_at = ${state.deletedAt}
     WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `
+  `,
 })
 
 const HABIT_ENTRY_COLUMNS =
   `${META_COLUMNS}, habit_id AS habitId, local_date AS localDate, ` +
   `time_zone AS timeZone, status, created_at AS createdAt`
 
-const habitEntryCodec = withSchema<HabitEntry>(HabitEntry, (row) => ({
+const habitEntryCodec = withSchema<HabitEntry>(HabitEntry, row => ({
   id: String(row.id),
   habitId: encodeText(row.habitId),
   ownerId: encodeText(row.ownerId),
   householdId: encodeText(row.householdId),
-  visibility: storedVisibility("habitEntry", row.visibility),
+  visibility: storedVisibility('habitEntry', row.visibility),
   localDate: encodeText(row.localDate),
-  timeZone: encodeText(row.timeZone) || "UTC",
-  status: encodeText(row.status) || "done",
-  createdAt: encodeText(row.createdAt)
+  timeZone: encodeText(row.timeZone) || 'UTC',
+  status: encodeText(row.status) || 'done',
+  createdAt: encodeText(row.createdAt),
 }))
 
 const HABIT_ENTRY_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
   // The entry's identity on the wire: a tap names the habit and the local day
   // it logs. Both are validated by the HabitEntry schema below.
-  ["habitId", isString],
-  ["localDate", isLocalDate],
-  ["timeZone", isString],
-  ["status", isOneOf("done", "partial", "missed")]
+  ['habitId', isString],
+  ['localDate', isLocalDate],
+  ['timeZone', isString],
+  ['status', isOneOf('done', 'partial', 'missed')],
 ])
 
-const habitEntryDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
-  entityType: "habitEntry",
-  table: "habit_entries",
+const habitEntryDefinition = (
+  sql: SqlClient.SqlClient,
+): SyncEntityDefinition => ({
+  entityType: 'habitEntry',
+  table: 'habit_entries',
   select: HABIT_ENTRY_COLUMNS,
   scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: "deleted_at",
+  softDeleteColumn: 'deleted_at',
   writable: HABIT_ENTRY_WRITABLE,
   parent: {
-    entityType: "habit",
-    field: "habitId",
-    column: "habit_id",
+    entityType: 'habit',
+    field: 'habitId',
+    column: 'habit_id',
     // A logged day is exactly as visible as its habit (ADR-0011).
-    visibility: "copy"
+    visibility: 'copy',
   },
   // `visibility` is exact inheritance (ADR-0011): the client cannot set it;
   // the sync service's policy guard rejects a patch that carries one before
   // this definition runs.
-  strict: ["habitId", "localDate", "status"],
+  strict: ['habitId', 'localDate', 'status'],
   ...habitEntryCodec,
   defaults: (patch, context) => {
-    const timeZone = encodeText(patch.timeZone) || "UTC"
+    const timeZone = encodeText(patch.timeZone) || 'UTC'
     return {
       id: context.entityId,
       habitId: encodeText(patch.habitId) || null,
       ownerId: context.userId,
       householdId: context.householdId,
-      visibility: createdVisibility("habitEntry", patch.visibility),
+      visibility: createdVisibility('habitEntry', patch.visibility),
       // The day the tap logged: the client sends it, so a backdated or
       // timezone-crossing tap is explicit. A delete-only push carries none, so
       // fall back to the local date of the write instant (never a throw: a bad
       // zone is rejected by the model below).
-      localDate: encodeText(patch.localDate) ||
+      localDate:
+        encodeText(patch.localDate) ||
         (localDateInOption(context.clientUpdatedAt, timeZone) ??
-          localDateIn(context.now, "UTC")),
+          localDateIn(context.now, 'UTC')),
       timeZone,
       // No default: an entry always has a status, so a value the client sent
       // outside the enum must be rejected as an invalid patch, not silently
       // recorded as `done` (the RPC path rejects it too).
       status: encodeText(patch.status),
-      createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
+      createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
     }
   },
   /**
@@ -1886,8 +1951,8 @@ const habitEntryDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition =>
    * a tombstone here is recovered by that explicit mutation (the client sync
    * engine calls it on a `tombstone`/`UniqueViolation` result).
    */
-  merge: (input) => mergeFields({}, input),
-  insert: (state) => sql`
+  merge: input => mergeFields({}, input),
+  insert: state => sql`
     INSERT INTO habit_entries
       (id, habit_id, owner_id, household_id, visibility, local_date,
        time_zone, status, created_at, updated_at, version, deleted_at)
@@ -1895,7 +1960,7 @@ const habitEntryDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition =>
       (${state.entityId}, ${encodeText(state.data.habitId)}, ${state.ownerId},
        ${state.householdId}, ${state.visibility},
        ${encodeText(state.data.localDate)},
-       ${encodeText(state.data.timeZone) || "UTC"},
+       ${encodeText(state.data.timeZone) || 'UTC'},
        ${encodeText(state.data.status)},
        ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
        ${state.updatedAt}, ${state.version}, ${state.deletedAt})
@@ -1904,13 +1969,13 @@ const habitEntryDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition =>
   update: (state, expectedVersion) => sql`
     UPDATE habit_entries SET
       visibility = ${state.visibility},
-      time_zone = ${encodeText(state.data.timeZone) || "UTC"},
+      time_zone = ${encodeText(state.data.timeZone) || 'UTC'},
       status = ${encodeText(state.data.status)},
       updated_at = ${state.updatedAt},
       version = ${state.version},
       deleted_at = ${state.deletedAt}
     WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `
+  `,
 })
 
 // ── Reminder ──────────────────────────────────────────────────────────────
@@ -1922,53 +1987,64 @@ const REMINDER_COLUMNS =
   `time_zone AS timeZone, created_at AS createdAt`
 
 /** Rebuild the link union from the flattened columns (malformed → none). */
-const reminderLinkOf = (type: unknown, id: unknown): Record<string, unknown> => {
+const reminderLinkOf = (
+  type: unknown,
+  id: unknown,
+): Record<string, unknown> => {
   const linkId = asText(id)
   switch (type) {
-    case "task":
-      return linkId === null ? { _tag: "none" } : { _tag: "task", taskId: linkId }
-    case "event":
-      return linkId === null ? { _tag: "none" } : { _tag: "event", eventId: linkId }
-    case "habit":
-      return linkId === null ? { _tag: "none" } : { _tag: "habit", habitId: linkId }
-    case "occasion":
-      return linkId === null ? { _tag: "none" } : { _tag: "occasion", occasionId: linkId }
+    case 'task':
+      return linkId === null
+        ? { _tag: 'none' }
+        : { _tag: 'task', taskId: linkId }
+    case 'event':
+      return linkId === null
+        ? { _tag: 'none' }
+        : { _tag: 'event', eventId: linkId }
+    case 'habit':
+      return linkId === null
+        ? { _tag: 'none' }
+        : { _tag: 'habit', habitId: linkId }
+    case 'occasion':
+      return linkId === null
+        ? { _tag: 'none' }
+        : { _tag: 'occasion', occasionId: linkId }
     default:
-      return { _tag: "none" }
+      return { _tag: 'none' }
   }
 }
 
 /** Flatten the link union for the two columns (the only writer is trusted). */
 const reminderLinkColumns = (
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
 ): { readonly linkType: string; readonly linkId: string | null } => {
   const link = data.link
-  if (typeof link === "object" && link !== null) {
+  if (typeof link === 'object' && link !== null) {
     const record = link as Record<string, unknown>
     switch (record._tag) {
-      case "task":
-        return { linkType: "task", linkId: asText(record.taskId) }
-      case "event":
-        return { linkType: "event", linkId: asText(record.eventId) }
-      case "habit":
-        return { linkType: "habit", linkId: asText(record.habitId) }
-      case "occasion":
-        return { linkType: "occasion", linkId: asText(record.occasionId) }
+      case 'task':
+        return { linkType: 'task', linkId: asText(record.taskId) }
+      case 'event':
+        return { linkType: 'event', linkId: asText(record.eventId) }
+      case 'habit':
+        return { linkType: 'habit', linkId: asText(record.habitId) }
+      case 'occasion':
+        return { linkType: 'occasion', linkId: asText(record.occasionId) }
       default:
-        return { linkType: "none", linkId: null }
+        return { linkType: 'none', linkId: null }
     }
   }
-  return { linkType: "none", linkId: null }
+  return { linkType: 'none', linkId: null }
 }
 
 const reminderRepeatOf = (value: unknown): Record<string, unknown> => {
   const parsed = parseJson(value)
-  if (typeof parsed === "object" && parsed !== null) {
+  if (typeof parsed === 'object' && parsed !== null) {
     return parsed as Record<string, unknown>
   }
   // A delete-only tombstone may be inserted without a valid repeat; the model
   // still has to be structurally valid, so fall back to a one-off.
-  return { _tag: "once" }
+  return { _tag: 'once' }
 }
 
 /**
@@ -1976,61 +2052,63 @@ const reminderRepeatOf = (value: unknown): Record<string, unknown> => {
  * canonical UTC — the same normalisation the service applies on its write path.
  */
 const normalizeInstantText = (value: unknown): unknown => {
-  if (typeof value !== "string") return value
+  if (typeof value !== 'string') return value
   const parsed = Date.parse(value)
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : value
 }
 
-const reminderCodec = withSchema<Reminder>(Reminder, (row) => ({
+const reminderCodec = withSchema<Reminder>(Reminder, row => ({
   id: String(row.id),
-  type: "reminder",
+  type: 'reminder',
   title: encodeText(row.title),
   note: asText(row.note),
-  kind: encodeText(row.kind) || "general",
-  tier: encodeText(row.tier) || "normal",
+  kind: encodeText(row.kind) || 'general',
+  tier: encodeText(row.tier) || 'normal',
   repeat: reminderRepeatOf(row.repeat),
   fireAt: encodeText(row.fireAt),
   offsetMinutes: encodeInt(row.offsetMinutes),
   link: reminderLinkOf(row.linkType, row.linkId),
   silencedUntil: asText(row.silencedUntil),
-  timeZone: encodeText(row.timeZone) || "UTC",
+  timeZone: encodeText(row.timeZone) || 'UTC',
   ownerId: encodeText(row.ownerId),
   householdId: encodeText(row.householdId),
-  visibility: storedVisibility("reminder", row.visibility),
+  visibility: storedVisibility('reminder', row.visibility),
   color: asText(row.color),
-  createdAt: encodeText(row.createdAt)
+  createdAt: encodeText(row.createdAt),
 }))
 
 const REMINDER_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
-  ["title", isString],
-  ["note", isNullableString],
-  ["color", isNullableString],
+  ['title', isString],
+  ['note', isNullableString],
+  ['color', isNullableString],
   // The tier is derived from the kind at write time and is deliberately not
   // writable: a client can never make a non-medication reminder critical.
-  ["kind", isOneOf("medication", "exercise", "chore", "general")],
+  ['kind', isOneOf('medication', 'exercise', 'chore', 'general')],
   // The repeat union is replaced as one unit; the shape is validated by the
   // Reminder schema below.
-  ["repeat", isJson],
-  ["fireAt", isString],
-  ["offsetMinutes", isInt],
-  ["link", isJson],
-  ["silencedUntil", isNullableString],
-  ["timeZone", isString],
-  ["visibility", isOneOf("private", "shared")]
+  ['repeat', isJson],
+  ['fireAt', isString],
+  ['offsetMinutes', isInt],
+  ['link', isJson],
+  ['silencedUntil', isNullableString],
+  ['timeZone', isString],
+  ['visibility', isOneOf('private', 'shared')],
 ])
 
-const reminderDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
-  entityType: "reminder",
-  table: "reminders",
+const reminderDefinition = (
+  sql: SqlClient.SqlClient,
+): SyncEntityDefinition => ({
+  entityType: 'reminder',
+  table: 'reminders',
   select: REMINDER_COLUMNS,
   scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: "deleted_at",
+  softDeleteColumn: 'deleted_at',
   writable: REMINDER_WRITABLE,
   ...reminderCodec,
   defaults: (patch, context) => {
-    const kind = encodeText(patch.kind) || "general"
+    const kind = encodeText(patch.kind) || 'general'
     const repeat = reminderRepeatOf(patch.repeat)
-    const timeZone = encodeText(patch.timeZone) || "UTC"
+    const timeZone = encodeText(patch.timeZone) || 'UTC'
     const explicitFireAt = asText(patch.fireAt)
     // The service derives a pattern reminder's first fire from its repeat; the
     // offline-create path must do the same, or a daily/weekly reminder synced
@@ -2040,17 +2118,17 @@ const reminderDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => (
     const fireAt = normalizeInstantText(
       explicitFireAt ??
         reminderFireAt({
-          repeat: repeat as Reminder["repeat"],
+          repeat: repeat as Reminder['repeat'],
           timeZone,
           now: context.clientUpdatedAt,
           explicitFireAt: null,
-          linkInstant: null
+          linkInstant: null,
         }) ??
-        context.clientUpdatedAt
+        context.clientUpdatedAt,
     )
     return {
       id: context.entityId,
-      type: "reminder",
+      type: 'reminder',
       title: encodeText(patch.title),
       note: asText(patch.note),
       color: asText(patch.color),
@@ -2064,17 +2142,17 @@ const reminderDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => (
         (patch.link as Record<string, unknown> | undefined)?.taskId ??
           (patch.link as Record<string, unknown> | undefined)?.eventId ??
           (patch.link as Record<string, unknown> | undefined)?.habitId ??
-          (patch.link as Record<string, unknown> | undefined)?.occasionId
+          (patch.link as Record<string, unknown> | undefined)?.occasionId,
       ),
       silencedUntil: normalizeInstantText(asText(patch.silencedUntil)),
       timeZone,
       ownerId: context.userId,
       householdId: context.householdId,
-      visibility: createdVisibility("reminder", patch.visibility),
-      createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
+      visibility: createdVisibility('reminder', patch.visibility),
+      createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
     }
   },
-  merge: (input) => {
+  merge: input => {
     const next = mergeFields({}, input)
     // Type drives tier: re-derive after every merge so a kind change cannot
     // leave a stale critical/normal flag (and a patch cannot forge one).
@@ -2082,9 +2160,10 @@ const reminderDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => (
     // Keep the scheduling columns canonical so the sweep's TEXT comparison is
     // an instant ordering, whichever device wrote the patch.
     next.fireAt = normalizeInstantText(next.fireAt)
-    next.silencedUntil = next.silencedUntil === null
-      ? null
-      : normalizeInstantText(next.silencedUntil)
+    next.silencedUntil =
+      next.silencedUntil === null
+        ? null
+        : normalizeInstantText(next.silencedUntil)
     return next
   },
   /**
@@ -2094,7 +2173,7 @@ const reminderDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => (
    * the ledger untouched.
    */
   index: ({ state }) => {
-    const silenced = typeof state.data.silencedUntil === "string"
+    const silenced = typeof state.data.silencedUntil === 'string'
     if (state.deletedAt === null && !silenced) return []
     return [
       sql`
@@ -2108,10 +2187,10 @@ const reminderDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => (
               AND version = ${state.version}
               AND updated_at = ${state.updatedAt}
           )
-      `
+      `,
     ]
   },
-  insert: (state) => {
+  insert: state => {
     const link = reminderLinkColumns(state.data)
     return sql`
       INSERT INTO reminders
@@ -2127,7 +2206,7 @@ const reminderDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => (
          ${encodeJson(state.data.repeat)}, ${encodeInt(state.data.offsetMinutes)},
          ${encodeText(state.data.fireAt)}, ${link.linkType}, ${link.linkId},
          ${encodeNullableText(state.data.silencedUntil)},
-         ${encodeText(state.data.timeZone) || "UTC"},
+         ${encodeText(state.data.timeZone) || 'UTC'},
          ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
          ${state.updatedAt}, ${state.version}, ${state.deletedAt})
       ON CONFLICT DO NOTHING
@@ -2149,13 +2228,13 @@ const reminderDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => (
         link_type = ${link.linkType},
         link_id = ${link.linkId},
         silenced_until = ${encodeNullableText(state.data.silencedUntil)},
-        time_zone = ${encodeText(state.data.timeZone) || "UTC"},
+        time_zone = ${encodeText(state.data.timeZone) || 'UTC'},
         updated_at = ${state.updatedAt},
         version = ${state.version},
         deleted_at = ${state.deletedAt}
       WHERE id = ${state.entityId} AND version = ${expectedVersion}
     `
-  }
+  },
 })
 
 // ── Occasion ──────────────────────────────────────────────────────────────
@@ -2165,9 +2244,9 @@ const OCCASION_COLUMNS =
   `yearly, advance_reminder_days AS advanceReminderDays, ` +
   `preparation_task_id AS preparationTaskId, color, created_at AS createdAt`
 
-const occasionCodec = withSchema<Occasion>(Occasion, (row) => ({
+const occasionCodec = withSchema<Occasion>(Occasion, row => ({
   id: String(row.id),
-  type: "occasion",
+  type: 'occasion',
   title: encodeText(row.title),
   originDate: encodeText(row.originDate),
   timeZone: encodeText(row.timeZone),
@@ -2176,9 +2255,9 @@ const occasionCodec = withSchema<Occasion>(Occasion, (row) => ({
   preparationTaskId: asText(row.preparationTaskId),
   ownerId: encodeText(row.ownerId),
   householdId: encodeText(row.householdId),
-  visibility: storedVisibility("occasion", row.visibility),
+  visibility: storedVisibility('occasion', row.visibility),
   color: asText(row.color),
-  createdAt: encodeText(row.createdAt)
+  createdAt: encodeText(row.createdAt),
 }))
 
 /**
@@ -2190,31 +2269,34 @@ const occasionCodec = withSchema<Occasion>(Occasion, (row) => ({
  * exactly like it mints any other client-owned row. A stale link is harmless
  * (the next preparation replaces a missing task).
  */
-const occasionDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
-  entityType: "occasion",
-  table: "occasions",
+const occasionDefinition = (
+  sql: SqlClient.SqlClient,
+): SyncEntityDefinition => ({
+  entityType: 'occasion',
+  table: 'occasions',
   select: OCCASION_COLUMNS,
   scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: "deleted_at",
+  softDeleteColumn: 'deleted_at',
   writable: new Map([
-    ["title", isString],
-    ["originDate", isString],
-    ["timeZone", isString],
-    ["yearly", isBoolean],
-    ["advanceReminderDays", isNullableIntInRange(0, 365)],
-    ["preparationTaskId", isNullableString],
-    ["color", isNullableString],
-    ["visibility", isOneOf("private", "shared")]
+    ['title', isString],
+    ['originDate', isString],
+    ['timeZone', isString],
+    ['yearly', isBoolean],
+    ['advanceReminderDays', isNullableIntInRange(0, 365)],
+    ['preparationTaskId', isNullableString],
+    ['color', isNullableString],
+    ['visibility', isOneOf('private', 'shared')],
   ]),
   ...occasionCodec,
   defaults: (patch, context) => ({
     id: context.entityId,
-    type: "occasion",
+    type: 'occasion',
     title: encodeText(patch.title),
     // A delete-only push carries no date; the tombstone still needs a valid
     // local date, so the client's own write day is the fallback.
-    originDate: encodeText(patch.originDate) || context.clientUpdatedAt.slice(0, 10),
-    timeZone: encodeText(patch.timeZone) || "UTC",
+    originDate:
+      encodeText(patch.originDate) || context.clientUpdatedAt.slice(0, 10),
+    timeZone: encodeText(patch.timeZone) || 'UTC',
     yearly: patch.yearly !== false,
     // Preserve an out-of-range offset so the strict schema rejects it rather
     // than silently clearing it.
@@ -2222,16 +2304,16 @@ const occasionDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => (
     preparationTaskId: asText(patch.preparationTaskId),
     ownerId: context.userId,
     householdId: context.householdId,
-    visibility: createdVisibility("occasion", patch.visibility),
+    visibility: createdVisibility('occasion', patch.visibility),
     color: asText(patch.color),
-    createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt
+    createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
   /**
    * The shared field-level LWW merge. The origin date is one field: a newer
    * edit may move the annual anchor, and an older one must not.
    */
-  merge: (input) => mergeFields({}, input),
-  insert: (state) => sql`
+  merge: input => mergeFields({}, input),
+  insert: state => sql`
     INSERT INTO occasions
       (id, type, title, owner_id, household_id, visibility, color,
        origin_date, time_zone, yearly, advance_reminder_days,
@@ -2262,24 +2344,24 @@ const occasionDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => (
       version = ${state.version},
       deleted_at = ${state.deletedAt}
     WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `
+  `,
 })
 
 // ── Registry ──────────────────────────────────────────────────────────────
 
 /** Aggregates that sync today. Other `ItemType`s still reject as unsupported. */
 export const SYNC_ENTITY_TYPES = [
-  "task",
-  "project",
-  "tag",
-  "list",
-  "listItem",
-  "note",
-  "event",
-  "habit",
-  "habitEntry",
-  "reminder",
-  "occasion"
+  'task',
+  'project',
+  'tag',
+  'list',
+  'listItem',
+  'note',
+  'event',
+  'habit',
+  'habitEntry',
+  'reminder',
+  'occasion',
 ] as const satisfies ReadonlyArray<SyncEntityType>
 
 export const makeSyncRegistry = (sql: SqlClient.SqlClient): SyncRegistry => {
@@ -2294,13 +2376,13 @@ export const makeSyncRegistry = (sql: SqlClient.SqlClient): SyncRegistry => {
     habitDefinition(sql),
     habitEntryDefinition(sql),
     reminderDefinition(sql),
-    occasionDefinition(sql)
+    occasionDefinition(sql),
   ]
   const byType = new Map<SyncEntityType, SyncEntityDefinition>(
-    definitions.map((definition) => [definition.entityType, definition])
+    definitions.map(definition => [definition.entityType, definition]),
   )
   return {
-    get: (entityType) => byType.get(entityType),
-    all: () => definitions
+    get: entityType => byType.get(entityType),
+    all: () => definitions,
   }
 }

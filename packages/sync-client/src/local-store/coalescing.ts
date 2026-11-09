@@ -1,4 +1,4 @@
-import type { LocalWrite, MirrorRecord, OutboxRecord } from "./types"
+import type { LocalWrite, MirrorRecord, OutboxRecord } from './types'
 
 /**
  * The pure half of the local store: everything that decides what a write
@@ -13,7 +13,7 @@ export const entityKey = (entityType: string, entityId: string): string =>
   `${entityType}\u0000${entityId}`
 
 export const isEmptyPatch = (
-  patch: Readonly<Record<string, unknown>>
+  patch: Readonly<Record<string, unknown>>,
 ): boolean => Object.keys(patch).length === 0
 
 export const withoutSyncError = (record: MirrorRecord): MirrorRecord => {
@@ -42,12 +42,12 @@ export const laterInstant = (a: string, b: string): string =>
  */
 export const coalescible = (
   queued: OutboxRecord | undefined,
-  write: LocalWrite
+  write: LocalWrite,
 ): queued is OutboxRecord =>
   queued !== undefined &&
   queued.sent !== true &&
-  queued.op === "upsert" &&
-  write.op === "upsert" &&
+  queued.op === 'upsert' &&
+  write.op === 'upsert' &&
   !isEmptyPatch(queued.patch) &&
   !isEmptyPatch(write.patch)
 
@@ -62,7 +62,7 @@ export const coalescible = (
 export const nextMirrorRecord = (
   current: MirrorRecord | undefined,
   write: LocalWrite,
-  now: string
+  now: string,
 ): MirrorRecord => ({
   entityType: write.entityType,
   entityId: write.entityId,
@@ -71,11 +71,11 @@ export const nextMirrorRecord = (
   deletedAt:
     write.deletedAt !== undefined
       ? write.deletedAt
-      : write.op === "delete"
+      : write.op === 'delete'
         ? now
         : (current?.deletedAt ?? null),
   data: { ...current?.data, ...write.patch },
-  ...(current?.syncError === undefined ? {} : { syncError: current.syncError })
+  ...(current?.syncError === undefined ? {} : { syncError: current.syncError }),
 })
 
 /** The outbox entry a fresh write would append when it cannot fold. */
@@ -83,8 +83,8 @@ export const newOutboxEntry = (
   current: MirrorRecord | undefined,
   write: LocalWrite,
   clientMutationId: string,
-  now: string
-): Omit<OutboxRecord, "seq"> =>
+  now: string,
+): Omit<OutboxRecord, 'seq'> =>
   ({
     clientMutationId,
     entityType: write.entityType,
@@ -93,8 +93,8 @@ export const newOutboxEntry = (
     op: write.op,
     patch: write.patch,
     clientUpdatedAt: now,
-    sent: false
-  }) satisfies Omit<OutboxRecord, "seq">
+    sent: false,
+  }) satisfies Omit<OutboxRecord, 'seq'>
 
 /**
  * Fold an unsent upsert into the newest queued upsert for the row, in the
@@ -105,7 +105,7 @@ export const newOutboxEntry = (
 export const coalesceOutboxEntry = (
   latest: OutboxRecord | undefined,
   write: LocalWrite,
-  now: string
+  now: string,
 ): OutboxRecord | undefined =>
   coalescible(latest, write)
     ? {
@@ -113,6 +113,6 @@ export const coalesceOutboxEntry = (
         // Same seq, identity and anchor: the server sees one mutation.
         patch: { ...latest.patch, ...write.patch },
         clientUpdatedAt: laterInstant(latest.clientUpdatedAt, now),
-        sent: false
+        sent: false,
       }
     : undefined

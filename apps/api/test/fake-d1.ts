@@ -1,5 +1,5 @@
-import { DatabaseSync } from "node:sqlite"
-import type { D1Database } from "@cloudflare/workers-types"
+import { DatabaseSync } from 'node:sqlite'
+import type { D1Database } from '@cloudflare/workers-types'
 
 /**
  * A tiny D1Database over Node's built-in SQLite for the sync-engine tests.
@@ -36,7 +36,7 @@ class BoundStatement {
     private readonly db: DatabaseSync,
     private readonly sql: string,
     private readonly params: ReadonlyArray<unknown> = [],
-    private readonly onExecute: () => void = () => {}
+    private readonly onExecute: () => void = () => {},
   ) {}
 
   bind(...params: ReadonlyArray<unknown>): BoundStatement {
@@ -52,7 +52,9 @@ class BoundStatement {
   }
 
   async raw(): Promise<ReadonlyArray<ReadonlyArray<unknown>>> {
-    return this.execute().results.map((row) => Object.values(row as Record<string, unknown>))
+    return this.execute().results.map(row =>
+      Object.values(row as Record<string, unknown>),
+    )
   }
 
   async first<T = unknown>(): Promise<T | null> {
@@ -66,18 +68,20 @@ class BoundStatement {
     if (this.params.length > D1_MAX_BOUND_PARAMS) {
       throw new Error(
         `D1 rejects more than ${D1_MAX_BOUND_PARAMS} bound parameters per query ` +
-          `(got ${this.params.length}): ${this.sql}`
+          `(got ${this.params.length}): ${this.sql}`,
       )
     }
     const statement = this.db.prepare(this.sql)
-    const results = statement.all(...(this.params as Array<string | number | null>))
+    const results = statement.all(
+      ...(this.params as Array<string | number | null>),
+    )
     const meta = this.db
-      .prepare("SELECT changes() AS changes, last_insert_rowid() AS lastRowId")
+      .prepare('SELECT changes() AS changes, last_insert_rowid() AS lastRowId')
       .get() as { readonly changes: number; readonly lastRowId: number }
     return {
       success: true,
       results: results as ReadonlyArray<unknown>,
-      meta: { changes: meta.changes, last_row_id: meta.lastRowId }
+      meta: { changes: meta.changes, last_row_id: meta.lastRowId },
     }
   }
 }
@@ -111,18 +115,18 @@ export class FakeD1 {
   }
 
   async batch(
-    statements: ReadonlyArray<BoundStatement>
+    statements: ReadonlyArray<BoundStatement>,
   ): Promise<ReadonlyArray<D1ResultLike>> {
     this.batchCalls += 1
     this.batchStatementCounts.push(statements.length)
     this.beforeBatch?.()
-    this.db.exec("BEGIN")
+    this.db.exec('BEGIN')
     try {
-      const results = statements.map((statement) => statement.execute())
-      this.db.exec("COMMIT")
+      const results = statements.map(statement => statement.execute())
+      this.db.exec('COMMIT')
       return results
     } catch (error) {
-      this.db.exec("ROLLBACK")
+      this.db.exec('ROLLBACK')
       throw error
     }
   }

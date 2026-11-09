@@ -96,6 +96,7 @@ export const reconcileDraft = (input: {
   const { draft } = input
 
   if (draft === undefined) return { apply: false, reason: 'missing' }
+
   if (draft.text === input.serverText) {
     return { apply: false, reason: 'unchanged' }
   }
@@ -121,6 +122,7 @@ export const reconcileDraft = (input: {
   // Legacy drafts without `baseText` cannot tell an ack from a remote edit;
   // an empty one may not overwrite stored text and the version wins ties.
   if (draft.text === '') return { apply: false, reason: 'empty' }
+
   if (draft.version >= input.serverVersion) {
     return { apply: true, text: draft.text }
   }

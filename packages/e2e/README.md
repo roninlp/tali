@@ -18,13 +18,13 @@ database is never touched.
 
 The five flows:
 
-| File | Flow |
-| --- | --- |
-| `01-household.spec.ts` | register → create household → invite → second account joins |
-| `02-offline-task.spec.ts` | offline quick-add → reload offline → reconnect → converges on both devices |
-| `03-shared-list.spec.ts` | item checked on A appears live on B |
-| `04-reminder.spec.ts` | medication reminder fires → Done from the notification → inbox shows it |
-| `05-recurring-event.spec.ts` | recurring event in week/month → "this and following" split |
+| File                         | Flow                                                                       |
+| ---------------------------- | -------------------------------------------------------------------------- |
+| `01-household.spec.ts`       | register → create household → invite → second account joins                |
+| `02-offline-task.spec.ts`    | offline quick-add → reload offline → reconnect → converges on both devices |
+| `03-shared-list.spec.ts`     | item checked on A appears live on B                                        |
+| `04-reminder.spec.ts`        | medication reminder fires → Done from the notification → inbox shows it    |
+| `05-recurring-event.spec.ts` | recurring event in week/month → "this and following" split                 |
 
 ## Auth and sync smoke checks
 

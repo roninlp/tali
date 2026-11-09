@@ -1,5 +1,10 @@
-import { Effect, Option, Schema } from "effect"
-import { HttpRouter, HttpServerError, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { Effect, Option, Schema } from 'effect'
+import {
+  HttpRouter,
+  HttpServerError,
+  HttpServerRequest,
+  HttpServerResponse,
+} from 'effect/http'
 import {
   ChangePasswordInput,
   CreateHouseholdInput,
@@ -9,9 +14,9 @@ import {
   RegisterInput,
   toUserProfile,
   Unauthorized,
-  type AuthErrorCode
-} from "@tali/domain"
-import { AuthService } from "./auth-service.js"
+  type AuthErrorCode,
+} from '@tali/domain'
+import { AuthService } from './auth-service.js'
 
 /**
  * Auth & household endpoints (Slice 1 / ticket #15, shell in #16).
@@ -26,8 +31,8 @@ import { AuthService } from "./auth-service.js"
  * `message`, a `retryable` flag, and machine-readable `details`.
  */
 
-const SESSION_COOKIE = "tali_session"
-const SESSION_MAX_AGE = "30 days"
+const SESSION_COOKIE = 'tali_session'
+const SESSION_MAX_AGE = '30 days'
 
 /** The session cookie name, shared with route modules that authenticate too. */
 export { SESSION_COOKIE }
@@ -35,11 +40,11 @@ export { SESSION_COOKIE }
 /** Serialize a body and mark it uncacheable (auth responses are per-session). */
 const json = (
   status: number,
-  body: unknown
+  body: unknown,
 ): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
   HttpServerResponse.json(body, { status }).pipe(
-    Effect.map(HttpServerResponse.setHeader("cache-control", "no-store")),
-    Effect.orDie
+    Effect.map(HttpServerResponse.setHeader('cache-control', 'no-store')),
+    Effect.orDie,
   )
 
 /** The one plain-HTTP error shape (see the file header). */
@@ -48,15 +53,17 @@ const fail = (
   code: AuthErrorCode,
   message: string,
   retryable = false,
-  details: Record<string, unknown> = {}
+  details: Record<string, unknown> = {},
 ): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
   json(status, { error: { code, message, retryable, details } })
 
 /** Maps non-domain failures: a bad body is a 400, anything else a 500. */
-const unexpectedFailure = (error: unknown): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
+const unexpectedFailure = (
+  error: unknown,
+): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
   Schema.isSchemaError(error) || HttpServerError.isHttpServerError(error)
-    ? fail(400, "BadRequest", "Malformed request body")
-    : fail(500, "InternalError", "Unexpected server error", true)
+    ? fail(400, 'BadRequest', 'Malformed request body')
+    : fail(500, 'InternalError', 'Unexpected server error', true)
 
 /**
  * Rate-limit bucket IP. Cloudflare sets `CF-Connecting-IP`; Effect's adapter
@@ -64,35 +71,24 @@ const unexpectedFailure = (error: unknown): Effect.Effect<HttpServerResponse.Htt
  * attempts share one bucket.
  */
 const clientIp = (request: HttpServerRequest.HttpServerRequest): string =>
-  request.headers["cf-connecting-ip"] ??
-  Option.getOrElse(request.remoteAddress, () => "unknown")
+  request.headers['cf-connecting-ip'] ??
+  Option.getOrElse(request.remoteAddress, () => 'unknown')
 
-export const AuthRoutes = HttpRouter.use((router) =>
-  Effect.gen(function*() {
+export const AuthRoutes = HttpRouter.use(router =>
+  Effect.gen(function* () {
     const auth = yield* AuthService
 
     const setSession = (
       response: HttpServerResponse.HttpServerResponse,
       token: string,
-      request: HttpServerRequest.HttpServerRequest
+      request: HttpServerRequest.HttpServerRequest,
     ): HttpServerResponse.HttpServerResponse =>
       HttpServerResponse.setCookieUnsafe(response, SESSION_COOKIE, token, {
         httpOnly: true,
-        sameSite: "lax",
-        path: "/",
+        sameSite: 'lax',
+        path: '/',
         maxAge: SESSION_MAX_AGE,
-        secure: request.url.startsWith("https://")
-      })
-
-    /** Resolve the cookie's token and principal, failing `Unauthorized` without one. */
-    const authenticate = (request: HttpServerRequest.HttpServerRequest) =>
-      Effect.gen(function*() {
-        const token = request.cookies[SESSION_COOKIE]
-        if (token === undefined) {
-          return yield* Effect.fail(new Unauthorized())
-        }
-        const context = yield* auth.me(token)
-        return { token, context }
+        secure: request.url.startsWith('https://'),
       })
 
     /**
@@ -100,8 +96,10 @@ export const AuthRoutes = HttpRouter.use((router) =>
      * expiry. The mutation routes re-stamp the cookie; taking the renewal flag
      * from the service is what keeps the cookie and the row expiring together.
      */
-    const authenticateWithRenewal = (request: HttpServerRequest.HttpServerRequest) =>
-      Effect.gen(function*() {
+    const authenticateWithRenewal = (
+      request: HttpServerRequest.HttpServerRequest,
+    ) =>
+      Effect.gen(function* () {
         const token = request.cookies[SESSION_COOKIE]
         if (token === undefined) {
           return yield* Effect.fail(new Unauthorized())
@@ -111,103 +109,128 @@ export const AuthRoutes = HttpRouter.use((router) =>
       })
 
     yield* router.add(
-      "POST",
-      "/auth/register",
-      Effect.gen(function*() {
+      'POST',
+      '/auth/register',
+      Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
         const input = yield* HttpServerRequest.schemaBodyJson(RegisterInput)
         const { user, token } = yield* auth.register(input)
         // A fresh account cannot belong to a household yet.
-        const response = yield* json(201, { user: toUserProfile(user), householdId: null })
+        const response = yield* json(201, {
+          user: toUserProfile(user),
+          householdId: null,
+        })
         return setSession(response, token, request)
       }).pipe(
         Effect.catchTags(
           {
             EmailAlreadyRegistered: () =>
-              fail(409, "EmailAlreadyRegistered", "Email already registered")
+              fail(409, 'EmailAlreadyRegistered', 'Email already registered'),
           },
-          unexpectedFailure
-        )
-      )
+          unexpectedFailure,
+        ),
+      ),
     )
 
     yield* router.add(
-      "POST",
-      "/auth/login",
-      Effect.gen(function*() {
+      'POST',
+      '/auth/login',
+      Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
         const input = yield* HttpServerRequest.schemaBodyJson(LoginInput)
-        const { user, token, householdId } = yield* auth.login(input, clientIp(request))
+        const { user, token, householdId } = yield* auth.login(
+          input,
+          clientIp(request),
+        )
         // The full session context: the client needs no follow-up `/auth/me`.
-        const response = yield* json(200, { user: toUserProfile(user), householdId })
+        const response = yield* json(200, {
+          user: toUserProfile(user),
+          householdId,
+        })
         return setSession(response, token, request)
       }).pipe(
         Effect.catchTags(
           {
             InvalidCredentials: () =>
-              fail(401, "InvalidCredentials", "Email or login key is incorrect"),
+              fail(
+                401,
+                'InvalidCredentials',
+                'Email or login key is incorrect',
+              ),
             RateLimited: (error: RateLimited) =>
-              fail(429, "RateLimited", "Too many login attempts", true, {
-                retryAfterSeconds: error.retryAfterSeconds
+              fail(429, 'RateLimited', 'Too many login attempts', true, {
+                retryAfterSeconds: error.retryAfterSeconds,
               }).pipe(
-                Effect.map((response) =>
-                  HttpServerResponse.setHeader(response, "retry-after", `${error.retryAfterSeconds}`)
-                )
-              )
+                Effect.map(response =>
+                  HttpServerResponse.setHeader(
+                    response,
+                    'retry-after',
+                    `${error.retryAfterSeconds}`,
+                  ),
+                ),
+              ),
           },
-          unexpectedFailure
-        )
-      )
+          unexpectedFailure,
+        ),
+      ),
     )
 
     yield* router.add(
-      "POST",
-      "/auth/change-password",
-      Effect.gen(function*() {
+      'POST',
+      '/auth/change-password',
+      Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
-        const { token, context, renewed } = yield* authenticateWithRenewal(request)
-        const input = yield* HttpServerRequest.schemaBodyJson(ChangePasswordInput)
+        const { token, context, renewed } =
+          yield* authenticateWithRenewal(request)
+        const input =
+          yield* HttpServerRequest.schemaBodyJson(ChangePasswordInput)
         yield* auth.changePassword(context.user.id, input, clientIp(request))
         const response = yield* json(200, { ok: true })
         return renewed ? setSession(response, token, request) : response
       }).pipe(
         Effect.catchTags(
           {
-            Unauthorized: () => fail(401, "Unauthorized", "No active session"),
+            Unauthorized: () => fail(401, 'Unauthorized', 'No active session'),
             InvalidCredentials: () =>
-              fail(401, "InvalidCredentials", "Current login key is incorrect"),
+              fail(401, 'InvalidCredentials', 'Current login key is incorrect'),
             RateLimited: (error: RateLimited) =>
-              fail(429, "RateLimited", "Too many attempts", true, {
-                retryAfterSeconds: error.retryAfterSeconds
+              fail(429, 'RateLimited', 'Too many attempts', true, {
+                retryAfterSeconds: error.retryAfterSeconds,
               }).pipe(
-                Effect.map((response) =>
-                  HttpServerResponse.setHeader(response, "retry-after", `${error.retryAfterSeconds}`)
-                )
-              )
+                Effect.map(response =>
+                  HttpServerResponse.setHeader(
+                    response,
+                    'retry-after',
+                    `${error.retryAfterSeconds}`,
+                  ),
+                ),
+              ),
           },
-          unexpectedFailure
-        )
-      )
+          unexpectedFailure,
+        ),
+      ),
     )
 
     yield* router.add(
-      "POST",
-      "/auth/logout",
-      Effect.gen(function*() {
+      'POST',
+      '/auth/logout',
+      Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
         const token = request.cookies[SESSION_COOKIE]
         if (token !== undefined) {
           yield* auth.logout(token)
         }
         const response = yield* json(200, { ok: true })
-        return HttpServerResponse.expireCookieUnsafe(response, SESSION_COOKIE, { path: "/" })
-      }).pipe(Effect.catchTags({}, unexpectedFailure))
+        return HttpServerResponse.expireCookieUnsafe(response, SESSION_COOKIE, {
+          path: '/',
+        })
+      }).pipe(Effect.catchTags({}, unexpectedFailure)),
     )
 
     yield* router.add(
-      "GET",
-      "/auth/me",
-      Effect.gen(function*() {
+      'GET',
+      '/auth/me',
+      Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
         const token = request.cookies[SESSION_COOKIE]
         if (token === undefined) {
@@ -221,57 +244,71 @@ export const AuthRoutes = HttpRouter.use((router) =>
       }).pipe(
         Effect.catchTags(
           {
-            Unauthorized: () => fail(401, "Unauthorized", "No active session")
+            Unauthorized: () => fail(401, 'Unauthorized', 'No active session'),
           },
-          unexpectedFailure
-        )
-      )
+          unexpectedFailure,
+        ),
+      ),
     )
 
     yield* router.add(
-      "POST",
-      "/household",
-      Effect.gen(function*() {
+      'POST',
+      '/household',
+      Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
-        const { token, context, renewed } = yield* authenticateWithRenewal(request)
-        const input = yield* HttpServerRequest.schemaBodyJson(CreateHouseholdInput)
+        const { token, context, renewed } =
+          yield* authenticateWithRenewal(request)
+        const input =
+          yield* HttpServerRequest.schemaBodyJson(CreateHouseholdInput)
         const household = yield* auth.createHousehold(context.user.id, input)
         const response = yield* json(201, { household })
         return renewed ? setSession(response, token, request) : response
       }).pipe(
         Effect.catchTags(
           {
-            Unauthorized: () => fail(401, "Unauthorized", "No active session"),
+            Unauthorized: () => fail(401, 'Unauthorized', 'No active session'),
             AlreadyInHousehold: () =>
-              fail(409, "AlreadyInHousehold", "Already a member of a household")
+              fail(
+                409,
+                'AlreadyInHousehold',
+                'Already a member of a household',
+              ),
           },
-          unexpectedFailure
-        )
-      )
+          unexpectedFailure,
+        ),
+      ),
     )
 
     yield* router.add(
-      "POST",
-      "/household/join",
-      Effect.gen(function*() {
+      'POST',
+      '/household/join',
+      Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
-        const { token, context, renewed } = yield* authenticateWithRenewal(request)
-        const input = yield* HttpServerRequest.schemaBodyJson(JoinHouseholdInput)
+        const { token, context, renewed } =
+          yield* authenticateWithRenewal(request)
+        const input =
+          yield* HttpServerRequest.schemaBodyJson(JoinHouseholdInput)
         const household = yield* auth.joinHousehold(context.user.id, input)
         const response = yield* json(200, { household })
         return renewed ? setSession(response, token, request) : response
       }).pipe(
         Effect.catchTags(
           {
-            Unauthorized: () => fail(401, "Unauthorized", "No active session"),
+            Unauthorized: () => fail(401, 'Unauthorized', 'No active session'),
             AlreadyInHousehold: () =>
-              fail(409, "AlreadyInHousehold", "Already a member of a household"),
-            HouseholdFull: () => fail(409, "HouseholdFull", "Household is full"),
-            InviteInvalid: () => fail(404, "InviteInvalid", "Invite code is invalid")
+              fail(
+                409,
+                'AlreadyInHousehold',
+                'Already a member of a household',
+              ),
+            HouseholdFull: () =>
+              fail(409, 'HouseholdFull', 'Household is full'),
+            InviteInvalid: () =>
+              fail(404, 'InviteInvalid', 'Invite code is invalid'),
           },
-          unexpectedFailure
-        )
-      )
+          unexpectedFailure,
+        ),
+      ),
     )
-  })
+  }),
 )

@@ -1,15 +1,15 @@
-import { Schema } from "effect"
-import { Model } from "effect/schema"
-import { Temporal } from "temporal-polyfill/full"
+import { Schema } from 'effect'
+import { Model } from 'effect/schema'
+import { Temporal } from 'temporal-polyfill/full'
 import {
   commonItemFields,
   HabitEntryId,
   HabitId,
   LocalDate,
   TimestampUtc,
-  TimeZone
-} from "./common.js"
-import { HouseholdId, UserId, Visibility } from "../common.js"
+  TimeZone,
+} from './common.js'
+import { HouseholdId, UserId, Visibility } from '../common.js'
 
 /**
  * `Habit` + `HabitEntry` aggregates (Slice 4 / ticket #63; FR-HAB-01/02).
@@ -69,7 +69,9 @@ import { HouseholdId, UserId, Visibility } from "../common.js"
 // ── Frequency ─────────────────────────────────────────────────────────────
 
 /** ISO weekday: 1 = Monday … 7 = Sunday (matching `RecurrenceRule.byDay`). */
-export const HabitWeekday = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 7 }))
+export const HabitWeekday = Schema.Int.check(
+  Schema.isBetween({ minimum: 1, maximum: 7 }),
+)
 export type HabitWeekday = Schema.Schema.Type<typeof HabitWeekday>
 
 /**
@@ -83,16 +85,18 @@ export type HabitWeekday = Schema.Schema.Type<typeof HabitWeekday>
  *   streak algorithm's business (#65).
  */
 export const HabitFrequency = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal("daily") }),
+  Schema.Struct({ _tag: Schema.Literal('daily') }),
   Schema.Struct({
-    _tag: Schema.Literal("weekdays"),
-    days: Schema.Array(HabitWeekday)
-      .check(Schema.isMinLength(1), Schema.isUnique())
+    _tag: Schema.Literal('weekdays'),
+    days: Schema.Array(HabitWeekday).check(
+      Schema.isMinLength(1),
+      Schema.isUnique(),
+    ),
   }),
   Schema.Struct({
-    _tag: Schema.Literal("weekly"),
-    times: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 7 }))
-  })
+    _tag: Schema.Literal('weekly'),
+    times: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 7 })),
+  }),
 ])
 export type HabitFrequency = Schema.Schema.Type<typeof HabitFrequency>
 
@@ -109,9 +113,11 @@ export type HabitFrequency = Schema.Schema.Type<typeof HabitFrequency>
  */
 export const HabitFrequencyChange = Schema.Struct({
   effectiveFrom: LocalDate,
-  frequency: HabitFrequency
+  frequency: HabitFrequency,
 })
-export type HabitFrequencyChange = Schema.Schema.Type<typeof HabitFrequencyChange>
+export type HabitFrequencyChange = Schema.Schema.Type<
+  typeof HabitFrequencyChange
+>
 
 /**
  * The version log: non-empty, oldest first, with **strictly increasing**
@@ -124,23 +130,27 @@ export type HabitFrequencyChange = Schema.Schema.Type<typeof HabitFrequencyChang
  * validation rule.
  */
 export const HabitFrequencyHistory = Schema.Array(HabitFrequencyChange).check(
-  Schema.makeFilter<ReadonlyArray<HabitFrequencyChange>>((history) => {
+  Schema.makeFilter<ReadonlyArray<HabitFrequencyChange>>(history => {
     if (history.length === 0) {
-      return "the frequency history must contain at least the starting era"
+      return 'the frequency history must contain at least the starting era'
     }
     for (let index = 1; index < history.length; index += 1) {
-      if (!(history[index]!.effectiveFrom > history[index - 1]!.effectiveFrom)) {
-        return "frequency eras must have strictly increasing effective dates"
+      if (
+        !(history[index]!.effectiveFrom > history[index - 1]!.effectiveFrom)
+      ) {
+        return 'frequency eras must have strictly increasing effective dates'
       }
     }
     return true
-  })
+  }),
 )
-export type HabitFrequencyHistory = Schema.Schema.Type<typeof HabitFrequencyHistory>
+export type HabitFrequencyHistory = Schema.Schema.Type<
+  typeof HabitFrequencyHistory
+>
 
 /** Local wall-clock time `HH:mm` (24h). Stored as text; the zone is the habit's. */
 export const HabitReminderTime = Schema.String.check(
-  Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/)
+  Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/),
 )
 export type HabitReminderTime = Schema.Schema.Type<typeof HabitReminderTime>
 
@@ -151,15 +161,17 @@ export type HabitReminderTime = Schema.Schema.Type<typeof HabitReminderTime>
  * frequency: comparing them as arrays would record a phantom version on every
  * save that round-trips through a differently ordered control.
  */
-export const sameHabitFrequency = (a: HabitFrequency, b: HabitFrequency): boolean =>
-  canonicalHabitFrequency(a) === canonicalHabitFrequency(b)
+export const sameHabitFrequency = (
+  a: HabitFrequency,
+  b: HabitFrequency,
+): boolean => canonicalHabitFrequency(a) === canonicalHabitFrequency(b)
 
 const canonicalHabitFrequency = (frequency: HabitFrequency): string =>
-  frequency._tag === "weekdays"
+  frequency._tag === 'weekdays'
     ? JSON.stringify({
-      _tag: "weekdays",
-      days: [...frequency.days].sort((left, right) => left - right)
-    })
+        _tag: 'weekdays',
+        days: [...frequency.days].sort((left, right) => left - right),
+      })
     : JSON.stringify(frequency)
 
 /**
@@ -171,7 +183,10 @@ const canonicalHabitFrequency = (frequency: HabitFrequency): string =>
  * inputs only; the sync path uses `localDateInOption`.
  */
 export const localDateIn = (instant: string, timeZone: string): LocalDate =>
-  Temporal.Instant.from(instant).toZonedDateTimeISO(timeZone).toPlainDate().toString() as LocalDate
+  Temporal.Instant.from(instant)
+    .toZonedDateTimeISO(timeZone)
+    .toPlainDate()
+    .toString() as LocalDate
 
 /**
  * As `localDateIn`, but a malformed instant or IANA zone yields `null`.
@@ -180,7 +195,10 @@ export const localDateIn = (instant: string, timeZone: string): LocalDate =>
  * throw: a bad zone is later rejected by the `Habit`/`HabitEntry` schema as an
  * `InvalidPatch` instead of turning the whole push into a retryable 500.
  */
-export const localDateInOption = (instant: string, timeZone: string): LocalDate | null => {
+export const localDateInOption = (
+  instant: string,
+  timeZone: string,
+): LocalDate | null => {
   try {
     return localDateIn(instant, timeZone)
   } catch {
@@ -191,8 +209,8 @@ export const localDateInOption = (instant: string, timeZone: string): LocalDate 
 // ── Frequency eras (#65) ──────────────────────────────────────────────────
 
 /** The counting unit of a frequency: day for daily/weekdays, week for weekly. */
-const habitUnit = (frequency: HabitFrequency): "day" | "week" =>
-  frequency._tag === "weekly" ? "week" : "day"
+const habitUnit = (frequency: HabitFrequency): 'day' | 'week' =>
+  frequency._tag === 'weekly' ? 'week' : 'day'
 
 const addDays = (date: LocalDate, days: number): LocalDate =>
   Temporal.PlainDate.from(date).add({ days }).toString() as LocalDate
@@ -202,19 +220,22 @@ const SATURDAY = 6
 const FRIDAY = 5
 
 /** The last day of the period of `unit` containing `date`. */
-const periodEndIn = (date: LocalDate, unit: "day" | "week"): LocalDate => {
-  if (unit === "day") return date
+const periodEndIn = (date: LocalDate, unit: 'day' | 'week'): LocalDate => {
+  if (unit === 'day') return date
   const dayOfWeek = Temporal.PlainDate.from(date).dayOfWeek
   return addDays(date, (FRIDAY - dayOfWeek + 7) % 7)
 }
 
 /** The first day of the next `unit` period strictly after `date`. */
-const nextPeriodStartAfter = (date: LocalDate, unit: "day" | "week"): LocalDate => {
-  if (unit === "day") return addDays(date, 1)
+const nextPeriodStartAfter = (
+  date: LocalDate,
+  unit: 'day' | 'week',
+): LocalDate => {
+  if (unit === 'day') return addDays(date, 1)
   const dayOfWeek = Temporal.PlainDate.from(date).dayOfWeek
   // A Saturday change belongs to the week that opened that day, so its next
   // boundary is a full week later.
-  return addDays(date, ((SATURDAY - dayOfWeek + 7) % 7) || 7)
+  return addDays(date, (SATURDAY - dayOfWeek + 7) % 7 || 7)
 }
 
 /**
@@ -232,8 +253,14 @@ const habitEraStartAfter = (input: {
   readonly next: HabitFrequency
   readonly changeDate: LocalDate
 }): LocalDate => {
-  const afterOldPeriod = addDays(periodEndIn(input.changeDate, habitUnit(input.previous)), 1)
-  const nextStart = nextPeriodStartAfter(input.changeDate, habitUnit(input.next))
+  const afterOldPeriod = addDays(
+    periodEndIn(input.changeDate, habitUnit(input.previous)),
+    1,
+  )
+  const nextStart = nextPeriodStartAfter(
+    input.changeDate,
+    habitUnit(input.next),
+  )
   return afterOldPeriod > nextStart ? afterOldPeriod : nextStart
 }
 
@@ -258,7 +285,10 @@ export const habitFrequencyHistoryAfter = (input: {
 }): ReadonlyArray<HabitFrequencyChange> => {
   const history = input.history
   const last = history[history.length - 1]
-  if (last !== undefined && sameHabitFrequency(last.frequency, input.frequency)) {
+  if (
+    last !== undefined &&
+    sameHabitFrequency(last.frequency, input.frequency)
+  ) {
     return history
   }
   if (last === undefined) {
@@ -267,20 +297,23 @@ export const habitFrequencyHistoryAfter = (input: {
   const effectiveFrom = habitEraStartAfter({
     previous: last.frequency,
     next: input.frequency,
-    changeDate: input.changeDate
+    changeDate: input.changeDate,
   })
   // Keep the log strictly increasing. A boundary behind the stored one (a clock
   // that crossed it between the read and the write) updates the pending era
   // instead of rewriting an era that already started.
   return effectiveFrom <= last.effectiveFrom
-    ? [...history.slice(0, -1), { effectiveFrom: last.effectiveFrom, frequency: input.frequency }]
+    ? [
+        ...history.slice(0, -1),
+        { effectiveFrom: last.effectiveFrom, frequency: input.frequency },
+      ]
     : [...history, { effectiveFrom, frequency: input.frequency }]
 }
 
 // ── Habit ─────────────────────────────────────────────────────────────────
 
-export class Habit extends Model.Class<Habit>("Habit")({
-  ...commonItemFields("habit", HabitId),
+export class Habit extends Model.Class<Habit>('Habit')({
+  ...commonItemFields('habit', HabitId),
   /** Resolved from the habit's `shareable` policy (ADR-0011); default `private`. */
   visibility: Visibility,
   /**
@@ -311,13 +344,13 @@ export class Habit extends Model.Class<Habit>("Habit")({
   /** Local `HH:mm` reminder time, or `null` for "no reminder time". */
   reminderTime: Schema.NullOr(HabitReminderTime),
   /** The habit's IANA zone; `reminderTime` and the history dates are read in it. */
-  timeZone: TimeZone
+  timeZone: TimeZone,
 }) {}
 
 // ── HabitEntry ────────────────────────────────────────────────────────────
 
 /** The three states a day can be logged with (FR-HAB-02). */
-export const HabitEntryStatus = Schema.Literals(["done", "partial", "missed"])
+export const HabitEntryStatus = Schema.Literals(['done', 'partial', 'missed'])
 export type HabitEntryStatus = Schema.Schema.Type<typeof HabitEntryStatus>
 
 /**
@@ -345,11 +378,14 @@ export interface HabitLogWindow {
  */
 export const habitLogWindow = (today: LocalDate): HabitLogWindow => ({
   earliest: addDays(today, -HABIT_LOG_BACKDATE_DAYS),
-  latest: today
+  latest: today,
 })
 
 /** Is `localDate` inside the inclusive window whose "today" is `today`? */
-export const isHabitLogDateInWindow = (localDate: LocalDate, today: LocalDate): boolean => {
+export const isHabitLogDateInWindow = (
+  localDate: LocalDate,
+  today: LocalDate,
+): boolean => {
   const window = habitLogWindow(today)
   return localDate >= window.earliest && localDate <= window.latest
 }
@@ -364,17 +400,17 @@ export const isHabitLogDateInWindow = (localDate: LocalDate, today: LocalDate): 
  * the first tap is Done.
  */
 export const nextHabitEntryStatus = (
-  current: HabitEntryStatus | null
+  current: HabitEntryStatus | null,
 ): HabitEntryStatus => {
   switch (current) {
     case null:
-      return "done"
-    case "done":
-      return "partial"
-    case "partial":
-      return "missed"
-    case "missed":
-      return "done"
+      return 'done'
+    case 'done':
+      return 'partial'
+    case 'partial':
+      return 'missed'
+    case 'missed':
+      return 'done'
   }
 }
 
@@ -390,7 +426,7 @@ export const nextHabitEntryStatus = (
  * `timeZone` is the zone `localDate` was written in: "the 3rd" stays the 3rd
  * when the entry is read from another zone (the per-item date rule).
  */
-export class HabitEntry extends Model.Class<HabitEntry>("HabitEntry")({
+export class HabitEntry extends Model.Class<HabitEntry>('HabitEntry')({
   id: Model.UuidV7Insert(HabitEntryId),
   habitId: HabitId,
   /** The member whose log this is; entries are never reattributed. */
@@ -406,5 +442,5 @@ export class HabitEntry extends Model.Class<HabitEntry>("HabitEntry")({
   createdAt: TimestampUtc,
   updatedAt: TimestampUtc,
   version: Schema.Int,
-  deletedAt: Schema.NullOr(TimestampUtc)
+  deletedAt: Schema.NullOr(TimestampUtc),
 }) {}

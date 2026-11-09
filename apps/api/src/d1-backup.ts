@@ -1,12 +1,12 @@
-import { Effect, Layer } from "effect"
-import { D1Client } from "@effect/sql-d1"
+import { Effect } from 'effect'
+import { D1Client } from '@effect/sql-d1'
 import {
   BACKUP_PREFIX,
   BACKUP_RETENTION_DAYS,
   makeBackupManifest,
-  planBackupRetention
-} from "@tali/domain"
-import { dumpDatabase } from "./d1-dump.js"
+  planBackupRetention,
+} from '@tali/domain'
+import { dumpDatabase } from './d1-dump.js'
 
 /**
  * The nightly D1 backup (ticket #85).
@@ -59,16 +59,19 @@ export const backupRetentionDays = (env: BackupEnv): number => {
 export const dumpLayer = (db: D1Database) => D1Client.layer({ db })
 
 export const sha256Hex = async (bytes: Uint8Array): Promise<string> => {
-  const digest = await crypto.subtle.digest("SHA-256", bytes)
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
   return [...new Uint8Array(digest)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("")
+    .map(byte => byte.toString(16).padStart(2, '0'))
+    .join('')
 }
 
 /** R2 accepts at most 1000 keys in one `delete` call. */
 export const R2_DELETE_BATCH = 1000
 
-const listAllKeys = async (bucket: R2Bucket, prefix: string): Promise<ReadonlyArray<string>> => {
+const listAllKeys = async (
+  bucket: R2Bucket,
+  prefix: string,
+): Promise<ReadonlyArray<string>> => {
   const keys: Array<string> = []
   let cursor: string | undefined
   do {
@@ -79,9 +82,12 @@ const listAllKeys = async (bucket: R2Bucket, prefix: string): Promise<ReadonlyAr
   return keys
 }
 
-const deleteKeys = async (bucket: R2Bucket, keys: ReadonlyArray<string>): Promise<void> => {
+const deleteKeys = async (
+  bucket: R2Bucket,
+  keys: ReadonlyArray<string>,
+): Promise<void> => {
   for (let index = 0; index < keys.length; index += R2_DELETE_BATCH) {
-    await bucket.delete([...keys.slice(index, index + R2_DELETE_BATCH)])
+    await bucket.delete(keys.slice(index, index + R2_DELETE_BATCH))
   }
 }
 
@@ -92,19 +98,22 @@ const deleteKeys = async (bucket: R2Bucket, keys: ReadonlyArray<string>): Promis
  * the manifest builder and the retention planner. The test suite runs this
  * twice over an in-memory bucket to prove a backup lands and ages out.
  */
-export const runD1Backup = async (env: BackupEnv, now: string): Promise<BackupResult> => {
+export const runD1Backup = async (
+  env: BackupEnv,
+  now: string,
+): Promise<BackupResult> => {
   const bucket = env.BACKUP_BUCKET
   if (bucket === undefined) {
     throw new Error(
-      "BACKUP_BUCKET is not bound: declare the R2 bucket in infra/alchemy.run.ts"
+      'BACKUP_BUCKET is not bound: declare the R2 bucket in infra/alchemy.run.ts',
     )
   }
 
   const dump = await Effect.runPromise(
-    Effect.provide(dumpDatabase, dumpLayer(env.DB))
+    Effect.provide(dumpDatabase, dumpLayer(env.DB)),
   )
   const bytes = new TextEncoder().encode(dump.sql)
-  const database = env.BACKUP_DATABASE_NAME?.trim() || "tali"
+  const database = env.BACKUP_DATABASE_NAME?.trim() || 'tali'
   const retentionDays = backupRetentionDays(env)
   const manifest = makeBackupManifest({
     createdAt: now,
@@ -112,15 +121,15 @@ export const runD1Backup = async (env: BackupEnv, now: string): Promise<BackupRe
     bytes: bytes.byteLength,
     sha256: await sha256Hex(bytes),
     tables: dump.tables,
-    retentionDays
+    retentionDays,
   })
 
   await bucket.put(manifest.objectKey, bytes, {
-    httpMetadata: { contentType: "application/sql" }
+    httpMetadata: { contentType: 'application/sql' },
   })
   // Commit marker: written last, and only after the dump body is durable.
   await bucket.put(manifest.manifestKey, JSON.stringify(manifest, null, 2), {
-    httpMetadata: { contentType: "application/json" }
+    httpMetadata: { contentType: 'application/json' },
   })
 
   const keys = await listAllKeys(bucket, BACKUP_PREFIX)
@@ -135,6 +144,6 @@ export const runD1Backup = async (env: BackupEnv, now: string): Promise<BackupRe
     sha256: manifest.sha256,
     tables: manifest.tables.length,
     retentionDays,
-    deleted: expired.length
+    deleted: expired.length,
   }
 }

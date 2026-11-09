@@ -65,18 +65,21 @@ export const HeatMonth = Schema.Struct({
   year: Schema.Int,
   month: Schema.Int,
 })
+
 export type HeatMonth = typeof HeatMonth.Type
 
 export const HeatState = Schema.Struct({
   habitId: Schema.String,
   month: HeatMonth,
 })
+
 export type HeatState = typeof HeatState.Type
 
 export const PendingHabitDelete = Schema.Struct({
   habitId: Schema.String,
   title: Schema.String,
 })
+
 export type PendingHabitDelete = typeof PendingHabitDelete.Type
 
 export const Model = Schema.Struct({
@@ -102,6 +105,7 @@ export const Model = Schema.Struct({
   toast: Toast.Model,
   picker: Picker.Model,
 })
+
 export type Model = typeof Model.Type
 
 export const initialModel = (now: number): Model =>
@@ -194,11 +198,13 @@ export const Message = defineMessageUnion({
   GotToastMessage: { message: Toast.Message },
   GotPickerMessage: { message: Picker.Message },
 })
+
 export type Message = typeof Message.Type
 
 export const OutMessage = defineMessageUnion({
   WroteLocalData: {},
 })
+
 export type OutMessage = typeof OutMessage.Type
 
 // COMMAND
@@ -415,6 +421,7 @@ export const TapHabit = Command.define('TapHabit', {
     Effect.gen(function* () {
       const store = yield* LocalStoreResource.get
       const now = yield* Clock.currentTimeMillis
+
       const record = yield* Effect.tryPromise({
         try: () =>
           tapHabitEntry(store, {
@@ -426,6 +433,7 @@ export const TapHabit = Command.define('TapHabit', {
           }),
         catch: storeFailureMessage,
       })
+
       const status: HabitEntryStatus = habitEntryStatusOf(record) ?? 'done'
 
       return Message.CompletedTapHabit({ habitId, title, status })
@@ -731,6 +739,7 @@ export const update = (
         icon: model.icon,
         color: model.color,
       }
+
       const started = modifyFields(model, {
         isSaving: () => true,
         maybeFormError: () => Option.none(),
@@ -1067,6 +1076,7 @@ const clockEvents: Stream.Stream<Message> = Stream.concat(
   Stream.fromEffectRepeat(
     Effect.gen(function* () {
       yield* Effect.sleep(Duration.seconds(60))
+
       return yield* clockTick
     }),
   ),

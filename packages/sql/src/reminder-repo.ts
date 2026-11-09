@@ -1,5 +1,5 @@
-import { Context, Effect, Layer, Option } from "effect"
-import { SqlClient, Statement } from "effect/sql"
+import { Context, Effect, Layer, Option } from 'effect'
+import { SqlClient, Statement } from 'effect/sql'
 import {
   defaultVisibilityFor,
   type DispatchResponse,
@@ -14,9 +14,9 @@ import {
   type ReminderTier,
   type ReminderType,
   type UserId,
-  type Visibility
-} from "@tali/domain"
-import { ReminderLink } from "@tali/domain"
+  type Visibility,
+} from '@tali/domain'
+import { ReminderLink } from '@tali/domain'
 
 /**
  * D1 persistence for the `Reminder` aggregate and its dispatch ledger
@@ -51,7 +51,7 @@ const dispatchColumns = (prefix: string): string =>
   `${prefix}response, ${prefix}responded_at AS respondedAt, ` +
   `${prefix}snoozed_until AS snoozedUntil, ${prefix}created_at AS createdAt`
 
-export const REMINDER_DISPATCH_SELECT = dispatchColumns("")
+export const REMINDER_DISPATCH_SELECT = dispatchColumns('')
 
 export interface ReminderRow extends Record<string, unknown> {
   readonly id: string
@@ -108,32 +108,40 @@ const parseJson = (value: string | null): unknown => {
 /** A row's repeat union; a malformed cell falls back to a one-off. */
 const repeatOf = (value: string): ReminderRepeat => {
   const parsed = parseJson(value)
-  if (typeof parsed === "object" && parsed !== null && "_tag" in parsed) {
+  if (typeof parsed === 'object' && parsed !== null && '_tag' in parsed) {
     return parsed as ReminderRepeat
   }
-  return { _tag: "once" }
+  return { _tag: 'once' }
 }
 
 /** A row's link union from the flattened columns. */
 const linkOf = (type: string, id: string | null): ReminderLink => {
   switch (type) {
-    case "task":
-      return id === null ? { _tag: "none" } : { _tag: "task", taskId: id as never }
-    case "event":
-      return id === null ? { _tag: "none" } : { _tag: "event", eventId: id as never }
-    case "habit":
-      return id === null ? { _tag: "none" } : { _tag: "habit", habitId: id as never }
-    case "occasion":
-      return id === null ? { _tag: "none" } : { _tag: "occasion", occasionId: id as never }
+    case 'task':
+      return id === null
+        ? { _tag: 'none' }
+        : { _tag: 'task', taskId: id as never }
+    case 'event':
+      return id === null
+        ? { _tag: 'none' }
+        : { _tag: 'event', eventId: id as never }
+    case 'habit':
+      return id === null
+        ? { _tag: 'none' }
+        : { _tag: 'habit', habitId: id as never }
+    case 'occasion':
+      return id === null
+        ? { _tag: 'none' }
+        : { _tag: 'occasion', occasionId: id as never }
     default:
-      return { _tag: "none" }
+      return { _tag: 'none' }
   }
 }
 
 /** The model's plain shape, built from a D1 row. */
 export const reminderPropsOf = (row: ReminderRow) => ({
-  id: row.id as Reminder["id"],
-  type: "reminder" as const,
+  id: row.id as Reminder['id'],
+  type: 'reminder' as const,
   title: row.title,
   note: row.note,
   kind: row.kind as ReminderType,
@@ -151,13 +159,14 @@ export const reminderPropsOf = (row: ReminderRow) => ({
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
   version: Number(row.version),
-  deletedAt: row.deletedAt
+  deletedAt: row.deletedAt,
 })
 
-export const toReminder = (row: ReminderRow): Reminder => new Reminder(reminderPropsOf(row))
+export const toReminder = (row: ReminderRow): Reminder =>
+  new Reminder(reminderPropsOf(row))
 
 export const dispatchPropsOf = (row: ReminderDispatchRow) => ({
-  id: row.id as ReminderDispatch["id"],
+  id: row.id as ReminderDispatch['id'],
   reminderId: row.reminderId as ReminderId,
   userId: row.userId as UserId,
   scheduledFor: row.scheduledFor,
@@ -171,67 +180,70 @@ export const dispatchPropsOf = (row: ReminderDispatchRow) => ({
   response: row.response as DispatchResponse | null,
   respondedAt: row.respondedAt,
   snoozedUntil: row.snoozedUntil,
-  createdAt: row.createdAt
+  createdAt: row.createdAt,
 })
 
-export const toReminderDispatch = (row: ReminderDispatchRow): ReminderDispatch =>
-  new ReminderDispatch(dispatchPropsOf(row))
+export const toReminderDispatch = (
+  row: ReminderDispatchRow,
+): ReminderDispatch => new ReminderDispatch(dispatchPropsOf(row))
 
 /** Flatten a link union for the two columns. */
 export const linkColumns = (
-  link: ReminderLink
+  link: ReminderLink,
 ): { readonly linkType: string; readonly linkId: string | null } => {
   switch (link._tag) {
-    case "task":
-      return { linkType: "task", linkId: link.taskId }
-    case "event":
-      return { linkType: "event", linkId: link.eventId }
-    case "habit":
-      return { linkType: "habit", linkId: link.habitId }
-    case "occasion":
-      return { linkType: "occasion", linkId: link.occasionId }
+    case 'task':
+      return { linkType: 'task', linkId: link.taskId }
+    case 'event':
+      return { linkType: 'event', linkId: link.eventId }
+    case 'habit':
+      return { linkType: 'habit', linkId: link.habitId }
+    case 'occasion':
+      return { linkType: 'occasion', linkId: link.occasionId }
     default:
-      return { linkType: "none", linkId: null }
+      return { linkType: 'none', linkId: null }
   }
 }
 
 const encodeRepeat = (repeat: ReminderRepeat): string => JSON.stringify(repeat)
 
-export class ReminderRepo extends Context.Service<ReminderRepo>()("ReminderRepo", {
-  make: Effect.gen(function*() {
-    const sql = yield* SqlClient.SqlClient
+export class ReminderRepo extends Context.Service<ReminderRepo>()(
+  'ReminderRepo',
+  {
+    make: Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
 
-    /** The visibility filter every reminder read shares (private owner-only). */
-    const visibleScope = (input: {
-      readonly householdId: string
-      readonly userId: UserId
-    }): Statement.Fragment =>
-      sql`
+      /** The visibility filter every reminder read shares (private owner-only). */
+      const visibleScope = (input: {
+        readonly householdId: string
+        readonly userId: UserId
+      }): Statement.Fragment =>
+        sql`
         household_id = ${input.householdId}
         AND (owner_id = ${input.userId} OR visibility = 'shared')
       `
 
-    const findById = (id: ReminderId) =>
-      Effect.map(
-        sql<ReminderRow>`SELECT ${sql.literal(REMINDER_SELECT)} FROM reminders WHERE id = ${id}`,
-        (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toReminder)
-      )
+      const findById = (id: ReminderId) =>
+        Effect.map(
+          sql<ReminderRow>`SELECT ${sql.literal(REMINDER_SELECT)} FROM reminders WHERE id = ${id}`,
+          rows => Option.map(Option.fromUndefinedOr(rows[0]), toReminder),
+        )
 
-    /**
-     * The reminder already materialised for one occasion occurrence, if any.
-     *
-     * Tombstones count: once the owner deletes a materialised advance reminder,
-     * a later materialisation of the same occurrence must not resurrect it. The
-     * lookup is by the flattened link plus the exact fire instant, which is the
-     * durable key `(occasion, occurrence date)` expands to.
-     */
-    const findOccasionByFireAt = (input: {
-      readonly householdId: string
-      readonly occasionId: string
-      readonly fireAt: string
-    }) =>
-      Effect.map(
-        sql<ReminderRow>`
+      /**
+       * The reminder already materialised for one occasion occurrence, if any.
+       *
+       * Tombstones count: once the owner deletes a materialised advance reminder,
+       * a later materialisation of the same occurrence must not resurrect it. The
+       * lookup is by the flattened link plus the exact fire instant, which is the
+       * durable key `(occasion, occurrence date)` expands to.
+       */
+      const findOccasionByFireAt = (input: {
+        readonly householdId: string
+        readonly occasionId: string
+        readonly fireAt: string
+      }) =>
+        Effect.map(
+          sql<ReminderRow>`
           SELECT ${sql.literal(REMINDER_SELECT)} FROM reminders
           WHERE household_id = ${input.householdId}
             AND link_type = 'occasion'
@@ -240,31 +252,31 @@ export class ReminderRepo extends Context.Service<ReminderRepo>()("ReminderRepo"
           ORDER BY version DESC, id ASC
           LIMIT 1
         `,
-        (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toReminder)
-      )
+          rows => Option.map(Option.fromUndefinedOr(rows[0]), toReminder),
+        )
 
-    /**
-     * Every occasion-linked reminder in a household whose fire instant falls in
-     * `[from, to]`, tombstones included.
-     *
-     * One read for the sweep's materialisation dedupe (ticket #61): a household
-     * has a handful of occasions, and checking each draft with
-     * `findOccasionByFireAt` would be one query per draft on *every* tick. The
-     * returned keys are `(linkId, fire_at)`; a tombstoned key must be skipped,
-     * not recreated.
-     */
-    const listOccasionLinkedInRange = (input: {
-      readonly householdId: string
-      readonly from: string
-      readonly to: string
-      readonly limit: number
-    }) =>
-      sql<{
+      /**
+       * Every occasion-linked reminder in a household whose fire instant falls in
+       * `[from, to]`, tombstones included.
+       *
+       * One read for the sweep's materialisation dedupe (ticket #61): a household
+       * has a handful of occasions, and checking each draft with
+       * `findOccasionByFireAt` would be one query per draft on *every* tick. The
+       * returned keys are `(linkId, fire_at)`; a tombstoned key must be skipped,
+       * not recreated.
+       */
+      const listOccasionLinkedInRange = (input: {
         readonly householdId: string
-        readonly occasionId: string
-        readonly fireAt: string
-        readonly deletedAt: string | null
-      }>`
+        readonly from: string
+        readonly to: string
+        readonly limit: number
+      }) =>
+        sql<{
+          readonly householdId: string
+          readonly occasionId: string
+          readonly fireAt: string
+          readonly deletedAt: string | null
+        }>`
         SELECT household_id AS householdId, link_id AS occasionId,
                fire_at AS fireAt, deleted_at AS deletedAt
         FROM reminders
@@ -276,26 +288,26 @@ export class ReminderRepo extends Context.Service<ReminderRepo>()("ReminderRepo"
         LIMIT ${input.limit}
       `
 
-    /** Live rows visible to one member: shared reminders plus their own private ones. */
-    const listVisible = (input: {
-      readonly householdId: string
-      readonly userId: UserId
-      readonly includeDeleted?: boolean
-    }) =>
-      Effect.map(
-        sql<ReminderRow>`
+      /** Live rows visible to one member: shared reminders plus their own private ones. */
+      const listVisible = (input: {
+        readonly householdId: string
+        readonly userId: UserId
+        readonly includeDeleted?: boolean
+      }) =>
+        Effect.map(
+          sql<ReminderRow>`
           SELECT ${sql.literal(REMINDER_SELECT)} FROM reminders
           WHERE ${visibleScope(input)}
             ${input.includeDeleted === true ? sql`` : sql`AND deleted_at IS NULL`}
           ORDER BY fire_at ASC, id ASC
         `,
-        (rows) => rows.map(toReminder)
-      )
+          rows => rows.map(toReminder),
+        )
 
-    const insert = (reminder: Reminder) => {
-      const link = linkColumns(reminder.link)
-      return Effect.map(
-        sql<ReminderRow>`
+      const insert = (reminder: Reminder) => {
+        const link = linkColumns(reminder.link)
+        return Effect.map(
+          sql<ReminderRow>`
           INSERT INTO reminders
             (id, type, title, note, owner_id, household_id, visibility, color,
              kind, tier, repeat, offset_minutes, fire_at, link_type, link_id,
@@ -310,19 +322,19 @@ export class ReminderRepo extends Context.Service<ReminderRepo>()("ReminderRepo"
              ${reminder.updatedAt}, ${reminder.version}, ${reminder.deletedAt})
           RETURNING ${sql.literal(REMINDER_SELECT)}
         `,
-        (rows) => toReminder(rows[0]!)
-      )
-    }
+          rows => toReminder(rows[0]!),
+        )
+      }
 
-    /**
-     * Full-row update. The caller owns the version CAS (`WHERE id AND
-     * version = base`) in the sync path; this primitive is for service writes
-     * that already hold the row.
-     */
-    const update = (reminder: Reminder) => {
-      const link = linkColumns(reminder.link)
-      return Effect.map(
-        sql<ReminderRow>`
+      /**
+       * Full-row update. The caller owns the version CAS (`WHERE id AND
+       * version = base`) in the sync path; this primitive is for service writes
+       * that already hold the row.
+       */
+      const update = (reminder: Reminder) => {
+        const link = linkColumns(reminder.link)
+        return Effect.map(
+          sql<ReminderRow>`
           UPDATE reminders SET
             title = ${reminder.title},
             note = ${reminder.note},
@@ -343,20 +355,21 @@ export class ReminderRepo extends Context.Service<ReminderRepo>()("ReminderRepo"
           WHERE id = ${reminder.id}
           RETURNING ${sql.literal(REMINDER_SELECT)}
         `,
-        (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toReminder)
-      )
-    }
+          rows => Option.map(Option.fromUndefinedOr(rows[0]), toReminder),
+        )
+      }
 
-    return {
-      findById,
-      findOccasionByFireAt,
-      listOccasionLinkedInRange,
-      listVisible,
-      insert,
-      update
-    } as const
-  })
-}) {}
+      return {
+        findById,
+        findOccasionByFireAt,
+        listOccasionLinkedInRange,
+        listVisible,
+        insert,
+        update,
+      } as const
+    }),
+  },
+) {}
 
 export const ReminderRepoLive = Layer.effect(ReminderRepo, ReminderRepo.make)
 
@@ -366,9 +379,9 @@ export const ReminderRepoLive = Layer.effect(ReminderRepo, ReminderRepo.make)
  * another member's ledger rows.
  */
 export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>()(
-  "ReminderDispatchRepo",
+  'ReminderDispatchRepo',
   {
-    make: Effect.gen(function*() {
+    make: Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient
 
       const findById = (id: ReminderDispatchId) =>
@@ -377,7 +390,8 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
             SELECT ${sql.literal(REMINDER_DISPATCH_SELECT)}
             FROM reminder_dispatches WHERE id = ${id}
           `,
-          (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toReminderDispatch)
+          rows =>
+            Option.map(Option.fromUndefinedOr(rows[0]), toReminderDispatch),
         )
 
       /**
@@ -422,8 +436,8 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
             ORDER BY r.fire_at ASC
             LIMIT ${input.limit}
           `,
-          (rows) =>
-            rows.map((row) => ({
+          rows =>
+            rows.map(row => ({
               reminderId: row.reminderId,
               fireAt: row.fireAt,
               ownerId: row.ownerId,
@@ -431,8 +445,8 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
               tier: row.tier as ReminderTier,
               repeat: repeatOf(row.repeat),
               timeZone: row.timeZone,
-              silencedUntil: row.silencedUntil
-            }))
+              silencedUntil: row.silencedUntil,
+            })),
         )
 
       /**
@@ -445,13 +459,15 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
         readonly limit: number
       }) =>
         Effect.map(
-          sql<ReminderDispatchRow & {
-            readonly rTitle: string
-            readonly rNote: string | null
-            readonly rKind: string
-            readonly rTier: string
-          }>`
-            SELECT ${sql.literal(dispatchColumns("d."))},
+          sql<
+            ReminderDispatchRow & {
+              readonly rTitle: string
+              readonly rNote: string | null
+              readonly rKind: string
+              readonly rTier: string
+            }
+          >`
+            SELECT ${sql.literal(dispatchColumns('d.'))},
                    r.title AS rTitle, r.note AS rNote, r.kind AS rKind, r.tier AS rTier
             FROM reminder_dispatches d
             JOIN reminders r ON r.id = d.reminder_id
@@ -462,14 +478,14 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
             ORDER BY d.deliver_at ASC
             LIMIT ${input.limit}
           `,
-          (rows) =>
-            rows.map((row) => ({
+          rows =>
+            rows.map(row => ({
               dispatch: toReminderDispatch(row),
               title: row.rTitle,
               note: row.rNote,
               kind: row.rKind as ReminderType,
-              tier: row.rTier as ReminderTier
-            }))
+              tier: row.rTier as ReminderTier,
+            })),
         )
 
       /**
@@ -511,16 +527,16 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
         input.dispatchIds.length === 0
           ? Effect.succeed([] as ReadonlyArray<string>)
           : Effect.map(
-            sql<{ readonly id: string }>`
+              sql<{ readonly id: string }>`
               UPDATE reminder_dispatches
               SET attempts = attempts + 1, last_attempt_at = ${input.now}
-              WHERE ${sql.in("id", input.dispatchIds)}
+              WHERE ${sql.in('id', input.dispatchIds)}
                 AND response IS NULL
                 AND push_outcome IN ('pending', 'failed')
               RETURNING id
             `,
-            (rows) => rows.map((row) => row.id)
-          )
+              rows => rows.map(row => row.id),
+            )
 
       /** The at-most-one snooze child of a parent dispatch. */
       const findSnoozeChild = (parentDispatchId: ReminderDispatchId) =>
@@ -529,7 +545,8 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
             SELECT ${sql.literal(REMINDER_DISPATCH_SELECT)}
             FROM reminder_dispatches WHERE parent_dispatch_id = ${parentDispatchId}
           `,
-          (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toReminderDispatch)
+          rows =>
+            Option.map(Option.fromUndefinedOr(rows[0]), toReminderDispatch),
         )
 
       /**
@@ -545,20 +562,25 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
         readonly history?: boolean
         readonly limit?: number
       }) =>
-        Effect.gen(function*() {
+        Effect.gen(function* () {
           const limit = input.limit ?? 100
-          const cutoff = new Date(Date.parse(input.now) - 24 * 60 * 60 * 1000).toISOString()
-          const rows = input.history === true
-            ? yield* sql<ReminderDispatchRow & {
-              readonly rTitle: string
-              readonly rNote: string | null
-              readonly rKind: string
-              readonly rTier: string
-              readonly rLinkType: string
-              readonly rLinkId: string | null
-              readonly rVisibility: string
-            }>`
-              SELECT ${sql.literal(dispatchColumns("d."))},
+          const cutoff = new Date(
+            Date.parse(input.now) - 24 * 60 * 60 * 1000,
+          ).toISOString()
+          const rows =
+            input.history === true
+              ? yield* sql<
+                  ReminderDispatchRow & {
+                    readonly rTitle: string
+                    readonly rNote: string | null
+                    readonly rKind: string
+                    readonly rTier: string
+                    readonly rLinkType: string
+                    readonly rLinkId: string | null
+                    readonly rVisibility: string
+                  }
+                >`
+              SELECT ${sql.literal(dispatchColumns('d.'))},
                      r.title AS rTitle, r.note AS rNote, r.kind AS rKind, r.tier AS rTier,
                      r.link_type AS rLinkType, r.link_id AS rLinkId,
                      r.visibility AS rVisibility
@@ -569,16 +591,18 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
               ORDER BY d.scheduled_for DESC
               LIMIT ${limit}
             `
-            : yield* sql<ReminderDispatchRow & {
-              readonly rTitle: string
-              readonly rNote: string | null
-              readonly rKind: string
-              readonly rTier: string
-              readonly rLinkType: string
-              readonly rLinkId: string | null
-              readonly rVisibility: string
-            }>`
-              SELECT ${sql.literal(dispatchColumns("d."))},
+              : yield* sql<
+                  ReminderDispatchRow & {
+                    readonly rTitle: string
+                    readonly rNote: string | null
+                    readonly rKind: string
+                    readonly rTier: string
+                    readonly rLinkType: string
+                    readonly rLinkId: string | null
+                    readonly rVisibility: string
+                  }
+                >`
+              SELECT ${sql.literal(dispatchColumns('d.'))},
                      r.title AS rTitle, r.note AS rNote, r.kind AS rKind, r.tier AS rTier,
                      r.link_type AS rLinkType, r.link_id AS rLinkId,
                      r.visibility AS rVisibility
@@ -591,21 +615,20 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
               ORDER BY d.scheduled_for ASC
               LIMIT ${limit}
             `
-          return rows.map(
-            (row): ReminderInboxItem => ({
-              dispatch: toReminderDispatch(row),
-              reminderId: row.reminderId as ReminderId,
-              title: row.rTitle,
-              note: row.rNote,
-              kind: row.rKind as ReminderType,
-              tier: row.rTier as ReminderTier,
-              link: linkOf(row.rLinkType, row.rLinkId),
-              visibility: row.rVisibility === "private" || row.rVisibility === "shared"
+          return rows.map((row): ReminderInboxItem => ({
+            dispatch: toReminderDispatch(row),
+            reminderId: row.reminderId as ReminderId,
+            title: row.rTitle,
+            note: row.rNote,
+            kind: row.rKind as ReminderType,
+            tier: row.rTier as ReminderTier,
+            link: linkOf(row.rLinkType, row.rLinkId),
+            visibility:
+              row.rVisibility === 'private' || row.rVisibility === 'shared'
                 ? row.rVisibility
-                : defaultVisibilityFor("reminder"),
-              state: input.history === true ? "history" : "inbox"
-            })
-          )
+                : defaultVisibilityFor('reminder'),
+            state: input.history === true ? 'history' : 'inbox',
+          }))
         })
 
       const insert = (dispatch: ReminderDispatch) =>
@@ -623,7 +646,7 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
                ${dispatch.respondedAt}, ${dispatch.snoozedUntil}, ${dispatch.createdAt})
             RETURNING ${sql.literal(REMINDER_DISPATCH_SELECT)}
           `,
-          (rows) => toReminderDispatch(rows[0]!)
+          rows => toReminderDispatch(rows[0]!),
         )
 
       /**
@@ -652,7 +675,7 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
        * or an overlapping retry produces exactly one child.
        */
       const insertSnoozeChildStatement = (
-        child: ReminderDispatch
+        child: ReminderDispatch,
       ): Statement.Statement<unknown> =>
         sql`
           INSERT INTO reminder_dispatches
@@ -677,7 +700,9 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
        * Expire every owed row of a reminder (silence or delete, ADR-0005 §5).
        * The row stays in the ledger as `expired`, inbox-only.
        */
-      const expireOwedStatement = (reminderId: ReminderId): Statement.Statement<unknown> =>
+      const expireOwedStatement = (
+        reminderId: ReminderId,
+      ): Statement.Statement<unknown> =>
         sql`
           UPDATE reminder_dispatches SET push_outcome = 'expired'
           WHERE reminder_id = ${reminderId}
@@ -694,7 +719,9 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
        * `(reminder_id, scheduled_for, origin)` is the mutex for overlapping
        * ticks, so the loser writes nothing.
        */
-      const claimInsertStatement = (dispatch: ReminderDispatch): Statement.Statement<unknown> =>
+      const claimInsertStatement = (
+        dispatch: ReminderDispatch,
+      ): Statement.Statement<unknown> =>
         sql`
           INSERT INTO reminder_dispatches
             (id, reminder_id, user_id, scheduled_for, deliver_at, root_scheduled_for,
@@ -762,13 +789,13 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
         expireOwedStatement,
         claimInsertStatement,
         advanceFireAtStatement,
-        advanceSuppressedStatement
+        advanceSuppressedStatement,
       } as const
-    })
-  }
+    }),
+  },
 ) {}
 
 export const ReminderDispatchRepoLive = Layer.effect(
   ReminderDispatchRepo,
-  ReminderDispatchRepo.make
+  ReminderDispatchRepo.make,
 )

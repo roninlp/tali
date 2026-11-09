@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema } from 'effect'
 import {
   type Habit,
   type HabitEntry,
@@ -10,10 +10,10 @@ import {
   SyncPushResponse,
   type SyncEntityRow,
   type SyncPushEntry,
-  type SyncPushResult
-} from "@tali/domain"
+  type SyncPushResult,
+} from '@tali/domain'
 
-import type { EntityRef, LocalStore, SyncFailure } from "./local-store/types"
+import type { EntityRef, LocalStore, SyncFailure } from './local-store/types'
 
 /**
  * The client half of the sync engine (ticket #18) — the implementation behind
@@ -34,8 +34,13 @@ const REQUEST_TIMEOUT_MS = 15_000
 
 export interface SyncTransport {
   readonly pull: (cursor: number, limit: number) => Promise<SyncPullResponse>
-  readonly bootstrap: (offset: number, limit: number) => Promise<SyncBootstrapResponse>
-  readonly push: (entries: ReadonlyArray<SyncPushEntry>) => Promise<SyncPushResponse>
+  readonly bootstrap: (
+    offset: number,
+    limit: number,
+  ) => Promise<SyncBootstrapResponse>
+  readonly push: (
+    entries: ReadonlyArray<SyncPushEntry>,
+  ) => Promise<SyncPushResponse>
   /**
    * The explicit service path that revives a habit day (#64).
    *
@@ -67,26 +72,26 @@ export interface SyncRpc {
 
 /** The server row shape for a habit entry the revive path returned. */
 const habitEntryRow = (entry: HabitEntry): SyncEntityRow => ({
-  entityType: "habitEntry",
+  entityType: 'habitEntry',
   entityId: entry.id,
   version: entry.version,
   updatedAt: entry.updatedAt,
   deletedAt: entry.deletedAt,
-  data: { ...entry }
+  data: { ...entry },
 })
 
 /** The server row shape for a habit the restore path returned (#63/#66). */
 const habitRow = (habit: Habit): SyncEntityRow => ({
-  entityType: "habit",
+  entityType: 'habit',
   entityId: habit.id,
   version: habit.version,
   updatedAt: habit.updatedAt,
   deletedAt: habit.deletedAt,
-  data: { ...habit }
+  data: { ...habit },
 })
 
 const isHabitEntryStatus = (value: unknown): value is HabitEntryStatus =>
-  value === "done" || value === "partial" || value === "missed"
+  value === 'done' || value === 'partial' || value === 'missed'
 
 /**
  * Typed refusals from the logging mutation that retrying cannot change: the
@@ -94,12 +99,12 @@ const isHabitEntryStatus = (value: unknown): value is HabitEntryStatus =>
  * Anything else (a network/RPC failure) is retried by leaving the outbox alone.
  */
 const PERMANENT_REVIVE_ERRORS: ReadonlySet<string> = new Set([
-  "HabitEntryOutOfWindow",
-  "HabitEntryNotFound",
-  "HabitNotFound",
-  "HabitForbidden",
-  "HabitValidationError",
-  "Unauthorized"
+  'HabitEntryOutOfWindow',
+  'HabitEntryNotFound',
+  'HabitNotFound',
+  'HabitForbidden',
+  'HabitValidationError',
+  'Unauthorized',
 ])
 
 /**
@@ -107,9 +112,9 @@ const PERMANENT_REVIVE_ERRORS: ReadonlySet<string> = new Set([
  * unique `(habit, day)` key belongs to a row this device does not know.
  */
 const repairableHabitEntry = (result: SyncPushResult): boolean =>
-  result.entityType === "habitEntry" &&
-  (result._tag === "tombstone" ||
-    (result._tag === "rejected" && result.code === "UniqueViolation"))
+  result.entityType === 'habitEntry' &&
+  (result._tag === 'tombstone' ||
+    (result._tag === 'rejected' && result.code === 'UniqueViolation'))
 
 /**
  * A queued habit restore: an `upsert` with no fields. The screen's delete is a
@@ -118,15 +123,15 @@ const repairableHabitEntry = (result: SyncPushResult): boolean =>
  * repairs through `RestoreHabit`.
  */
 const isHabitRestore = (entry: SyncPushEntry): boolean =>
-  entry.entityType === "habit" &&
-  entry.op === "upsert" &&
+  entry.entityType === 'habit' &&
+  entry.op === 'upsert' &&
   Object.keys(entry.patch).length === 0
 
 /** A non-2xx sync response; the stable code and details travel to the engine. */
 export class SyncRejected extends Error {
   constructor(
     readonly code: string,
-    readonly details: Readonly<Record<string, unknown>> = {}
+    readonly details: Readonly<Record<string, unknown>> = {},
   ) {
     super(code)
   }
@@ -140,14 +145,14 @@ export class SyncRejected extends Error {
  * reports the refusal after the batch so `syncNow` can surface it rather than
  * leaving the user with a habit that silently disappears again.
  */
-export const HABIT_RESTORE_REFUSED = "habit-restore-refused"
+export const HABIT_RESTORE_REFUSED = 'habit-restore-refused'
 
 export class HabitRestoreRefused extends Error {
-  override readonly name = "HabitRestoreRefused"
+  override readonly name = 'HabitRestoreRefused'
 
   constructor(
     readonly habitId: string,
-    readonly reason: string
+    readonly reason: string,
   ) {
     super(`${HABIT_RESTORE_REFUSED}:${reason}`)
   }
@@ -157,17 +162,17 @@ const request = async <A>(
   baseUrl: string,
   path: string,
   schema: Schema.ConstraintDecoder<A>,
-  init: RequestInit = {}
+  init: RequestInit = {},
 ): Promise<A> => {
   let response: Response
   try {
     response = await fetch(`${baseUrl}${path}`, {
-      credentials: "include",
+      credentials: 'include',
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      ...init
+      ...init,
     })
   } catch {
-    throw new Error("network")
+    throw new Error('network')
   }
   const body: unknown = await response.json().catch(() => undefined)
   if (!response.ok) {
@@ -175,13 +180,18 @@ const request = async <A>(
       Schema.Struct({
         error: Schema.Struct({
           code: Schema.String,
-          details: Schema.optional(Schema.Record(Schema.String, Schema.Unknown))
-        })
-      })
+          details: Schema.optional(
+            Schema.Record(Schema.String, Schema.Unknown),
+          ),
+        }),
+      }),
     )(body)
-    throw envelope._tag === "Some"
-      ? new SyncRejected(envelope.value.error.code, envelope.value.error.details ?? {})
-      : new SyncRejected("sync-failed")
+    throw envelope._tag === 'Some'
+      ? new SyncRejected(
+          envelope.value.error.code,
+          envelope.value.error.details ?? {},
+        )
+      : new SyncRejected('sync-failed')
   }
   return Schema.decodeUnknownSync(schema)(body)
 }
@@ -197,45 +207,43 @@ export interface HttpSyncTransportOptions {
 
 /** The plain-HTTP transport. Unit tests inject a fake with the same interface. */
 export const httpSyncTransport = (
-  options: HttpSyncTransportOptions
+  options: HttpSyncTransportOptions,
 ): SyncTransport => ({
   pull: (cursor, limit) =>
     request(
       options.baseUrl,
       `/sync/pull?cursor=${cursor}&limit=${limit}`,
-      SyncPullResponse
+      SyncPullResponse,
     ),
   bootstrap: (offset, limit) =>
     request(
       options.baseUrl,
       `/sync/bootstrap?offset=${offset}&limit=${limit}`,
-      SyncBootstrapResponse
+      SyncBootstrapResponse,
     ),
-  push: (entries) =>
-    request(options.baseUrl, "/sync/push", SyncPushResponse, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ entries })
+  push: entries =>
+    request(options.baseUrl, '/sync/push', SyncPushResponse, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ entries }),
     }),
   ...(options.rpc === undefined
     ? {}
     : {
         logHabitEntry: options.rpc.logHabitEntry,
-        restoreHabit: options.rpc.restoreHabit
-      })
+        restoreHabit: options.rpc.restoreHabit,
+      }),
 })
 
 const asServerRows = (result: SyncPushResult): ReadonlyArray<SyncEntityRow> =>
-  result._tag === "rejected" || result.item === undefined ? [] : [result.item]
+  result._tag === 'rejected' || result.item === undefined ? [] : [result.item]
 
 export interface SyncEngine {
   /** One reconcile pass: pull deltas, then drain as much of the outbox as possible. */
   readonly sync: (store: LocalStore) => Promise<void>
 }
 
-export const createSyncEngine = (
-  transport: SyncTransport
-): SyncEngine => {
+export const createSyncEngine = (transport: SyncTransport): SyncEngine => {
   const pullAll = async (store: LocalStore): Promise<void> => {
     let cursor = await store.cursor()
     for (;;) {
@@ -304,12 +312,16 @@ export const createSyncEngine = (
       // would drop that field. Mark before sending, never after: if this
       // request times out the entries stay `sent` and are retried unchanged, so
       // a merged patch can never hide behind an `applied_mutations` dedupe hit.
-      const marked = await store.markSent(batch.map((entry) => entry.clientMutationId))
+      const marked = await store.markSent(
+        batch.map(entry => entry.clientMutationId),
+      )
       if (marked.length === 0) return
-      const entries = marked.map((entry) => {
+      const entries = marked.map(entry => {
         const key = `${entry.entityType}\u0000${entry.entityId}`
         const chained = versionByEntity.get(key)
-        return chained === undefined ? entry : { ...entry, baseVersion: chained }
+        return chained === undefined
+          ? entry
+          : { ...entry, baseVersion: chained }
       })
       let response: SyncPushResponse
       try {
@@ -318,15 +330,20 @@ export const createSyncEngine = (
         // A 403 means this entry can never be applied (the row went private,
         // or belongs to another household). Retrying would fail forever and
         // block every later entry, so drop that entity's queue and mirror row.
-        if (!(cause instanceof SyncRejected) || cause.code !== "Forbidden") throw cause
+        if (!(cause instanceof SyncRejected) || cause.code !== 'Forbidden')
+          throw cause
         const entityId = cause.details.entityId
-        if (typeof entityId !== "string") throw cause
+        if (typeof entityId !== 'string') throw cause
         // A permanent refusal is rare enough to afford the whole-queue read;
         // the batch above only holds this entity's first link.
-        const poisoned = (await store.pending()).filter((entry) => entry.entityId === entityId)
+        const poisoned = (await store.pending()).filter(
+          entry => entry.entityId === entityId,
+        )
         if (poisoned.length === 0) throw cause
-        await store.ack(poisoned.map((entry) => entry.clientMutationId))
-        for (const entityType of new Set(poisoned.map((entry) => entry.entityType))) {
+        await store.ack(poisoned.map(entry => entry.clientMutationId))
+        for (const entityType of new Set(
+          poisoned.map(entry => entry.entityType),
+        )) {
           await store.removeFromMirror(entityType, entityId)
         }
         continue
@@ -346,31 +363,34 @@ export const createSyncEngine = (
          * acked so a transient failure leaves the undo queued.
          */
         if (
-          result.entityType === "habit" &&
-          result._tag === "tombstone" &&
+          result.entityType === 'habit' &&
+          result._tag === 'tombstone' &&
           transport.restoreHabit !== undefined
         ) {
           const queued = batch.find(
-            (entry) => entry.clientMutationId === result.clientMutationId
+            entry => entry.clientMutationId === result.clientMutationId,
           )
           if (queued !== undefined && isHabitRestore(queued)) {
             try {
               const restored = await transport.restoreHabit({
-                id: queued.entityId as Habit["id"],
-                clientMutationId: queued.clientMutationId
+                id: queued.entityId as Habit['id'],
+                clientMutationId: queued.clientMutationId,
               })
               repairedRows.push(habitRow(restored))
               versionByEntity.set(`habit\u0000${restored.id}`, restored.version)
             } catch (cause) {
               const tag = (cause as { readonly _tag?: unknown })._tag
-              if (typeof tag !== "string" || !PERMANENT_REVIVE_ERRORS.has(tag)) {
+              if (
+                typeof tag !== 'string' ||
+                !PERMANENT_REVIVE_ERRORS.has(tag)
+              ) {
                 // Transient (offline, 5xx, timeout): keep the undo queued.
                 throw cause
               }
               console.warn(
                 `[sync] stopped restoring habit/${queued.entityId} (${tag}): ${
                   cause instanceof Error ? cause.message : String(cause)
-                }`
+                }`,
               )
               // Acked below like any other resolved result, so the refusal is
               // reported after the batch instead of retrying forever.
@@ -385,9 +405,12 @@ export const createSyncEngine = (
          * resolver refuses it by design, so the explicit logging mutation
          * resolves the day and revives/updates the existing row.
          */
-        if (repairableHabitEntry(result) && transport.logHabitEntry !== undefined) {
+        if (
+          repairableHabitEntry(result) &&
+          transport.logHabitEntry !== undefined
+        ) {
           const queued = batch.find(
-            (entry) => entry.clientMutationId === result.clientMutationId
+            entry => entry.clientMutationId === result.clientMutationId,
           )
           const habitId = queued?.patch.habitId
           const localDate = queued?.patch.localDate
@@ -395,31 +418,40 @@ export const createSyncEngine = (
           const timeZone = queued?.patch.timeZone
           if (
             queued !== undefined &&
-            queued.op === "upsert" &&
-            typeof habitId === "string" &&
-            typeof localDate === "string" &&
+            queued.op === 'upsert' &&
+            typeof habitId === 'string' &&
+            typeof localDate === 'string' &&
             isHabitEntryStatus(status)
           ) {
             try {
               const revived = await transport.logHabitEntry({
-                id: queued.entityId as HabitEntry["id"],
+                id: queued.entityId as HabitEntry['id'],
                 clientMutationId: queued.clientMutationId,
-                habitId: habitId as HabitEntry["habitId"],
-                localDate: localDate as HabitEntry["localDate"],
+                habitId: habitId as HabitEntry['habitId'],
+                localDate: localDate as HabitEntry['localDate'],
                 status,
-                ...(typeof timeZone === "string" ? { timeZone } : {})
+                ...(typeof timeZone === 'string' ? { timeZone } : {}),
               })
               if (revived.id !== queued.entityId) {
                 repairedOriginalIds.add(queued.entityId)
               }
               repairedRows.push(habitEntryRow(revived))
-              versionByEntity.set(`habitEntry\u0000${revived.id}`, revived.version)
+              versionByEntity.set(
+                `habitEntry\u0000${revived.id}`,
+                revived.version,
+              )
               if (revived.id !== queued.entityId) {
-                versionByEntity.set(`habitEntry\u0000${queued.entityId}`, revived.version)
+                versionByEntity.set(
+                  `habitEntry\u0000${queued.entityId}`,
+                  revived.version,
+                )
               }
             } catch (cause) {
               const tag = (cause as { readonly _tag?: unknown })._tag
-              if (typeof tag !== "string" || !PERMANENT_REVIVE_ERRORS.has(tag)) {
+              if (
+                typeof tag !== 'string' ||
+                !PERMANENT_REVIVE_ERRORS.has(tag)
+              ) {
                 // Transient (offline, 5xx, timeout): keep the outbox entry and
                 // try again on the next reconcile.
                 throw cause
@@ -427,7 +459,7 @@ export const createSyncEngine = (
               console.warn(
                 `[sync] stopped reviving habitEntry/${queued.entityId} (${tag}): ${
                   cause instanceof Error ? cause.message : String(cause)
-                }`
+                }`,
               )
             }
             continue
@@ -439,9 +471,9 @@ export const createSyncEngine = (
         // mirror keeps the local row **and** a durable marker: the server never
         // moved this row's feed seq, so no later pull will re-deliver it. The
         // marker is what stops the UI claiming "saved" and lets the user retry.
-        if (result._tag === "rejected") {
+        if (result._tag === 'rejected') {
           console.warn(
-            `[sync] rejected ${result.entityType}/${result.entityId} (${result.code}): ${result.message}`
+            `[sync] rejected ${result.entityType}/${result.entityId} (${result.code}): ${result.message}`,
           )
           failures.push({
             entityType: result.entityType,
@@ -449,16 +481,19 @@ export const createSyncEngine = (
             code: result.code,
             message: result.message,
             at: new Date().toISOString(),
-            clientMutationId: result.clientMutationId
+            clientMutationId: result.clientMutationId,
           })
           continue
         }
         // Any non-rejected result resolved this entity on the server, even when
         // the response omits the authoritative row (tests, already-applied).
-        resolved.push({ entityType: result.entityType, entityId: result.entityId })
+        resolved.push({
+          entityType: result.entityType,
+          entityId: result.entityId,
+        })
         versionByEntity.set(
           `${result.entityType}\u0000${result.entityId}`,
-          result.version
+          result.version,
         )
       }
       const rows = [...response.results.flatMap(asServerRows), ...repairedRows]
@@ -466,15 +501,15 @@ export const createSyncEngine = (
       // with what this device has pulled. A remote change committed between
       // our pull and our push would be skipped forever if we jumped to it.
       await store.ack(
-        response.results.map((result) => result.clientMutationId),
+        response.results.map(result => result.clientMutationId),
         rows,
         failures,
-        resolved
+        resolved,
       )
       // The revive resolved the day to a different server row: drop the local
       // placeholder so the mirror holds exactly one row for the day.
       for (const entityId of repairedOriginalIds) {
-        await store.removeFromMirror("habitEntry", entityId)
+        await store.removeFromMirror('habitEntry', entityId)
       }
       // The undo was acked (so it cannot loop), but the user asked to restore a
       // habit the server permanently refused: report it now that the mirror is
@@ -486,9 +521,9 @@ export const createSyncEngine = (
   }
 
   return {
-    sync: async (store) => {
+    sync: async store => {
       await pullAll(store)
       await pushAll(store)
-    }
+    },
   }
 }

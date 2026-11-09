@@ -208,6 +208,7 @@ export const trashNoteInMirror = (
  */
 export const noteToServerRow = (note: Note): ServerRow => {
   const { version, updatedAt, deletedAt, ...data } = note
+
   return {
     entityType: 'note',
     entityId: note.id,

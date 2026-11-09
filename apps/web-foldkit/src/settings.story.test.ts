@@ -218,6 +218,7 @@ describe('password command', () => {
       async (_input: RequestInfo | URL, _init?: RequestInit) =>
         jsonResponse(200, { ok: true }),
     )
+
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await Effect.runPromise(

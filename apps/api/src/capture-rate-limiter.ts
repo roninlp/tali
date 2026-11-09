@@ -1,5 +1,5 @@
-import { Context, Effect, Layer, Schema } from "effect"
-import { SqlClient, SqlSchema } from "effect/sql"
+import { Context, Effect, Layer, Schema } from 'effect'
+import { SqlClient, SqlSchema } from 'effect/sql'
 
 /**
  * D1 fixed-window Capture limiter (ADR-0012 §9; ticket #101).
@@ -18,7 +18,7 @@ export const CAPTURE_MAX_PER_WINDOW = 20
 
 const Attempt = Schema.Struct({
   windowStart: Schema.Int,
-  count: Schema.Int
+  count: Schema.Int,
 })
 
 export interface CaptureLimitStatus {
@@ -28,12 +28,13 @@ export interface CaptureLimitStatus {
 }
 
 export class CaptureRateLimiter extends Context.Service<CaptureRateLimiter>()(
-  "CaptureRateLimiter",
+  'CaptureRateLimiter',
   {
-    make: Effect.gen(function*() {
+    make: Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient
 
-      const windowStartOf = (now: number): number => Math.floor(now / WINDOW_MS) * WINDOW_MS
+      const windowStartOf = (now: number): number =>
+        Math.floor(now / WINDOW_MS) * WINDOW_MS
 
       const consumeAttempt = SqlSchema.findOne({
         Request: Schema.Struct({ key: Schema.String, windowStart: Schema.Int }),
@@ -49,15 +50,15 @@ export class CaptureRateLimiter extends Context.Service<CaptureRateLimiter>()(
             END,
             window_start = excluded.window_start
           RETURNING window_start, count
-        `
+        `,
       })
 
       const consume = (key: string): Effect.Effect<CaptureLimitStatus> =>
-        Effect.gen(function*() {
+        Effect.gen(function* () {
           const now = Date.now()
           const windowStart = windowStartOf(now)
           const { count } = yield* consumeAttempt({ key, windowStart }).pipe(
-            Effect.orDie
+            Effect.orDie,
           )
           if (count <= CAPTURE_MAX_PER_WINDOW) {
             return { limited: false, retryAfterSeconds: 0 }
@@ -66,17 +67,17 @@ export class CaptureRateLimiter extends Context.Service<CaptureRateLimiter>()(
             limited: true,
             retryAfterSeconds: Math.max(
               1,
-              Math.ceil((windowStart + WINDOW_MS - now) / 1000)
-            )
+              Math.ceil((windowStart + WINDOW_MS - now) / 1000),
+            ),
           }
         })
 
       return { consume } as const
-    })
-  }
+    }),
+  },
 ) {}
 
 export const CaptureRateLimiterLive = Layer.effect(
   CaptureRateLimiter,
-  CaptureRateLimiter.make
+  CaptureRateLimiter.make,
 )

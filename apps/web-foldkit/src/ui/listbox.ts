@@ -1,6 +1,7 @@
-import { Listbox } from '@foldkit/ui'
 import { Array, Option } from 'effect'
 import { type Html, type HtmlBuilder, childAttributes } from 'foldkit/html'
+
+import { Listbox } from '@foldkit/ui'
 
 import { chevronDownIcon } from './icons'
 
@@ -34,7 +35,10 @@ export const listboxTriggerContent = <Message>(
     ],
   )
 
-type ListboxRow<Value extends string> = Readonly<{ value: Value; label: string }>
+type ListboxRow<Value extends string> = Readonly<{
+  value: Value
+  label: string
+}>
 
 /** Selected-label resolver for `Listbox` pickers over `{ value, label }` rows. */
 export const selectedListboxLabel = <Value extends string>(
@@ -48,10 +52,7 @@ export const selectedListboxLabel = <Value extends string>(
     onSome: selected =>
       Option.getOrElse(
         Option.map(
-          Array.findFirst(
-            config.items,
-            item => item.value === selected,
-          ),
+          Array.findFirst(config.items, item => item.value === selected),
           item => item.label,
         ),
         () => selected,

@@ -51,6 +51,7 @@ describe('picker', () => {
       model,
       Picker.Message.SelectedHour({ hour: 19 }),
     )
+
     expect(pickedHour.outMessage).toBeUndefined()
     expect(pickedHour.model.timeValue).toBe('19:15')
 
@@ -58,12 +59,14 @@ describe('picker', () => {
       pickedHour.model,
       Picker.Message.SelectedMinute({ minute: 45 }),
     )
+
     expect(pickedMinute.model.timeValue).toBe('19:45')
 
     const confirmed = Picker.update(
       pickedMinute.model,
       Picker.Message.ClickedConfirm(),
     )
+
     expect(confirmed.outMessage).toStrictEqual(
       Picker.OutMessage.PickedValue({
         target: 'habit:reminderTime',
@@ -83,28 +86,33 @@ describe('picker', () => {
       model,
       Picker.Message.ScrolledHour({ index: 11 }),
     )
+
     expect(toNoon.model.timeValue).toBe('00:15')
 
     const toAfternoon = Picker.update(
       toNoon.model,
       Picker.Message.ScrolledPeriod({ index: 1 }),
     )
+
     expect(toAfternoon.model.timeValue).toBe('12:15')
 
     const toNinePm = Picker.update(
       model,
       Picker.Message.ScrolledHour({ index: 8 }),
     )
+
     const ninePmAfternoon = Picker.update(
       toNinePm.model,
       Picker.Message.ScrolledPeriod({ index: 1 }),
     )
+
     expect(ninePmAfternoon.model.timeValue).toBe('21:15')
 
     const thirty = Picker.update(
       model,
       Picker.Message.ScrolledMinute({ index: 30 }),
     )
+
     expect(thirty.model.timeValue).toBe('09:30')
   })
 
@@ -114,6 +122,7 @@ describe('picker', () => {
       mode: 'datetime',
       value: '',
     })
+
     expect(model.dateValue).toBe('2026-11-09')
     expect(model.timeValue).toBe('09:00')
 
@@ -121,10 +130,12 @@ describe('picker', () => {
       model,
       Picker.Message.ClickedDay({ date: '2026-11-11' }),
     )
+
     const withHour = Picker.update(
       withDay.model,
       Picker.Message.SelectedHour({ hour: 17 }),
     )
+
     const confirmed = Picker.update(
       withHour.model,
       Picker.Message.ClickedConfirm(),
@@ -158,6 +169,7 @@ describe('picker', () => {
       mode: 'date',
       value: '2026-11-09',
     })
+
     const initial = { year: model.viewYear, month: model.viewMonth }
 
     const next = Picker.update(model, Picker.Message.ClickedNextMonth())

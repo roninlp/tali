@@ -11,7 +11,8 @@
   "devDependencies": {
     "@effect/platform-node": "catalog:",
     "@types/node": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "@tali/tsconfig": "workspace:*"
   },
   "scripts": {
     "dev": "sh -c 'set -a; [ -f ../.env ] && . ../.env; set +a; exec alchemy dev \"$@\"' sh",

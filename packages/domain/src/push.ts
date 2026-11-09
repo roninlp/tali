@@ -1,6 +1,6 @@
-import { Schema } from "effect"
-import { Model } from "effect/schema"
-import { PushSubscriptionId, UserId } from "./common.js"
+import { Schema } from 'effect'
+import { Model } from 'effect/schema'
+import { PushSubscriptionId, UserId } from './common.js'
 
 /**
  * Web Push shapes (tickets #20, #61).
@@ -41,27 +41,33 @@ import { PushSubscriptionId, UserId } from "./common.js"
 export const MAX_PUSH_ENDPOINT_LENGTH = 2048
 
 const IPV4 = /^(?:\d{1,3}\.){3}\d{1,3}$/u
-const RESERVED_SUFFIXES = [".localhost", ".local", ".internal", ".home.arpa"] as const
+const RESERVED_SUFFIXES = [
+  '.localhost',
+  '.local',
+  '.internal',
+  '.home.arpa',
+] as const
 
 export const isSafePushEndpoint = (value: string): boolean => {
-  if (value.length === 0 || value.length > MAX_PUSH_ENDPOINT_LENGTH) return false
+  if (value.length === 0 || value.length > MAX_PUSH_ENDPOINT_LENGTH)
+    return false
   let url: URL
   try {
     url = new URL(value)
   } catch {
     return false
   }
-  if (url.protocol !== "https:") return false
-  if (url.username !== "" || url.password !== "") return false
-  if (url.port !== "" && url.port !== "443") return false
+  if (url.protocol !== 'https:') return false
+  if (url.username !== '' || url.password !== '') return false
+  if (url.port !== '' && url.port !== '443') return false
   const host = url.hostname.toLowerCase()
-  if (host === "" || host === "localhost") return false
+  if (host === '' || host === 'localhost') return false
   // URL normalizes decimal/hex IPv4 forms to dotted-quad, so this also catches
   // `https://2130706433/` and `https://0x7f.0.0.1/`.
   if (IPV4.test(host)) return false
   // IPv6 hostnames keep their brackets (`[::1]`).
-  if (host.startsWith("[")) return false
-  if (RESERVED_SUFFIXES.some((suffix) => host.endsWith(suffix))) return false
+  if (host.startsWith('[')) return false
+  if (RESERVED_SUFFIXES.some(suffix => host.endsWith(suffix))) return false
   return true
 }
 
@@ -72,10 +78,12 @@ export const PushSubscriptionInput = Schema.Struct({
   expirationTime: Schema.NullOr(Schema.Number),
   keys: Schema.Struct({
     p256dh: Schema.String.check(Schema.isMinLength(1)),
-    auth: Schema.String.check(Schema.isMinLength(1))
-  })
+    auth: Schema.String.check(Schema.isMinLength(1)),
+  }),
 })
-export type PushSubscriptionInput = Schema.Schema.Type<typeof PushSubscriptionInput>
+export type PushSubscriptionInput = Schema.Schema.Type<
+  typeof PushSubscriptionInput
+>
 
 /**
  * The persisted per-device subscription (`push_subscriptions`).
@@ -83,7 +91,9 @@ export type PushSubscriptionInput = Schema.Schema.Type<typeof PushSubscriptionIn
  * `endpoint` is unique: a browser rotates its subscription by creating a new
  * endpoint, and re-registering the same endpoint refreshes the keys in place.
  */
-export class PushSubscription extends Model.Class<PushSubscription>("PushSubscription")({
+export class PushSubscription extends Model.Class<PushSubscription>(
+  'PushSubscription',
+)({
   id: Model.UuidV7Insert(PushSubscriptionId),
   userId: UserId,
   endpoint: Schema.String,
@@ -93,12 +103,14 @@ export class PushSubscription extends Model.Class<PushSubscription>("PushSubscri
   expirationTime: Schema.NullOr(Schema.String),
   userAgent: Schema.NullOr(Schema.String),
   createdAt: Schema.String,
-  updatedAt: Schema.String
+  updatedAt: Schema.String,
 }) {}
 
 /** The two action buttons the shell wires in the notification. */
-export const ReminderNotificationAction = Schema.Literals(["done", "snooze"])
-export type ReminderNotificationAction = Schema.Schema.Type<typeof ReminderNotificationAction>
+export const ReminderNotificationAction = Schema.Literals(['done', 'snooze'])
+export type ReminderNotificationAction = Schema.Schema.Type<
+  typeof ReminderNotificationAction
+>
 
 /** What the notification's "Snooze" button means without a picker (minutes). */
 export const DEFAULT_NOTIFICATION_SNOOZE_MINUTES = 10
@@ -109,7 +121,7 @@ export const ReminderPushAction = Schema.Struct({
   /** Localized label ("انجام شد" / "بعداً"). */
   title: Schema.String,
   /** Only for `snooze`: the preset re-fire offset, in minutes (#13 §2.3). */
-  minutes: Schema.optional(Schema.Int)
+  minutes: Schema.optional(Schema.Int),
 })
 export type ReminderPushAction = Schema.Schema.Type<typeof ReminderPushAction>
 
@@ -121,16 +133,16 @@ export type ReminderPushAction = Schema.Schema.Type<typeof ReminderPushAction>
  * which occurrence it was showing.
  */
 export const ReminderPushPayload = Schema.Struct({
-  type: Schema.Literal("reminder"),
+  type: Schema.Literal('reminder'),
   /** The `reminder_dispatches.id` this notification answers. */
   id: Schema.String,
   reminderId: Schema.String,
   title: Schema.String,
   body: Schema.optional(Schema.String),
   /** Medication = `critical`; everything else is `normal`. */
-  tier: Schema.optional(Schema.Literals(["normal", "critical"])),
+  tier: Schema.optional(Schema.Literals(['normal', 'critical'])),
   /** Where a body tap should land. Defaults to `/reminders`. */
   url: Schema.optional(Schema.String),
-  actions: Schema.optional(Schema.Array(ReminderPushAction))
+  actions: Schema.optional(Schema.Array(ReminderPushAction)),
 })
 export type ReminderPushPayload = Schema.Schema.Type<typeof ReminderPushPayload>

@@ -20,6 +20,7 @@ const stored = (
   settings: TaskViewSettings,
 ): Readonly<{ filters: unknown; sort: unknown }> => {
   const filters = settings.filters
+
   const projectId = ProjectFilter.match(filters.project, {
     All: () => undefined,
     None: () => null,

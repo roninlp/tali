@@ -1,6 +1,6 @@
-import { Schema } from "effect"
-import { Visibility } from "./common.js"
-import { ItemType } from "./planning/common.js"
+import { Schema } from 'effect'
+import { Visibility } from './common.js'
+import { ItemType } from './planning/common.js'
 
 /**
  * Sync wire shapes shared by the client store and the sync endpoints.
@@ -20,7 +20,7 @@ export const SyncEntityType = ItemType
 export type SyncEntityType = Schema.Schema.Type<typeof SyncEntityType>
 
 /** `delete` is a soft-delete tombstone, not a physical row removal. */
-export const SyncOp = Schema.Literals(["upsert", "delete"])
+export const SyncOp = Schema.Literals(['upsert', 'delete'])
 export type SyncOp = Schema.Schema.Type<typeof SyncOp>
 
 /**
@@ -47,7 +47,7 @@ export const SyncPushEntry = Schema.Struct({
   baseVersion: Schema.Int,
   op: SyncOp,
   patch: Schema.Record(Schema.String, Schema.Unknown),
-  clientUpdatedAt: Schema.DateTimeUtcFromString
+  clientUpdatedAt: Schema.DateTimeUtcFromString,
 })
 /**
  * The *encoded* (wire/storage) shape: `clientUpdatedAt` stays a UTC string.
@@ -70,7 +70,7 @@ export const ChangeFeedEntry = Schema.Struct({
   version: Schema.Int,
   updatedAt: Schema.String,
   ownerId: Schema.String,
-  visibility: Visibility
+  visibility: Visibility,
 })
 export type ChangeFeedEntry = Schema.Schema.Type<typeof ChangeFeedEntry>
 
@@ -85,14 +85,14 @@ export const SyncEntityRow = Schema.Struct({
   version: Schema.Int,
   updatedAt: Schema.String,
   deletedAt: Schema.NullOr(Schema.String),
-  data: Schema.Record(Schema.String, Schema.Unknown)
+  data: Schema.Record(Schema.String, Schema.Unknown),
 })
 export type SyncEntityRow = Schema.Schema.Type<typeof SyncEntityRow>
 
 /** A row that stopped being visible to this client (visibility flip / purge). */
 export const SyncRemovedEntry = Schema.Struct({
   entityType: SyncEntityType,
-  entityId: Schema.String
+  entityId: Schema.String,
 })
 export type SyncRemovedEntry = Schema.Schema.Type<typeof SyncRemovedEntry>
 
@@ -105,7 +105,7 @@ export const SyncPullResponse = Schema.Struct({
   nextCursor: Schema.Int,
   hasMore: Schema.Boolean,
   /** True when the cursor predates the retained feed window; re-bootstrap. */
-  resetRequired: Schema.Boolean
+  resetRequired: Schema.Boolean,
 })
 export type SyncPullResponse = Schema.Schema.Type<typeof SyncPullResponse>
 
@@ -118,56 +118,58 @@ export const SyncBootstrapResponse = Schema.Struct({
   nextOffset: Schema.Int,
   hasMore: Schema.Boolean,
   /** Max feed `seq` at bootstrap; the client continues from here. */
-  cursor: Schema.Int
+  cursor: Schema.Int,
 })
-export type SyncBootstrapResponse = Schema.Schema.Type<typeof SyncBootstrapResponse>
+export type SyncBootstrapResponse = Schema.Schema.Type<
+  typeof SyncBootstrapResponse
+>
 
 // ── Push ──────────────────────────────────────────────────────────────────
 
 export const SyncPushRequest = Schema.Struct({
   /** Chunked by the client; the server caps a request at 200 entries. */
-  entries: Schema.Array(SyncPushEntry)
+  entries: Schema.Array(SyncPushEntry),
 })
 export type SyncPushRequest = Schema.Schema.Type<typeof SyncPushRequest>
 
 const AppliedResult = Schema.Struct({
-  _tag: Schema.Literal("applied"),
+  _tag: Schema.Literal('applied'),
   clientMutationId: Schema.String,
   entityType: SyncEntityType,
   entityId: Schema.String,
   version: Schema.Int,
   seq: Schema.Int,
-  item: Schema.optional(SyncEntityRow)
+  item: Schema.optional(SyncEntityRow),
 })
 
 const AlreadyAppliedResult = Schema.Struct({
-  _tag: Schema.Literal("alreadyApplied"),
+  _tag: Schema.Literal('alreadyApplied'),
   clientMutationId: Schema.String,
   entityType: SyncEntityType,
   entityId: Schema.String,
   version: Schema.Int,
   seq: Schema.Int,
-  item: Schema.optional(SyncEntityRow)
+  item: Schema.optional(SyncEntityRow),
 })
 
 const ConflictResult = Schema.Struct({
-  _tag: Schema.Literal("conflict"),
+  _tag: Schema.Literal('conflict'),
   clientMutationId: Schema.String,
   entityType: SyncEntityType,
   entityId: Schema.String,
   version: Schema.Int,
   seq: Schema.Int,
-  item: Schema.optional(SyncEntityRow)
+  item: Schema.optional(SyncEntityRow),
 })
 
 const TombstoneResult = Schema.Struct({
-  _tag: Schema.Literal("tombstone"),
+  _tag: Schema.Literal('tombstone'),
   clientMutationId: Schema.String,
   entityType: SyncEntityType,
   entityId: Schema.String,
   version: Schema.Int,
   seq: Schema.Int,
-  item: Schema.optional(SyncEntityRow)
+  item: Schema.optional(SyncEntityRow),
 })
 
 /**
@@ -181,12 +183,12 @@ const TombstoneResult = Schema.Struct({
  * stable for programmatic handling, `message` is for diagnosis only.
  */
 const RejectedResult = Schema.Struct({
-  _tag: Schema.Literal("rejected"),
+  _tag: Schema.Literal('rejected'),
   clientMutationId: Schema.String,
   entityType: SyncEntityType,
   entityId: Schema.String,
   code: Schema.String,
-  message: Schema.String
+  message: Schema.String,
 })
 
 /** Per-entry outcome (`docs/sync-protocol-draft.md` §4.3). */
@@ -195,14 +197,14 @@ export const SyncPushResult = Schema.Union([
   AlreadyAppliedResult,
   ConflictResult,
   TombstoneResult,
-  RejectedResult
+  RejectedResult,
 ])
 export type SyncPushResult = Schema.Schema.Type<typeof SyncPushResult>
 
 export const SyncPushResponse = Schema.Struct({
   results: Schema.Array(SyncPushResult),
   /** Highest `seq` written (or deduped) by this push; the client may advance. */
-  cursor: Schema.Int
+  cursor: Schema.Int,
 })
 export type SyncPushResponse = Schema.Schema.Type<typeof SyncPushResponse>
 
@@ -211,13 +213,13 @@ export type SyncPushResponse = Schema.Schema.Type<typeof SyncPushResponse>
  * plain-HTTP `ErrorEnvelope` (`docs/error-model-draft.md` §5).
  */
 export const SYNC_ERROR_CODES = [
-  "NoHousehold",
-  "Unauthorized",
-  "BadRequest",
-  "Forbidden",
-  "UnsupportedEntity",
-  "StaleCursor",
-  "Conflict",
-  "InternalError"
+  'NoHousehold',
+  'Unauthorized',
+  'BadRequest',
+  'Forbidden',
+  'UnsupportedEntity',
+  'StaleCursor',
+  'Conflict',
+  'InternalError',
 ] as const
 export type SyncErrorCode = (typeof SYNC_ERROR_CODES)[number]

@@ -382,6 +382,7 @@ describe('reminders responses', () => {
         response: 'done',
       }),
     )
+
     const second = Reminders.update(
       first.model,
       Reminders.Message.ClickedRespond({

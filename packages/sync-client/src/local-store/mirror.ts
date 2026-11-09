@@ -1,4 +1,4 @@
-import type { MirrorRecord } from "./types"
+import type { MirrorRecord } from './types'
 
 /**
  * Pure mirror projections.
@@ -9,19 +9,23 @@ import type { MirrorRecord } from "./types"
  */
 
 export const liveRows = (
-  rows: ReadonlyArray<MirrorRecord>
+  rows: ReadonlyArray<MirrorRecord>,
 ): ReadonlyArray<MirrorRecord> => rows.filter(row => row.deletedAt === null)
 
 export const trashedRows = (
-  rows: ReadonlyArray<MirrorRecord>
+  rows: ReadonlyArray<MirrorRecord>,
 ): ReadonlyArray<MirrorRecord> =>
   rows
     .filter(row => row.deletedAt !== null)
-    .sort((a, b) => (b.deletedAt ?? "").localeCompare(a.deletedAt ?? ""))
+    .sort((a, b) => (b.deletedAt ?? '').localeCompare(a.deletedAt ?? ''))
 
 export const failedRows = (
-  rows: ReadonlyArray<MirrorRecord>
-): ReadonlyArray<MirrorRecord> => rows.filter(row => row.syncError !== undefined)
+  rows: ReadonlyArray<MirrorRecord>,
+): ReadonlyArray<MirrorRecord> =>
+  rows.filter(row => row.syncError !== undefined)
 
 export const countFailedRows = (rows: ReadonlyArray<MirrorRecord>): number =>
-  rows.reduce((count, row) => (row.syncError === undefined ? count : count + 1), 0)
+  rows.reduce(
+    (count, row) => (row.syncError === undefined ? count : count + 1),
+    0,
+  )

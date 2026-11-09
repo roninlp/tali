@@ -15,9 +15,7 @@
         "timeZone": "Asia/Tehran"
       }
     ],
-    "expectedTags": [
-      "event"
-    ],
+    "expectedTags": ["event"],
     "expectedMissing": [],
     "neverInventDate": false
   },
@@ -38,12 +36,8 @@
         "kind": "medication"
       }
     ],
-    "expectedTags": [
-      "reminder"
-    ],
-    "expectedMissing": [
-      "repeat"
-    ],
+    "expectedTags": ["reminder"],
+    "expectedMissing": ["repeat"],
     "neverInventDate": true
   },
   {
@@ -75,13 +69,8 @@
         "kind": "medication"
       }
     ],
-    "expectedTags": [
-      "event",
-      "reminder"
-    ],
-    "expectedMissing": [
-      "repeat"
-    ],
+    "expectedTags": ["event", "reminder"],
+    "expectedMissing": ["repeat"],
     "neverInventDate": true
   },
   {
@@ -106,13 +95,8 @@
         "missing": []
       }
     ],
-    "expectedTags": [
-      "event",
-      "task"
-    ],
-    "expectedMissing": [
-      "timing"
-    ],
+    "expectedTags": ["event", "task"],
+    "expectedMissing": ["timing"],
     "neverInventDate": true
   },
   {
@@ -128,9 +112,7 @@
         }
       }
     ],
-    "expectedTags": [
-      "habit"
-    ],
+    "expectedTags": ["habit"],
     "expectedMissing": [],
     "neverInventDate": false
   },
@@ -148,9 +130,7 @@
         }
       }
     ],
-    "expectedTags": [
-      "habit"
-    ],
+    "expectedTags": ["habit"],
     "expectedMissing": [],
     "neverInventDate": false
   },
@@ -164,16 +144,11 @@
         "missing": [],
         "frequency": {
           "_tag": "weekdays",
-          "days": [
-            6,
-            1
-          ]
+          "days": [6, 1]
         }
       }
     ],
-    "expectedTags": [
-      "habit"
-    ],
+    "expectedTags": ["habit"],
     "expectedMissing": [],
     "neverInventDate": false
   },
@@ -188,9 +163,7 @@
         "missing": []
       }
     ],
-    "expectedTags": [
-      "note"
-    ],
+    "expectedTags": ["note"],
     "expectedMissing": [],
     "neverInventDate": false
   },
@@ -204,9 +177,7 @@
         "missing": []
       }
     ],
-    "expectedTags": [
-      "task"
-    ],
+    "expectedTags": ["task"],
     "expectedMissing": [],
     "neverInventDate": false
   },
@@ -221,9 +192,7 @@
         "dueDate": "2026-11-09"
       }
     ],
-    "expectedTags": [
-      "task"
-    ],
+    "expectedTags": ["task"],
     "expectedMissing": [],
     "neverInventDate": false
   },
@@ -247,12 +216,8 @@
         }
       }
     ],
-    "expectedTags": [
-      "reminder"
-    ],
-    "expectedMissing": [
-      "fireAt"
-    ],
+    "expectedTags": ["reminder"],
+    "expectedMissing": ["fireAt"],
     "neverInventDate": true
   },
   {
@@ -271,9 +236,7 @@
         "timeZone": "Asia/Tehran"
       }
     ],
-    "expectedTags": [
-      "event"
-    ],
+    "expectedTags": ["event"],
     "expectedMissing": [],
     "neverInventDate": false
   },
@@ -293,12 +256,8 @@
         ]
       }
     ],
-    "expectedTags": [
-      "event"
-    ],
-    "expectedMissing": [
-      "timing"
-    ],
+    "expectedTags": ["event"],
+    "expectedMissing": ["timing"],
     "neverInventDate": true
   },
   {
@@ -311,9 +270,7 @@
         "missing": []
       }
     ],
-    "expectedTags": [
-      "task"
-    ],
+    "expectedTags": ["task"],
     "expectedMissing": [],
     "neverInventDate": false
   },
@@ -331,9 +288,7 @@
         "reminderTime": "22:00"
       }
     ],
-    "expectedTags": [
-      "habit"
-    ],
+    "expectedTags": ["habit"],
     "expectedMissing": [],
     "neverInventDate": false
   },
@@ -353,9 +308,7 @@
         "timeZone": "Asia/Tehran"
       }
     ],
-    "expectedTags": [
-      "event"
-    ],
+    "expectedTags": ["event"],
     "expectedMissing": [],
     "neverInventDate": false
   },
@@ -375,12 +328,8 @@
         ]
       }
     ],
-    "expectedTags": [
-      "event"
-    ],
-    "expectedMissing": [
-      "timing"
-    ],
+    "expectedTags": ["event"],
+    "expectedMissing": ["timing"],
     "neverInventDate": true
   },
   {
@@ -393,9 +342,7 @@
         "missing": []
       }
     ],
-    "expectedTags": [
-      "task"
-    ],
+    "expectedTags": ["task"],
     "expectedMissing": [],
     "neverInventDate": false
   },
@@ -414,9 +361,7 @@
         }
       }
     ],
-    "expectedTags": [
-      "reminder"
-    ],
+    "expectedTags": ["reminder"],
     "expectedMissing": [],
     "neverInventDate": false
   },
@@ -448,13 +393,8 @@
         ]
       }
     ],
-    "expectedTags": [
-      "event",
-      "event"
-    ],
-    "expectedMissing": [
-      "timing"
-    ],
+    "expectedTags": ["event", "event"],
+    "expectedMissing": ["timing"],
     "neverInventDate": true
   },
   {
@@ -468,9 +408,7 @@
         "missing": []
       }
     ],
-    "expectedTags": [
-      "note"
-    ],
+    "expectedTags": ["note"],
     "expectedMissing": [],
     "neverInventDate": false
   },
@@ -488,9 +426,7 @@
         }
       }
     ],
-    "expectedTags": [
-      "habit"
-    ],
+    "expectedTags": ["habit"],
     "expectedMissing": [],
     "neverInventDate": false
   },
@@ -510,12 +446,8 @@
         ]
       }
     ],
-    "expectedTags": [
-      "event"
-    ],
-    "expectedMissing": [
-      "timing"
-    ],
+    "expectedTags": ["event"],
+    "expectedMissing": ["timing"],
     "neverInventDate": true
   },
   {
@@ -535,12 +467,8 @@
         "kind": "medication"
       }
     ],
-    "expectedTags": [
-      "reminder"
-    ],
-    "expectedMissing": [
-      "repeat"
-    ],
+    "expectedTags": ["reminder"],
+    "expectedMissing": ["repeat"],
     "neverInventDate": true
   },
   {
@@ -584,15 +512,8 @@
         ]
       }
     ],
-    "expectedTags": [
-      "event",
-      "reminder",
-      "event"
-    ],
-    "expectedMissing": [
-      "repeat",
-      "timing"
-    ],
+    "expectedTags": ["event", "reminder", "event"],
+    "expectedMissing": ["repeat", "timing"],
     "neverInventDate": true
   }
 ]

@@ -23,6 +23,7 @@ import {
  */
 
 export type { NoteParagraph, NoteTextDocument, NoteTextNode }
+
 export type NoteDocument = NoteTextDocument
 
 export const textToNoteBody = (text: string): NoteDocument =>
@@ -34,6 +35,7 @@ const blockText = (block: unknown): Option.Option<string> => {
   }
 
   const content = Reflect.get(block, 'content')
+
   if (Array.isArray(content)) {
     return Option.some(
       content
@@ -62,6 +64,7 @@ export const noteTextFromBody = (body: unknown): string => {
   }
 
   const content = Reflect.get(body, 'content')
+
   if (!Array.isArray(content)) {
     return extractNotePlainText(body)
   }
@@ -69,6 +72,7 @@ export const noteTextFromBody = (body: unknown): string => {
   const lines = content.map(block =>
     Option.getOrElse(blockText(block), () => ''),
   )
+
   const hasUnrepresentableBlock = content.some(
     block =>
       block !== null &&
@@ -76,6 +80,7 @@ export const noteTextFromBody = (body: unknown): string => {
       !Array.isArray(Reflect.get(block, 'content')) &&
       typeof Reflect.get(block, 'text') === 'string',
   )
+
   const joined = lines.join('\n')
 
   return hasUnrepresentableBlock && joined.trim() === ''

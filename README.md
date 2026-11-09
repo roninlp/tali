@@ -59,7 +59,11 @@ fresh database (migrations re-apply on the next `pnpm dev`).
 
 ```sh
 pnpm typecheck        # turbo typecheck across all packages/apps (includes the Alchemy stack)
-pnpm lint             # oxlint across the apps (Foldkit Effect rules are deny-warnings)
+pnpm lint             # oxlint across the repo (root task)
+pnpm lint:fix         # apply Oxlint fixes
+pnpm format           # oxfmt check across the repo (root task)
+pnpm format:fix       # write Oxfmt changes
+pnpm exec turbo run quality  # lint + format check
 pnpm test             # turbo test
 pnpm build            # turbo build (packages typecheck; web: static SPA build)
 pnpm stack:plan       # alchemy plan  — diff the Cloudflare stack (needs a profile)

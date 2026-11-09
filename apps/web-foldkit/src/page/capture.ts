@@ -52,6 +52,7 @@ export const Phase = Schema.Literals([
   'committing',
   'result',
 ])
+
 export type Phase = typeof Phase.Type
 
 export const CaptureCard = Schema.Struct({
@@ -62,6 +63,7 @@ export const CaptureCard = Schema.Struct({
   title: Schema.String,
   isDiscarded: Schema.Boolean,
 })
+
 export type CaptureCard = typeof CaptureCard.Type
 
 export const Model = Schema.Struct({
@@ -82,6 +84,7 @@ export const Model = Schema.Struct({
   commitGeneration: Schema.Int,
   picker: Picker.Model,
 })
+
 export type Model = typeof Model.Type
 
 export type Inputs = Readonly<{
@@ -176,6 +179,7 @@ export const Message = defineMessageUnion({
   IgnoredInput: {},
   GotPickerMessage: { message: Picker.Message },
 })
+
 export type Message = typeof Message.Type
 
 // COMMAND
@@ -242,6 +246,7 @@ export const CacheText = Command.define('CacheText', {
   execute: ({ userId, text }) =>
     Effect.sync(() => {
       saveCaptureText(userId, text)
+
       return Message.CompletedCacheText()
     }),
 })
@@ -257,6 +262,7 @@ export const init = (options: {
 /** Load the history when the route enters; the composer text is already cached. */
 export const entered = (model: Model): Update.Return<Model, Message> => {
   const generation = model.historyGeneration + 1
+
   return {
     model: modifyFields(model, {
       historyGeneration: () => generation,
@@ -302,6 +308,7 @@ export const visibleCards = (model: Model): ReadonlyArray<CaptureCard> =>
 
 const cardToDraft = (card: CaptureCard): CaptureDraft => {
   const title = card.title.trim()
+
   return Struct.assign(card.draft, { title: title === '' ? undefined : title })
 }
 
@@ -309,10 +316,13 @@ const answeredFieldsOf = (field: string): ReadonlyArray<string> => {
   if (field === 'timing' || field === 'timing.date') {
     return ['timing', 'timing.start', 'timing.end', 'start', 'end']
   }
+
   if (field === 'timing.start' || field === 'start') {
     return ['timing', 'timing.start', 'start']
   }
+
   if (field === 'timing.end' || field === 'end') return ['timing.end', 'end']
+
   return [field]
 }
 
@@ -320,6 +330,7 @@ const withoutMissing = (draft: CaptureDraft, field: string): CaptureDraft =>
   modifyFields(draft, {
     missing: () => {
       const answered = answeredFieldsOf(field)
+
       return draft.missing.filter(entry => !answered.includes(entry.field))
     },
   })
@@ -336,48 +347,61 @@ const setDraftField = (
         dueAt: undefined,
       })
     }
+
     if (field === 'dueAt') {
       if (value === '') {
         return Struct.assign(draft, { dueAt: undefined, dueDate: undefined })
       }
+
       if (!isInstant(value)) return draft
+
       return Struct.assign(draft, { dueAt: value, dueDate: undefined })
     }
+
     return draft
   }
 
   if (draft._tag === 'event') {
     if (field === 'timing' || field === 'timing.date') {
       if (value === '') return Struct.assign(draft, { timing: undefined })
+
       if (value.includes('T')) {
         const end = new Date(Date.parse(value) + 60 * 60 * 1000).toISOString()
+
         return Struct.assign(draft, {
           timing: { _tag: 'timed' as const, start: value, end },
         })
       }
+
       return Struct.assign(draft, {
         timing: { _tag: 'allDay' as const, date: value },
       })
     }
+
     if (field === 'timing.start' || field === 'start') {
       if (value === '' || !isInstant(value)) return draft
       const current = draft.timing
+
       const end =
         current?._tag === 'timed'
           ? current.end
           : new Date(Date.parse(value) + 60 * 60 * 1000).toISOString()
+
       return Struct.assign(draft, {
         timing: { _tag: 'timed' as const, start: value, end },
       })
     }
+
     if (field === 'timing.end' || field === 'end') {
       if (value === '' || !isInstant(value)) return draft
       const current = draft.timing
       const start = current?._tag === 'timed' ? current.start : value
+
       return Struct.assign(draft, {
         timing: { _tag: 'timed' as const, start, end: value },
       })
     }
+
     return draft
   }
 
@@ -387,25 +411,33 @@ const setDraftField = (
         reminderTime: value === '' ? undefined : value,
       })
     }
+
     return draft
   }
 
   if (draft._tag === 'reminder') {
     if (field === 'fireAt') {
       if (value === '') return Struct.assign(draft, { fireAt: undefined })
+
       if (!isInstant(value)) return draft
+
       return Struct.assign(draft, { fireAt: value })
     }
+
     if (field === 'repeat.time') {
       const repeat = draft.repeat
+
       if (repeat === undefined) return draft
+
       if (repeat._tag === 'daily' || repeat._tag === 'weekly') {
         return Struct.assign(draft, {
           repeat: modifyFields(repeat, { time: () => value }),
         })
       }
+
       return draft
     }
+
     return draft
   }
 
@@ -425,21 +457,26 @@ const resolveClockAnswer = (
   timeZone: string,
 ): string | undefined => {
   if (!isClockTime(value)) return value
+
   if (draft._tag === 'task' && field === 'dueAt') {
     const date =
       draft.dueDate ??
       (draft.dueAt === undefined || draft.dueAt === null
         ? undefined
         : instantPartsOf(draft.dueAt, timeZone)?.date)
+
     return date === undefined ? undefined : instantOf(date, value, timeZone)
   }
+
   if (draft._tag === 'reminder' && field === 'fireAt') {
     const date =
       draft.fireAt === undefined || draft.fireAt === null
         ? undefined
         : instantPartsOf(draft.fireAt, timeZone)?.date
+
     return date === undefined ? undefined : instantOf(date, value, timeZone)
   }
+
   if (
     draft._tag === 'event' &&
     (field === 'timing' ||
@@ -452,14 +489,17 @@ const resolveClockAnswer = (
     // A date question cannot be answered with a bare clock time.
     if (field === 'timing' || field === 'timing.date') return undefined
     const timing = draft.timing
+
     const date =
       timing === undefined
         ? undefined
         : timing._tag === 'allDay'
           ? timing.date
           : instantPartsOf(timing.start, timeZone)?.date
+
     return date === undefined ? undefined : instantOf(date, value, timeZone)
   }
+
   return value
 }
 
@@ -470,7 +510,9 @@ const answerNeedsInput = (
   timeZone: string,
 ): CaptureDraft => {
   const resolved = resolveClockAnswer(draft, field, value, timeZone)
+
   if (resolved === undefined) return draft
+
   return withoutMissing(setDraftField(draft, field, resolved), field)
 }
 
@@ -481,17 +523,21 @@ const currentInstantOf = (
   if (draft._tag === 'task' && field === 'dueAt') {
     return draft.dueAt ?? undefined
   }
+
   if (draft._tag === 'reminder' && field === 'fireAt') {
     return draft.fireAt ?? undefined
   }
+
   if (draft._tag === 'event' && draft.timing?._tag === 'timed') {
     if (field === 'timing.start' || field === 'start') {
       return draft.timing.start
     }
+
     if (field === 'timing.end' || field === 'end') {
       return draft.timing.end
     }
   }
+
   return undefined
 }
 
@@ -502,18 +548,23 @@ const draftDateOf = (
   timeZone: string,
 ): string | undefined => {
   const instant = currentInstantOf(draft, field)
+
   if (instant !== undefined) {
     const date = instantPartsOf(instant, timeZone)?.date
+
     if (date !== undefined) {
       return date
     }
   }
+
   if (draft._tag === 'task' && field === 'dueAt') {
     return draft.dueDate ?? undefined
   }
+
   if (draft._tag === 'event' && draft.timing?._tag === 'allDay') {
     return draft.timing.date
   }
+
   return undefined
 }
 
@@ -524,6 +575,7 @@ const draftClockTimeOf = (
   timeZone: string,
 ): string => {
   const instant = currentInstantOf(draft, field)
+
   return instant === undefined
     ? '09:00'
     : (instantPartsOf(instant, timeZone)?.time ?? '09:00')
@@ -539,10 +591,13 @@ const pickerTargetParts = (
   target: string,
 ): { kind: string; index: number; field: string } | undefined => {
   const [kind, rawIndex, ...fieldParts] = target.split(':')
+
   if (kind === undefined || rawIndex === undefined || fieldParts.length === 0) {
     return undefined
   }
+
   const index = Number.parseInt(rawIndex, 10)
+
   return Number.isNaN(index)
     ? undefined
     : { kind, index, field: fieldParts.join(':') }
@@ -555,14 +610,18 @@ const applyPickerValue = (
   inputs: Inputs,
 ): Model => {
   const parts = pickerTargetParts(target)
+
   if (parts === undefined) {
     return model
   }
+
   const { kind, index, field } = parts
   const card = model.cards[index]
+
   if (card === undefined) {
     return model
   }
+
   const timeZone = inputs.display.timeZone
   const draft = card.draft
 
@@ -573,6 +632,7 @@ const applyPickerValue = (
   if (kind === 'card-instant') {
     if (value === '') {
       const date = draftDateOf(draft, field, timeZone)
+
       if (
         draft._tag === 'event' &&
         (field === 'timing.start' ||
@@ -587,11 +647,15 @@ const applyPickerValue = (
           setDraftField(draft, 'timing.date', date),
         )
       }
+
       return withCardDraft(model, index, setDraftField(draft, field, ''))
     }
+
     const date = draftDateOf(draft, field, timeZone)
+
     const instant =
       date === undefined ? undefined : instantOf(date, value, timeZone)
+
     return instant === undefined
       ? model
       : withCardDraft(model, index, setDraftField(draft, field, instant))
@@ -601,11 +665,13 @@ const applyPickerValue = (
     if (value === '') {
       return withCardDraft(model, index, setDraftField(draft, field, ''))
     }
+
     const instant = instantOf(
       value,
       draftClockTimeOf(draft, field, timeZone),
       timeZone,
     )
+
     return instant === undefined
       ? model
       : withCardDraft(model, index, setDraftField(draft, field, instant))
@@ -631,11 +697,15 @@ const applyPickerValue = (
     if (value === '') {
       return model
     }
+
     const [date, time] = value.split('T')
+
     if (date === undefined || time === undefined) {
       return model
     }
+
     const instant = instantOf(date, time, timeZone)
+
     return instant === undefined
       ? model
       : withCardDraft(
@@ -688,6 +758,7 @@ const setHabitFrequency = (
 ): CaptureDraft => {
   if (draft._tag !== 'habit') return draft
   const current = draft.frequency
+
   const frequency =
     kind === 'daily'
       ? { _tag: 'daily' as const }
@@ -698,6 +769,7 @@ const setHabitFrequency = (
         : current?._tag === 'weekly'
           ? current
           : { _tag: 'weekly' as const, times: 3 }
+
   return withoutMissing(Struct.assign(draft, { frequency }), 'frequency')
 }
 
@@ -707,11 +779,13 @@ const setReminderRepeat = (
 ): CaptureDraft => {
   if (draft._tag !== 'reminder') return draft
   const current = draft.repeat
+
   const time =
     current !== undefined &&
     (current._tag === 'daily' || current._tag === 'weekly')
       ? current.time
       : '08:00'
+
   const repeat =
     kind === 'once'
       ? { _tag: 'once' as const }
@@ -757,18 +831,24 @@ const updateNumberField = (
 ): CaptureDraft => {
   if (draft._tag === 'habit' && field === 'times') {
     const current = draft.frequency
+
     if (current?._tag !== 'weekly') return draft
+
     return modifyFields(draft, {
       frequency: () => ({ _tag: 'weekly', times: value }),
     })
   }
+
   if (draft._tag === 'reminder' && field === 'hours') {
     const current = draft.repeat
+
     if (current?._tag !== 'interval') return draft
+
     return modifyFields(draft, {
       repeat: () => ({ _tag: 'interval', hours: value }),
     })
   }
+
   return draft
 }
 
@@ -793,10 +873,13 @@ const startDissect = (model: Model, inputs: Inputs): UpdateReturn => {
       ),
     }
   }
+
   if (model.text.trim() === '') {
     return { model: withError(model, 'اول چیزی بنویس.') }
   }
+
   const generation = model.dissectGeneration + 1
+
   return {
     model: modifyFields(model, {
       phase: () => 'dissecting',
@@ -811,10 +894,13 @@ const startDissect = (model: Model, inputs: Inputs): UpdateReturn => {
 
 const startCommit = (model: Model): UpdateReturn => {
   const cards = visibleCards(model)
+
   if (cards.length === 0) {
     return { model: withError(model, 'کارتی برای ساخت نیست.') }
   }
+
   const blocked = cards.findIndex(card => card.draft.missing.length > 0)
+
   if (blocked >= 0) {
     return {
       model: withError(
@@ -823,11 +909,15 @@ const startCommit = (model: Model): UpdateReturn => {
       ),
     }
   }
+
   const maybeCaptureId = model.maybeCaptureId
+
   if (Option.isNone(maybeCaptureId)) {
     return { model: withError(model, 'کپچر پیدا نشد؛ دوباره تجزیه کن.') }
   }
+
   const generation = model.commitGeneration + 1
+
   return {
     model: modifyFields(model, {
       phase: () => 'committing',
@@ -849,6 +939,7 @@ const historyCommand = (
   model: Model,
 ): ReadonlyArray<Command.Command<Message>> => {
   const generation = model.historyGeneration + 1
+
   return [LoadHistory({ generation })]
 }
 
@@ -858,6 +949,7 @@ export const update = (
   inputs: Inputs,
 ): UpdateReturn => {
   const foldPicker = makeFoldPicker(inputs)
+
   return Message.match<UpdateReturn>(message, {
     GotPickerMessage: ({ message: pickerMessage }) =>
       foldPicker(model, pickerMessage),
@@ -867,6 +959,7 @@ export const update = (
         text: () => value,
         maybeError: () => Option.none(),
       })
+
       return { model: next, commands: cacheCommands(next, inputs) }
     },
 
@@ -888,6 +981,7 @@ export const update = (
           commands: historyCommand(model),
         }
       }
+
       const cards = Array.map(capture.drafts, draft =>
         CaptureCard.make({
           cardId: uuidV7(),
@@ -896,6 +990,7 @@ export const update = (
           isDiscarded: false,
         }),
       )
+
       return {
         model: modifyFields(model, {
           phase: () => 'review',
@@ -925,6 +1020,7 @@ export const update = (
 
     CompletedCommit: ({ result }) => {
       const isComplete = result.failure === null
+
       const next = modifyFields(model, {
         phase: () => 'result',
         maybeResult: () => Option.some(result),
@@ -942,6 +1038,7 @@ export const update = (
             }
           : {}),
       })
+
       return {
         model: next,
         commands: [
@@ -1011,7 +1108,9 @@ export const update = (
         if (kind === 'habit' && card.draft._tag === 'habit') {
           const draft = card.draft
           const current = draft.frequency
+
           if (current?._tag !== 'weekdays') return card
+
           return modifyFields(card, {
             draft: () =>
               modifyFields(draft, {
@@ -1022,10 +1121,13 @@ export const update = (
               }),
           })
         }
+
         if (kind === 'reminder' && card.draft._tag === 'reminder') {
           const draft = card.draft
           const current = draft.repeat
+
           if (current?._tag !== 'weekly') return card
+
           return modifyFields(card, {
             draft: () =>
               modifyFields(draft, {
@@ -1037,6 +1139,7 @@ export const update = (
               }),
           })
         }
+
         return card
       }),
     }),
@@ -1051,6 +1154,7 @@ export const update = (
 
     ClickedNewCapture: () => {
       const next = freshComposer(model, '')
+
       return { model: next, commands: cacheCommands(next, inputs) }
     },
 
@@ -1083,11 +1187,15 @@ export const update = (
 
     ClickedRetryHistory: ({ captureId }) => {
       const capture = model.history.find(row => row.id === captureId)
+
       if (capture === undefined) return { model }
+
       const next = modifyFields(freshComposer(model, capture.text), {
         expandedHistoryId: () => Option.none(),
       })
+
       const started = startDissect(next, inputs)
+
       return {
         model: started.model,
         commands: [...cacheCommands(next, inputs), ...(started.commands ?? [])],

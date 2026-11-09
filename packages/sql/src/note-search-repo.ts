@@ -1,5 +1,5 @@
-import { Context, Effect, Layer } from "effect"
-import { SqlClient, SqlError } from "effect/sql"
+import { Context, Effect, Layer } from 'effect'
+import { SqlClient, SqlError } from 'effect/sql'
 import {
   buildSearchMatchQuery,
   SEARCH_MARK_CLOSE,
@@ -8,8 +8,8 @@ import {
   type HouseholdId,
   type NoteId,
   type NoteSearchSegment,
-  type UserId
-} from "@tali/domain"
+  type UserId,
+} from '@tali/domain'
 
 /**
  * The note search index (ticket #41; FR-NOTE-04).
@@ -53,25 +53,27 @@ export interface NoteSearchInput {
   readonly limit: number
 }
 
-export class NoteSearchRepo extends Context.Service<NoteSearchRepo>()("NoteSearchRepo", {
-  make: Effect.gen(function*() {
-    const sql = yield* SqlClient.SqlClient
+export class NoteSearchRepo extends Context.Service<NoteSearchRepo>()(
+  'NoteSearchRepo',
+  {
+    make: Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
 
-    /**
-     * Ranked hits for a query.
-     *
-     * The `MATCH` expression is built by the shared query builder, so a user
-     * query can never be read as FTS5 syntax; a query with nothing searchable
-     * in it returns no hits instead of an error.
-     */
-    const search = (
-      input: NoteSearchInput
-    ): Effect.Effect<ReadonlyArray<NoteSearchHit>, SqlError.SqlError> =>
-      Effect.gen(function*() {
-        const match = buildSearchMatchQuery(input.query)
-        if (match === undefined) return []
+      /**
+       * Ranked hits for a query.
+       *
+       * The `MATCH` expression is built by the shared query builder, so a user
+       * query can never be read as FTS5 syntax; a query with nothing searchable
+       * in it returns no hits instead of an error.
+       */
+      const search = (
+        input: NoteSearchInput,
+      ): Effect.Effect<ReadonlyArray<NoteSearchHit>, SqlError.SqlError> =>
+        Effect.gen(function* () {
+          const match = buildSearchMatchQuery(input.query)
+          if (match === undefined) return []
 
-        const rows = yield* sql<NoteSearchRow>`
+          const rows = yield* sql<NoteSearchRow>`
           SELECT n.id AS id,
                  n.title AS title,
                  n.updated_at AS updatedAt,
@@ -86,16 +88,20 @@ export class NoteSearchRepo extends Context.Service<NoteSearchRepo>()("NoteSearc
           LIMIT ${input.limit}
         `
 
-        return rows.map((row) => ({
-          id: row.id as NoteId,
-          title: row.title,
-          segments: splitSearchSegments(row.snippet),
-          updatedAt: row.updatedAt
-        }))
-      })
+          return rows.map(row => ({
+            id: row.id as NoteId,
+            title: row.title,
+            segments: splitSearchSegments(row.snippet),
+            updatedAt: row.updatedAt,
+          }))
+        })
 
-    return { search } as const
-  })
-}) {}
+      return { search } as const
+    }),
+  },
+) {}
 
-export const NoteSearchRepoLive = Layer.effect(NoteSearchRepo, NoteSearchRepo.make)
+export const NoteSearchRepoLive = Layer.effect(
+  NoteSearchRepo,
+  NoteSearchRepo.make,
+)

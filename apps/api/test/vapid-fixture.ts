@@ -1,4 +1,4 @@
-import { generateKeyPairSync } from "node:crypto"
+import { generateKeyPairSync } from 'node:crypto'
 
 /**
  * A throwaway VAPID pair for tests.
@@ -18,19 +18,20 @@ export interface TestVapidKeys {
 }
 
 export const makeTestVapidKeys = (): TestVapidKeys => {
-  const { privateKey, publicKey } = generateKeyPairSync("ec", {
-    namedCurve: "prime256v1"
+  const { privateKey, publicKey } = generateKeyPairSync('ec', {
+    namedCurve: 'prime256v1',
   })
-  const scalar = privateKey.export({ format: "jwk" }).d
-  if (scalar === undefined) throw new Error("the generated P-256 key has no private scalar")
+  const scalar = privateKey.export({ format: 'jwk' }).d
+  if (scalar === undefined)
+    throw new Error('the generated P-256 key has no private scalar')
   // SPKI for P-256 is a fixed header followed by the 65-byte uncompressed point.
-  const der = publicKey.export({ format: "der", type: "spki" })
+  const der = publicKey.export({ format: 'der', type: 'spki' })
   const point = der.subarray(der.length - 65)
   if (point.length !== 65 || point[0] !== 0x04) {
-    throw new Error("unexpected P-256 SPKI encoding")
+    throw new Error('unexpected P-256 SPKI encoding')
   }
   return {
     privateKey: scalar,
-    publicKey: point.toString("base64url")
+    publicKey: point.toString('base64url'),
   }
 }

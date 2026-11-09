@@ -14,17 +14,17 @@
 // Paths are resolved from this file, not the working directory, so the stack
 // behaves the same whether it starts under Turbo (`infra/`) or from the repo
 // root with `--config infra/alchemy.run.ts`.
-import * as Alchemy from "alchemy"
-import * as Cloudflare from "alchemy/Cloudflare"
-import { CRON, CRON_EXPRESSIONS } from "@tali/config"
-import * as Effect from "effect/Effect"
-import * as Redacted from "effect/Redacted"
-import { createECDH } from "node:crypto"
-import { Buffer } from "node:buffer"
-import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
+import * as Alchemy from 'alchemy'
+import * as Cloudflare from 'alchemy/Cloudflare'
+import { CRON, CRON_EXPRESSIONS } from '@tali/config'
+import * as Effect from 'effect/Effect'
+import * as Redacted from 'effect/Redacted'
+import { createECDH } from 'node:crypto'
+import { Buffer } from 'node:buffer'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..")
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 /**
  * `alchemy deploy` keeps state in the Cloudflare state store (a Worker in the
@@ -32,12 +32,13 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..")
  * stack persists local state under `.alchemy/state` instead. The CLI sets
  * `ALCHEMY_DEV=true` on the process that evaluates this module.
  */
-const isDev = process.env.ALCHEMY_DEV === "true" || process.env.ALCHEMY_DEV === "1"
+const isDev =
+  process.env.ALCHEMY_DEV === 'true' || process.env.ALCHEMY_DEV === '1'
 const state = isDev ? Alchemy.localState() : Cloudflare.state()
 
 /** The household database. Migrations under packages/sql are applied on deploy and on every dev reconcile. */
-export const Database = Cloudflare.D1.Database("TaliDatabase", {
-  migrations: join(repoRoot, "packages/sql/migrations")
+export const Database = Cloudflare.D1.Database('TaliDatabase', {
+  migrations: join(repoRoot, 'packages/sql/migrations'),
 })
 
 /**
@@ -60,19 +61,19 @@ export const Database = Cloudflare.D1.Database("TaliDatabase", {
  * without R2 needs. The default stays on, so a normal deploy keeps #85's
  * guarantee.
  */
-const backupsEnabled = process.env.TALI_BACKUPS !== "off"
+const backupsEnabled = process.env.TALI_BACKUPS !== 'off'
 
 export const Backups = backupsEnabled
-  ? Cloudflare.R2.Bucket("TaliBackups", {
+  ? Cloudflare.R2.Bucket('TaliBackups', {
       lifecycleRules: [
         {
-          id: "expire-stale-backups",
-          prefix: "backups/",
+          id: 'expire-stale-backups',
+          prefix: 'backups/',
           deleteObjectsTransition: {
-            condition: { type: "Age", maxAge: 30 * 24 * 60 * 60 }
-          }
-        }
-      ]
+            condition: { type: 'Age', maxAge: 30 * 24 * 60 * 60 },
+          },
+        },
+      ],
     })
   : undefined
 
@@ -100,46 +101,46 @@ export const Backups = backupsEnabled
  * a deploy without one fails instead of silently shipping an inbox-only app.
  */
 const publicKeyOf = (privateKey: string): string => {
-  const ecdh = createECDH("prime256v1")
-  ecdh.setPrivateKey(Buffer.from(privateKey, "base64url"))
-  return ecdh.getPublicKey().toString("base64url")
+  const ecdh = createECDH('prime256v1')
+  ecdh.setPrivateKey(Buffer.from(privateKey, 'base64url'))
+  return ecdh.getPublicKey().toString('base64url')
 }
 
-const VAPID_DEV_SUBJECT = "mailto:dev@tali.local"
+const VAPID_DEV_SUBJECT = 'mailto:dev@tali.local'
 
 const resolveVapid = () => {
-  const privateKey = process.env.VAPID_PRIVATE_KEY?.trim() ?? ""
-  const publicKey = process.env.VAPID_PUBLIC_KEY?.trim() ?? ""
-  const subject = process.env.VAPID_SUBJECT?.trim() ?? ""
+  const privateKey = process.env.VAPID_PRIVATE_KEY?.trim() ?? ''
+  const publicKey = process.env.VAPID_PUBLIC_KEY?.trim() ?? ''
+  const subject = process.env.VAPID_SUBJECT?.trim() ?? ''
 
-  if (privateKey === "") {
+  if (privateKey === '') {
     if (!isDev) {
       throw new Error(
-        "VAPID_PRIVATE_KEY is required to deploy: generate one with " +
-          "`pnpm exec web-push generate-vapid-keys` and export it (a Workers secret " +
-          "in CI). See docs/web-push-local.md §1."
+        'VAPID_PRIVATE_KEY is required to deploy: generate one with ' +
+          '`pnpm exec web-push generate-vapid-keys` and export it (a Workers secret ' +
+          'in CI). See docs/web-push-local.md §1.',
       )
     }
     console.warn(
-      "[tali] VAPID_PRIVATE_KEY is not set: push dispatch is disabled and every " +
-        "reminder is inbox-only. Generate a dev pair with " +
-        "`pnpm exec web-push generate-vapid-keys` and export it before `pnpm dev`."
+      '[tali] VAPID_PRIVATE_KEY is not set: push dispatch is disabled and every ' +
+        'reminder is inbox-only. Generate a dev pair with ' +
+        '`pnpm exec web-push generate-vapid-keys` and export it before `pnpm dev`.',
     )
-    return { privateKey: "", publicKey: "", subject: "" }
+    return { privateKey: '', publicKey: '', subject: '' }
   }
 
-  if (subject === "" && !isDev) {
+  if (subject === '' && !isDev) {
     throw new Error(
-      "VAPID_SUBJECT is required to deploy (a mailto: or https: contact URI; " +
-        "Apple rejects localhost subjects). See docs/web-push-local.md §1."
+      'VAPID_SUBJECT is required to deploy (a mailto: or https: contact URI; ' +
+        'Apple rejects localhost subjects). See docs/web-push-local.md §1.',
     )
   }
 
   return {
     privateKey,
-    publicKey: publicKey === "" ? publicKeyOf(privateKey) : publicKey,
+    publicKey: publicKey === '' ? publicKeyOf(privateKey) : publicKey,
     // A local mailto is enough for a dev push service.
-    subject: subject === "" ? VAPID_DEV_SUBJECT : subject
+    subject: subject === '' ? VAPID_DEV_SUBJECT : subject,
   }
 }
 
@@ -173,19 +174,20 @@ const resolveVapid = () => {
  * the gateway also needs `x-opencode-session` + a non-generic User-Agent; both
  * are set by the extractor's `wrapFetch` middleware, not here.
  */
-const CAPTURE_DEFAULT_BASE_URL = "https://opencode.ai/inference/go/openai/v1"
-const CAPTURE_DEFAULT_MODEL = "deepseek-v4.1-flash"
+const CAPTURE_DEFAULT_BASE_URL = 'https://opencode.ai/inference/go/openai/v1'
+const CAPTURE_DEFAULT_MODEL = 'deepseek-v4.1-flash'
 
 const resolveCapture = () => {
-  const apiKey = process.env.OPENCODE_API_KEY?.trim() ?? ""
-  const baseUrl = process.env.CAPTURE_BASE_URL?.trim() || CAPTURE_DEFAULT_BASE_URL
+  const apiKey = process.env.OPENCODE_API_KEY?.trim() ?? ''
+  const baseUrl =
+    process.env.CAPTURE_BASE_URL?.trim() || CAPTURE_DEFAULT_BASE_URL
   const model = process.env.CAPTURE_MODEL?.trim() || CAPTURE_DEFAULT_MODEL
 
-  if (apiKey === "") {
+  if (apiKey === '') {
     console.warn(
-      "[tali] OPENCODE_API_KEY is not set: Capture is inert and every Dissect " +
-        "fails with a typed ModelUnavailable. Set it (a Workers secret in CI) " +
-        "to enable the feature."
+      '[tali] OPENCODE_API_KEY is not set: Capture is inert and every Dissect ' +
+        'fails with a typed ModelUnavailable. Set it (a Workers secret in CI) ' +
+        'to enable the feature.',
     )
   }
 
@@ -214,22 +216,22 @@ const TRACE_DEFAULT_SAMPLE_RATE = 0.1
 
 const resolveTraceSampleRate = (): number => {
   const raw = process.env.TALI_TRACE_SAMPLE_RATE?.trim()
-  if (raw === undefined || raw === "") return TRACE_DEFAULT_SAMPLE_RATE
+  if (raw === undefined || raw === '') return TRACE_DEFAULT_SAMPLE_RATE
   const parsed = Number(raw)
   if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
     throw new Error(
-      `TALI_TRACE_SAMPLE_RATE must be a number from 0 to 1 (got "${raw}")`
+      `TALI_TRACE_SAMPLE_RATE must be a number from 0 to 1 (got "${raw}")`,
     )
   }
   return parsed
 }
 
-const resolveTracePropagation = (): "accept" | "authenticated" | undefined => {
+const resolveTracePropagation = (): 'accept' | 'authenticated' | undefined => {
   const raw = process.env.TALI_TRACE_PROPAGATION?.trim().toLowerCase()
-  if (raw === undefined || raw === "") return undefined
-  if (raw !== "accept" && raw !== "authenticated") {
+  if (raw === undefined || raw === '') return undefined
+  if (raw !== 'accept' && raw !== 'authenticated') {
     throw new Error(
-      `TALI_TRACE_PROPAGATION must be "accept" or "authenticated" (got "${raw}")`
+      `TALI_TRACE_PROPAGATION must be "accept" or "authenticated" (got "${raw}")`,
     )
   }
   return raw
@@ -242,21 +244,25 @@ const resolveTracePropagation = (): "accept" | "authenticated" | undefined => {
  */
 const otlpHeaders = (
   raw: string | undefined,
-  variable: string
+  variable: string,
 ): Record<string, Redacted.Redacted<string>> | undefined => {
-  if (raw === undefined || raw.trim() === "") return undefined
+  if (raw === undefined || raw.trim() === '') return undefined
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
   } catch {
-    throw new Error(`${variable} must be a JSON object of header names to values`)
+    throw new Error(
+      `${variable} must be a JSON object of header names to values`,
+    )
   }
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(`${variable} must be a JSON object of header names to values`)
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(
+      `${variable} must be a JSON object of header names to values`,
+    )
   }
   const headers: Record<string, Redacted.Redacted<string>> = {}
   for (const [key, value] of Object.entries(parsed)) {
-    if (typeof value !== "string") {
+    if (typeof value !== 'string') {
       throw new Error(`${variable}.${key} must be a string`)
     }
     headers[key] = Redacted.make(value)
@@ -266,7 +272,7 @@ const otlpHeaders = (
 
 interface ObservabilityOptions {
   readonly headSamplingRate: number
-  readonly propagationPolicy?: "accept" | "authenticated"
+  readonly propagationPolicy?: 'accept' | 'authenticated'
   readonly traceDestinations: ReadonlyArray<string>
   readonly logDestinations: ReadonlyArray<string>
 }
@@ -274,112 +280,114 @@ interface ObservabilityOptions {
 const defineApi = (
   vapid: ReturnType<typeof resolveVapid>,
   capture: ReturnType<typeof resolveCapture>,
-  observability: ObservabilityOptions
+  observability: ObservabilityOptions,
 ) =>
-  Cloudflare.Worker("TaliApi", {
-  main: join(repoRoot, "apps/api/src/index.ts"),
-  // `nodejs_compat` is the default from 2026-08-04, so the flag is redundant;
-  // newer workerd builds reject it outright instead of warning.
-  compatibility: { date: "2026-10-09" },
-  // Smart Placement runs this isolate near the D1 primary. A screen issues
-  // ~11 sequential statements, so a cross-region hop is paid eleven times.
-  placement: { mode: "smart" },
-  dev: { port: 8787, strictPort: true },
-  observability: {
-    enabled: true,
-    // Query strings are not part of the Capture flow and can carry user input.
-    redactQueryString: true,
-    logs: {
+  Cloudflare.Worker('TaliApi', {
+    main: join(repoRoot, 'apps/api/src/index.ts'),
+    // `nodejs_compat` is the default from 2026-08-04, so the flag is redundant;
+    // newer workerd builds reject it outright instead of warning.
+    compatibility: { date: '2026-10-09' },
+    // Smart Placement runs this isolate near the D1 primary. A screen issues
+    // ~11 sequential statements, so a cross-region hop is paid eleven times.
+    placement: { mode: 'smart' },
+    dev: { port: 8787, strictPort: true },
+    observability: {
       enabled: true,
-      invocationLogs: true,
-      ...(observability.logDestinations.length === 0
-        ? {}
-        : { destinations: [...observability.logDestinations] })
+      // Query strings are not part of the Capture flow and can carry user input.
+      redactQueryString: true,
+      logs: {
+        enabled: true,
+        invocationLogs: true,
+        ...(observability.logDestinations.length === 0
+          ? {}
+          : { destinations: [...observability.logDestinations] }),
+      },
+      traces: {
+        enabled: true,
+        headSamplingRate: observability.headSamplingRate,
+        // Keep the waterfall in the Workers dashboard; an OTLP destination is an
+        // additional copy, not a replacement.
+        persist: true,
+        ...(observability.propagationPolicy === undefined
+          ? {}
+          : { propagationPolicy: observability.propagationPolicy }),
+        ...(observability.traceDestinations.length === 0
+          ? {}
+          : { destinations: [...observability.traceDestinations] }),
+      },
     },
-    traces: {
-      enabled: true,
-      headSamplingRate: observability.headSamplingRate,
-      // Keep the waterfall in the Workers dashboard; an OTLP destination is an
-      // additional copy, not a replacement.
-      persist: true,
-      ...(observability.propagationPolicy === undefined
+    crons: backupsEnabled ? [...CRON_EXPRESSIONS] : [CRON.reminder, CRON.purge],
+    env: {
+      DB: Database,
+      // Nightly backup target and its window (ticket #85). The bucket is private;
+      // the Worker writes through the binding, so no API token is involved.
+      ...(backupsEnabled
+        ? {
+            BACKUP_BUCKET: Backups,
+            BACKUP_DATABASE_NAME: 'tali',
+            BACKUP_RETENTION_DAYS: '14',
+          }
+        : {}),
+      // Plain config (public by design); the private keys bind as secrets.
+      VAPID_PUBLIC_KEY: vapid.publicKey,
+      VAPID_SUBJECT: vapid.subject,
+      VAPID_PRIVATE_KEY: Redacted.make(vapid.privateKey),
+      CAPTURE_BASE_URL: capture.baseUrl,
+      CAPTURE_MODEL: capture.model,
+      ...(capture.apiKey === ''
         ? {}
-        : { propagationPolicy: observability.propagationPolicy }),
-      ...(observability.traceDestinations.length === 0
-        ? {}
-        : { destinations: [...observability.traceDestinations] })
-    }
-  },
-  crons: backupsEnabled
-    ? [...CRON_EXPRESSIONS]
-    : [CRON.reminder, CRON.purge],
-  env: {
-    DB: Database,
-    // Nightly backup target and its window (ticket #85). The bucket is private;
-    // the Worker writes through the binding, so no API token is involved.
-    ...(backupsEnabled
-      ? {
-          BACKUP_BUCKET: Backups,
-          BACKUP_DATABASE_NAME: "tali",
-          BACKUP_RETENTION_DAYS: "14"
-        }
-      : {}),
-    // Plain config (public by design); the private keys bind as secrets.
-    VAPID_PUBLIC_KEY: vapid.publicKey,
-    VAPID_SUBJECT: vapid.subject,
-    VAPID_PRIVATE_KEY: Redacted.make(vapid.privateKey),
-    CAPTURE_BASE_URL: capture.baseUrl,
-    CAPTURE_MODEL: capture.model,
-    ...(capture.apiKey === ""
-      ? {}
-      : { OPENCODE_API_KEY: Redacted.make(capture.apiKey) }),
-    DEV_ROUTES: isDev ? "1" : "0"
-  }
-})
+        : { OPENCODE_API_KEY: Redacted.make(capture.apiKey) }),
+      DEV_ROUTES: isDev ? '1' : '0',
+    },
+  })
 
 export default Alchemy.Stack(
-  "tali",
+  'tali',
   { providers: Cloudflare.providers(), state },
   Effect.gen(function* () {
     const tracesUrl = process.env.TALI_OTLP_TRACES_URL?.trim()
     const logsUrl = process.env.TALI_OTLP_LOGS_URL?.trim()
 
-    const tracesDestination = tracesUrl === undefined || tracesUrl === ""
-      ? undefined
-      : yield* Cloudflare.Workers.ObservabilityDestination("TaliOtlpTraces", {
-          url: tracesUrl,
-          headers: otlpHeaders(
-            process.env.TALI_OTLP_TRACES_HEADERS,
-            "TALI_OTLP_TRACES_HEADERS"
-          ),
-          logpushDataset: "opentelemetry-traces",
-          skipPreflightCheck: process.env.TALI_OTLP_TRACES_SKIP_PREFLIGHT === "1"
-        })
+    const tracesDestination =
+      tracesUrl === undefined || tracesUrl === ''
+        ? undefined
+        : yield* Cloudflare.Workers.ObservabilityDestination('TaliOtlpTraces', {
+            url: tracesUrl,
+            headers: otlpHeaders(
+              process.env.TALI_OTLP_TRACES_HEADERS,
+              'TALI_OTLP_TRACES_HEADERS',
+            ),
+            logpushDataset: 'opentelemetry-traces',
+            skipPreflightCheck:
+              process.env.TALI_OTLP_TRACES_SKIP_PREFLIGHT === '1',
+          })
 
-    const logsDestination = logsUrl === undefined || logsUrl === ""
-      ? undefined
-      : yield* Cloudflare.Workers.ObservabilityDestination("TaliOtlpLogs", {
-          url: logsUrl,
-          headers: otlpHeaders(
-            process.env.TALI_OTLP_LOGS_HEADERS,
-            "TALI_OTLP_LOGS_HEADERS"
-          ),
-          logpushDataset: "opentelemetry-logs",
-          skipPreflightCheck: process.env.TALI_OTLP_LOGS_SKIP_PREFLIGHT === "1"
-        })
+    const logsDestination =
+      logsUrl === undefined || logsUrl === ''
+        ? undefined
+        : yield* Cloudflare.Workers.ObservabilityDestination('TaliOtlpLogs', {
+            url: logsUrl,
+            headers: otlpHeaders(
+              process.env.TALI_OTLP_LOGS_HEADERS,
+              'TALI_OTLP_LOGS_HEADERS',
+            ),
+            logpushDataset: 'opentelemetry-logs',
+            skipPreflightCheck:
+              process.env.TALI_OTLP_LOGS_SKIP_PREFLIGHT === '1',
+          })
 
-    const traceDestinations = tracesDestination === undefined
-      ? []
-      : [yield* yield* tracesDestination.slug]
-    const logDestinations = logsDestination === undefined
-      ? []
-      : [yield* yield* logsDestination.slug]
+    const traceDestinations =
+      tracesDestination === undefined
+        ? []
+        : [yield* yield* tracesDestination.slug]
+    const logDestinations =
+      logsDestination === undefined ? [] : [yield* yield* logsDestination.slug]
 
     const Api = defineApi(resolveVapid(), resolveCapture(), {
       headSamplingRate: resolveTraceSampleRate(),
       propagationPolicy: resolveTracePropagation(),
       traceDestinations,
-      logDestinations
+      logDestinations,
     })
     const database = yield* Database
     const backups = Backups === undefined ? undefined : yield* Backups
@@ -397,26 +405,26 @@ export default Alchemy.Stack(
      * session cookie same-origin and lets the client carry a relative
      * `VITE_API_URL`, so the build does not bake in the deployment's hostname.
      */
-    const web = yield* Cloudflare.Website.StaticSite("TaliWeb", {
-      cwd: join(repoRoot, "apps/web-foldkit"),
-      main: join(repoRoot, "apps/web-foldkit/worker.ts"),
-      command: "pnpm run build",
-      outdir: "dist",
+    const web = yield* Cloudflare.Website.StaticSite('TaliWeb', {
+      cwd: join(repoRoot, 'apps/web-foldkit'),
+      main: join(repoRoot, 'apps/web-foldkit/worker.ts'),
+      command: 'pnpm run build',
+      outdir: 'dist',
       dev: {
-        command: "pnpm exec vite",
-        url: "http://localhost:3001",
+        command: 'pnpm exec vite',
+        url: 'http://localhost:3001',
         // Alchemy's sidecar defaults to NODE_ENV=production, and Vite derives
         // `import.meta.env.DEV` (and its own dev mode) from that. A dev server
         // must run as development or the app thinks it is a production build.
-        env: { NODE_ENV: "development" }
+        env: { NODE_ENV: 'development' },
       },
       assets: {
-        notFoundHandling: "single-page-application",
+        notFoundHandling: 'single-page-application',
         // `/api/*` reaches the service binding. `/assets/*` is worker-first
         // only to detect a stale client asking for a removed hash: the asset
         // layer answers it with the SPA shell, and the Worker turns that into a
         // cache-clearing module instead of a blank page.
-        runWorkerFirst: ["/api/*", "/assets/*"],
+        runWorkerFirst: ['/api/*', '/assets/*'],
         // Vite hashes /assets/* filenames, so a copy is immutable for a year.
         // The shell entry points and the service worker must never be cached:
         // a client that kept the previous deployment's index.html asks for old
@@ -424,15 +432,15 @@ export default Alchemy.Stack(
         // cache-clearing module instead of a blank page. Add future rules here
         // rather than in public/.
         headers:
-          "/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n" +
-          "/\n  Cache-Control: no-store\n" +
-          "/index.html\n  Cache-Control: no-store\n" +
-          "/sw.js\n  Cache-Control: no-store\n"
+          '/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n' +
+          '/\n  Cache-Control: no-store\n' +
+          '/index.html\n  Cache-Control: no-store\n' +
+          '/sw.js\n  Cache-Control: no-store\n',
       },
       env: {
-        ...(isDev ? {} : { VITE_API_URL: "/api" }),
-        API: api
-      }
+        ...(isDev ? {} : { VITE_API_URL: '/api' }),
+        API: api,
+      },
     })
 
     return {
@@ -441,7 +449,7 @@ export default Alchemy.Stack(
       captureTracesDestination: tracesDestination?.slug,
       captureLogsDestination: logsDestination?.slug,
       apiUrl: api.url,
-      webUrl: web.url
+      webUrl: web.url,
     }
-  })
+  }),
 )

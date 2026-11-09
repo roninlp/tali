@@ -1,6 +1,6 @@
-import { fileURLToPath } from "node:url"
-import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin"
-import { defineConfig } from "vitest/config"
+import { fileURLToPath } from 'node:url'
+import { cloudflareTest, readD1Migrations } from '@cloudflare/vitest-plugin'
+import { defineConfig } from 'vitest/config'
 
 /**
  * Two test layers, one command (ticket #82 / the #81 verification strategy).
@@ -13,7 +13,7 @@ import { defineConfig } from "vitest/config"
  *   credentials, cookie minting and middleware.
  */
 const migrationsDir = fileURLToPath(
-  new URL("../../packages/sql/migrations/", import.meta.url)
+  new URL('../../packages/sql/migrations/', import.meta.url),
 )
 
 export default defineConfig(async () => {
@@ -24,22 +24,22 @@ export default defineConfig(async () => {
       projects: [
         {
           test: {
-            name: "service",
-            include: ["test/**/*.test.ts"],
-            exclude: ["test/boundary/**"]
-          }
+            name: 'service',
+            include: ['test/**/*.test.ts'],
+            exclude: ['test/boundary/**'],
+          },
         },
         {
           plugins: [
             cloudflareTest({
-              wrangler: { configPath: "./wrangler.test.jsonc" },
-              miniflare: { bindings: { TEST_MIGRATIONS: migrations } }
-            })
+              wrangler: { configPath: './wrangler.test.jsonc' },
+              miniflare: { bindings: { TEST_MIGRATIONS: migrations } },
+            }),
           ],
           test: {
-            name: "boundary",
-            include: ["test/boundary/**/*.test.ts"],
-            setupFiles: ["./test/boundary/setup.ts"],
+            name: 'boundary',
+            include: ['test/boundary/**/*.test.ts'],
+            setupFiles: ['./test/boundary/setup.ts'],
             // The pool's warm-module snapshot inlines every transformed
             // module's code (source maps included) into one WebSocket message.
             // With the Worker's full import graph that crosses workerd's 32 MiB
@@ -47,10 +47,10 @@ export default defineConfig(async () => {
             // too large" (1009) — workers-sdk#16349. Without the on-disk
             // transform cache the pool skips the snapshot and fetches modules
             // one at a time instead.
-            fsModuleCache: false
-          }
-        }
-      ]
-    }
+            fsModuleCache: false,
+          },
+        },
+      ],
+    },
   }
 })

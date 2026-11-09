@@ -1,6 +1,6 @@
-import { fileURLToPath, URL } from "node:url"
-import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin"
-import { defineConfig } from "vitest/config"
+import { fileURLToPath, URL } from 'node:url'
+import { cloudflareTest, readD1Migrations } from '@cloudflare/vitest-plugin'
+import { defineConfig } from 'vitest/config'
 
 /**
  * The conflict lab (ticket #83).
@@ -15,9 +15,9 @@ import { defineConfig } from "vitest/config"
  * Two suites: a bounded deterministic + property run for PR CI, and a longer
  * randomised nightly run (`CONFLICT_LAB_NIGHTLY=1`, see package.json).
  */
-const apiDir = fileURLToPath(new URL("../../apps/api/", import.meta.url))
+const apiDir = fileURLToPath(new URL('../../apps/api/', import.meta.url))
 const migrationsDir = fileURLToPath(
-  new URL("../sql/migrations/", import.meta.url)
+  new URL('../sql/migrations/', import.meta.url),
 )
 
 export default defineConfig(async () => {
@@ -25,16 +25,16 @@ export default defineConfig(async () => {
   // Resolved here, in Node: workerd does not receive the host `process.env`.
   // `define` carries it into the test module; the binding lets the harness
   // prove the two agree (harness.test.ts pins this against `resolveLabMode`).
-  const nightly = process.env.CONFLICT_LAB_NIGHTLY === "1"
+  const nightly = process.env.CONFLICT_LAB_NIGHTLY === '1'
   const mode = {
     nightly,
     numRuns: nightly ? 100 : 20,
-    maxSteps: nightly ? 70 : 40
+    maxSteps: nightly ? 70 : 40,
   }
 
   return {
     define: {
-      __CONFLICT_LAB_MODE__: JSON.stringify(mode)
+      __CONFLICT_LAB_MODE__: JSON.stringify(mode),
     },
     plugins: [
       cloudflareTest({
@@ -42,14 +42,14 @@ export default defineConfig(async () => {
         miniflare: {
           bindings: {
             TEST_MIGRATIONS: migrations,
-            CONFLICT_LAB_NIGHTLY: process.env.CONFLICT_LAB_NIGHTLY ?? ""
-          }
-        }
-      })
+            CONFLICT_LAB_NIGHTLY: process.env.CONFLICT_LAB_NIGHTLY ?? '',
+          },
+        },
+      }),
     ],
     test: {
-      include: ["test/**/*.test.ts"],
-      setupFiles: ["./test/setup.ts"],
+      include: ['test/**/*.test.ts'],
+      setupFiles: ['./test/setup.ts'],
       // The pool's warm-module snapshot inlines every transformed module's
       // code (source maps included) into one WebSocket message. This suite
       // loads the api Worker, the sync client and the Foldkit app's graph, so
@@ -61,7 +61,7 @@ export default defineConfig(async () => {
       // Shrinking a failing two-device trace reruns real IndexedDB + D1 work;
       // give the property suite room without letting a hang pin CI.
       testTimeout: mode.nightly ? 1_200_000 : 300_000,
-      hookTimeout: 60_000
-    }
+      hookTimeout: 60_000,
+    },
   }
 })

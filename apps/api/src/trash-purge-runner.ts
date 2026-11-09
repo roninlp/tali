@@ -1,15 +1,15 @@
-import { Effect, Layer } from "effect"
-import { D1Client } from "@effect/sql-d1"
-import { CAPTURE_RETENTION_MS } from "@tali/domain"
+import { Effect, Layer } from 'effect'
+import { D1Client } from '@effect/sql-d1'
+import { CAPTURE_RETENTION_MS } from '@tali/domain'
 import {
   CaptureRepo,
   CaptureRepoLive,
   SyncRepo,
   SyncRepoLive,
   TrashPurgeRepo,
-  TrashPurgeRepoLive
-} from "@tali/sql"
-import { FEED_RETENTION_MS } from "./sync-service.js"
+  TrashPurgeRepoLive,
+} from '@tali/sql'
+import { FEED_RETENTION_MS } from './sync-service.js'
 
 /**
  * The trash-purge entry point for the nightly cron (ticket #85).
@@ -29,14 +29,14 @@ export interface PurgeEnv {
 
 export const purgeLayer = (db: D1Database) =>
   Layer.mergeAll(TrashPurgeRepoLive, SyncRepoLive, CaptureRepoLive).pipe(
-    Layer.provide(D1Client.layer({ db }))
+    Layer.provide(D1Client.layer({ db })),
   )
 
 /** One nightly sweep at the cron tick's nominal instant. */
 export const runTrashPurge = (env: PurgeEnv, now: string) =>
   Effect.runPromise(
     Effect.provide(
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const purge = yield* TrashPurgeRepo
         const result = yield* purge.purge(now)
         // Same cutoff the poll used to apply, now once a night. The repo keeps
@@ -46,7 +46,7 @@ export const runTrashPurge = (env: PurgeEnv, now: string) =>
         // not counted in `result.statements`.
         const sync = yield* SyncRepo
         yield* sync.prune(
-          new Date(Date.parse(now) - FEED_RETENTION_MS).toISOString()
+          new Date(Date.parse(now) - FEED_RETENTION_MS).toISOString(),
         )
 
         // Capture is outside the sync registry, so its 90-day purge is a
@@ -55,13 +55,13 @@ export const runTrashPurge = (env: PurgeEnv, now: string) =>
         // forever; a window is 1 hour, so a day of slack is generous.
         const captures = yield* CaptureRepo
         const capturesPurged = yield* captures.purge(
-          new Date(Date.parse(now) - CAPTURE_RETENTION_MS).toISOString()
+          new Date(Date.parse(now) - CAPTURE_RETENTION_MS).toISOString(),
         )
         yield* captures.purgeAttemptsBefore(
-          Date.parse(now) - 24 * 60 * 60 * 1000
+          Date.parse(now) - 24 * 60 * 60 * 1000,
         )
         return { ...result, capturesPurged: capturesPurged.length }
       }),
-      purgeLayer(env.DB)
-    )
+      purgeLayer(env.DB),
+    ),
   )

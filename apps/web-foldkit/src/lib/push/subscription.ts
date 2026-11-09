@@ -16,6 +16,7 @@ export const PushSubscriptionJson = Schema.Struct({
     auth: Schema.String,
   }),
 })
+
 export type PushSubscriptionJson = typeof PushSubscriptionJson.Type
 
 export const PushSubscriptionInput = Schema.Struct({
@@ -26,6 +27,7 @@ export const PushSubscriptionInput = Schema.Struct({
     auth: Schema.String,
   }),
 })
+
 export type PushSubscriptionInput = typeof PushSubscriptionInput.Type
 
 /** Normalize the browser's `toJSON()` output into the strict wire shape. */

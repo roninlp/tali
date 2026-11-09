@@ -35,6 +35,7 @@ const adoptedModel = (row: PreferencesRow = savedRow()): Preferences.Model =>
 describe('cache adoption', () => {
   test('init adopts the cached row before the network settles', () => {
     const cached = savedRow()
+
     const init = Preferences.init({
       maybeUserId: Option.some(USER_ID),
       maybeProfileDefaults: Option.none(),
@@ -319,6 +320,7 @@ describe('display settings save', () => {
 describe('session changes', () => {
   test('a new account reads its own cache and a sign-out resets the drafts', () => {
     const signedOut = preferencesModel({ maybeUserId: Option.none() })
+
     const signedIn = Preferences.applySession(
       signedOut,
       Option.some({

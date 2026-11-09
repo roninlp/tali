@@ -1,5 +1,5 @@
-import type { D1Migration } from "@cloudflare/vitest-plugin"
-import type { LabMode } from "./mode"
+import type { D1Migration } from '@cloudflare/vitest-plugin'
+import type { LabMode } from './mode'
 
 /**
  * The bindings this lab's Worker config declares (it reuses
@@ -26,7 +26,7 @@ declare global {
         default: {
           fetch: (
             input: string | URL | Request,
-            init?: RequestInit
+            init?: RequestInit,
           ) => Promise<Response>
         }
       }

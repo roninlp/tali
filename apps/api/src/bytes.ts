@@ -1,9 +1,9 @@
-import { Effect } from "effect"
+import { Effect } from 'effect'
 
 /** Hex/random/digest helpers shared by session minting and password hashing. */
 
 export const toHex = (bytes: Uint8Array): string =>
-  Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
+  Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
 
 export const fromHex = (hex: string): Uint8Array => {
   const out = new Uint8Array(hex.length / 2)
@@ -31,6 +31,6 @@ export const randomToken = (bytes: number): string =>
 
 export const sha256Hex = (value: string): Effect.Effect<string> =>
   Effect.promise(async () => {
-    const digest = await crypto.subtle.digest("SHA-256", encoder.encode(value))
+    const digest = await crypto.subtle.digest('SHA-256', encoder.encode(value))
     return toHex(new Uint8Array(digest))
   })

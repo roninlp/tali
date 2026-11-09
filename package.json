@@ -7,7 +7,7 @@
   "scripts": {
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
-    "lint": "turbo run lint",
+    "lint": "oxlint --ignore-pattern 'repos/**' --deny-warnings . && pnpm --filter @tali/web-foldkit lint:effect",
     "test": "turbo run test",
     "test:e2e": "pnpm --filter @tali/e2e test:e2e",
     "dev": "turbo run dev",
@@ -19,12 +19,18 @@
     "eval:capture": "node scripts/eval-capture.mjs",
     "test:smoke:foldkit": "pnpm --filter @tali/e2e test:smoke:foldkit",
     "test:smoke:foldkit:sync": "pnpm --filter @tali/e2e test:smoke:foldkit:sync",
-    "stack:ci": "pnpm --filter @tali/infra run github"
+    "stack:ci": "pnpm --filter @tali/infra run github",
+    "lint:fix": "oxlint --ignore-pattern 'repos/**' --fix . && pnpm --filter @tali/web-foldkit lint:effect",
+    "format": "oxfmt --check",
+    "format:fix": "oxfmt ."
   },
   "devDependencies": {
     "turbo": "^2.11.8",
     "typescript": "catalog:",
-    "web-push": "^3.6.7"
+    "web-push": "^3.6.7",
+    "@tali/lint-config": "workspace:*",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:"
   },
   "engines": {
     "node": ">=24"

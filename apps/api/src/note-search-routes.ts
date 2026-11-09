@@ -1,10 +1,13 @@
-import { Effect, Schema } from "effect"
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { NoteSearchResponse, Unauthorized } from "@tali/domain"
-import { AuthService } from "./auth-service.js"
-import { SESSION_COOKIE } from "./auth-routes.js"
-import { NoteSearchService, type NoteSearchViewer } from "./note-search-service.js"
-import { fail, json, requestUrl } from "./read-model-http.js"
+import { Effect, Schema } from 'effect'
+import { HttpRouter, HttpServerRequest } from 'effect/http'
+import { NoteSearchResponse } from '@tali/domain'
+import { AuthService } from './auth-service.js'
+import { SESSION_COOKIE } from './auth-routes.js'
+import {
+  NoteSearchService,
+  type NoteSearchViewer,
+} from './note-search-service.js'
+import { fail, json, requestUrl } from './read-model-http.js'
 
 /**
  * `GET /search/notes?q=…` — Persian full-text note search (ticket #41;
@@ -27,39 +30,44 @@ import { fail, json, requestUrl } from "./read-model-http.js"
  * them, so another member's private note can never appear in the results.
  */
 
-export const NoteSearchRoutes = HttpRouter.use((router) =>
-  Effect.gen(function*() {
+export const NoteSearchRoutes = HttpRouter.use(router =>
+  Effect.gen(function* () {
     const auth = yield* AuthService
     const search = yield* NoteSearchService
 
     yield* router.add(
-      "GET",
-      "/search/notes",
-      Effect.gen(function*() {
+      'GET',
+      '/search/notes',
+      Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
         const token = request.cookies[SESSION_COOKIE]
         if (token === undefined) {
-          return yield* fail(401, "Unauthorized", "No active session")
+          return yield* fail(401, 'Unauthorized', 'No active session')
         }
         const context = yield* auth.me(token)
         if (context.householdId === null) {
-          return yield* fail(403, "Forbidden", "Join a household to search notes")
+          return yield* fail(
+            403,
+            'Forbidden',
+            'Join a household to search notes',
+          )
         }
 
         const url = requestUrl(request)
-        const query = url.searchParams.get("q") ?? ""
-        const rawLimit = url.searchParams.get("limit")
-        const limit = rawLimit === null ? undefined : Number.parseInt(rawLimit, 10)
+        const query = url.searchParams.get('q') ?? ''
+        const rawLimit = url.searchParams.get('limit')
+        const limit =
+          rawLimit === null ? undefined : Number.parseInt(rawLimit, 10)
 
         const viewer: NoteSearchViewer = {
           userId: context.user.id,
-          householdId: context.householdId
+          householdId: context.householdId,
         }
 
         const model = yield* search.search(
           viewer,
           query,
-          limit === undefined || Number.isNaN(limit) ? undefined : limit
+          limit === undefined || Number.isNaN(limit) ? undefined : limit,
         )
         // Encode through the shared schema: the wire shape is the contract,
         // not whatever object the composition happened to build.
@@ -68,12 +76,12 @@ export const NoteSearchRoutes = HttpRouter.use((router) =>
       }).pipe(
         Effect.catchTags(
           {
-            Unauthorized: () => fail(401, "Unauthorized", "No active session")
+            Unauthorized: () => fail(401, 'Unauthorized', 'No active session'),
           },
           // Encoding a bad payload is a server bug, not client input: 500.
-          () => fail(500, "InternalError", "Unexpected server error", true)
-        )
-      )
+          () => fail(500, 'InternalError', 'Unexpected server error', true),
+        ),
+      ),
     )
-  })
+  }),
 )

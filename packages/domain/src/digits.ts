@@ -1,4 +1,4 @@
-import type { Digits } from "./common.js"
+import type { Digits } from './common.js'
 
 /**
  * Numeral rendering (CC-04).
@@ -8,7 +8,7 @@ import type { Digits } from "./common.js"
  * mirror and wire. Callers pass `{ digits: "latin" }` for the opt-out.
  */
 
-export const DEFAULT_DIGITS: Digits = "persian"
+export const DEFAULT_DIGITS: Digits = 'persian'
 
 const PERSIAN_ZERO = 0x06f0
 const ARABIC_ZERO = 0x0660
@@ -18,13 +18,14 @@ const persianDigit = (digit: number): string =>
 
 /** Render the ASCII digits in a string with Persian (Extended Arabic-Indic) digits. */
 export const toPersianDigits = (value: string | number): string =>
-  String(value).replace(/[0-9]/g, (digit) => persianDigit(Number(digit)))
+  String(value).replace(/[0-9]/g, digit => persianDigit(Number(digit)))
 
 /** Render Persian/Arabic-Indic digits in a string as ASCII digits. */
 export const toLatinDigits = (value: string | number): string =>
-  String(value).replace(/[۰-۹٠-٩]/g, (digit) => {
+  String(value).replace(/[۰-۹٠-٩]/g, digit => {
     const code = digit.charCodeAt(0)
-    const digitValue = code >= PERSIAN_ZERO ? code - PERSIAN_ZERO : code - ARABIC_ZERO
+    const digitValue =
+      code >= PERSIAN_ZERO ? code - PERSIAN_ZERO : code - ARABIC_ZERO
     return String(digitValue)
   })
 
@@ -34,8 +35,9 @@ export const toLatinDigits = (value: string | number): string =>
  */
 export const localizeDigits = (
   value: string | number,
-  digits: Digits = DEFAULT_DIGITS
-): string => (digits === "persian" ? toPersianDigits(value) : toLatinDigits(value))
+  digits: Digits = DEFAULT_DIGITS,
+): string =>
+  digits === 'persian' ? toPersianDigits(value) : toLatinDigits(value)
 
 export interface FormatNumberOptions {
   /** `persian` (default) or the Latin opt-out. */
@@ -49,11 +51,17 @@ export interface FormatNumberOptions {
  * Format a number for display. Persian digits and Persian separators are the
  * default; `digits: "latin"` uses ASCII digits with Latin separators.
  */
-export const formatNumber = (value: number, options: FormatNumberOptions = {}): string => {
+export const formatNumber = (
+  value: number,
+  options: FormatNumberOptions = {},
+): string => {
   const { digits = DEFAULT_DIGITS, ...numberFormat } = options
-  return new Intl.NumberFormat(digits === "persian" ? "fa-IR-u-nu-arabext" : "fa-IR-u-nu-latn", {
-    useGrouping: numberFormat.useGrouping,
-    minimumFractionDigits: numberFormat.minimumFractionDigits,
-    maximumFractionDigits: numberFormat.maximumFractionDigits
-  }).format(value)
+  return new Intl.NumberFormat(
+    digits === 'persian' ? 'fa-IR-u-nu-arabext' : 'fa-IR-u-nu-latn',
+    {
+      useGrouping: numberFormat.useGrouping,
+      minimumFractionDigits: numberFormat.minimumFractionDigits,
+      maximumFractionDigits: numberFormat.maximumFractionDigits,
+    },
+  ).format(value)
 }

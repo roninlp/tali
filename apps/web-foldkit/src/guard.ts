@@ -21,6 +21,7 @@ export const GuardDecision = defineTaggedUnion({
   Wait: {},
   Redirect: { route: AppRoute, path: Schema.String },
 })
+
 export type GuardDecision = typeof GuardDecision.Type
 
 export type GuardContext = Readonly<{
@@ -41,6 +42,7 @@ const isGuestRoute = AppRoute.isAnyOf(['Login', 'Register'])
 const isNotFoundRoute = AppRoute.isAnyOf(['NotFound'])
 const isHomeRoute = AppRoute.isAnyOf(['Home'])
 const isHouseholdOnboardingRoute = AppRoute.isAnyOf(['Household'])
+
 const isHouseholdRoute = AppRoute.isAnyOf([
   'Today',
   'Tasks',

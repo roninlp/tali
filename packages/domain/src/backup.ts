@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema } from 'effect'
 
 /**
  * Nightly D1 backup metadata (ticket #85).
@@ -21,10 +21,10 @@ import { Schema } from "effect"
 export const BACKUP_RETENTION_DAYS = 14
 
 /** Everything a backup owns lives below this prefix. */
-export const BACKUP_PREFIX = "backups/"
+export const BACKUP_PREFIX = 'backups/'
 
 /** The file body is a plain SQL script (schema + data), importable by D1. */
-export const BACKUP_FORMAT = "sqlite-sql"
+export const BACKUP_FORMAT = 'sqlite-sql'
 
 export const BACKUP_MANIFEST_VERSION = 1
 
@@ -34,7 +34,7 @@ const SHA256_HEX = /^[0-9a-f]{64}$/
 
 export const BackupTableStat = Schema.Struct({
   name: Schema.String,
-  rows: Schema.Int
+  rows: Schema.Int,
 })
 export type BackupTableStat = Schema.Schema.Type<typeof BackupTableStat>
 
@@ -58,7 +58,7 @@ export const BackupManifest = Schema.Struct({
   tables: Schema.Array(BackupTableStat),
   retentionDays: Schema.Int,
   /** The instant after which retention may remove this backup. */
-  expiresAt: Schema.String
+  expiresAt: Schema.String,
 })
 export type BackupManifest = Schema.Schema.Type<typeof BackupManifest>
 
@@ -80,14 +80,16 @@ export const backupDateOf = (instant: string): string => {
   return new Date(parsed).toISOString().slice(0, 10)
 }
 
-export const backupObjectKey = (id: string, database = "tali"): string =>
+export const backupObjectKey = (id: string, database = 'tali'): string =>
   `${BACKUP_PREFIX}${id}/${database}.sql`
 
 export const backupManifestKey = (id: string): string =>
   `${BACKUP_PREFIX}${id}/manifest.json`
 
 /** Build the manifest for one upload. Keys and expiry are derived, never passed in. */
-export const makeBackupManifest = (source: BackupManifestSource): BackupManifest => {
+export const makeBackupManifest = (
+  source: BackupManifestSource,
+): BackupManifest => {
   const id = backupDateOf(source.createdAt)
   const retentionDays = source.retentionDays ?? BACKUP_RETENTION_DAYS
   const createdAt = new Date(Date.parse(source.createdAt)).toISOString()
@@ -103,15 +105,19 @@ export const makeBackupManifest = (source: BackupManifestSource): BackupManifest
     sha256: source.sha256,
     tables: [...source.tables],
     retentionDays,
-    expiresAt: new Date(Date.parse(createdAt) + retentionDays * DAY_MS).toISOString()
+    expiresAt: new Date(
+      Date.parse(createdAt) + retentionDays * DAY_MS,
+    ).toISOString(),
   }
 }
 
 /** Decode a manifest read back from R2; `undefined` for malformed JSON/shape. */
-export const parseBackupManifest = (json: string): BackupManifest | undefined => {
+export const parseBackupManifest = (
+  json: string,
+): BackupManifest | undefined => {
   try {
     const decoded = Schema.decodeUnknownOption(BackupManifest)(JSON.parse(json))
-    return decoded._tag === "Some" ? decoded.value : undefined
+    return decoded._tag === 'Some' ? decoded.value : undefined
   } catch {
     return undefined
   }
@@ -145,19 +151,27 @@ export interface BackupRetentionInput {
  * upload. It is unusable (the manifest is the commit marker), so retention
  * removes it instead of keeping a truncated backup for the whole window.
  */
-export const planBackupRetention = (input: BackupRetentionInput): ReadonlyArray<string> => {
-  const retentionDays = Math.max(1, input.retentionDays ?? BACKUP_RETENTION_DAYS)
-  const groups = new Map<string, {
-    readonly keys: Array<string>
-    dump: boolean
-    manifest: boolean
-  }>()
+export const planBackupRetention = (
+  input: BackupRetentionInput,
+): ReadonlyArray<string> => {
+  const retentionDays = Math.max(
+    1,
+    input.retentionDays ?? BACKUP_RETENTION_DAYS,
+  )
+  const groups = new Map<
+    string,
+    {
+      readonly keys: Array<string>
+      dump: boolean
+      manifest: boolean
+    }
+  >()
   for (const key of input.keys) {
     const date = backupDateOfKey(key)
     if (date === undefined) continue
     const group = groups.get(date) ?? { keys: [], dump: false, manifest: false }
     group.keys.push(key)
-    if (key.endsWith(".sql")) group.dump = true
+    if (key.endsWith('.sql')) group.dump = true
     if (key === backupManifestKey(date)) group.manifest = true
     groups.set(date, group)
   }
@@ -166,11 +180,14 @@ export const planBackupRetention = (input: BackupRetentionInput): ReadonlyArray<
   const complete = [...groups.entries()]
     .filter(([, group]) => group.dump && group.manifest)
     .map(([date]) => date)
-  const newestComplete = complete.reduce((latest, date) => (date > latest ? date : latest), "")
+  const newestComplete = complete.reduce(
+    (latest, date) => (date > latest ? date : latest),
+    '',
+  )
   // Include today: 14 retained days means today plus the previous 13.
-  const cutoff = new Date(
-    Date.parse(input.now) - (retentionDays - 1) * DAY_MS
-  ).toISOString().slice(0, 10)
+  const cutoff = new Date(Date.parse(input.now) - (retentionDays - 1) * DAY_MS)
+    .toISOString()
+    .slice(0, 10)
 
   return [...groups.entries()].flatMap(([date, group]) => {
     const incomplete = !group.dump || !group.manifest

@@ -1031,9 +1031,11 @@ const railView = (
   h: HtmlBuilder<Message>,
 ): Html => {
   const digits = inputs.display.digits
+
   const maybeNext = Option.fromNullishOr(
     nextTimedTask(view.tasks, view.timeZone, model.now),
   )
+
   const week = weekDaysFor(view.today, inputs.display.weekStart, digits)
   const bounds = boundsFor(view.timeZone, model.now)
 

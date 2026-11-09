@@ -1,7 +1,13 @@
-import { Schema } from "effect"
-import { Model } from "effect/schema"
-import { Visibility } from "../common.js"
-import { commonItemFields, LocalDate, OccasionId, TaskId, TimeZone } from "./common.js"
+import { Schema } from 'effect'
+import { Model } from 'effect/schema'
+import { Visibility } from '../common.js'
+import {
+  commonItemFields,
+  LocalDate,
+  OccasionId,
+  TaskId,
+  TimeZone,
+} from './common.js'
 
 /**
  * `Occasion` aggregate (ticket #59; FR-CAL-02).
@@ -46,8 +52,8 @@ import { commonItemFields, LocalDate, OccasionId, TaskId, TimeZone } from "./com
  * before the server sees the occasion, and a deleted task leaves a harmless
  * stale id that the next preparation replaces.
  */
-export class Occasion extends Model.Class<Occasion>("Occasion")({
-  ...commonItemFields("occasion", OccasionId),
+export class Occasion extends Model.Class<Occasion>('Occasion')({
+  ...commonItemFields('occasion', OccasionId),
   /** Resolved from the occasion's `shareable` policy (ADR-0011); default `private`. */
   visibility: Visibility,
   /**
@@ -64,8 +70,8 @@ export class Occasion extends Model.Class<Occasion>("Occasion")({
   yearly: Schema.Boolean,
   /** Days before the occurrence to remind; `null` = no advance reminder. */
   advanceReminderDays: Schema.NullOr(
-    Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 365 }))
+    Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 365 })),
   ),
   /** The optional "prepare gift" task created from this occasion. */
-  preparationTaskId: Schema.NullOr(TaskId)
+  preparationTaskId: Schema.NullOr(TaskId),
 }) {}

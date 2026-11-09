@@ -1,7 +1,7 @@
-import { Schema } from "effect"
-import { Visibility } from "../common.js"
-import { RecurrenceRule, TaskRecurrenceMode } from "../recurrence.js"
-import { TaskBucket } from "./buckets.js"
+import { Schema } from 'effect'
+import { Visibility } from '../common.js'
+import { RecurrenceRule, TaskRecurrenceMode } from '../recurrence.js'
+import { TaskBucket } from './buckets.js'
 import {
   LocalDate,
   Priority,
@@ -11,9 +11,9 @@ import {
   TaskId,
   TaskStatus,
   TimeZone,
-  TimestampUtc
-} from "./common.js"
-import { Task } from "./task.js"
+  TimestampUtc,
+} from './common.js'
+import { Task } from './task.js'
 
 /**
  * TaskService contract (ticket #36; FR-TASK-01/02/05/06).
@@ -29,59 +29,74 @@ import { Task } from "./task.js"
 // ── Typed errors (`docs/error-model-draft.md` §2) ────────────────────────
 
 /** The task does not exist, or is not visible to this viewer. */
-export class TaskNotFound extends Schema.TaggedError<TaskNotFound>()("TaskNotFound", {
-  id: TaskId
-}) {}
+export class TaskNotFound extends Schema.TaggedError<TaskNotFound>()(
+  'TaskNotFound',
+  {
+    id: TaskId,
+  },
+) {}
 
-export class ProjectNotFound extends Schema.TaggedError<ProjectNotFound>()("ProjectNotFound", {
-  id: ProjectId
-}) {}
+export class ProjectNotFound extends Schema.TaggedError<ProjectNotFound>()(
+  'ProjectNotFound',
+  {
+    id: ProjectId,
+  },
+) {}
 
-export class TagNotFound extends Schema.TaggedError<TagNotFound>()("TagNotFound", {
-  id: TagId
-}) {}
+export class TagNotFound extends Schema.TaggedError<TagNotFound>()(
+  'TagNotFound',
+  {
+    id: TagId,
+  },
+) {}
 
 /** The row exists but this viewer may not read/write it. */
-export class TaskForbidden extends Schema.TaggedError<TaskForbidden>()("TaskForbidden", {
-  id: Schema.NullOr(Schema.String),
-  reason: Schema.Literals(["private", "household", "noHousehold"])
-}) {}
+export class TaskForbidden extends Schema.TaggedError<TaskForbidden>()(
+  'TaskForbidden',
+  {
+    id: Schema.NullOr(Schema.String),
+    reason: Schema.Literals(['private', 'household', 'noHousehold']),
+  },
+) {}
 
 /** A lifecycle move that the task's current status cannot make. */
 export class TaskInvalidTransition extends Schema.TaggedError<TaskInvalidTransition>()(
-  "TaskInvalidTransition",
+  'TaskInvalidTransition',
   {
     id: TaskId,
     from: TaskStatus,
-    to: TaskStatus
-  }
+    to: TaskStatus,
+  },
 ) {}
 
 /** Field-level validation (bad due instant, foreign project/tag, both due shapes, …). */
 export class TaskValidationError extends Schema.TaggedError<TaskValidationError>()(
-  "TaskValidationError",
+  'TaskValidationError',
   {
     issues: Schema.Array(
       Schema.Struct({
         field: Schema.String,
-        message: Schema.String
-      })
-    )
-  }
+        message: Schema.String,
+      }),
+    ),
+  },
 ) {}
 
 /** A concurrent writer won the version CAS; the caller may retry. */
-export class TaskConflict extends Schema.TaggedError<TaskConflict>()("TaskConflict", {
-  id: Schema.String
-}) {}
+export class TaskConflict extends Schema.TaggedError<TaskConflict>()(
+  'TaskConflict',
+  {
+    id: Schema.String,
+  },
+) {}
 
 /** A completion older than the 7-day retention window can no longer be undone. */
 export class TaskNotRestorable extends Schema.TaggedError<TaskNotRestorable>()(
-  "TaskNotRestorable",
+  'TaskNotRestorable',
   {
     id: TaskId,
-    completedAt: Schema.String
-  }
+    completedAt: Schema.String,
+  },
 ) {}
 
 export const TaskServiceError = Schema.Union([
@@ -92,7 +107,7 @@ export const TaskServiceError = Schema.Union([
   TaskInvalidTransition,
   TaskValidationError,
   TaskConflict,
-  TaskNotRestorable
+  TaskNotRestorable,
 ])
 export type TaskServiceError = Schema.Schema.Type<typeof TaskServiceError>
 
@@ -116,7 +131,7 @@ export const TaskPatch = Schema.Struct({
   color: Schema.optional(Schema.NullOr(Schema.String)),
   recurrence: Schema.optional(Schema.NullOr(RecurrenceRule)),
   recurrenceMode: Schema.optional(Schema.NullOr(TaskRecurrenceMode)),
-  visibility: Schema.optional(Visibility)
+  visibility: Schema.optional(Visibility),
 })
 export type TaskPatch = Schema.Schema.Type<typeof TaskPatch>
 
@@ -138,7 +153,7 @@ export const TaskCreateInput = Schema.Struct({
   recurrence: Schema.optional(Schema.NullOr(RecurrenceRule)),
   /** Defaults to `onDueDate` when a rule is supplied without a mode. */
   recurrenceMode: Schema.optional(Schema.NullOr(TaskRecurrenceMode)),
-  visibility: Schema.optional(Visibility)
+  visibility: Schema.optional(Visibility),
 })
 export type TaskCreateInput = Schema.Schema.Type<typeof TaskCreateInput>
 
@@ -147,7 +162,7 @@ export const TaskUpdateInput = Schema.Struct({
   clientMutationId: Schema.String,
   /** The version the client last saw; informational for the service CAS. */
   baseVersion: Schema.optional(Schema.Int),
-  patch: TaskPatch
+  patch: TaskPatch,
 })
 export type TaskUpdateInput = Schema.Schema.Type<typeof TaskUpdateInput>
 
@@ -156,39 +171,39 @@ export const TaskMoveInput = Schema.Struct({
   id: TaskId,
   clientMutationId: Schema.String,
   dueDate: Schema.NullOr(LocalDate),
-  timeZone: Schema.optional(TimeZone)
+  timeZone: Schema.optional(TimeZone),
 })
 export type TaskMoveInput = Schema.Schema.Type<typeof TaskMoveInput>
 
 /** Start/complete/undo all carry only the row id plus the replay key. */
 export const TaskMutationInput = Schema.Struct({
   id: TaskId,
-  clientMutationId: Schema.String
+  clientMutationId: Schema.String,
 })
 export type TaskMutationInput = Schema.Schema.Type<typeof TaskMutationInput>
 
 // ── Query inputs ─────────────────────────────────────────────────────────
 
 export const TaskSortField = Schema.Literals([
-  "dueDate",
-  "priority",
-  "status",
-  "createdAt",
-  "updatedAt",
-  "title"
+  'dueDate',
+  'priority',
+  'status',
+  'createdAt',
+  'updatedAt',
+  'title',
 ])
 export type TaskSortField = Schema.Schema.Type<typeof TaskSortField>
 
-export const SortDirection = Schema.Literals(["asc", "desc"])
+export const SortDirection = Schema.Literals(['asc', 'desc'])
 export type SortDirection = Schema.Schema.Type<typeof SortDirection>
 
 export const TaskSort = Schema.Struct({
   by: TaskSortField,
-  direction: SortDirection
+  direction: SortDirection,
 })
 export type TaskSort = Schema.Schema.Type<typeof TaskSort>
 
-export const DEFAULT_TASK_SORT: TaskSort = { by: "dueDate", direction: "asc" }
+export const DEFAULT_TASK_SORT: TaskSort = { by: 'dueDate', direction: 'asc' }
 
 export const TaskFilter = Schema.Struct({
   projectId: Schema.optional(Schema.NullOr(ProjectId)),
@@ -202,13 +217,13 @@ export const TaskFilter = Schema.Struct({
   /** A quick preset; mutually exclusive with the explicit due bounds. */
   bucket: Schema.optional(TaskBucket),
   /** Completed tasks are retained 7 days; this includes older archived rows. */
-  includeArchived: Schema.optional(Schema.Boolean)
+  includeArchived: Schema.optional(Schema.Boolean),
 })
 export type TaskFilter = Schema.Schema.Type<typeof TaskFilter>
 
 export const TaskListInput = Schema.Struct({
   filter: Schema.optional(TaskFilter),
-  sort: Schema.optional(TaskSort)
+  sort: Schema.optional(TaskSort),
 })
 export type TaskListInput = Schema.Schema.Type<typeof TaskListInput>
 
@@ -222,7 +237,7 @@ export const TaskBuckets = Schema.Struct({
   todayTasks: Schema.Array(Task),
   tomorrowTasks: Schema.Array(Task),
   thisWeek: Schema.Array(Task),
-  noDate: Schema.Array(Task)
+  noDate: Schema.Array(Task),
 })
 export type TaskBuckets = Schema.Schema.Type<typeof TaskBuckets>
 
@@ -232,14 +247,14 @@ export const ProjectCreateInput = Schema.Struct({
   id: Schema.optional(ProjectId),
   clientMutationId: Schema.String,
   title: Schema.String.check(Schema.isMinLength(1)),
-  color: Schema.optional(Schema.NullOr(Schema.String))
+  color: Schema.optional(Schema.NullOr(Schema.String)),
 })
 export type ProjectCreateInput = Schema.Schema.Type<typeof ProjectCreateInput>
 
 export const ProjectRenameInput = Schema.Struct({
   id: ProjectId,
   clientMutationId: Schema.String,
-  title: Schema.String.check(Schema.isMinLength(1))
+  title: Schema.String.check(Schema.isMinLength(1)),
 })
 export type ProjectRenameInput = Schema.Schema.Type<typeof ProjectRenameInput>
 
@@ -247,13 +262,13 @@ export const TagCreateInput = Schema.Struct({
   id: Schema.optional(TagId),
   clientMutationId: Schema.String,
   name: Schema.String.check(Schema.isMinLength(1)),
-  color: Schema.optional(Schema.NullOr(Schema.String))
+  color: Schema.optional(Schema.NullOr(Schema.String)),
 })
 export type TagCreateInput = Schema.Schema.Type<typeof TagCreateInput>
 
 export const TagRenameInput = Schema.Struct({
   id: TagId,
   clientMutationId: Schema.String,
-  name: Schema.String.check(Schema.isMinLength(1))
+  name: Schema.String.check(Schema.isMinLength(1)),
 })
 export type TagRenameInput = Schema.Schema.Type<typeof TagRenameInput>

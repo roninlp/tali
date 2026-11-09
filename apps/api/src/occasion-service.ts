@@ -1,5 +1,5 @@
-import { Context, Effect, Layer, Option, Schema } from "effect"
-import { SqlClient } from "effect/sql"
+import { Context, Effect, Layer, Option, Schema } from 'effect'
+import { SqlClient } from 'effect/sql'
 import {
   type HouseholdId,
   type LocalDate,
@@ -23,7 +23,6 @@ import {
   taskBucketBounds,
   TimeZone,
   type UserId,
-  type Visibility,
   occasionAdvanceReminder,
   occasionAdvanceReminderDate,
   occasionAdvanceReminders,
@@ -33,16 +32,16 @@ import {
   localDateStartInstant,
   nextOccasionOccurrence,
   resolveCreateVisibility,
-  uuidV7
-} from "@tali/domain"
+  uuidV7,
+} from '@tali/domain'
 import type {
   OccasionAdvanceReminder,
   OccasionDetail as OccasionDetailShape,
   OccasionOccurrence as OccasionOccurrenceShape,
   OccasionPreparation as OccasionPreparationShape,
   OccasionRange,
-  OccasionSource
-} from "@tali/domain"
+  OccasionSource,
+} from '@tali/domain'
 import {
   OccasionRepo,
   OccasionRepoLive,
@@ -52,9 +51,9 @@ import {
   SyncRepo,
   SyncRepoLive,
   TaskRepo,
-  TaskRepoLive
-} from "@tali/sql"
-import { ReminderService, ReminderServiceLive } from "./reminder-service.js"
+  TaskRepoLive,
+} from '@tali/sql'
+import { ReminderService, ReminderServiceLive } from './reminder-service.js'
 
 /**
  * `OccasionService` — annual important dates (ticket #59; FR-CAL-02).
@@ -125,36 +124,42 @@ export interface OccasionServiceApi {
   readonly create: (
     viewer: OccasionViewer,
     input: Schema.Schema.Type<typeof OccasionCreateInput>,
-    now?: string
+    now?: string,
   ) => Effect.Effect<Occasion, OccasionServiceError>
   readonly get: (
     viewer: OccasionViewer,
     id: OccasionId,
-    now?: string
+    now?: string,
   ) => Effect.Effect<OccasionDetailShape, OccasionServiceError>
   readonly update: (
     viewer: OccasionViewer,
     input: Schema.Schema.Type<typeof OccasionUpdateInput>,
-    now?: string
+    now?: string,
   ) => Effect.Effect<Occasion, OccasionServiceError>
   readonly delete: (
     viewer: OccasionViewer,
     input: Schema.Schema.Type<typeof OccasionMutationInput>,
-    now?: string
+    now?: string,
   ) => Effect.Effect<Occasion, OccasionServiceError>
   readonly list: (
-    viewer: OccasionViewer
+    viewer: OccasionViewer,
   ) => Effect.Effect<ReadonlyArray<Occasion>, OccasionServiceError>
   /** Project the visible occasions onto an inclusive local-date window. */
   readonly occurrences: (
     viewer: OccasionViewer,
-    input: Schema.Schema.Type<typeof OccasionOccurrenceQuery>
-  ) => Effect.Effect<ReadonlyArray<OccasionOccurrenceShape>, OccasionServiceError>
+    input: Schema.Schema.Type<typeof OccasionOccurrenceQuery>,
+  ) => Effect.Effect<
+    ReadonlyArray<OccasionOccurrenceShape>,
+    OccasionServiceError
+  >
   /** Advance reminders due inside the window (the #60 seam, not persisted). */
   readonly advanceReminders: (
     viewer: OccasionViewer,
-    input: Schema.Schema.Type<typeof OccasionOccurrenceQuery>
-  ) => Effect.Effect<ReadonlyArray<OccasionAdvanceReminder>, OccasionServiceError>
+    input: Schema.Schema.Type<typeof OccasionOccurrenceQuery>,
+  ) => Effect.Effect<
+    ReadonlyArray<OccasionAdvanceReminder>,
+    OccasionServiceError
+  >
   /**
    * Materialise the due advance reminders into real `Reminder` rows (#60).
    *
@@ -166,8 +171,11 @@ export interface OccasionServiceApi {
    */
   readonly materialiseReminders: (
     viewer: OccasionViewer,
-    input: Schema.Schema.Type<typeof OccasionOccurrenceQuery>
-  ) => Effect.Effect<ReadonlyArray<Reminder>, OccasionServiceError | ReminderServiceError>
+    input: Schema.Schema.Type<typeof OccasionOccurrenceQuery>,
+  ) => Effect.Effect<
+    ReadonlyArray<Reminder>,
+    OccasionServiceError | ReminderServiceError
+  >
   /**
    * The **system** materialiser (#61's per-minute sweep has no viewer).
    *
@@ -182,7 +190,10 @@ export interface OccasionServiceApi {
     readonly householdId: HouseholdId
     readonly range: OccasionRange
     readonly limit?: number
-  }) => Effect.Effect<ReadonlyArray<Reminder>, OccasionServiceError | ReminderServiceError>
+  }) => Effect.Effect<
+    ReadonlyArray<Reminder>,
+    OccasionServiceError | ReminderServiceError
+  >
   /**
    * The sweep's materialisation pass over every household (#61).
    *
@@ -194,24 +205,27 @@ export interface OccasionServiceApi {
   readonly materialiseDue: (input: {
     readonly range: OccasionRange
     readonly limit?: number
-  }) => Effect.Effect<ReadonlyArray<Reminder>, OccasionServiceError | ReminderServiceError>
+  }) => Effect.Effect<
+    ReadonlyArray<Reminder>,
+    OccasionServiceError | ReminderServiceError
+  >
   /** One-tap "prepare gift" task creation (idempotent for a live link). */
   readonly prepareTask: (
     viewer: OccasionViewer,
     input: Schema.Schema.Type<typeof OccasionPrepareInput>,
-    now?: string
+    now?: string,
   ) => Effect.Effect<OccasionPreparationShape, OccasionServiceError>
 }
 
 const invalid = (
   field: string,
-  message: string
+  message: string,
 ): Effect.Effect<never, OccasionValidationError> =>
   Effect.fail(new OccasionValidationError({ issues: [{ field, message }] }))
 
 const validLocalDate = (value: string): boolean => {
   try {
-    localDateStartInstant(value, "UTC")
+    localDateStartInstant(value, 'UTC')
     return true
   } catch {
     return false
@@ -223,826 +237,949 @@ const validLocalDate = (value: string): boolean => {
  * that 500s the RPC: the registry's `validate` would otherwise throw while
  * encoding the row (the same guard the habit service applies).
  */
-const decodeTimeZone = (timeZone: string): Effect.Effect<string, OccasionValidationError> => {
+const decodeTimeZone = (
+  timeZone: string,
+): Effect.Effect<string, OccasionValidationError> => {
   const decoded = Schema.decodeUnknownOption(TimeZone)(timeZone)
   return Option.isNone(decoded)
-    ? invalid("timeZone", "the time zone must be a valid IANA identifier")
+    ? invalid('timeZone', 'the time zone must be a valid IANA identifier')
     : Effect.succeed(decoded.value)
 }
 
-export class OccasionService extends Context.Service<OccasionService>()("OccasionService", {
-  make: Effect.gen(function*() {
-    const occasions = yield* OccasionRepo
-    const tasks = yield* TaskRepo
-    const sync = yield* SyncRepo
-    const reminders = yield* ReminderService
-    const reminderRepo = yield* ReminderRepo
-    const sql = yield* SqlClient.SqlClient
+export class OccasionService extends Context.Service<OccasionService>()(
+  'OccasionService',
+  {
+    make: Effect.gen(function* () {
+      const occasions = yield* OccasionRepo
+      const tasks = yield* TaskRepo
+      const sync = yield* SyncRepo
+      const reminders = yield* ReminderService
+      const reminderRepo = yield* ReminderRepo
+      const sql = yield* SqlClient.SqlClient
 
-    const definition = (entityType: "occasion" | "task") => {
-      const def = sync.definition(entityType)
-      if (def === undefined) {
-        throw new Error(`sync entity type is not registered: ${entityType}`)
-      }
-      return def
-    }
-
-    /** The registry's strict shape, shared with the sync push. */
-    const occasionState = (occasion: Occasion): SyncEntityState => ({
-      entityType: "occasion",
-      entityId: occasion.id,
-      householdId: occasion.householdId,
-      ownerId: occasion.ownerId,
-      visibility: occasion.visibility,
-      version: occasion.version,
-      updatedAt: occasion.updatedAt,
-      deletedAt: occasion.deletedAt,
-      data: definition("occasion").validate(
-        { ...occasion } as Record<string, unknown>,
-        {
-          version: occasion.version,
-          updatedAt: occasion.updatedAt,
-          deletedAt: occasion.deletedAt
+      const definition = (entityType: 'occasion' | 'task') => {
+        const def = sync.definition(entityType)
+        if (def === undefined) {
+          throw new Error(`sync entity type is not registered: ${entityType}`)
         }
-      )
-    })
+        return def
+      }
 
-    const taskState = (task: Task): SyncEntityState => ({
-      entityType: "task",
-      entityId: task.id,
-      householdId: task.householdId,
-      ownerId: task.ownerId,
-      visibility: task.visibility,
-      version: task.version,
-      updatedAt: task.updatedAt,
-      deletedAt: task.deletedAt,
-      data: definition("task").validate(
-        { ...task } as Record<string, unknown>,
-        { version: task.version, updatedAt: task.updatedAt, deletedAt: task.deletedAt }
-      )
-    })
+      /** The registry's strict shape, shared with the sync push. */
+      const occasionState = (occasion: Occasion): SyncEntityState => ({
+        entityType: 'occasion',
+        entityId: occasion.id,
+        householdId: occasion.householdId,
+        ownerId: occasion.ownerId,
+        visibility: occasion.visibility,
+        version: occasion.version,
+        updatedAt: occasion.updatedAt,
+        deletedAt: occasion.deletedAt,
+        data: definition('occasion').validate(
+          { ...occasion } as Record<string, unknown>,
+          {
+            version: occasion.version,
+            updatedAt: occasion.updatedAt,
+            deletedAt: occasion.deletedAt,
+          },
+        ),
+      })
 
-    const appliedMutation = (viewer: OccasionViewer, clientMutationId: string) =>
-      Effect.gen(function*() {
-        const applied = yield* sync
-          .findApplied({
+      const appliedMutation = (
+        viewer: OccasionViewer,
+        clientMutationId: string,
+      ) =>
+        Effect.gen(function* () {
+          const applied = yield* sync
+            .findApplied({
+              householdId: viewer.householdId,
+              clientMutationIds: [clientMutationId],
+            })
+            .pipe(Effect.orDie)
+          return Option.fromUndefinedOr(applied.get(clientMutationId))
+        })
+
+      const reusedMutationId = (
+        row: { readonly entityType: string; readonly entityId: string },
+        expected: { readonly entityType: string; readonly id?: string },
+      ): boolean =>
+        row.entityType !== expected.entityType ||
+        (expected.id !== undefined && row.entityId !== expected.id)
+
+      const reusedMutationIdError = (_id: string) =>
+        invalid(
+          'clientMutationId',
+          'this mutation id was already applied to a different change',
+        )
+
+      /**
+       * One occasion mutation: the CAS entity write, its gated feed append and
+       * its gated ledger row, in one D1 batch. Returns whether the ledger recorded
+       * the mutation, i.e. the CAS won.
+       */
+      const commitOccasion = (input: {
+        readonly viewer: OccasionViewer
+        readonly state: SyncEntityState
+        readonly expectedVersion: number | null
+        readonly clientMutationId: string
+        readonly now: string
+        readonly op?: 'upsert' | 'delete'
+      }): Effect.Effect<boolean, OccasionServiceError> =>
+        Effect.gen(function* () {
+          const prior = yield* appliedMutation(
+            input.viewer,
+            input.clientMutationId,
+          )
+          if (Option.isSome(prior)) {
+            if (
+              reusedMutationId(prior.value, {
+                entityType: 'occasion',
+                id: input.state.entityId,
+              })
+            ) {
+              return yield* reusedMutationIdError(input.state.entityId)
+            }
+            return true
+          }
+
+          const statements = [
+            sync.writeEntity({
+              state: input.state,
+              expectedVersion: input.expectedVersion,
+            }),
+            sync.appendFeed({
+              householdId: input.viewer.householdId,
+              entityType: 'occasion',
+              entityId: input.state.entityId,
+              op: input.op ?? 'upsert',
+              version: input.state.version,
+              updatedAt: input.state.updatedAt,
+              ownerId: input.state.ownerId,
+              visibility: input.state.visibility,
+            }),
+            sync.recordApplied({
+              clientMutationId: input.clientMutationId,
+              householdId: input.viewer.householdId,
+              entityType: 'occasion',
+              entityId: input.state.entityId,
+              version: input.state.version,
+              createdAt: input.now,
+            }),
+          ]
+          yield* sync.commit(statements).pipe(Effect.orDie)
+
+          const applied = yield* appliedMutation(
+            input.viewer,
+            input.clientMutationId,
+          )
+          return Option.isSome(applied)
+        })
+
+      const readOccasion = (
+        viewer: OccasionViewer,
+        id: OccasionId,
+        includeTrashed: boolean,
+      ): Effect.Effect<Occasion, OccasionServiceError> =>
+        Effect.gen(function* () {
+          const found = yield* occasions.findById(id).pipe(Effect.orDie)
+          if (Option.isNone(found)) {
+            return yield* Effect.fail(new OccasionNotFound({ id }))
+          }
+          const occasion = found.value
+          if (occasion.householdId !== viewer.householdId) {
+            return yield* Effect.fail(
+              new OccasionForbidden({ id, reason: 'household' }),
+            )
+          }
+          if (
+            occasion.visibility === 'private' &&
+            occasion.ownerId !== viewer.userId
+          ) {
+            return yield* Effect.fail(
+              new OccasionForbidden({ id, reason: 'private' }),
+            )
+          }
+          if (!includeTrashed && occasion.deletedAt !== null) {
+            return yield* Effect.fail(new OccasionNotFound({ id }))
+          }
+          return occasion
+        })
+
+      /** Today in the viewer's zone, as a local date. */
+      const todayOf = (viewer: OccasionViewer, now: string): LocalDate =>
+        taskBucketBounds(viewer.timeZone, now).today
+
+      const visibleOccasions = (
+        viewer: OccasionViewer,
+      ): Effect.Effect<ReadonlyArray<Occasion>, OccasionServiceError> =>
+        occasions
+          .listVisible({
             householdId: viewer.householdId,
-            clientMutationIds: [clientMutationId]
+            userId: viewer.userId,
           })
           .pipe(Effect.orDie)
-        return Option.fromUndefinedOr(applied.get(clientMutationId))
-      })
 
-    const reusedMutationId = (
-      row: { readonly entityType: string; readonly entityId: string },
-      expected: { readonly entityType: string; readonly id?: string }
-    ): boolean =>
-      row.entityType !== expected.entityType ||
-      (expected.id !== undefined && row.entityId !== expected.id)
+      /** The same rows in the structural shape the pure projection accepts. */
+      const visibleSources = (
+        viewer: OccasionViewer,
+      ): Effect.Effect<ReadonlyArray<OccasionSource>, OccasionServiceError> =>
+        Effect.map(visibleOccasions(viewer), rows => rows)
 
-    const reusedMutationIdError = (id: string) =>
-      invalid("clientMutationId", "this mutation id was already applied to a different change")
-
-    /**
-     * One occasion mutation: the CAS entity write, its gated feed append and
-     * its gated ledger row, in one D1 batch. Returns whether the ledger recorded
-     * the mutation, i.e. the CAS won.
-     */
-    const commitOccasion = (input: {
-      readonly viewer: OccasionViewer
-      readonly state: SyncEntityState
-      readonly expectedVersion: number | null
-      readonly clientMutationId: string
-      readonly now: string
-      readonly op?: "upsert" | "delete"
-    }): Effect.Effect<boolean, OccasionServiceError> =>
-      Effect.gen(function*() {
-        const prior = yield* appliedMutation(input.viewer, input.clientMutationId)
-        if (Option.isSome(prior)) {
-          if (
-            reusedMutationId(prior.value, {
-              entityType: "occasion",
-              id: input.state.entityId
-            })
-          ) {
-            return yield* reusedMutationIdError(input.state.entityId)
+      const validateRange = (
+        input: Schema.Schema.Type<typeof OccasionOccurrenceQuery>,
+      ): Effect.Effect<void, OccasionValidationError> =>
+        Effect.gen(function* () {
+          if (!validLocalDate(input.from)) {
+            return yield* invalid(
+              'from',
+              'the window needs a real calendar date',
+            )
           }
-          return true
-        }
-
-        const statements = [
-          sync.writeEntity({
-            state: input.state,
-            expectedVersion: input.expectedVersion
-          }),
-          sync.appendFeed({
-            householdId: input.viewer.householdId,
-            entityType: "occasion",
-            entityId: input.state.entityId,
-            op: input.op ?? "upsert",
-            version: input.state.version,
-            updatedAt: input.state.updatedAt,
-            ownerId: input.state.ownerId,
-            visibility: input.state.visibility
-          }),
-          sync.recordApplied({
-            clientMutationId: input.clientMutationId,
-            householdId: input.viewer.householdId,
-            entityType: "occasion",
-            entityId: input.state.entityId,
-            version: input.state.version,
-            createdAt: input.now
-          })
-        ]
-        yield* sync.commit(statements).pipe(Effect.orDie)
-
-        const applied = yield* appliedMutation(input.viewer, input.clientMutationId)
-        return Option.isSome(applied)
-      })
-
-    const readOccasion = (
-      viewer: OccasionViewer,
-      id: OccasionId,
-      includeTrashed: boolean
-    ): Effect.Effect<Occasion, OccasionServiceError> =>
-      Effect.gen(function*() {
-        const found = yield* occasions.findById(id).pipe(Effect.orDie)
-        if (Option.isNone(found)) {
-          return yield* Effect.fail(new OccasionNotFound({ id }))
-        }
-        const occasion = found.value
-        if (occasion.householdId !== viewer.householdId) {
-          return yield* Effect.fail(new OccasionForbidden({ id, reason: "household" }))
-        }
-        if (occasion.visibility === "private" && occasion.ownerId !== viewer.userId) {
-          return yield* Effect.fail(new OccasionForbidden({ id, reason: "private" }))
-        }
-        if (!includeTrashed && occasion.deletedAt !== null) {
-          return yield* Effect.fail(new OccasionNotFound({ id }))
-        }
-        return occasion
-      })
-
-    /** Today in the viewer's zone, as a local date. */
-    const todayOf = (viewer: OccasionViewer, now: string): LocalDate =>
-      taskBucketBounds(viewer.timeZone, now).today
-
-    const visibleOccasions = (
-      viewer: OccasionViewer
-    ): Effect.Effect<ReadonlyArray<Occasion>, OccasionServiceError> =>
-      occasions.listVisible({
-        householdId: viewer.householdId,
-        userId: viewer.userId
-      }).pipe(Effect.orDie)
-
-    /** The same rows in the structural shape the pure projection accepts. */
-    const visibleSources = (
-      viewer: OccasionViewer
-    ): Effect.Effect<ReadonlyArray<OccasionSource>, OccasionServiceError> =>
-      Effect.map(visibleOccasions(viewer), (rows) => rows)
-
-    const validateRange = (
-      input: Schema.Schema.Type<typeof OccasionOccurrenceQuery>
-    ): Effect.Effect<void, OccasionValidationError> =>
-      Effect.gen(function*() {
-        if (!validLocalDate(input.from)) {
-          return yield* invalid("from", "the window needs a real calendar date")
-        }
-        if (!validLocalDate(input.to)) {
-          return yield* invalid("to", "the window needs a real calendar date")
-        }
-        if (input.to < input.from) {
-          return yield* invalid("to", "the window ends before it starts")
-        }
-      })
-
-    const create = (
-      viewer: OccasionViewer,
-      input: Schema.Schema.Type<typeof OccasionCreateInput>,
-      now: string = new Date().toISOString()
-    ): Effect.Effect<Occasion, OccasionServiceError> =>
-      Effect.gen(function*() {
-        const replayed = yield* appliedMutation(viewer, input.clientMutationId)
-        if (Option.isSome(replayed)) {
-          if (
-            reusedMutationId(replayed.value, { entityType: "occasion", id: input.id })
-          ) {
-            return yield* reusedMutationIdError(input.id ?? replayed.value.entityId)
+          if (!validLocalDate(input.to)) {
+            return yield* invalid('to', 'the window needs a real calendar date')
           }
-          return yield* readOccasion(
+          if (input.to < input.from) {
+            return yield* invalid('to', 'the window ends before it starts')
+          }
+        })
+
+      const create = (
+        viewer: OccasionViewer,
+        input: Schema.Schema.Type<typeof OccasionCreateInput>,
+        now: string = new Date().toISOString(),
+      ): Effect.Effect<Occasion, OccasionServiceError> =>
+        Effect.gen(function* () {
+          const replayed = yield* appliedMutation(
             viewer,
-            replayed.value.entityId as OccasionId,
-            true
+            input.clientMutationId,
           )
-        }
-
-        if (input.title.trim().length === 0) {
-          return yield* invalid("title", "an occasion needs a title")
-        }
-        if (!validLocalDate(input.originDate)) {
-          return yield* invalid("originDate", "the origin date must be a real calendar date")
-        }
-        const timeZone = yield* decodeTimeZone(input.timeZone ?? viewer.timeZone)
-
-        const occasion = new Occasion({
-          id: (input.id ?? uuidV7()) as Occasion["id"],
-          type: "occasion",
-          title: input.title,
-          originDate: input.originDate,
-          timeZone: timeZone as TimeZone,
-          yearly: input.yearly ?? true,
-          advanceReminderDays: input.advanceReminderDays ?? null,
-          preparationTaskId: null,
-          ownerId: viewer.userId,
-          householdId: viewer.householdId,
-          visibility: resolveCreateVisibility("occasion", input.visibility),
-          color: input.color ?? null,
-          createdAt: now,
-          updatedAt: now,
-          version: 1,
-          deletedAt: null
-        })
-
-        const applied = yield* commitOccasion({
-          viewer,
-          state: occasionState(occasion),
-          expectedVersion: null,
-          clientMutationId: input.clientMutationId,
-          now
-        })
-        if (!applied) {
-          return yield* Effect.fail(new OccasionConflict({ id: occasion.id }))
-        }
-        return occasion
-      })
-
-    const detail = (
-      viewer: OccasionViewer,
-      id: OccasionId,
-      now: string = new Date().toISOString()
-    ): Effect.Effect<OccasionDetailShape, OccasionServiceError> =>
-      Effect.gen(function*() {
-        const occasion = yield* readOccasion(viewer, id, false)
-        const next = nextOccasionOccurrence(occasion, todayOf(viewer, now))
-        return {
-          occasion,
-          next,
-          nextReminder:
-            next === null ? null : occasionAdvanceReminder(occasion, next.date)
-        }
-      })
-
-    const patchOccasion = (
-      viewer: OccasionViewer,
-      current: Occasion,
-      patch: Schema.Schema.Type<typeof OccasionPatch>,
-      now: string
-    ): Effect.Effect<Occasion, OccasionServiceError> =>
-      Effect.gen(function*() {
-        if (patch.title !== undefined && patch.title.trim().length === 0) {
-          return yield* invalid("title", "an occasion needs a title")
-        }
-        // Shared means co-edit; un-sharing is the owner's alone (ADR-0011).
-        if (patch.visibility === "private" && current.ownerId !== viewer.userId) {
-          return yield* invalid("visibility", "only the occasion owner can make it private")
-        }
-        if (patch.originDate !== undefined && !validLocalDate(patch.originDate)) {
-          return yield* invalid("originDate", "the origin date must be a real calendar date")
-        }
-        const timeZone = yield* decodeTimeZone(patch.timeZone ?? current.timeZone)
-        return new Occasion({
-          ...current,
-          title: patch.title ?? current.title,
-          originDate: patch.originDate ?? current.originDate,
-          timeZone: timeZone as TimeZone,
-          yearly: patch.yearly ?? current.yearly,
-          advanceReminderDays:
-            patch.advanceReminderDays === undefined
-              ? current.advanceReminderDays
-              : patch.advanceReminderDays,
-          color: patch.color === undefined ? current.color : patch.color,
-          visibility: patch.visibility ?? current.visibility,
-          version: current.version + 1,
-          updatedAt: now
-        })
-      })
-
-    const sameOccasion = (a: Occasion, b: Occasion): boolean =>
-      a.title === b.title &&
-      a.originDate === b.originDate &&
-      a.timeZone === b.timeZone &&
-      a.yearly === b.yearly &&
-      a.advanceReminderDays === b.advanceReminderDays &&
-      a.color === b.color &&
-      a.visibility === b.visibility &&
-      a.preparationTaskId === b.preparationTaskId
-
-    const update = (
-      viewer: OccasionViewer,
-      input: Schema.Schema.Type<typeof OccasionUpdateInput>,
-      now: string = new Date().toISOString()
-    ): Effect.Effect<Occasion, OccasionServiceError> =>
-      Effect.gen(function*() {
-        const replayed = yield* appliedMutation(viewer, input.clientMutationId)
-        if (Option.isSome(replayed)) {
-          if (reusedMutationId(replayed.value, { entityType: "occasion", id: input.id })) {
-            return yield* reusedMutationIdError(input.id)
+          if (Option.isSome(replayed)) {
+            if (
+              reusedMutationId(replayed.value, {
+                entityType: 'occasion',
+                id: input.id,
+              })
+            ) {
+              return yield* reusedMutationIdError(
+                input.id ?? replayed.value.entityId,
+              )
+            }
+            return yield* readOccasion(
+              viewer,
+              replayed.value.entityId as OccasionId,
+              true,
+            )
           }
-          return yield* readOccasion(viewer, input.id, true)
-        }
 
-        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-          const current = yield* readOccasion(viewer, input.id, false)
-          const next = yield* patchOccasion(viewer, current, input.patch, now)
-          if (sameOccasion(current, next)) return current
+          if (input.title.trim().length === 0) {
+            return yield* invalid('title', 'an occasion needs a title')
+          }
+          if (!validLocalDate(input.originDate)) {
+            return yield* invalid(
+              'originDate',
+              'the origin date must be a real calendar date',
+            )
+          }
+          const timeZone = yield* decodeTimeZone(
+            input.timeZone ?? viewer.timeZone,
+          )
+
+          const occasion = new Occasion({
+            id: (input.id ?? uuidV7()) as Occasion['id'],
+            type: 'occasion',
+            title: input.title,
+            originDate: input.originDate,
+            timeZone: timeZone as TimeZone,
+            yearly: input.yearly ?? true,
+            advanceReminderDays: input.advanceReminderDays ?? null,
+            preparationTaskId: null,
+            ownerId: viewer.userId,
+            householdId: viewer.householdId,
+            visibility: resolveCreateVisibility('occasion', input.visibility),
+            color: input.color ?? null,
+            createdAt: now,
+            updatedAt: now,
+            version: 1,
+            deletedAt: null,
+          })
+
           const applied = yield* commitOccasion({
             viewer,
-            state: occasionState(next),
-            expectedVersion: current.version,
-            clientMutationId: input.clientMutationId,
-            now
-          })
-          if (applied) return next
-        }
-        return yield* Effect.fail(new OccasionConflict({ id: input.id }))
-      })
-
-    const deleteOccasion = (
-      viewer: OccasionViewer,
-      input: Schema.Schema.Type<typeof OccasionMutationInput>,
-      now: string = new Date().toISOString()
-    ): Effect.Effect<Occasion, OccasionServiceError> =>
-      Effect.gen(function*() {
-        const replayed = yield* appliedMutation(viewer, input.clientMutationId)
-        if (Option.isSome(replayed)) {
-          if (reusedMutationId(replayed.value, { entityType: "occasion", id: input.id })) {
-            return yield* reusedMutationIdError(input.id)
-          }
-          return yield* readOccasion(viewer, input.id, true)
-        }
-
-        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-          const current = yield* readOccasion(viewer, input.id, false)
-          const next = new Occasion({
-            ...current,
-            deletedAt: now,
-            version: current.version + 1,
-            updatedAt: now
-          })
-          const applied = yield* commitOccasion({
-            viewer,
-            state: occasionState(next),
-            expectedVersion: current.version,
+            state: occasionState(occasion),
+            expectedVersion: null,
             clientMutationId: input.clientMutationId,
             now,
-            op: "delete"
           })
-          if (applied) return next
-        }
-        return yield* Effect.fail(new OccasionConflict({ id: input.id }))
-      })
-
-    const list = (
-      viewer: OccasionViewer
-    ): Effect.Effect<ReadonlyArray<Occasion>, OccasionServiceError> =>
-      visibleOccasions(viewer)
-
-    const occurrences = (
-      viewer: OccasionViewer,
-      input: Schema.Schema.Type<typeof OccasionOccurrenceQuery>
-    ): Effect.Effect<ReadonlyArray<OccasionOccurrenceShape>, OccasionServiceError> =>
-      Effect.gen(function*() {
-        yield* validateRange(input)
-        const rows = yield* visibleSources(viewer)
-        return occasionOccurrences({ occasions: rows, range: input })
-      })
-
-    const advanceReminders = (
-      viewer: OccasionViewer,
-      input: Schema.Schema.Type<typeof OccasionOccurrenceQuery>
-    ): Effect.Effect<ReadonlyArray<OccasionAdvanceReminder>, OccasionServiceError> =>
-      Effect.gen(function*() {
-        yield* validateRange(input)
-        const rows = yield* visibleSources(viewer)
-        return occasionAdvanceReminders({ occasions: rows, range: input })
-      })
-
-    /**
-     * Turn the due advance reminders into real reminder rows.
-     *
-     * The write goes through `ReminderService.create`, so the reminder lands on
-     * the #34 one-batch version/feed/ledger path and travels on `/sync/pull` to
-     * the other household member exactly like any other reminder.
-     *
-     * Idempotency is a lookup by the flattened link plus the exact fire instant
-     * (a tombstone counts, so a deleted reminder is not resurrected), backed by
-     * the deterministic `clientMutationId` that makes a retried create replay.
-     * No unique index: the lookup is the durable key, and the ledger alone
-     * cannot be the guard because `applied_mutations` is pruned after 90 days.
-     */
-    const materialiseReminders = (
-      viewer: OccasionViewer,
-      input: Schema.Schema.Type<typeof OccasionOccurrenceQuery>
-    ): Effect.Effect<ReadonlyArray<Reminder>, OccasionServiceError | ReminderServiceError> =>
-      Effect.gen(function*() {
-        yield* validateRange(input)
-        const rows = yield* visibleOccasions(viewer)
-        const drafts = occasionAdvanceReminders({ occasions: rows, range: input })
-        const byId = new Map(rows.map((row) => [row.id as string, row]))
-        const materialised: Array<Reminder> = []
-        for (const draft of drafts) {
-          // The stored instant is canonical UTC with milliseconds; the pure
-          // projection emits Temporal's shorter form, so normalise before the
-          // lookup or every call would miss and fall through to create.
-          const fireAt = new Date(draft.fireAt).toISOString()
-          const existing = yield* reminderRepo.findOccasionByFireAt({
-            householdId: viewer.householdId,
-            occasionId: draft.occasionId,
-            fireAt
-          }).pipe(Effect.orDie)
-          if (Option.isSome(existing)) {
-            // A tombstone means the owner removed this occurrence's reminder.
-            if (existing.value.deletedAt === null) materialised.push(existing.value)
-            continue
+          if (!applied) {
+            return yield* Effect.fail(new OccasionConflict({ id: occasion.id }))
           }
-          const source = byId.get(draft.occasionId)
-          const created = yield* reminders.create(viewer, {
-            clientMutationId: `occasion-advance:${draft.reminderKey}`,
-            title: draft.title,
-            kind: "general",
-            repeat: { _tag: "once" },
-            fireAt: draft.fireAt,
-            offsetMinutes: draft.advanceDays * 24 * 60,
-            link: draft.link,
-            timeZone: draft.timeZone,
-            visibility: resolveCreateVisibility("reminder", source?.visibility)
+          return occasion
+        })
+
+      const detail = (
+        viewer: OccasionViewer,
+        id: OccasionId,
+        now: string = new Date().toISOString(),
+      ): Effect.Effect<OccasionDetailShape, OccasionServiceError> =>
+        Effect.gen(function* () {
+          const occasion = yield* readOccasion(viewer, id, false)
+          const next = nextOccasionOccurrence(occasion, todayOf(viewer, now))
+          return {
+            occasion,
+            next,
+            nextReminder:
+              next === null
+                ? null
+                : occasionAdvanceReminder(occasion, next.date),
+          }
+        })
+
+      const patchOccasion = (
+        viewer: OccasionViewer,
+        current: Occasion,
+        patch: Schema.Schema.Type<typeof OccasionPatch>,
+        now: string,
+      ): Effect.Effect<Occasion, OccasionServiceError> =>
+        Effect.gen(function* () {
+          if (patch.title !== undefined && patch.title.trim().length === 0) {
+            return yield* invalid('title', 'an occasion needs a title')
+          }
+          // Shared means co-edit; un-sharing is the owner's alone (ADR-0011).
+          if (
+            patch.visibility === 'private' &&
+            current.ownerId !== viewer.userId
+          ) {
+            return yield* invalid(
+              'visibility',
+              'only the occasion owner can make it private',
+            )
+          }
+          if (
+            patch.originDate !== undefined &&
+            !validLocalDate(patch.originDate)
+          ) {
+            return yield* invalid(
+              'originDate',
+              'the origin date must be a real calendar date',
+            )
+          }
+          const timeZone = yield* decodeTimeZone(
+            patch.timeZone ?? current.timeZone,
+          )
+          return new Occasion({
+            ...current,
+            title: patch.title ?? current.title,
+            originDate: patch.originDate ?? current.originDate,
+            timeZone: timeZone as TimeZone,
+            yearly: patch.yearly ?? current.yearly,
+            advanceReminderDays:
+              patch.advanceReminderDays === undefined
+                ? current.advanceReminderDays
+                : patch.advanceReminderDays,
+            color: patch.color === undefined ? current.color : patch.color,
+            visibility: patch.visibility ?? current.visibility,
+            version: current.version + 1,
+            updatedAt: now,
           })
-          materialised.push(created)
-        }
-        return materialised
-      })
+        })
 
-    /**
-     * The household-scoped materialiser the sweep calls (#61).
-     *
-     * No viewer: the sweep is a system actor (ADR-0005 §8), so it reads every
-     * live occasion in the household and creates each advance reminder under
-     * the **occasion's own owner**, copying the occasion's visibility. That is
-     * the same own-or-shared rule the user-facing read applies — a shared
-     * occasion's reminder is shared (any member sees it), a private one's is
-     * private — without inventing a viewer and without a cross-household read.
-     *
-     * Dedupe is one read over the household's occasion-linked reminders in the
-     * fire window (tombstones included, so a deleted reminder stays deleted),
-     * rather than one lookup per draft on every tick. `limit` caps creates per
-     * tick; anything skipped is still due on the next tick, so nothing is lost.
-     */
-    /** A stable key for "this occasion occurrence already has its reminder". */
-    const materialiseKey = (
-      householdId: string,
-      occasionId: string,
-      fireAt: string
-    ): string => `${householdId}:${occasionId}:${new Date(fireAt).toISOString()}`
+      const sameOccasion = (a: Occasion, b: Occasion): boolean =>
+        a.title === b.title &&
+        a.originDate === b.originDate &&
+        a.timeZone === b.timeZone &&
+        a.yearly === b.yearly &&
+        a.advanceReminderDays === b.advanceReminderDays &&
+        a.color === b.color &&
+        a.visibility === b.visibility &&
+        a.preparationTaskId === b.preparationTaskId
 
-    /**
-     * The window's fire instants are 09:00 in each occasion's own zone, so a
-     * local date can be up to a day away from its UTC date. Two days of slack
-     * either side makes the dedupe read a superset of the drafts.
-     */
-    const windowInstants = (range: OccasionRange): { readonly from: string; readonly to: string } => ({
-      from: shiftDay(range.from, -2),
-      to: shiftDay(range.to, 2)
-    })
+      const update = (
+        viewer: OccasionViewer,
+        input: Schema.Schema.Type<typeof OccasionUpdateInput>,
+        now: string = new Date().toISOString(),
+      ): Effect.Effect<Occasion, OccasionServiceError> =>
+        Effect.gen(function* () {
+          const replayed = yield* appliedMutation(
+            viewer,
+            input.clientMutationId,
+          )
+          if (Option.isSome(replayed)) {
+            if (
+              reusedMutationId(replayed.value, {
+                entityType: 'occasion',
+                id: input.id,
+              })
+            ) {
+              return yield* reusedMutationIdError(input.id)
+            }
+            return yield* readOccasion(viewer, input.id, true)
+          }
 
-    /** Create the drafts that have no row (or tombstone) yet, up to `limit`. */
-    const createDrafts = (input: {
-      readonly householdId: HouseholdId
-      readonly rows: ReadonlyArray<Occasion>
-      readonly range: OccasionRange
-      readonly known: Set<string>
-      readonly limit: number
-    }): Effect.Effect<ReadonlyArray<Reminder>, ReminderServiceError> =>
-      Effect.gen(function*() {
-        const drafts = occasionAdvanceReminders({ occasions: input.rows, range: input.range })
-        const byId = new Map(input.rows.map((row) => [row.id as string, row]))
-        const created: Array<Reminder> = []
-        for (const draft of drafts) {
-          if (created.length >= input.limit) break
-          const fireAt = new Date(draft.fireAt).toISOString()
-          const key = materialiseKey(input.householdId, draft.occasionId, fireAt)
-          if (input.known.has(key)) continue
-          const source = byId.get(draft.occasionId)
-          if (source === undefined) continue
-          const reminder = yield* reminders.create(
-            {
-              userId: source.ownerId,
-              householdId: input.householdId,
-              timeZone: source.timeZone
-            },
-            {
+          for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
+            const current = yield* readOccasion(viewer, input.id, false)
+            const next = yield* patchOccasion(viewer, current, input.patch, now)
+            if (sameOccasion(current, next)) return current
+            const applied = yield* commitOccasion({
+              viewer,
+              state: occasionState(next),
+              expectedVersion: current.version,
+              clientMutationId: input.clientMutationId,
+              now,
+            })
+            if (applied) return next
+          }
+          return yield* Effect.fail(new OccasionConflict({ id: input.id }))
+        })
+
+      const deleteOccasion = (
+        viewer: OccasionViewer,
+        input: Schema.Schema.Type<typeof OccasionMutationInput>,
+        now: string = new Date().toISOString(),
+      ): Effect.Effect<Occasion, OccasionServiceError> =>
+        Effect.gen(function* () {
+          const replayed = yield* appliedMutation(
+            viewer,
+            input.clientMutationId,
+          )
+          if (Option.isSome(replayed)) {
+            if (
+              reusedMutationId(replayed.value, {
+                entityType: 'occasion',
+                id: input.id,
+              })
+            ) {
+              return yield* reusedMutationIdError(input.id)
+            }
+            return yield* readOccasion(viewer, input.id, true)
+          }
+
+          for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
+            const current = yield* readOccasion(viewer, input.id, false)
+            const next = new Occasion({
+              ...current,
+              deletedAt: now,
+              version: current.version + 1,
+              updatedAt: now,
+            })
+            const applied = yield* commitOccasion({
+              viewer,
+              state: occasionState(next),
+              expectedVersion: current.version,
+              clientMutationId: input.clientMutationId,
+              now,
+              op: 'delete',
+            })
+            if (applied) return next
+          }
+          return yield* Effect.fail(new OccasionConflict({ id: input.id }))
+        })
+
+      const list = (
+        viewer: OccasionViewer,
+      ): Effect.Effect<ReadonlyArray<Occasion>, OccasionServiceError> =>
+        visibleOccasions(viewer)
+
+      const occurrences = (
+        viewer: OccasionViewer,
+        input: Schema.Schema.Type<typeof OccasionOccurrenceQuery>,
+      ): Effect.Effect<
+        ReadonlyArray<OccasionOccurrenceShape>,
+        OccasionServiceError
+      > =>
+        Effect.gen(function* () {
+          yield* validateRange(input)
+          const rows = yield* visibleSources(viewer)
+          return occasionOccurrences({ occasions: rows, range: input })
+        })
+
+      const advanceReminders = (
+        viewer: OccasionViewer,
+        input: Schema.Schema.Type<typeof OccasionOccurrenceQuery>,
+      ): Effect.Effect<
+        ReadonlyArray<OccasionAdvanceReminder>,
+        OccasionServiceError
+      > =>
+        Effect.gen(function* () {
+          yield* validateRange(input)
+          const rows = yield* visibleSources(viewer)
+          return occasionAdvanceReminders({ occasions: rows, range: input })
+        })
+
+      /**
+       * Turn the due advance reminders into real reminder rows.
+       *
+       * The write goes through `ReminderService.create`, so the reminder lands on
+       * the #34 one-batch version/feed/ledger path and travels on `/sync/pull` to
+       * the other household member exactly like any other reminder.
+       *
+       * Idempotency is a lookup by the flattened link plus the exact fire instant
+       * (a tombstone counts, so a deleted reminder is not resurrected), backed by
+       * the deterministic `clientMutationId` that makes a retried create replay.
+       * No unique index: the lookup is the durable key, and the ledger alone
+       * cannot be the guard because `applied_mutations` is pruned after 90 days.
+       */
+      const materialiseReminders = (
+        viewer: OccasionViewer,
+        input: Schema.Schema.Type<typeof OccasionOccurrenceQuery>,
+      ): Effect.Effect<
+        ReadonlyArray<Reminder>,
+        OccasionServiceError | ReminderServiceError
+      > =>
+        Effect.gen(function* () {
+          yield* validateRange(input)
+          const rows = yield* visibleOccasions(viewer)
+          const drafts = occasionAdvanceReminders({
+            occasions: rows,
+            range: input,
+          })
+          const byId = new Map(rows.map(row => [row.id as string, row]))
+          const materialised: Array<Reminder> = []
+          for (const draft of drafts) {
+            // The stored instant is canonical UTC with milliseconds; the pure
+            // projection emits Temporal's shorter form, so normalise before the
+            // lookup or every call would miss and fall through to create.
+            const fireAt = new Date(draft.fireAt).toISOString()
+            const existing = yield* reminderRepo
+              .findOccasionByFireAt({
+                householdId: viewer.householdId,
+                occasionId: draft.occasionId,
+                fireAt,
+              })
+              .pipe(Effect.orDie)
+            if (Option.isSome(existing)) {
+              // A tombstone means the owner removed this occurrence's reminder.
+              if (existing.value.deletedAt === null)
+                materialised.push(existing.value)
+              continue
+            }
+            const source = byId.get(draft.occasionId)
+            const created = yield* reminders.create(viewer, {
               clientMutationId: `occasion-advance:${draft.reminderKey}`,
               title: draft.title,
-              kind: "general",
-              repeat: { _tag: "once" },
+              kind: 'general',
+              repeat: { _tag: 'once' },
               fireAt: draft.fireAt,
               offsetMinutes: draft.advanceDays * 24 * 60,
               link: draft.link,
               timeZone: draft.timeZone,
-              visibility: source.visibility
-            }
-          )
-          input.known.add(key)
-          created.push(reminder)
-        }
-        return created
-      })
-
-    const materialiseForHousehold = (input: {
-      readonly householdId: HouseholdId
-      readonly range: OccasionRange
-      readonly limit?: number
-    }): Effect.Effect<ReadonlyArray<Reminder>, OccasionServiceError | ReminderServiceError> =>
-      Effect.gen(function*() {
-        yield* validateRange(input.range)
-        const rows = yield* occasions.listByHousehold(input.householdId).pipe(Effect.orDie)
-        const existing = yield* reminderRepo.listOccasionLinkedInRange({
-          householdId: input.householdId,
-          ...windowInstants(input.range),
-          limit: MATERIALISE_SCAN_LIMIT
-        }).pipe(Effect.orDie)
-        const known = new Set(
-          existing.map((row) => materialiseKey(row.householdId, row.occasionId, row.fireAt))
-        )
-        return yield* createDrafts({
-          householdId: input.householdId,
-          rows,
-          range: input.range,
-          known,
-          limit: Math.max(1, input.limit ?? MATERIALISE_LIMIT)
+              visibility: resolveCreateVisibility(
+                'reminder',
+                source?.visibility,
+              ),
+            })
+            materialised.push(created)
+          }
+          return materialised
         })
+
+      /**
+       * The household-scoped materialiser the sweep calls (#61).
+       *
+       * No viewer: the sweep is a system actor (ADR-0005 §8), so it reads every
+       * live occasion in the household and creates each advance reminder under
+       * the **occasion's own owner**, copying the occasion's visibility. That is
+       * the same own-or-shared rule the user-facing read applies — a shared
+       * occasion's reminder is shared (any member sees it), a private one's is
+       * private — without inventing a viewer and without a cross-household read.
+       *
+       * Dedupe is one read over the household's occasion-linked reminders in the
+       * fire window (tombstones included, so a deleted reminder stays deleted),
+       * rather than one lookup per draft on every tick. `limit` caps creates per
+       * tick; anything skipped is still due on the next tick, so nothing is lost.
+       */
+      /** A stable key for "this occasion occurrence already has its reminder". */
+      const materialiseKey = (
+        householdId: string,
+        occasionId: string,
+        fireAt: string,
+      ): string =>
+        `${householdId}:${occasionId}:${new Date(fireAt).toISOString()}`
+
+      /**
+       * The window's fire instants are 09:00 in each occasion's own zone, so a
+       * local date can be up to a day away from its UTC date. Two days of slack
+       * either side makes the dedupe read a superset of the drafts.
+       */
+      const windowInstants = (
+        range: OccasionRange,
+      ): { readonly from: string; readonly to: string } => ({
+        from: shiftDay(range.from, -2),
+        to: shiftDay(range.to, 2),
       })
 
-    /**
-     * The sweep's materialisation pass (#61): every household's due advance
-     * reminders, in one discovery read plus one indexed dedupe read per
-     * household that actually has due drafts.
-     *
-     * `listAdvanceReminderSources` finds the occasions across households without
-     * scanning reminder rows; each household's dedupe read is scoped to its
-     * `household_id` index and includes tombstones, so a deleted reminder is not
-     * resurrected. `limit` bounds creates for the whole tick; the rest are still
-     * due on the next one.
-     */
-    const materialiseDue = (input: {
-      readonly range: OccasionRange
-      readonly limit?: number
-    }): Effect.Effect<ReadonlyArray<Reminder>, OccasionServiceError | ReminderServiceError> =>
-      Effect.gen(function*() {
-        yield* validateRange(input.range)
-        const sources = yield* occasions
-          .listAdvanceReminderSources(MATERIALISE_SCAN_LIMIT)
-          .pipe(Effect.orDie)
-        if (sources.length === 0) return []
+      /** Create the drafts that have no row (or tombstone) yet, up to `limit`. */
+      const createDrafts = (input: {
+        readonly householdId: HouseholdId
+        readonly rows: ReadonlyArray<Occasion>
+        readonly range: OccasionRange
+        readonly known: Set<string>
+        readonly limit: number
+      }): Effect.Effect<ReadonlyArray<Reminder>, ReminderServiceError> =>
+        Effect.gen(function* () {
+          const drafts = occasionAdvanceReminders({
+            occasions: input.rows,
+            range: input.range,
+          })
+          const byId = new Map(input.rows.map(row => [row.id as string, row]))
+          const created: Array<Reminder> = []
+          for (const draft of drafts) {
+            if (created.length >= input.limit) break
+            const fireAt = new Date(draft.fireAt).toISOString()
+            const key = materialiseKey(
+              input.householdId,
+              draft.occasionId,
+              fireAt,
+            )
+            if (input.known.has(key)) continue
+            const source = byId.get(draft.occasionId)
+            if (source === undefined) continue
+            const reminder = yield* reminders.create(
+              {
+                userId: source.ownerId,
+                householdId: input.householdId,
+                timeZone: source.timeZone,
+              },
+              {
+                clientMutationId: `occasion-advance:${draft.reminderKey}`,
+                title: draft.title,
+                kind: 'general',
+                repeat: { _tag: 'once' },
+                fireAt: draft.fireAt,
+                offsetMinutes: draft.advanceDays * 24 * 60,
+                link: draft.link,
+                timeZone: draft.timeZone,
+                visibility: source.visibility,
+              },
+            )
+            input.known.add(key)
+            created.push(reminder)
+          }
+          return created
+        })
 
-        const byHousehold = new Map<string, Array<Occasion>>()
-        for (const row of sources) {
-          const group = byHousehold.get(row.householdId) ?? []
-          group.push(row)
-          byHousehold.set(row.householdId, group)
-        }
-
-        const limit = Math.max(1, input.limit ?? MATERIALISE_LIMIT)
-        const materialised: Array<Reminder> = []
-        for (const [householdId, rows] of byHousehold) {
-          if (materialised.length >= limit) break
-          // Scoped by household so the read uses the existing household index;
-          // tombstones are included so a deleted reminder stays deleted.
-          const existing = yield* reminderRepo.listOccasionLinkedInRange({
-            householdId,
-            ...windowInstants(input.range),
-            limit: MATERIALISE_SCAN_LIMIT
-          }).pipe(Effect.orDie)
+      const materialiseForHousehold = (input: {
+        readonly householdId: HouseholdId
+        readonly range: OccasionRange
+        readonly limit?: number
+      }): Effect.Effect<
+        ReadonlyArray<Reminder>,
+        OccasionServiceError | ReminderServiceError
+      > =>
+        Effect.gen(function* () {
+          yield* validateRange(input.range)
+          const rows = yield* occasions
+            .listByHousehold(input.householdId)
+            .pipe(Effect.orDie)
+          const existing = yield* reminderRepo
+            .listOccasionLinkedInRange({
+              householdId: input.householdId,
+              ...windowInstants(input.range),
+              limit: MATERIALISE_SCAN_LIMIT,
+            })
+            .pipe(Effect.orDie)
           const known = new Set(
-            existing.map((row) => materialiseKey(row.householdId, row.occasionId, row.fireAt))
+            existing.map(row =>
+              materialiseKey(row.householdId, row.occasionId, row.fireAt),
+            ),
           )
-          const created = yield* createDrafts({
-            householdId: householdId as HouseholdId,
+          return yield* createDrafts({
+            householdId: input.householdId,
             rows,
             range: input.range,
             known,
-            limit: limit - materialised.length
+            limit: Math.max(1, input.limit ?? MATERIALISE_LIMIT),
           })
-          materialised.push(...created)
-        }
-        return materialised
-      })
-
-    /**
-     * Replay guard for preparation: the ledger row names the task this
-     * mutation created. The occasion is re-read (its link may have been
-     * replaced by a later preparation), so the response is current state.
-     */
-    const replayPreparation = (
-      viewer: OccasionViewer,
-      input: Schema.Schema.Type<typeof OccasionPrepareInput>
-    ): Effect.Effect<Option.Option<OccasionPreparationShape>, OccasionServiceError> =>
-      Effect.gen(function*() {
-        const row = yield* appliedMutation(viewer, input.clientMutationId)
-        if (Option.isNone(row)) return Option.none()
-        if (reusedMutationId(row.value, { entityType: "task" })) {
-          return yield* reusedMutationIdError(row.value.entityId)
-        }
-        const occasion = yield* readOccasion(viewer, input.id, true)
-        const taskId = (occasion.preparationTaskId ?? row.value.entityId) as TaskId
-        const found = yield* tasks.findById(taskId).pipe(Effect.orDie)
-        if (Option.isNone(found)) {
-          // The linked task was hard-purged; treat it as absent so the caller
-          // can prepare again instead of failing the retry forever.
-          return Option.none()
-        }
-        return Option.some({
-          occasion,
-          task: found.value,
-          created: false
         })
-      })
 
-    const prepareTask = (
-      viewer: OccasionViewer,
-      input: Schema.Schema.Type<typeof OccasionPrepareInput>,
-      now: string = new Date().toISOString()
-    ): Effect.Effect<OccasionPreparationShape, OccasionServiceError> =>
-      Effect.gen(function*() {
-        const replayed = yield* replayPreparation(viewer, input)
-        if (Option.isSome(replayed)) return replayed.value
+      /**
+       * The sweep's materialisation pass (#61): every household's due advance
+       * reminders, in one discovery read plus one indexed dedupe read per
+       * household that actually has due drafts.
+       *
+       * `listAdvanceReminderSources` finds the occasions across households without
+       * scanning reminder rows; each household's dedupe read is scoped to its
+       * `household_id` index and includes tombstones, so a deleted reminder is not
+       * resurrected. `limit` bounds creates for the whole tick; the rest are still
+       * due on the next one.
+       */
+      const materialiseDue = (input: {
+        readonly range: OccasionRange
+        readonly limit?: number
+      }): Effect.Effect<
+        ReadonlyArray<Reminder>,
+        OccasionServiceError | ReminderServiceError
+      > =>
+        Effect.gen(function* () {
+          yield* validateRange(input.range)
+          const sources = yield* occasions
+            .listAdvanceReminderSources(MATERIALISE_SCAN_LIMIT)
+            .pipe(Effect.orDie)
+          if (sources.length === 0) return []
 
-        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-          const current = yield* readOccasion(viewer, input.id, false)
-
-          // A live preparation task is the idempotent answer to a second tap.
-          if (current.preparationTaskId !== null) {
-            const linked = yield* tasks.findById(current.preparationTaskId).pipe(Effect.orDie)
-            if (Option.isSome(linked) && linked.value.deletedAt === null) {
-              return { occasion: current, task: linked.value, created: false }
-            }
+          const byHousehold = new Map<string, Array<Occasion>>()
+          for (const row of sources) {
+            const group = byHousehold.get(row.householdId) ?? []
+            group.push(row)
+            byHousehold.set(row.householdId, group)
           }
 
-          const occurrenceDate =
-            input.occurrenceDate ??
-            nextOccasionOccurrence(current, todayOf(viewer, now))?.date
-          if (occurrenceDate === undefined) {
-            return yield* invalid(
-              "occurrenceDate",
-              "this occasion has no upcoming occurrence to prepare for"
+          const limit = Math.max(1, input.limit ?? MATERIALISE_LIMIT)
+          const materialised: Array<Reminder> = []
+          for (const [householdId, rows] of byHousehold) {
+            if (materialised.length >= limit) break
+            // Scoped by household so the read uses the existing household index;
+            // tombstones are included so a deleted reminder stays deleted.
+            const existing = yield* reminderRepo
+              .listOccasionLinkedInRange({
+                householdId,
+                ...windowInstants(input.range),
+                limit: MATERIALISE_SCAN_LIMIT,
+              })
+              .pipe(Effect.orDie)
+            const known = new Set(
+              existing.map(row =>
+                materialiseKey(row.householdId, row.occasionId, row.fireAt),
+              ),
             )
+            const created = yield* createDrafts({
+              householdId: householdId as HouseholdId,
+              rows,
+              range: input.range,
+              known,
+              limit: limit - materialised.length,
+            })
+            materialised.push(...created)
           }
-          if (!validLocalDate(occurrenceDate)) {
-            return yield* invalid("occurrenceDate", "the occurrence must be a real calendar date")
-          }
-          if (!isOccasionOccurrence(current, occurrenceDate)) {
-            return yield* invalid(
-              "occurrenceDate",
-              "the preparation date is not an occurrence of this occasion"
-            )
-          }
+          return materialised
+        })
 
-          const dueDate =
-            input.dueDate ??
-            occasionAdvanceReminderDate(current, occurrenceDate) ??
-            (occurrenceDate as LocalDate)
-          if (!validLocalDate(dueDate)) {
-            return yield* invalid("dueDate", "the task due date must be a real calendar date")
+      /**
+       * Replay guard for preparation: the ledger row names the task this
+       * mutation created. The occasion is re-read (its link may have been
+       * replaced by a later preparation), so the response is current state.
+       */
+      const replayPreparation = (
+        viewer: OccasionViewer,
+        input: Schema.Schema.Type<typeof OccasionPrepareInput>,
+      ): Effect.Effect<
+        Option.Option<OccasionPreparationShape>,
+        OccasionServiceError
+      > =>
+        Effect.gen(function* () {
+          const row = yield* appliedMutation(viewer, input.clientMutationId)
+          if (Option.isNone(row)) return Option.none()
+          if (reusedMutationId(row.value, { entityType: 'task' })) {
+            return yield* reusedMutationIdError(row.value.entityId)
           }
-
-          const title = (input.title ?? occasionPreparationTaskTitle(current.title)).trim()
-          if (title === "") {
-            return yield* invalid("title", "a preparation task needs a title")
+          const occasion = yield* readOccasion(viewer, input.id, true)
+          const taskId = (occasion.preparationTaskId ??
+            row.value.entityId) as TaskId
+          const found = yield* tasks.findById(taskId).pipe(Effect.orDie)
+          if (Option.isNone(found)) {
+            // The linked task was hard-purged; treat it as absent so the caller
+            // can prepare again instead of failing the retry forever.
+            return Option.none()
           }
-
-          const task = new Task({
-            id: uuidV7() as TaskId,
-            type: "task" as const,
-            title,
-            description: null,
-            status: "todo" as const,
-            priority: "medium" as const,
-            dueAt: null,
-            dueDate,
-            timeZone: current.timeZone,
-            projectId: null,
-            tagIds: [],
-            color: current.color,
-            recurrence: null,
-            recurrenceMode: null,
-            startedAt: null,
-            completedAt: null,
-            ownerId: viewer.userId,
-            householdId: viewer.householdId,
-            visibility: current.visibility,
-            createdAt: now,
-            updatedAt: now,
-            version: 1,
-            deletedAt: null
+          return Option.some({
+            occasion,
+            task: found.value,
+            created: false,
           })
-          const next = new Occasion({
-            ...current,
-            preparationTaskId: task.id,
-            version: current.version + 1,
-            updatedAt: now
-          })
+        })
 
-          // The replay guard above already returned the ledger's task. Reaching
-          // here with the mutation recorded means that task was hard-purged;
-          // refuse rather than replacing a recorded mutation with a new row.
-          const prior = yield* appliedMutation(viewer, input.clientMutationId)
-          if (Option.isSome(prior)) {
-            if (reusedMutationId(prior.value, { entityType: "task" })) {
-              return yield* reusedMutationIdError(prior.value.entityId)
+      const prepareTask = (
+        viewer: OccasionViewer,
+        input: Schema.Schema.Type<typeof OccasionPrepareInput>,
+        now: string = new Date().toISOString(),
+      ): Effect.Effect<OccasionPreparationShape, OccasionServiceError> =>
+        Effect.gen(function* () {
+          const replayed = yield* replayPreparation(viewer, input)
+          if (Option.isSome(replayed)) return replayed.value
+
+          for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
+            const current = yield* readOccasion(viewer, input.id, false)
+
+            // A live preparation task is the idempotent answer to a second tap.
+            if (current.preparationTaskId !== null) {
+              const linked = yield* tasks
+                .findById(current.preparationTaskId)
+                .pipe(Effect.orDie)
+              if (Option.isSome(linked) && linked.value.deletedAt === null) {
+                return { occasion: current, task: linked.value, created: false }
+              }
             }
-            return yield* invalid(
-              "clientMutationId",
-              "this mutation already prepared a task that no longer exists"
-            )
-          }
 
-          const statements = [
-            // 1. The occasion CAS that links the new task.
-            sync.writeEntity({
-              state: occasionState(next),
-              expectedVersion: current.version
-            }),
-            sync.appendFeed({
+            const occurrenceDate =
+              input.occurrenceDate ??
+              nextOccasionOccurrence(current, todayOf(viewer, now))?.date
+            if (occurrenceDate === undefined) {
+              return yield* invalid(
+                'occurrenceDate',
+                'this occasion has no upcoming occurrence to prepare for',
+              )
+            }
+            if (!validLocalDate(occurrenceDate)) {
+              return yield* invalid(
+                'occurrenceDate',
+                'the occurrence must be a real calendar date',
+              )
+            }
+            if (!isOccasionOccurrence(current, occurrenceDate)) {
+              return yield* invalid(
+                'occurrenceDate',
+                'the preparation date is not an occurrence of this occasion',
+              )
+            }
+
+            const dueDate =
+              input.dueDate ??
+              occasionAdvanceReminderDate(current, occurrenceDate) ??
+              (occurrenceDate as LocalDate)
+            if (!validLocalDate(dueDate)) {
+              return yield* invalid(
+                'dueDate',
+                'the task due date must be a real calendar date',
+              )
+            }
+
+            const title = (
+              input.title ?? occasionPreparationTaskTitle(current.title)
+            ).trim()
+            if (title === '') {
+              return yield* invalid('title', 'a preparation task needs a title')
+            }
+
+            const task = new Task({
+              id: uuidV7() as TaskId,
+              type: 'task' as const,
+              title,
+              description: null,
+              status: 'todo' as const,
+              priority: 'medium' as const,
+              dueAt: null,
+              dueDate,
+              timeZone: current.timeZone,
+              projectId: null,
+              tagIds: [],
+              color: current.color,
+              recurrence: null,
+              recurrenceMode: null,
+              startedAt: null,
+              completedAt: null,
+              ownerId: viewer.userId,
               householdId: viewer.householdId,
-              entityType: "occasion",
-              entityId: next.id,
-              op: "upsert",
-              version: next.version,
-              updatedAt: next.updatedAt,
-              ownerId: next.ownerId,
-              visibility: next.visibility
-            }),
-            // 2. The task insert, gated on the occasion reaching exactly the
-            //    version/link this batch wrote. A lost CAS inserts nothing.
-            tasks.insertStatementGated(
-              task,
-              sql`EXISTS (
+              visibility: current.visibility,
+              createdAt: now,
+              updatedAt: now,
+              version: 1,
+              deletedAt: null,
+            })
+            const next = new Occasion({
+              ...current,
+              preparationTaskId: task.id,
+              version: current.version + 1,
+              updatedAt: now,
+            })
+
+            // The replay guard above already returned the ledger's task. Reaching
+            // here with the mutation recorded means that task was hard-purged;
+            // refuse rather than replacing a recorded mutation with a new row.
+            const prior = yield* appliedMutation(viewer, input.clientMutationId)
+            if (Option.isSome(prior)) {
+              if (reusedMutationId(prior.value, { entityType: 'task' })) {
+                return yield* reusedMutationIdError(prior.value.entityId)
+              }
+              return yield* invalid(
+                'clientMutationId',
+                'this mutation already prepared a task that no longer exists',
+              )
+            }
+
+            const statements = [
+              // 1. The occasion CAS that links the new task.
+              sync.writeEntity({
+                state: occasionState(next),
+                expectedVersion: current.version,
+              }),
+              sync.appendFeed({
+                householdId: viewer.householdId,
+                entityType: 'occasion',
+                entityId: next.id,
+                op: 'upsert',
+                version: next.version,
+                updatedAt: next.updatedAt,
+                ownerId: next.ownerId,
+                visibility: next.visibility,
+              }),
+              // 2. The task insert, gated on the occasion reaching exactly the
+              //    version/link this batch wrote. A lost CAS inserts nothing.
+              tasks.insertStatementGated(
+                task,
+                sql`EXISTS (
                 SELECT 1 FROM occasions
                 WHERE id = ${next.id}
                   AND version = ${next.version}
                   AND preparation_task_id = ${task.id}
                   AND deleted_at IS NULL
-              )`
-            ),
-            sync.appendFeed({
-              householdId: viewer.householdId,
-              entityType: "task",
-              entityId: task.id,
-              op: "upsert",
-              version: task.version,
-              updatedAt: task.updatedAt,
-              ownerId: task.ownerId,
-              visibility: task.visibility
-            }),
-            sync.recordApplied({
-              clientMutationId: input.clientMutationId,
-              householdId: viewer.householdId,
-              entityType: "task",
-              entityId: task.id,
-              version: task.version,
-              createdAt: now
-            })
-          ]
-          yield* sync.commit(statements).pipe(Effect.orDie)
+              )`,
+              ),
+              sync.appendFeed({
+                householdId: viewer.householdId,
+                entityType: 'task',
+                entityId: task.id,
+                op: 'upsert',
+                version: task.version,
+                updatedAt: task.updatedAt,
+                ownerId: task.ownerId,
+                visibility: task.visibility,
+              }),
+              sync.recordApplied({
+                clientMutationId: input.clientMutationId,
+                householdId: viewer.householdId,
+                entityType: 'task',
+                entityId: task.id,
+                version: task.version,
+                createdAt: now,
+              }),
+            ]
+            yield* sync.commit(statements).pipe(Effect.orDie)
 
-          const applied = yield* appliedMutation(viewer, input.clientMutationId)
-          if (Option.isSome(applied)) {
-            return { occasion: next, task, created: true }
+            const applied = yield* appliedMutation(
+              viewer,
+              input.clientMutationId,
+            )
+            if (Option.isSome(applied)) {
+              return { occasion: next, task, created: true }
+            }
+            // The CAS lost: re-read and try again with a fresh occurrence/task.
           }
-          // The CAS lost: re-read and try again with a fresh occurrence/task.
-        }
-        return yield* Effect.fail(new OccasionConflict({ id: input.id }))
-      })
+          return yield* Effect.fail(new OccasionConflict({ id: input.id }))
+        })
 
-    return {
-      create,
-      get: detail,
-      update,
-      delete: deleteOccasion,
-      list,
-      occurrences,
-      advanceReminders,
-      materialiseReminders,
-      materialiseForHousehold,
-      materialiseDue,
-      prepareTask
-    } as const
-  })
-}) {}
+      return {
+        create,
+        get: detail,
+        update,
+        delete: deleteOccasion,
+        list,
+        occurrences,
+        advanceReminders,
+        materialiseReminders,
+        materialiseForHousehold,
+        materialiseDue,
+        prepareTask,
+      } as const
+    }),
+  },
+) {}
 
-export const OccasionServiceLive = Layer.effect(OccasionService, OccasionService.make).pipe(
+export const OccasionServiceLive = Layer.effect(
+  OccasionService,
+  OccasionService.make,
+).pipe(
   Layer.provide(OccasionRepoLive),
   Layer.provide(TaskRepoLive),
   Layer.provide(ReminderRepoLive),
   Layer.provide(ReminderServiceLive),
-  Layer.provide(SyncRepoLive)
+  Layer.provide(SyncRepoLive),
 )

@@ -1,20 +1,20 @@
-import { Context, Effect, Layer, Option } from "effect"
-import { D1Client } from "@effect/sql-d1"
-import { SqlClient, Statement } from "effect/sql"
+import { Context, Effect, Layer, Option } from 'effect'
+import { D1Client } from '@effect/sql-d1'
+import { SqlClient, Statement } from 'effect/sql'
 import {
   defaultVisibilityFor,
   type SyncEntityRow,
   type SyncEntityType,
   type SyncOp,
-  type Visibility
-} from "@tali/domain"
+  type Visibility,
+} from '@tali/domain'
 import {
   makeSyncRegistry,
   type SyncEntityDefinition,
   type SyncEntityState,
   type SyncIndexInput,
-  type SyncRegistry
-} from "./sync-registry.js"
+  type SyncRegistry,
+} from './sync-registry.js'
 
 /**
  * D1-backed persistence for the sync engine (tickets #18, #34).
@@ -107,7 +107,10 @@ const MAX_IN_PARAMS = 90
  */
 const MAX_COMPOUND_SELECT_TERMS = 5
 
-const chunked = <A>(values: ReadonlyArray<A>, size: number): ReadonlyArray<ReadonlyArray<A>> => {
+const chunked = <A>(
+  values: ReadonlyArray<A>,
+  size: number,
+): ReadonlyArray<ReadonlyArray<A>> => {
   const chunks: Array<ReadonlyArray<A>> = []
   for (let index = 0; index < values.length; index += size) {
     chunks.push(values.slice(index, index + size))
@@ -121,7 +124,7 @@ const toEntityRow = (state: SyncEntityState): SyncEntityRow => ({
   version: state.version,
   updatedAt: state.updatedAt,
   deletedAt: state.deletedAt,
-  data: state.data
+  data: state.data,
 })
 
 /**
@@ -129,17 +132,23 @@ const toEntityRow = (state: SyncEntityState): SyncEntityRow => ({
  * than blindly to `shared` (ADR-0011). A corrupt/legacy value on a
  * private-by-default aggregate must not become readable by the partner.
  */
-const storedVisibility = (entityType: SyncEntityType, value: unknown): Visibility =>
-  value === "private" || value === "shared" ? value : defaultVisibilityFor(entityType)
+const storedVisibility = (
+  entityType: SyncEntityType,
+  value: unknown,
+): Visibility =>
+  value === 'private' || value === 'shared'
+    ? value
+    : defaultVisibilityFor(entityType)
 
-export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
-  make: Effect.gen(function*() {
+export class SyncRepo extends Context.Service<SyncRepo>()('SyncRepo', {
+  make: Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const d1 = yield* D1Client.D1Client
     const registry: SyncRegistry = makeSyncRegistry(sql)
 
-    const definition = (entityType: SyncEntityType): SyncEntityDefinition | undefined =>
-      registry.get(entityType)
+    const definition = (
+      entityType: SyncEntityType,
+    ): SyncEntityDefinition | undefined => registry.get(entityType)
 
     /**
      * Batch-hydrate entity rows behind feed/push references. Rows live in
@@ -148,7 +157,7 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
      * hold far more refs than D1 allows bound parameters in one statement.
      */
     const findEntities = (refs: ReadonlyArray<EntityRef>) =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const byType = new Map<SyncEntityType, Set<string>>()
         for (const ref of refs) {
           const ids = byType.get(ref.entityType) ?? new Set<string>()
@@ -162,20 +171,25 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
           for (const chunk of chunked([...ids], MAX_IN_PARAMS)) {
             const rows = yield* sql<Record<string, unknown>>`
               SELECT ${sql.literal(def.select)} FROM ${sql.literal(def.table)}
-              WHERE ${sql.in("id", chunk)}
+              WHERE ${sql.in('id', chunk)}
             `
             for (const row of rows) {
               const id = String(row.id)
               states.set(entityKey({ entityType, entityId: id }), {
                 entityType,
                 entityId: id,
-                householdId: typeof row.householdId === "string" ? row.householdId : null,
-                ownerId: typeof row.ownerId === "string" ? row.ownerId : "",
+                householdId:
+                  typeof row.householdId === 'string' ? row.householdId : null,
+                ownerId: typeof row.ownerId === 'string' ? row.ownerId : '',
                 visibility: storedVisibility(entityType, row.visibility),
-                version: typeof row.version === "number" ? row.version : Number(row.version ?? 0),
-                updatedAt: String(row.updatedAt ?? ""),
-                deletedAt: typeof row.deletedAt === "string" ? row.deletedAt : null,
-                data: def.hydrate(row)
+                version:
+                  typeof row.version === 'number'
+                    ? row.version
+                    : Number(row.version ?? 0),
+                updatedAt: String(row.updatedAt ?? ''),
+                deletedAt:
+                  typeof row.deletedAt === 'string' ? row.deletedAt : null,
+                data: def.hydrate(row),
               })
             }
           }
@@ -194,7 +208,7 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
      * the push path already trusts.
      */
     const findChildIds = (refs: ReadonlyArray<EntityRef>) =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const byParent = new Map<SyncEntityType, Set<string>>()
         for (const ref of refs) {
           const ids = byParent.get(ref.entityType) ?? new Set<string>()
@@ -214,7 +228,10 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
               WHERE ${sql.in(parent.column, chunk)}
             `
             for (const row of rows) {
-              const child: EntityRef = { entityType: def.entityType, entityId: String(row.id) }
+              const child: EntityRef = {
+                entityType: def.entityType,
+                entityId: String(row.id),
+              }
               const key = entityKey(child)
               if (seen.has(key)) continue
               seen.add(key)
@@ -234,30 +251,32 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
       readonly householdId: string
       readonly clientMutationIds: ReadonlyArray<string>
     }) =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const unique = [...new Set(input.clientMutationIds)]
         if (unique.length === 0) return new Map<string, AppliedMutation>()
         const rows: Array<AppliedRow> = []
         for (const chunk of chunked(unique, MAX_IN_PARAMS)) {
-          rows.push(...(yield* sql<AppliedRow>`
+          rows.push(
+            ...(yield* sql<AppliedRow>`
             SELECT client_mutation_id AS clientMutationId, entity_type AS entityType,
                    entity_id AS entityId, server_version AS serverVersion, seq
             FROM applied_mutations
             WHERE household_id = ${input.householdId}
-              AND ${sql.in("client_mutation_id", chunk)}
-          `))
+              AND ${sql.in('client_mutation_id', chunk)}
+          `),
+          )
         }
         return new Map(
-          rows.map((row) => [
+          rows.map(row => [
             row.clientMutationId,
             {
               clientMutationId: row.clientMutationId,
               entityType: row.entityType,
               entityId: row.entityId,
               version: row.serverVersion,
-              seq: row.seq
-            }
-          ])
+              seq: row.seq,
+            },
+          ]),
         )
       })
 
@@ -298,7 +317,7 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
       readonly offset: number
       readonly limit: number
     }) =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         // The global page can only draw rows that are inside every group's
         // `offset + limit + 1` prefix, so each chunk reads that many rows.
         const prefix = input.offset + input.limit + 1
@@ -308,26 +327,32 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
           readonly updatedAt: string
         }> = []
 
-        for (const group of chunked(registry.all(), MAX_COMPOUND_SELECT_TERMS)) {
-          const branches = group.map((def) =>
-            sql`
+        for (const group of chunked(
+          registry.all(),
+          MAX_COMPOUND_SELECT_TERMS,
+        )) {
+          const branches = group.map(
+            def =>
+              sql`
               SELECT ${def.entityType} AS entityType, id, updated_at AS updatedAt
               FROM ${sql.literal(def.table)}
               WHERE ${sql.literal(def.scope.householdId)} = ${input.householdId}
                 AND ${sql.literal(def.softDeleteColumn)} IS NULL
                 AND (${sql.literal(def.scope.ownerId)} = ${input.userId}
                   OR ${sql.literal(def.scope.visibility)} = 'shared')
-            `
+            `,
           )
-          rows.push(...(yield* sql<{
-            readonly entityType: SyncEntityType
-            readonly id: string
-            readonly updatedAt: string
-          }>`
-            ${sql.join(" UNION ALL ", false)(branches)}
+          rows.push(
+            ...(yield* sql<{
+              readonly entityType: SyncEntityType
+              readonly id: string
+              readonly updatedAt: string
+            }>`
+            ${sql.join(' UNION ALL ', false)(branches)}
             ORDER BY updatedAt ASC, entityType ASC, id ASC
             LIMIT ${prefix}
-          `))
+          `),
+          )
         }
 
         rows.sort((left, right) => {
@@ -344,26 +369,29 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
         })
         return rows
           .slice(input.offset, input.offset + input.limit + 1)
-          .map((row) => ({ entityType: row.entityType, entityId: row.id }))
+          .map(row => ({ entityType: row.entityType, entityId: row.id }))
       })
 
     /** Hydrate a page of bootstrap refs into wire rows. */
     const bootstrapEntities = (refs: ReadonlyArray<EntityRef>) =>
-      Effect.map(findEntities(refs), (states) =>
-        refs.flatMap((ref) => {
+      Effect.map(findEntities(refs), states =>
+        refs.flatMap(ref => {
           const state = states.get(entityKey(ref))
           return state === undefined ? [] : [toEntityRow(state)]
-        }))
+        }),
+      )
 
-    const minSeq = Effect.gen(function*() {
+    const minSeq = Effect.gen(function* () {
       const rows = yield* sql<{ minSeq: number | null }>`
         SELECT MIN(seq) AS minSeq FROM change_feed
       `
       const value = rows[0]?.minSeq
-      return value === null || value === undefined ? Option.none<number>() : Option.some(value)
+      return value === null || value === undefined
+        ? Option.none<number>()
+        : Option.some(value)
     })
 
-    const maxSeq = Effect.gen(function*() {
+    const maxSeq = Effect.gen(function* () {
       const rows = yield* sql<{ maxSeq: number | null }>`
         SELECT MAX(seq) AS maxSeq FROM change_feed
       `
@@ -372,7 +400,7 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
 
     /** Bound feed growth + replay memory to the 90-day window (§DP-8). */
     const prune = (cutoff: string) =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         // Keep the newest feed row even when it is older than the window: it is
         // the high-water marker that keeps `minSeq` non-empty, so a cursor that
         // predates the pruned window is still detected as stale.
@@ -394,12 +422,19 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
      * `applied_mutations`. The service then treats the entry as contended and
      * asks the client to retry (the retry re-resolves against fresh state).
      */
-    const writeEntity = ({ state, expectedVersion }: EntityWrite): Statement.Statement<unknown> => {
+    const writeEntity = ({
+      state,
+      expectedVersion,
+    }: EntityWrite): Statement.Statement<unknown> => {
       const def = registry.get(state.entityType)
       if (def === undefined) {
-        throw new Error(`sync entity type is not registered: ${state.entityType}`)
+        throw new Error(
+          `sync entity type is not registered: ${state.entityType}`,
+        )
       }
-      return expectedVersion === null ? def.insert(state) : def.update(state, expectedVersion)
+      return expectedVersion === null
+        ? def.insert(state)
+        : def.update(state, expectedVersion)
     }
 
     /**
@@ -417,7 +452,7 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
      */
     const indexStatements = (
       state: SyncEntityState,
-      change?: Omit<SyncIndexInput, "state">
+      change?: Omit<SyncIndexInput, 'state'>,
     ): ReadonlyArray<Statement.Statement<unknown>> => {
       const def = registry.get(state.entityType)
       return def?.index?.({ state, ...change }) ?? []
@@ -467,9 +502,9 @@ export class SyncRepo extends Context.Service<SyncRepo>()("SyncRepo", {
       indexStatements,
       appendFeed,
       recordApplied,
-      commit
+      commit,
     } as const
-  })
+  }),
 }) {}
 
 export const SyncRepoLive = Layer.effect(SyncRepo, SyncRepo.make)

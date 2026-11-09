@@ -1,6 +1,6 @@
-import { Context, Effect, Layer } from "effect"
-import { KDF_VERSION, type LoginKey } from "@tali/domain"
-import { constantTimeEqual, randomToken, sha256Hex } from "./bytes.js"
+import { Context, Effect, Layer } from 'effect'
+import { KDF_VERSION, type LoginKey } from '@tali/domain'
+import { constantTimeEqual, randomToken, sha256Hex } from './bytes.js'
 
 /**
  * Credential verification (ADR-0001).
@@ -43,13 +43,13 @@ export interface EnrolledCredential {
  * scanners flagging the module (an empty-string SHA-256 was flagged).
  */
 const DUMMY_CREDENTIAL: StoredCredential = {
-  credentialVerifier: "0".repeat(64),
-  credentialSalt: "0".repeat(32),
-  kdfVersion: KDF_VERSION
+  credentialVerifier: '0'.repeat(64),
+  credentialSalt: '0'.repeat(32),
+  kdfVersion: KDF_VERSION,
 }
 
 export class CredentialVerifier extends Context.Service<CredentialVerifier>()(
-  "CredentialVerifier",
+  'CredentialVerifier',
   {
     make: Effect.sync(() => {
       const digest = (salt: string, loginKey: string): Effect.Effect<string> =>
@@ -57,24 +57,31 @@ export class CredentialVerifier extends Context.Service<CredentialVerifier>()(
 
       /** Registration: mint a fresh per-user salt and store only the verifier. */
       const enroll = (loginKey: LoginKey): Effect.Effect<EnrolledCredential> =>
-        Effect.gen(function*() {
+        Effect.gen(function* () {
           const credentialSalt = randomToken(CREDENTIAL_SALT_BYTES)
           const credentialVerifier = yield* digest(credentialSalt, loginKey)
           return { credentialVerifier, credentialSalt, kdfVersion: KDF_VERSION }
         })
 
-      const verify = (loginKey: LoginKey, stored: StoredCredential): Effect.Effect<boolean> =>
-        Effect.gen(function*() {
+      const verify = (
+        loginKey: LoginKey,
+        stored: StoredCredential,
+      ): Effect.Effect<boolean> =>
+        Effect.gen(function* () {
           const candidate = yield* digest(stored.credentialSalt, loginKey)
           return constantTimeEqual(candidate, stored.credentialVerifier)
         })
 
       /** Burn the same SHA-256 + constant-time compare when the email is unknown. */
-      const verifyDummy = (loginKey: LoginKey): Effect.Effect<boolean> => verify(loginKey, DUMMY_CREDENTIAL)
+      const verifyDummy = (loginKey: LoginKey): Effect.Effect<boolean> =>
+        verify(loginKey, DUMMY_CREDENTIAL)
 
       return { enroll, verify, verifyDummy } as const
-    })
-  }
+    }),
+  },
 ) {}
 
-export const CredentialVerifierLive = Layer.effect(CredentialVerifier, CredentialVerifier.make)
+export const CredentialVerifierLive = Layer.effect(
+  CredentialVerifier,
+  CredentialVerifier.make,
+)

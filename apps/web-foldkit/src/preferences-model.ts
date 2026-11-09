@@ -11,12 +11,15 @@ import { Schema } from 'effect'
  */
 
 export const WeekStart = Schema.Literals(['saturday', 'sunday', 'monday'])
+
 export type WeekStart = typeof WeekStart.Type
 
 export const Digits = Schema.Literals(['persian', 'latin'])
+
 export type Digits = typeof Digits.Type
 
 export const CheckedItemPlacement = Schema.Literals(['inPlace', 'bottom'])
+
 export type CheckedItemPlacement = typeof CheckedItemPlacement.Type
 
 export const Preferences = Schema.Struct({
@@ -29,6 +32,7 @@ export const Preferences = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.String,
 })
+
 export type Preferences = typeof Preferences.Type
 
 export const PreferencesPatch = Schema.Struct({
@@ -38,10 +42,12 @@ export const PreferencesPatch = Schema.Struct({
   dashboardSectionOrder: Schema.optional(Schema.Array(Schema.String)),
   checkedItemPlacement: Schema.optional(CheckedItemPlacement),
 })
+
 export type PreferencesPatch = typeof PreferencesPatch.Type
 
 /** Where the value currently on screen came from. */
 export const PreferencesSource = Schema.Literals(['Default', 'Cache', 'Server'])
+
 export type PreferencesSource = typeof PreferencesSource.Type
 
 /** The three fields the display-settings form edits on one save. */
@@ -50,6 +56,7 @@ export const DisplayFields = Schema.Struct({
   weekStart: WeekStart,
   digits: Digits,
 })
+
 export type DisplayFields = typeof DisplayFields.Type
 
 /** The profile values a user who never saved preferences should see. */
@@ -62,6 +69,7 @@ export type PreferenceDefaults = Readonly<{
 export const DEFAULT_TIME_ZONE = 'Asia/Tehran'
 export const DEFAULT_WEEK_START: WeekStart = 'saturday'
 export const DEFAULT_DIGITS: Digits = 'persian'
+
 export const DEFAULT_DASHBOARD_ORDER: ReadonlyArray<string> = [
   'tasks',
   'events',

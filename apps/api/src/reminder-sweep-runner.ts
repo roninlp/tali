@@ -1,15 +1,20 @@
-import { Effect, Layer, String as Str } from "effect"
-import { D1Client } from "@effect/sql-d1"
+import { Effect, Layer, String as Str } from 'effect'
+import { D1Client } from '@effect/sql-d1'
 import {
   PushSubscriptionRepoLive,
   ReminderDispatchRepoLive,
-  SyncRepoLive
-} from "@tali/sql"
-import { type VapidConfig, PushConfig, PushGatewayLive, vapidConfigOf } from "./push-gateway.js"
-import { OccasionServiceLive } from "./occasion-service.js"
-import { ReminderServiceLive } from "./reminder-service.js"
-import { ReminderSweep, ReminderSweepLive } from "./reminder-sweep.js"
-import { FEED_RETENTION_MS } from "./sync-service.js"
+  SyncRepoLive,
+} from '@tali/sql'
+import {
+  type VapidConfig,
+  PushConfig,
+  PushGatewayLive,
+  vapidConfigOf,
+} from './push-gateway.js'
+import { OccasionServiceLive } from './occasion-service.js'
+import { ReminderServiceLive } from './reminder-service.js'
+import { ReminderSweep, ReminderSweepLive } from './reminder-sweep.js'
+import { FEED_RETENTION_MS } from './sync-service.js'
 
 /**
  * The `scheduled()` entry point's layer (ticket #61; ADR-0005 §11).
@@ -34,24 +39,28 @@ export interface SweepEnv {
 export const sweepLayer = (db: D1Database, vapid: VapidConfig | null) => {
   // `OccasionServiceLive` is the sweep's materialisation seam (#61): it turns
   // due occasion advance reminders into reminder rows before the claim.
-  const services = Layer.mergeAll(ReminderServiceLive, PushGatewayLive, OccasionServiceLive)
+  const services = Layer.mergeAll(
+    ReminderServiceLive,
+    PushGatewayLive,
+    OccasionServiceLive,
+  )
   return ReminderSweepLive.pipe(
     Layer.provide(services),
     Layer.provide(
       Layer.mergeAll(
         ReminderDispatchRepoLive,
         PushSubscriptionRepoLive,
-        SyncRepoLive
-      )
+        SyncRepoLive,
+      ),
     ),
     Layer.provide(Layer.succeed(PushConfig, vapid)),
     Layer.provide(
       D1Client.layer({
         db,
         transformQueryNames: Str.camelToSnake,
-        transformResultNames: Str.snakeToCamel
-      })
-    )
+        transformResultNames: Str.snakeToCamel,
+      }),
+    ),
   )
 }
 
@@ -76,7 +85,7 @@ const FEED_PRUNE_FALLBACK_UTC_MINUTE = 17
 export const runReminderSweep = (env: SweepEnv, now: string) =>
   Effect.runPromise(
     Effect.provide(
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const sweep = yield* ReminderSweep
         const result = yield* sweep.sweep(now)
         const at = new Date(now)
@@ -84,24 +93,26 @@ export const runReminderSweep = (env: SweepEnv, now: string) =>
           at.getUTCHours() === FEED_PRUNE_FALLBACK_UTC_HOUR &&
           at.getUTCMinutes() === FEED_PRUNE_FALLBACK_UTC_MINUTE
         ) {
-          const cutoff = new Date(at.getTime() - FEED_RETENTION_MS).toISOString()
+          const cutoff = new Date(
+            at.getTime() - FEED_RETENTION_MS,
+          ).toISOString()
           yield* sweep.pruneFeed(cutoff).pipe(
-            Effect.catch((error) =>
+            Effect.catch(error =>
               // A failed fallback must not fail the reminder tick.
               Effect.sync(() => {
                 console.error(
                   JSON.stringify({
-                    event: "feed.prune.failed",
+                    event: 'feed.prune.failed',
                     at: now,
-                    message: String(error)
-                  })
+                    message: String(error),
+                  }),
                 )
-              })
-            )
+              }),
+            ),
           )
         }
         return result
       }),
-      sweepLayer(env.DB, vapidConfigOf(env))
-    )
+      sweepLayer(env.DB, vapidConfigOf(env)),
+    ),
   )

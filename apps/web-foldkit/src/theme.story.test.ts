@@ -2,10 +2,11 @@ import { Option } from 'effect'
 import { Command, given, message, model, story } from 'foldkit/story'
 import { expect, test } from 'vitest'
 
+import { RadioGroup } from '@foldkit/ui'
+
 import { Message, update } from './main'
 import { AppRoute } from './route'
 import { modelAt } from './test-fixtures'
-import { RadioGroup } from '@foldkit/ui'
 import * as Theme from './theme'
 
 const givenTheme = (

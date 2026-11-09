@@ -1,11 +1,7 @@
-import { Schema } from "effect"
-import { Visibility } from "../common.js"
-import { HabitEntryId, HabitId, LocalDate, TimeZone } from "./common.js"
-import {
-  HabitEntryStatus,
-  HabitFrequency,
-  HabitReminderTime
-} from "./habit.js"
+import { Schema } from 'effect'
+import { Visibility } from '../common.js'
+import { HabitEntryId, HabitId, LocalDate, TimeZone } from './common.js'
+import { HabitEntryStatus, HabitFrequency, HabitReminderTime } from './habit.js'
 
 /**
  * HabitService contract (ticket #63; FR-HAB-01).
@@ -46,33 +42,42 @@ import {
 // ── Typed errors (`docs/error-model-draft.md` §2) ────────────────────────
 
 /** The habit does not exist, or is not visible to this viewer. */
-export class HabitNotFound extends Schema.TaggedError<HabitNotFound>()("HabitNotFound", {
-  id: HabitId
-}) {}
+export class HabitNotFound extends Schema.TaggedError<HabitNotFound>()(
+  'HabitNotFound',
+  {
+    id: HabitId,
+  },
+) {}
 
 /** The row exists but this viewer may not read/write it. */
-export class HabitForbidden extends Schema.TaggedError<HabitForbidden>()("HabitForbidden", {
-  id: Schema.NullOr(Schema.String),
-  reason: Schema.Literals(["private", "household", "noHousehold"])
-}) {}
+export class HabitForbidden extends Schema.TaggedError<HabitForbidden>()(
+  'HabitForbidden',
+  {
+    id: Schema.NullOr(Schema.String),
+    reason: Schema.Literals(['private', 'household', 'noHousehold']),
+  },
+) {}
 
 /** Field-level validation (empty title, empty/duplicate weekdays, bad time, …). */
 export class HabitValidationError extends Schema.TaggedError<HabitValidationError>()(
-  "HabitValidationError",
+  'HabitValidationError',
   {
     issues: Schema.Array(
       Schema.Struct({
         field: Schema.String,
-        message: Schema.String
-      })
-    )
-  }
+        message: Schema.String,
+      }),
+    ),
+  },
 ) {}
 
 /** A concurrent writer won the version CAS; the caller may retry. */
-export class HabitConflict extends Schema.TaggedError<HabitConflict>()("HabitConflict", {
-  id: Schema.String
-}) {}
+export class HabitConflict extends Schema.TaggedError<HabitConflict>()(
+  'HabitConflict',
+  {
+    id: Schema.String,
+  },
+) {}
 
 /**
  * A tap outside the ≤ 7-day backdating window (#64; FR-HAB-02).
@@ -83,20 +88,20 @@ export class HabitConflict extends Schema.TaggedError<HabitConflict>()("HabitCon
  * (dropping the tap) would be just as wrong.
  */
 export class HabitEntryOutOfWindow extends Schema.TaggedError<HabitEntryOutOfWindow>()(
-  "HabitEntryOutOfWindow",
+  'HabitEntryOutOfWindow',
   {
     localDate: LocalDate,
     earliest: LocalDate,
-    latest: LocalDate
-  }
+    latest: LocalDate,
+  },
 ) {}
 
 /** The replayed entry no longer exists (already purged past its trash window). */
 export class HabitEntryNotFound extends Schema.TaggedError<HabitEntryNotFound>()(
-  "HabitEntryNotFound",
+  'HabitEntryNotFound',
   {
-    id: HabitEntryId
-  }
+    id: HabitEntryId,
+  },
 ) {}
 
 export const HabitServiceError = Schema.Union([
@@ -105,7 +110,7 @@ export const HabitServiceError = Schema.Union([
   HabitValidationError,
   HabitConflict,
   HabitEntryOutOfWindow,
-  HabitEntryNotFound
+  HabitEntryNotFound,
 ])
 export type HabitServiceError = Schema.Schema.Type<typeof HabitServiceError>
 
@@ -127,7 +132,7 @@ const habitFields = {
   icon: Schema.NullOr(Schema.String),
   frequency: HabitFrequency,
   reminderTime: Schema.NullOr(HabitReminderTime),
-  timeZone: TimeZone
+  timeZone: TimeZone,
 }
 
 /** Create input. A habit needs a title and a frequency; everything else defaults. */
@@ -143,7 +148,7 @@ export const HabitCreateInput = Schema.Struct({
   reminderTime: Schema.optional(habitFields.reminderTime),
   /** Defaults to the viewer's profile zone. */
   timeZone: Schema.optional(habitFields.timeZone),
-  visibility: Schema.optional(Visibility)
+  visibility: Schema.optional(Visibility),
 })
 export type HabitCreateInput = Schema.Schema.Type<typeof HabitCreateInput>
 
@@ -156,7 +161,7 @@ export const HabitPatch = Schema.Struct({
   frequency: Schema.optional(habitFields.frequency),
   reminderTime: Schema.optional(habitFields.reminderTime),
   timeZone: Schema.optional(habitFields.timeZone),
-  visibility: Schema.optional(Visibility)
+  visibility: Schema.optional(Visibility),
 })
 export type HabitPatch = Schema.Schema.Type<typeof HabitPatch>
 
@@ -165,14 +170,14 @@ export const HabitUpdateInput = Schema.Struct({
   clientMutationId: Schema.String,
   /** Informational; the update re-reads and retries on a lost CAS. */
   baseVersion: Schema.optional(Schema.Int),
-  patch: HabitPatch
+  patch: HabitPatch,
 })
 export type HabitUpdateInput = Schema.Schema.Type<typeof HabitUpdateInput>
 
 /** Delete/restore carry only the row id plus the replay key. */
 export const HabitMutationInput = Schema.Struct({
   id: HabitId,
-  clientMutationId: Schema.String
+  clientMutationId: Schema.String,
 })
 export type HabitMutationInput = Schema.Schema.Type<typeof HabitMutationInput>
 
@@ -199,7 +204,7 @@ export const HabitEntryLogInput = Schema.Struct({
   localDate: LocalDate,
   status: HabitEntryStatus,
   /** The zone the tap happened in; defaults to the viewer's profile zone. */
-  timeZone: Schema.optional(TimeZone)
+  timeZone: Schema.optional(TimeZone),
 })
 export type HabitEntryLogInput = Schema.Schema.Type<typeof HabitEntryLogInput>
 
@@ -214,9 +219,11 @@ export type HabitEntryLogInput = Schema.Schema.Type<typeof HabitEntryLogInput>
 export const HabitEntryRangeInput = Schema.Struct({
   from: LocalDate,
   before: LocalDate,
-  habitId: Schema.optional(HabitId)
+  habitId: Schema.optional(HabitId),
 })
-export type HabitEntryRangeInput = Schema.Schema.Type<typeof HabitEntryRangeInput>
+export type HabitEntryRangeInput = Schema.Schema.Type<
+  typeof HabitEntryRangeInput
+>
 
 // ── Query inputs ─────────────────────────────────────────────────────────
 

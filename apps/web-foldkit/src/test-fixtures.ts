@@ -1,5 +1,6 @@
-import { Listbox, Menu, Popover, RadioGroup } from '@foldkit/ui'
 import { Option } from 'effect'
+
+import { Listbox, Menu, Popover, RadioGroup } from '@foldkit/ui'
 
 import * as Auth from './auth'
 import type { AuthFailure } from './lib/auth-api'

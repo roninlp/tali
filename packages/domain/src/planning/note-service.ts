@@ -1,6 +1,6 @@
-import { Schema } from "effect"
-import { TRASH_RETENTION_MS, Visibility } from "../common.js"
-import { NoteId, TagIds } from "./common.js"
+import { Schema } from 'effect'
+import { TRASH_RETENTION_MS, Visibility } from '../common.js'
+import { NoteId, TagIds } from './common.js'
 
 /**
  * NoteService contract (ticket #40; FR-NOTE-01/03).
@@ -33,45 +33,54 @@ import { NoteId, TagIds } from "./common.js"
 // ── Typed errors (`docs/error-model-draft.md` §2) ────────────────────────
 
 /** The note does not exist, or is not visible to this viewer. */
-export class NoteNotFound extends Schema.TaggedError<NoteNotFound>()("NoteNotFound", {
-  id: NoteId
-}) {}
+export class NoteNotFound extends Schema.TaggedError<NoteNotFound>()(
+  'NoteNotFound',
+  {
+    id: NoteId,
+  },
+) {}
 
 /** The row exists but this viewer may not read/write it. */
-export class NoteForbidden extends Schema.TaggedError<NoteForbidden>()("NoteForbidden", {
-  id: Schema.NullOr(Schema.String),
-  reason: Schema.Literals(["private", "household", "noHousehold"])
-}) {}
+export class NoteForbidden extends Schema.TaggedError<NoteForbidden>()(
+  'NoteForbidden',
+  {
+    id: Schema.NullOr(Schema.String),
+    reason: Schema.Literals(['private', 'household', 'noHousehold']),
+  },
+) {}
 
 /** Field-level validation (foreign/private tag, malformed body, …). */
 export class NoteValidationError extends Schema.TaggedError<NoteValidationError>()(
-  "NoteValidationError",
+  'NoteValidationError',
   {
     issues: Schema.Array(
       Schema.Struct({
         field: Schema.String,
-        message: Schema.String
-      })
-    )
-  }
+        message: Schema.String,
+      }),
+    ),
+  },
 ) {}
 
 /**
  * The autosave's `baseVersion` is behind the stored row. `version` is the
  * current server version, which the client uses to reconcile.
  */
-export class NoteConflict extends Schema.TaggedError<NoteConflict>()("NoteConflict", {
-  id: NoteId,
-  version: Schema.Int
-}) {}
+export class NoteConflict extends Schema.TaggedError<NoteConflict>()(
+  'NoteConflict',
+  {
+    id: NoteId,
+    version: Schema.Int,
+  },
+) {}
 
 /** A trashed note older than the 30-day retention window cannot be restored. */
 export class NoteNotRestorable extends Schema.TaggedError<NoteNotRestorable>()(
-  "NoteNotRestorable",
+  'NoteNotRestorable',
   {
     id: NoteId,
-    deletedAt: Schema.String
-  }
+    deletedAt: Schema.String,
+  },
 ) {}
 
 export const NoteServiceError = Schema.Union([
@@ -79,7 +88,7 @@ export const NoteServiceError = Schema.Union([
   NoteForbidden,
   NoteValidationError,
   NoteConflict,
-  NoteNotRestorable
+  NoteNotRestorable,
 ])
 export type NoteServiceError = Schema.Schema.Type<typeof NoteServiceError>
 
@@ -104,7 +113,7 @@ export const NoteCreateInput = Schema.Struct({
   isArchived: Schema.optional(Schema.Boolean),
   tagIds: Schema.optional(TagIds),
   color: Schema.optional(Schema.NullOr(Schema.String)),
-  visibility: Schema.optional(Visibility)
+  visibility: Schema.optional(Visibility),
 })
 export type NoteCreateInput = Schema.Schema.Type<typeof NoteCreateInput>
 
@@ -117,7 +126,7 @@ export const NotePatch = Schema.Struct({
   isArchived: Schema.optional(Schema.Boolean),
   tagIds: Schema.optional(TagIds),
   color: Schema.optional(Schema.NullOr(Schema.String)),
-  visibility: Schema.optional(Visibility)
+  visibility: Schema.optional(Visibility),
 })
 export type NotePatch = Schema.Schema.Type<typeof NotePatch>
 
@@ -126,7 +135,7 @@ export const NoteUpdateInput = Schema.Struct({
   clientMutationId: Schema.String,
   /** Informational; the update re-reads and retries on a lost CAS. */
   baseVersion: Schema.optional(Schema.Int),
-  patch: NotePatch
+  patch: NotePatch,
 })
 export type NoteUpdateInput = Schema.Schema.Type<typeof NoteUpdateInput>
 
@@ -139,14 +148,14 @@ export const NoteSaveInput = Schema.Struct({
   clientMutationId: Schema.String,
   baseVersion: Schema.Int,
   title: Schema.optional(Schema.String),
-  body: Schema.optional(Schema.NullOr(Schema.Json))
+  body: Schema.optional(Schema.NullOr(Schema.Json)),
 })
 export type NoteSaveInput = Schema.Schema.Type<typeof NoteSaveInput>
 
 /** Only the row id plus the replay key (trash/restore). */
 export const NoteMutationInput = Schema.Struct({
   id: NoteId,
-  clientMutationId: Schema.String
+  clientMutationId: Schema.String,
 })
 export type NoteMutationInput = Schema.Schema.Type<typeof NoteMutationInput>
 
@@ -154,7 +163,7 @@ export type NoteMutationInput = Schema.Schema.Type<typeof NoteMutationInput>
 export const NoteFlagInput = Schema.Struct({
   id: NoteId,
   clientMutationId: Schema.String,
-  value: Schema.Boolean
+  value: Schema.Boolean,
 })
 export type NoteFlagInput = Schema.Schema.Type<typeof NoteFlagInput>
 
@@ -162,7 +171,7 @@ export type NoteFlagInput = Schema.Schema.Type<typeof NoteFlagInput>
 export const NoteTagInput = Schema.Struct({
   id: NoteId,
   clientMutationId: Schema.String,
-  tagIds: TagIds
+  tagIds: TagIds,
 })
 export type NoteTagInput = Schema.Schema.Type<typeof NoteTagInput>
 
@@ -172,7 +181,7 @@ export const NoteListInput = Schema.Struct({
   /** Chips are an OR filter: a note matches if it carries any listed tag. */
   tagIds: Schema.optional(TagIds),
   /** The archive view; the default list is active notes only. */
-  includeArchived: Schema.optional(Schema.Boolean)
+  includeArchived: Schema.optional(Schema.Boolean),
 })
 export type NoteListInput = Schema.Schema.Type<typeof NoteListInput>
 
@@ -180,23 +189,23 @@ export type NoteListInput = Schema.Schema.Type<typeof NoteListInput>
 
 /** One text run inside a paragraph-shaped note document. */
 export interface NoteTextNode {
-  readonly type: "text"
+  readonly type: 'text'
   readonly text: string
 }
 
 /** One paragraph of a note document. */
 export interface NoteParagraph {
-  readonly type: "paragraph"
+  readonly type: 'paragraph'
   readonly content: ReadonlyArray<NoteTextNode>
 }
 
 /** The minimal ProseMirror/TipTap document a plain-text note stores. */
 export interface NoteTextDocument {
-  readonly type: "doc"
+  readonly type: 'doc'
   readonly content: ReadonlyArray<NoteParagraph>
 }
 
-const EMPTY_NOTE_DOCUMENT: NoteTextDocument = { type: "doc", content: [] }
+const EMPTY_NOTE_DOCUMENT: NoteTextDocument = { type: 'doc', content: [] }
 
 /**
  * Wrap plain text into the minimal ProseMirror document the note aggregate
@@ -208,15 +217,15 @@ const EMPTY_NOTE_DOCUMENT: NoteTextDocument = { type: "doc", content: [] }
  * write paths agree on the shape.
  */
 export const plainTextToNoteBody = (text: string): NoteTextDocument =>
-  text === ""
+  text === ''
     ? EMPTY_NOTE_DOCUMENT
     : {
-      type: "doc",
-      content: text.split("\n").map((line) => ({
-        type: "paragraph",
-        content: line === "" ? [] : [{ type: "text", text: line }]
-      }))
-    }
+        type: 'doc',
+        content: text.split('\n').map(line => ({
+          type: 'paragraph',
+          content: line === '' ? [] : [{ type: 'text', text: line }],
+        })),
+      }
 
 /**
  * Extract text from a structured note body. It walks the ProseMirror/TipTap
@@ -227,7 +236,7 @@ export const plainTextToNoteBody = (text: string): NoteTextDocument =>
 export const extractNotePlainText = (body: unknown): string => {
   const parts: Array<string> = []
   const walk = (node: unknown): void => {
-    if (typeof node === "string") {
+    if (typeof node === 'string') {
       parts.push(node)
       return
     }
@@ -235,13 +244,13 @@ export const extractNotePlainText = (body: unknown): string => {
       for (const entry of node) walk(entry)
       return
     }
-    if (node === null || typeof node !== "object") return
+    if (node === null || typeof node !== 'object') return
     const record = node as Record<string, unknown>
-    if (typeof record.text === "string") parts.push(record.text)
+    if (typeof record.text === 'string') parts.push(record.text)
     if (Array.isArray(record.content)) {
       for (const entry of record.content) walk(entry)
     }
   }
   walk(body)
-  return parts.join(" ").replace(/\s+/g, " ").trim()
+  return parts.join(' ').replace(/\s+/g, ' ').trim()
 }

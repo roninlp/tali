@@ -63,6 +63,7 @@ export const TaskRow = Schema.Struct({
   ownerId: Schema.optional(Schema.NullOr(Schema.String)),
   visibility: Schema.optional(Schema.Literals(['private', 'shared'])),
 })
+
 export type TaskRow = typeof TaskRow.Type
 
 export const ProjectRow = Schema.Struct({
@@ -70,6 +71,7 @@ export const ProjectRow = Schema.Struct({
   title: Schema.String,
   color: Schema.NullOr(Schema.String),
 })
+
 export type ProjectRow = typeof ProjectRow.Type
 
 export const TagRow = Schema.Struct({
@@ -77,6 +79,7 @@ export const TagRow = Schema.Struct({
   name: Schema.String,
   color: Schema.NullOr(Schema.String),
 })
+
 export type TagRow = typeof TagRow.Type
 
 export const NoteRow = Schema.Struct({
@@ -92,6 +95,7 @@ export const NoteRow = Schema.Struct({
   version: Schema.Int,
   syncErrorCode: Schema.Option(Schema.String),
 })
+
 export type NoteRow = typeof NoteRow.Type
 
 export const MirrorSnapshot = Schema.Struct({
@@ -109,6 +113,7 @@ export const MirrorSnapshot = Schema.Struct({
   occasions: Schema.Array(OccasionRow),
   trashedOccasions: Schema.Array(OccasionRow),
 })
+
 export type MirrorSnapshot = typeof MirrorSnapshot.Type
 
 export const emptyMirrorSnapshot = (): MirrorSnapshot =>
@@ -151,6 +156,7 @@ const asRecurrence = (value: unknown): TaskRow['recurrence'] => {
           }
         })()
       : value
+
   const decoded = Schema.decodeUnknownOption(CalendarRecurrenceRule)(parsed)
 
   return Option.getOrUndefined(decoded)
@@ -185,7 +191,8 @@ export const toTaskRow = (record: MirrorRecord): TaskRow =>
     hasSyncError: record.syncError !== undefined,
     ownerId: asNullableString(record.data.ownerId),
     visibility:
-      record.data.visibility === 'private' || record.data.visibility === 'shared'
+      record.data.visibility === 'private' ||
+      record.data.visibility === 'shared'
         ? record.data.visibility
         : defaultVisibilityFor('task'),
   })
@@ -394,6 +401,7 @@ export const sortNotes = (
 ): ReadonlyArray<NoteRow> =>
   [...notes].sort((left, right) => {
     const byUpdated = compareText(right.updatedAt, left.updatedAt)
+
     return byUpdated !== 0 ? byUpdated : compareText(left.id, right.id)
   })
 
@@ -412,11 +420,13 @@ export const compareTasksByDueDate = (
   right: TaskRow,
 ): -1 | 0 | 1 => {
   const byDue = compareText(dueSortKey(left), dueSortKey(right))
+
   if (byDue !== 0) {
     return byDue
   }
 
   const byPriority = priorityRank[left.priority] - priorityRank[right.priority]
+
   if (byPriority !== 0) {
     return byPriority < 0 ? -1 : 1
   }

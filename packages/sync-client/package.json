@@ -18,6 +18,7 @@
   "devDependencies": {
     "fake-indexeddb": "catalog:",
     "typescript": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "@tali/tsconfig": "workspace:*"
   }
 }

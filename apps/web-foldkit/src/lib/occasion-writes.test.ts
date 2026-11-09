@@ -77,6 +77,7 @@ describe('occasions client model', () => {
       )
 
       const rows = (await store.list('occasion')).map(toOccasionRow)
+
       const occurrences = monthOccasionsFromSources(
         rows.map(asOccasionSource),
         '2026-04-01',
@@ -179,6 +180,7 @@ describe('occasions client model', () => {
         uuidV7(),
         '2026-10-21T10:00:00.000Z',
       )
+
       expect(first.created).toBe(true)
 
       const task = await store.get('task', first.taskId)
@@ -189,6 +191,7 @@ describe('occasions client model', () => {
       ).toBe(first.taskId)
 
       const [linked] = (await store.list('occasion')).map(toOccasionRow)
+
       const again = await prepareOccasionTaskInMirror(
         store,
         linked!,
@@ -196,6 +199,7 @@ describe('occasions client model', () => {
         uuidV7(),
         '2026-10-21T10:01:00.000Z',
       )
+
       expect(again).toEqual({ taskId: first.taskId, created: false })
       expect(await store.list('task')).toHaveLength(1)
     })
@@ -226,6 +230,7 @@ describe('occasions client model', () => {
       })
 
       const [stale] = (await store.list('occasion')).map(toOccasionRow)
+
       const repaired = await prepareOccasionTaskInMirror(
         store,
         stale!,
@@ -233,6 +238,7 @@ describe('occasions client model', () => {
         uuidV7(),
         '2026-10-21T10:02:00.000Z',
       )
+
       expect(repaired.created).toBe(true)
       expect(await store.get('task', repaired.taskId)).toBeDefined()
       expect(

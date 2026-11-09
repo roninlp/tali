@@ -30,7 +30,8 @@ const INSTANT_PATTERN =
 export const isInstant = (value: string): boolean => INSTANT_PATTERN.test(value)
 
 /** A bare clock time, the value a `time` picker reports. */
-export const isClockTime = (value: string): boolean => /^\d{1,2}:\d{2}$/.test(value)
+export const isClockTime = (value: string): boolean =>
+  /^\d{1,2}:\d{2}$/.test(value)
 
 /** A local date + clock time as a UTC instant, or `undefined` when invalid. */
 export const instantOf = (

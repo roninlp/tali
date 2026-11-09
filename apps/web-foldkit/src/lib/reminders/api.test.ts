@@ -59,15 +59,19 @@ describe('fetchReminderInbox', () => {
         ],
       }),
     )
+
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await Effect.runPromise(
       fetchReminderInbox({ history: true, limit: 25 }),
     )
+
     expect(result.ok).toBe(true)
+
     if (!result.ok) {
       return
     }
+
     expect(result.value).toHaveLength(1)
     expect(result.value[0]).toMatchObject({
       title: 'دارو',
@@ -113,18 +117,23 @@ describe('respondToReminder', () => {
       response: 'done',
       respondedAt: '2026-10-20T08:10:00.000Z',
     })
+
     const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
       jsonResponse({ dispatch: answered, child: null, onTime: true }),
     )
+
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await Effect.runPromise(
       respondToReminder({ dispatchId: answered.id, response: 'done' }),
     )
+
     expect(result.ok).toBe(true)
+
     if (!result.ok) {
       return
     }
+
     expect(result.value.dispatch.response).toBe('done')
     expect(result.value.onTime).toBe(true)
     const call = fetchMock.mock.calls[0]
@@ -139,6 +148,7 @@ describe('respondToReminder', () => {
       response: 'snooze',
       snoozedUntil: '2026-10-20T08:15:00.000Z',
     })
+
     const child = dispatch({
       id: '0192f0a0-0000-7000-8000-000000000103',
       scheduledFor: '2026-10-20T08:15:00.000Z',
@@ -146,9 +156,11 @@ describe('respondToReminder', () => {
       origin: `snooze:${parent.id}`,
       parentDispatchId: parent.id,
     })
+
     const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
       jsonResponse({ dispatch: parent, child, onTime: false }),
     )
+
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await Effect.runPromise(
@@ -158,6 +170,7 @@ describe('respondToReminder', () => {
         snoozeMinutes: 15,
       }),
     )
+
     expect(result.ok).toBe(true)
     const call = fetchMock.mock.calls[0]
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({
@@ -171,12 +184,14 @@ describe('respondToReminder', () => {
       'fetch',
       vi.fn(async () => jsonResponse({}, 404)),
     )
+
     const result = await Effect.runPromise(
       respondToReminder({
         dispatchId: '0192f0a0-0000-7000-8000-000000000101',
         response: 'dismiss',
       }),
     )
+
     expect(result).toEqual({
       ok: false,
       error: { code: 'NotFound', retryable: false },

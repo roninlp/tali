@@ -1,11 +1,8 @@
 {
-  "extends": "../../tsconfig.base.json",
+  "extends": "@tali/tsconfig/base.json",
   "compilerOptions": {
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": [
-      "@cloudflare/workers-types",
-      "@cloudflare/vitest-plugin/types"
-    ]
+    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-plugin/types"]
   },
   "include": ["test", "vitest.config.ts"]
 }

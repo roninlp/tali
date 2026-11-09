@@ -1,7 +1,7 @@
-import { Layer, Tracer } from "effect"
-import { HttpMiddleware, HttpRouter, HttpServerResponse } from "effect/http"
-import { RpcServer, RpcSerialization } from "effect/rpc"
-import { ApiRpcs } from "@tali/rpc"
+import { Layer, Tracer } from 'effect'
+import { HttpMiddleware, HttpRouter, HttpServerResponse } from 'effect/http'
+import { RpcServer, RpcSerialization } from 'effect/rpc'
+import { ApiRpcs } from '@tali/rpc'
 import {
   EventRepoLive,
   HabitEntryRepoLive,
@@ -16,51 +16,52 @@ import {
   ReminderRepoLive,
   SyncRepoLive,
   TagRepoLive,
-  TaskRepoLive
-} from "@tali/sql"
-import { AuthServiceLive } from "./auth-service.js"
-import { AuthRoutes } from "./auth-routes.js"
+  TaskRepoLive,
+} from '@tali/sql'
+import { AuthServiceLive } from './auth-service.js'
+import { AuthRoutes } from './auth-routes.js'
 import {
   CaptureConfig,
   type CaptureConfigValue,
   ExtractorLive,
-  captureConfigOf
-} from "./capture-extractor.js"
-import { CaptureServiceLive } from "./capture-service.js"
-import { CalendarRoutes } from "./calendar-routes.js"
-import { CalendarServiceLive } from "./calendar-service.js"
-import { EventServiceLive } from "./event-service.js"
-import { HabitServiceLive } from "./habit-service.js"
-import { ListServiceLive } from "./list-service.js"
-import { ListItemServiceLive } from "./list-item-service.js"
-import { NoteSearchRoutes } from "./note-search-routes.js"
-import { NoteSearchServiceLive } from "./note-search-service.js"
-import { NoteServiceLive } from "./note-service.js"
-import { OccasionServiceLive } from "./occasion-service.js"
-import { PreferencesRoutes } from "./preferences-routes.js"
-import { PreferencesServiceLive } from "./preferences-service.js"
-import { DevReminderRoutes } from "./dev-reminder-routes.js"
-import { PushConfig, PushGatewayLive, type VapidConfig } from "./push-gateway.js"
-import { PushRoutes } from "./push-routes.js"
-import { ReminderRoutes } from "./reminder-routes.js"
-import { ReminderServiceLive } from "./reminder-service.js"
-import { ReminderSweepLive } from "./reminder-sweep.js"
-import { RpcHandlers } from "./rpc-handlers.js"
-import { SyncRoutes } from "./sync.js"
-import { SyncServiceLive } from "./sync-service.js"
-import { TaskServiceLive } from "./task-service.js"
-import { TodayRoutes } from "./today-routes.js"
-import { TodayServiceLive } from "./today-service.js"
+  captureConfigOf,
+} from './capture-extractor.js'
+import { CaptureServiceLive } from './capture-service.js'
+import { CalendarRoutes } from './calendar-routes.js'
+import { CalendarServiceLive } from './calendar-service.js'
+import { EventServiceLive } from './event-service.js'
+import { HabitServiceLive } from './habit-service.js'
+import { ListServiceLive } from './list-service.js'
+import { ListItemServiceLive } from './list-item-service.js'
+import { NoteSearchRoutes } from './note-search-routes.js'
+import { NoteSearchServiceLive } from './note-search-service.js'
+import { NoteServiceLive } from './note-service.js'
+import { OccasionServiceLive } from './occasion-service.js'
+import { PreferencesRoutes } from './preferences-routes.js'
+import { PreferencesServiceLive } from './preferences-service.js'
+import { DevReminderRoutes } from './dev-reminder-routes.js'
+import {
+  PushConfig,
+  PushGatewayLive,
+  type VapidConfig,
+} from './push-gateway.js'
+import { PushRoutes } from './push-routes.js'
+import { ReminderRoutes } from './reminder-routes.js'
+import { ReminderServiceLive } from './reminder-service.js'
+import { ReminderSweepLive } from './reminder-sweep.js'
+import { RpcHandlers } from './rpc-handlers.js'
+import { SyncRoutes } from './sync.js'
+import { SyncServiceLive } from './sync-service.js'
+import { TaskServiceLive } from './task-service.js'
+import { TodayRoutes } from './today-routes.js'
+import { TodayServiceLive } from './today-service.js'
 
 /** Mount `POST /rpc` over plain HTTP (ndjson). */
 const RpcLayer = RpcServer.layerHttp({
   group: ApiRpcs,
-  path: "/rpc",
-  protocol: "http"
-}).pipe(
-  Layer.provide(RpcHandlers),
-  Layer.provide(RpcSerialization.layerNdjson)
-)
+  path: '/rpc',
+  protocol: 'http',
+}).pipe(Layer.provide(RpcHandlers), Layer.provide(RpcSerialization.layerNdjson))
 
 /**
  * The service layers, grouped because `Layer.provide` merges at most 20
@@ -85,7 +86,7 @@ const ServiceLayers = Layer.mergeAll(
   // Capture's service needs the Extractor; wire it here because sibling
   // layers in this merge are not auto-provided. The Extractor's CaptureConfig
   // comes from the outer app layer.
-  CaptureServiceLive.pipe(Layer.provide(ExtractorLive))
+  CaptureServiceLive.pipe(Layer.provide(ExtractorLive)),
 )
 
 /** The aggregate repositories (each service also provides the ones it owns). */
@@ -105,7 +106,7 @@ const RepoLayers = Layer.mergeAll(
   PushSubscriptionRepoLive,
   // The sweep reads the ledger directly and commits its outcome batch through
   // the same sync primitives, so it needs the repo (not just the service).
-  SyncRepoLive
+  SyncRepoLive,
 )
 
 export interface AppOptions {
@@ -129,9 +130,12 @@ export interface AppOptions {
 }
 
 /** Name a server span by method and route path; never the query string. */
-const serverSpanName = (request: { readonly method: string; readonly url: string }): string => {
+const serverSpanName = (request: {
+  readonly method: string
+  readonly url: string
+}): string => {
   try {
-    return `${request.method} ${new URL(request.url, "http://localhost").pathname}`
+    return `${request.method} ${new URL(request.url, 'http://localhost').pathname}`
   } catch {
     return request.method
   }
@@ -148,7 +152,7 @@ const serverSpanName = (request: { readonly method: string; readonly url: string
  */
 export const makeAppLayer = (options: AppOptions = {}) => {
   const app = Layer.mergeAll(
-    HttpRouter.add("GET", "/health", HttpServerResponse.json({ ok: true })),
+    HttpRouter.add('GET', '/health', HttpServerResponse.json({ ok: true })),
     SyncRoutes,
     AuthRoutes,
     PreferencesRoutes,
@@ -157,19 +161,21 @@ export const makeAppLayer = (options: AppOptions = {}) => {
     NoteSearchRoutes,
     PushRoutes,
     ReminderRoutes,
-    RpcLayer
+    RpcLayer,
   )
-  const routes = options.devRoutes === true ? Layer.merge(app, DevReminderRoutes) : app
-  const traced = options.tracer === undefined
-    ? routes
-    : Layer.mergeAll(
-      routes,
-      // Global middleware, so every route (RPC, sync, auth, health, dev) gets
-      // one server span and continues the browser's traceparent.
-      HttpRouter.middleware(HttpMiddleware.tracer, { global: true }),
-      Layer.succeed(HttpMiddleware.SpanNameGenerator)(serverSpanName),
-      Layer.succeed(Tracer.Tracer, options.tracer)
-    )
+  const routes =
+    options.devRoutes === true ? Layer.merge(app, DevReminderRoutes) : app
+  const traced =
+    options.tracer === undefined
+      ? routes
+      : Layer.mergeAll(
+          routes,
+          // Global middleware, so every route (RPC, sync, auth, health, dev) gets
+          // one server span and continues the browser's traceparent.
+          HttpRouter.middleware(HttpMiddleware.tracer, { global: true }),
+          Layer.succeed(HttpMiddleware.SpanNameGenerator)(serverSpanName),
+          Layer.succeed(Tracer.Tracer, options.tracer),
+        )
 
   return traced.pipe(
     // The sweep runs inside the app so the local-only dev trigger can drive a
@@ -179,8 +185,8 @@ export const makeAppLayer = (options: AppOptions = {}) => {
     Layer.provide(RepoLayers),
     Layer.provide(Layer.succeed(PushConfig, options.vapid ?? null)),
     Layer.provide(
-      Layer.succeed(CaptureConfig, options.capture ?? captureConfigOf({}))
-    )
+      Layer.succeed(CaptureConfig, options.capture ?? captureConfigOf({})),
+    ),
   )
 }
 

@@ -65,6 +65,7 @@ export const visibilityOfValue = (value: string): ListVisibility =>
   value === 'private' ? 'private' : 'shared'
 
 export const DeleteScope = Schema.Literals(['index', 'detail'])
+
 export type DeleteScope = typeof DeleteScope.Type
 
 export const PendingListDelete = Schema.Struct({
@@ -72,9 +73,11 @@ export const PendingListDelete = Schema.Struct({
   title: Schema.String,
   scope: DeleteScope,
 })
+
 export type PendingListDelete = typeof PendingListDelete.Type
 
 export const MoveDirection = Schema.Literals(['up', 'down'])
+
 export type MoveDirection = typeof MoveDirection.Type
 
 export const Model = Schema.Struct({
@@ -106,13 +109,16 @@ export const Model = Schema.Struct({
   placementListbox: Listbox.Model,
   visibilityListbox: Listbox.Model,
 })
+
 export type Model = typeof Model.Type
 
 export type SortOption = Readonly<{ value: ListSort; label: string }>
+
 export type PlacementOption = Readonly<{
   value: CheckedPlacement
   label: string
 }>
+
 export type VisibilityOption = Readonly<{
   value: ListVisibility
   label: string
@@ -318,6 +324,7 @@ export const Message = defineMessageUnion({
   DroppedOnItem: { itemId: Schema.String },
   EndedDragItem: {},
 })
+
 export type Message = typeof Message.Type
 
 export const OutMessage = defineMessageUnion({
@@ -325,6 +332,7 @@ export const OutMessage = defineMessageUnion({
   CreatedList: { listId: Schema.String },
   DeletedList: { listId: Schema.String },
 })
+
 export type OutMessage = typeof OutMessage.Type
 
 // COMMAND
@@ -646,6 +654,7 @@ export const ReorderListItems = Command.define('ReorderListItems', {
     Effect.gen(function* () {
       const store = yield* LocalStoreResource.get
       const now = yield* currentIso
+
       const items = yield* Effect.tryPromise({
         try: () => readListItems(store),
         catch: storeFailureMessage,
@@ -971,6 +980,7 @@ export const update = (
 
     FailedCreateList: ({ message }) => {
       const failed = withIndexError(model, message)
+
       return {
         model: modifyFields(failed.model, { isCreating: () => false }),
       }
@@ -1020,6 +1030,7 @@ export const update = (
 
     FailedDeleteList: ({ message }) => {
       const failed = withDetailError(model, message)
+
       return {
         model: modifyFields(failed.model, {
           isDeletingList: () => false,
@@ -1098,6 +1109,7 @@ export const update = (
 
     FailedRenameList: ({ message }) => {
       const failed = withDetailError(model, message)
+
       return {
         model: modifyFields(failed.model, { isRenaming: () => false }),
       }
@@ -1105,6 +1117,7 @@ export const update = (
 
     SelectedListSort: ({ listId, sort }) => {
       const maybeList = findListRow(inputs.mirror.lists, listId)
+
       const effective = Option.match(model.maybeSortDraft, {
         onNone: () => Option.map(maybeList, list => list.sort),
         onSome: draft => Option.some(draft),
@@ -1136,6 +1149,7 @@ export const update = (
 
     FailedSetListSort: ({ message }) => {
       const failed = withDetailError(model, message)
+
       return {
         model: modifyFields(failed.model, {
           maybeSortDraft: () => Option.none(),
@@ -1145,6 +1159,7 @@ export const update = (
 
     SelectedCheckedPlacement: ({ listId, placement }) => {
       const maybeList = findListRow(inputs.mirror.lists, listId)
+
       const effective = Option.match(model.maybePlacementDraft, {
         onNone: () => Option.map(maybeList, list => list.checkedPlacement),
         onSome: draft => Option.some(draft),
@@ -1176,6 +1191,7 @@ export const update = (
 
     FailedSetCheckedPlacement: ({ message }) => {
       const failed = withDetailError(model, message)
+
       return {
         model: modifyFields(failed.model, {
           maybePlacementDraft: () => Option.none(),
@@ -1185,9 +1201,11 @@ export const update = (
 
     SelectedListVisibility: ({ listId, visibility }) => {
       const maybeList = findListRow(inputs.mirror.lists, listId)
+
       const canChange = Option.exists(maybeList, list =>
         Option.exists(inputs.maybeUserId, userId => userId === list.ownerId),
       )
+
       const effective = Option.match(model.maybeVisibilityDraft, {
         onNone: () => Option.map(maybeList, list => list.visibility),
         onSome: draft => Option.some(draft),
@@ -1219,6 +1237,7 @@ export const update = (
 
     FailedSetListVisibility: ({ message }) => {
       const failed = withDetailError(model, message)
+
       return {
         model: modifyFields(failed.model, {
           maybeVisibilityDraft: () => Option.none(),
@@ -1282,6 +1301,7 @@ export const update = (
 
     FailedCreateListItem: ({ message }) => {
       const failed = withDetailError(model, message)
+
       return {
         model: modifyFields(failed.model, { isAddingItem: () => false }),
       }

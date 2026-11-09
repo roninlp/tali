@@ -75,6 +75,7 @@ export const Model = Schema.Struct({
   habitError: Schema.Option(Schema.String),
   habitAnnouncement: Schema.String,
 })
+
 export type Model = typeof Model.Type
 
 export const initialModel = (now: number): Model =>
@@ -176,12 +177,14 @@ export const Message = defineMessageUnion({
   },
   FailedTapHabit: { message: Schema.String },
 })
+
 export type Message = typeof Message.Type
 
 export const OutMessage = defineMessageUnion({
   WroteLocalData: {},
   SavedSectionOrder: { preferences: Preferences },
 })
+
 export type OutMessage = typeof OutMessage.Type
 
 // COMMAND
@@ -387,6 +390,7 @@ export const TapHabit = Command.define('TapHabit', {
     Effect.gen(function* () {
       const store = yield* LocalStoreResource.get
       const now = yield* Clock.currentTimeMillis
+
       const record = yield* Effect.tryPromise({
         try: () =>
           tapHabitEntry(store, {
@@ -398,6 +402,7 @@ export const TapHabit = Command.define('TapHabit', {
           }),
         catch: storeFailureMessage,
       })
+
       const status: HabitEntryStatus = habitEntryStatusOf(record) ?? 'done'
 
       return Message.CompletedTapHabit({ habitId, title, status })
@@ -446,6 +451,7 @@ const startFetch = (model: Model): CommandReturn => {
   }
 
   const generation = model.refreshGeneration + 1
+
   const maybeEtag = Option.isSome(model.maybeServer)
     ? model.maybeEtag
     : Option.none()
@@ -708,6 +714,7 @@ export const update = (
       }
 
       const next = moveSection(inputs.sectionOrder, section, direction)
+
       const unchanged =
         next.length === inputs.sectionOrder.length &&
         next.every((value, index) => value === inputs.sectionOrder[index])
@@ -865,6 +872,7 @@ const clockEvents: Stream.Stream<Message> = Stream.concat(
   Stream.fromEffectRepeat(
     Effect.gen(function* () {
       yield* Effect.sleep(Duration.seconds(60))
+
       return yield* clockTick
     }),
   ),
@@ -901,18 +909,21 @@ const keyboardEvents: Stream.Stream<Message> = eventStream(emit => {
     if (event.key === '/') {
       event.preventDefault()
       emit(Message.PressedQuickAddShortcut())
+
       return
     }
 
     if (event.key === 'ArrowDown') {
       event.preventDefault()
       emit(Message.PressedCursorDown())
+
       return
     }
 
     if (event.key === 'ArrowUp') {
       event.preventDefault()
       emit(Message.PressedCursorUp())
+
       return
     }
 

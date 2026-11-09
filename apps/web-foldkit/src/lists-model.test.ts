@@ -154,6 +154,7 @@ describe('index summaries and pending state', () => {
       id: 'list-a',
       updatedAt: '2026-10-20T09:00:00.000Z',
     })
+
     const newer = list({
       id: 'list-b',
       updatedAt: '2026-10-21T09:00:00.000Z',

@@ -1,8 +1,4 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "lib": ["ES2023"],
-    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-plugin/types"]
-  },
+  "extends": "@tali/tsconfig/worker.json",
   "include": ["src", "test/boundary"]
 }

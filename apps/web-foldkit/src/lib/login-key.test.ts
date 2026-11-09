@@ -15,6 +15,7 @@ describe('login key derivation', () => {
       'correct horse battery',
       'owner@example.com',
     )
+
     const second = await deriveLoginKey(
       'correct horse battery',
       ' Owner@Example.COM ',
@@ -37,6 +38,7 @@ describe('login key derivation', () => {
       'correct horse battery',
       'owner@example.com',
     )
+
     const second = await deriveLoginKey(
       'correct horse batterY',
       'owner@example.com',

@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest"
-import { uuidV7 } from "@tali/domain"
-import { sessionWithHousehold, workerFetch } from "./support.js"
+import { describe, expect, it } from 'vitest'
+import { uuidV7 } from '@tali/domain'
+import { sessionWithHousehold, workerFetch } from './support.js'
 
 /**
  * `POST /rpc` through the Worker.
@@ -12,51 +12,55 @@ import { sessionWithHousehold, workerFetch } from "./support.js"
  */
 
 interface RpcFailure {
-  readonly _tag: "Fail"
+  readonly _tag: 'Fail'
   readonly error: { readonly _tag: string }
 }
 
 interface RpcExit {
-  readonly _tag: "Exit"
+  readonly _tag: 'Exit'
   readonly requestId: string
   readonly exit:
-    | { readonly _tag: "Success"; readonly value: unknown }
-    | { readonly _tag: "Failure"; readonly cause: ReadonlyArray<RpcFailure> }
+    | { readonly _tag: 'Success'; readonly value: unknown }
+    | { readonly _tag: 'Failure'; readonly cause: ReadonlyArray<RpcFailure> }
 }
 
 const rpc = async (
   tag: string,
   payload: Record<string, unknown>,
-  cookie?: string
-): Promise<{ readonly status: number; readonly messages: ReadonlyArray<unknown> }> => {
+  cookie?: string,
+): Promise<{
+  readonly status: number
+  readonly messages: ReadonlyArray<unknown>
+}> => {
   const request = {
-    _tag: "Request",
-    id: "boundary-1",
+    _tag: 'Request',
+    id: 'boundary-1',
     tag,
     payload,
-    headers: []
+    headers: [],
   }
-  const response = await workerFetch("/rpc", {
-    method: "POST",
+  const response = await workerFetch('/rpc', {
+    method: 'POST',
     headers: {
-      "content-type": "application/ndjson",
-      ...(cookie === undefined ? {} : { cookie })
+      'content-type': 'application/ndjson',
+      ...(cookie === undefined ? {} : { cookie }),
     },
-    body: `${JSON.stringify(request)}\n`
+    body: `${JSON.stringify(request)}\n`,
   })
   const text = new TextDecoder().decode(await response.arrayBuffer())
   const messages = text
-    .split("\n")
-    .filter((line) => line.trim().length > 0)
-    .map((line) => JSON.parse(line) as unknown)
+    .split('\n')
+    .filter(line => line.trim().length > 0)
+    .map(line => JSON.parse(line) as unknown)
   return { status: response.status, messages }
 }
 
 const exitOf = (messages: ReadonlyArray<unknown>): RpcExit => {
   const exit = messages.find(
     (message): message is RpcExit =>
-      typeof message === "object" && message !== null &&
-      (message as { _tag?: string })._tag === "Exit"
+      typeof message === 'object' &&
+      message !== null &&
+      (message as { _tag?: string })._tag === 'Exit',
   )
   if (exit === undefined) {
     throw new Error(`no Exit message: ${JSON.stringify(messages)}`)
@@ -64,40 +68,42 @@ const exitOf = (messages: ReadonlyArray<unknown>): RpcExit => {
   return exit
 }
 
-describe("POST /rpc", () => {
-  it("creates a task with the cookie-derived viewer", async () => {
+describe('POST /rpc', () => {
+  it('creates a task with the cookie-derived viewer', async () => {
     const { session, household } = await sessionWithHousehold()
     const id = uuidV7()
 
     const { status, messages } = await rpc(
-      "CreateTask",
-      { id, clientMutationId: "boundary-rpc-create", title: "کار مرزی" },
-      session.cookie
+      'CreateTask',
+      { id, clientMutationId: 'boundary-rpc-create', title: 'کار مرزی' },
+      session.cookie,
     )
 
     expect(status).toBe(200)
     const exit = exitOf(messages)
-    expect(exit.exit._tag).toBe("Success")
-    const task = (exit.exit as { readonly value: Record<string, unknown> }).value
+    expect(exit.exit._tag).toBe('Success')
+    const task = (exit.exit as { readonly value: Record<string, unknown> })
+      .value
     expect(task).toMatchObject({
       id,
-      title: "کار مرزی",
+      title: 'کار مرزی',
       householdId: household.id,
-      status: "todo"
+      status: 'todo',
     })
   })
 
-  it("returns a typed Unauthorized failure when the cookie is missing", async () => {
-    const { messages } = await rpc("CreateTask", {
+  it('returns a typed Unauthorized failure when the cookie is missing', async () => {
+    const { messages } = await rpc('CreateTask', {
       id: uuidV7(),
-      clientMutationId: "boundary-rpc-anon",
-      title: "بی‌نشست"
+      clientMutationId: 'boundary-rpc-anon',
+      title: 'بی‌نشست',
     })
 
     const exit = exitOf(messages)
-    expect(exit.exit._tag).toBe("Failure")
-    const cause = (exit.exit as { readonly cause: ReadonlyArray<RpcFailure> }).cause
-    expect(cause.map((failure) => failure.error._tag)).toContain("Unauthorized")
+    expect(exit.exit._tag).toBe('Failure')
+    const cause = (exit.exit as { readonly cause: ReadonlyArray<RpcFailure> })
+      .cause
+    expect(cause.map(failure => failure.error._tag)).toContain('Unauthorized')
   })
 
   it("lists only the viewer's tasks", async () => {
@@ -107,21 +113,27 @@ describe("POST /rpc", () => {
     const bobTask = uuidV7()
 
     await rpc(
-      "CreateTask",
-      { id: aliceTask, clientMutationId: "boundary-rpc-alice", title: "مال آلیس" },
-      alice.session.cookie
+      'CreateTask',
+      {
+        id: aliceTask,
+        clientMutationId: 'boundary-rpc-alice',
+        title: 'مال آلیس',
+      },
+      alice.session.cookie,
     )
     await rpc(
-      "CreateTask",
-      { id: bobTask, clientMutationId: "boundary-rpc-bob", title: "مال باب" },
-      bob.session.cookie
+      'CreateTask',
+      { id: bobTask, clientMutationId: 'boundary-rpc-bob', title: 'مال باب' },
+      bob.session.cookie,
     )
 
-    const { messages } = await rpc("ListTasks", {}, bob.session.cookie)
+    const { messages } = await rpc('ListTasks', {}, bob.session.cookie)
     const exit = exitOf(messages)
-    expect(exit.exit._tag).toBe("Success")
-    const listed = (exit.exit as { readonly value: ReadonlyArray<{ id: string }> }).value
-    expect(listed.map((task) => task.id)).toContain(bobTask)
-    expect(listed.map((task) => task.id)).not.toContain(aliceTask)
+    expect(exit.exit._tag).toBe('Success')
+    const listed = (
+      exit.exit as { readonly value: ReadonlyArray<{ id: string }> }
+    ).value
+    expect(listed.map(task => task.id)).toContain(bobTask)
+    expect(listed.map(task => task.id)).not.toContain(aliceTask)
   })
 })

@@ -4,12 +4,12 @@ The Tali stack as typed TypeScript. `alchemy.run.ts` declares four base
 resources, plus opt-in OTLP destinations (see Observability), and is the single
 owner of how the app runs:
 
-| Resource | Type | Local (`alchemy dev`) | Deploy |
-| --- | --- | --- | --- |
-| `TaliDatabase` | `Cloudflare.D1.Database` | local simulator; `packages/sql/migrations` applied on every reconcile | real D1; migrations applied on deploy |
-| `TaliBackups` | `Cloudflare.R2.Bucket` | local R2 simulator | private R2 bucket; nightly D1 dumps, 30-day lifecycle safety net |
-| `TaliApi` | `Cloudflare.Worker` | `apps/api/src/index.ts` in workerd on :8787 | uploaded Worker with the `DB` + `BACKUP_BUCKET` bindings |
-| `TaliWeb` | `Cloudflare.Website.StaticSite` | `pnpm run dev` (Vite) on :3001 | `pnpm run build` → `apps/web-foldkit/dist` as static assets, with `apps/web-foldkit/worker.ts` in front of them |
+| Resource       | Type                            | Local (`alchemy dev`)                                                 | Deploy                                                                                                          |
+| -------------- | ------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `TaliDatabase` | `Cloudflare.D1.Database`        | local simulator; `packages/sql/migrations` applied on every reconcile | real D1; migrations applied on deploy                                                                           |
+| `TaliBackups`  | `Cloudflare.R2.Bucket`          | local R2 simulator                                                    | private R2 bucket; nightly D1 dumps, 30-day lifecycle safety net                                                |
+| `TaliApi`      | `Cloudflare.Worker`             | `apps/api/src/index.ts` in workerd on :8787                           | uploaded Worker with the `DB` + `BACKUP_BUCKET` bindings                                                        |
+| `TaliWeb`      | `Cloudflare.Website.StaticSite` | `pnpm run dev` (Vite) on :3001                                        | `pnpm run build` → `apps/web-foldkit/dist` as static assets, with `apps/web-foldkit/worker.ts` in front of them |
 
 The api Worker declares **three** cron triggers:
 
@@ -53,17 +53,17 @@ The deploy command is `pnpm stack:deploy` (`turbo run deploy` → `alchemy deplo
 It reads its credentials from the process environment; none of them live in the
 repository:
 
-| Variable | What it is |
-| --- | --- |
-| `CLOUDFLARE_API_TOKEN` | API token with Workers Scripts, D1 and Workers R2 Storage edit permissions |
-| `CLOUDFLARE_ACCOUNT_ID` | the target account |
-| `VAPID_PRIVATE_KEY` | the existing Web Push identity (base64url) |
-| `VAPID_PUBLIC_KEY` | optional; derived from the private key when omitted |
-| `VAPID_SUBJECT` | a real `mailto:`/`https:` contact URI |
-| `OPENCODE_API_KEY` | an OpenCode Go key for Capture; without it the feature is inert |
-| `CAPTURE_BASE_URL` | optional; the Go OpenAI-compatible root (defaults in code) |
-| `CAPTURE_MODEL` | optional; the paid model id (defaults in code) |
-| `TALI_BACKUPS` | `off` deploys without R2/backups (default on) |
+| Variable                | What it is                                                                 |
+| ----------------------- | -------------------------------------------------------------------------- |
+| `CLOUDFLARE_API_TOKEN`  | API token with Workers Scripts, D1 and Workers R2 Storage edit permissions |
+| `CLOUDFLARE_ACCOUNT_ID` | the target account                                                         |
+| `VAPID_PRIVATE_KEY`     | the existing Web Push identity (base64url)                                 |
+| `VAPID_PUBLIC_KEY`      | optional; derived from the private key when omitted                        |
+| `VAPID_SUBJECT`         | a real `mailto:`/`https:` contact URI                                      |
+| `OPENCODE_API_KEY`      | an OpenCode Go key for Capture; without it the feature is inert            |
+| `CAPTURE_BASE_URL`      | optional; the Go OpenAI-compatible root (defaults in code)                 |
+| `CAPTURE_MODEL`         | optional; the paid model id (defaults in code)                             |
+| `TALI_BACKUPS`          | `off` deploys without R2/backups (default on)                              |
 
 **Why it used to fail out of the box.** Three separate things:
 

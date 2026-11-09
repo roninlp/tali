@@ -54,12 +54,14 @@ const send = (
     }
 
     const response = maybeResponse.value
+
     const maybeJson = yield* Effect.option(
       Effect.tryPromise({
         try: () => response.json(),
         catch: () => undefined,
       }),
     )
+
     const json: unknown = Option.getOrUndefined(maybeJson)
 
     if (!response.ok) {

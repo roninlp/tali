@@ -1,4 +1,3 @@
-import { Popover } from '@foldkit/ui'
 import {
   Command,
   Mount,
@@ -15,6 +14,7 @@ import {
 } from 'foldkit/scene'
 import { describe, test } from 'vitest'
 
+import { Popover } from '@foldkit/ui'
 import { ListId, NoteId } from '@tali/domain'
 
 import * as Auth from './auth'
@@ -189,7 +189,9 @@ describe('navigation', () => {
     scene(
       { update, view },
       given(modelAt(AppRoute.Habits())),
-      expect(within(mobileNav(), role('link', { name: 'عادت‌ها' }))).toBeAbsent(),
+      expect(
+        within(mobileNav(), role('link', { name: 'عادت‌ها' })),
+      ).toBeAbsent(),
       click(within(mobileNav(), role('button', { name: 'بخش‌های بیشتر' }))),
       Mount.resolve(
         Popover.AnchorPopover,

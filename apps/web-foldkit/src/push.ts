@@ -62,6 +62,7 @@ export const Model = Schema.Struct({
   maybeLastAction: Schema.Option(QueuedReminderAction),
   isCopied: Schema.Boolean,
 })
+
 export type Model = typeof Model.Type
 
 export const initialModel = (
@@ -127,6 +128,7 @@ export const Message = defineMessageUnion({
     maybeLastAction: Schema.Option(QueuedReminderAction),
   },
 })
+
 export type Message = typeof Message.Type
 
 // COMMAND
@@ -155,6 +157,7 @@ export const RegisterPushWorker = Command.define('RegisterPushWorker', {
   messages: [Message.CompletedRegisterPushWorker],
   execute: Effect.promise(async () => {
     await registerServiceWorker()
+
     return Message.CompletedRegisterPushWorker()
   }),
 })
@@ -250,6 +253,7 @@ export const EnablePush = Command.define('EnablePush', {
       }
 
       const permission = yield* Effect.promise(requestNotificationPermission)
+
       const nextEnvironment = modifyFields(environment, {
         permission: () => permission,
       })
@@ -670,10 +674,12 @@ const serviceWorkerEvents: Stream.Stream<Message> = eventStream(emit => {
           at: decoded.value.at,
         }),
       )
+
       return
     }
 
     const data: unknown = event.data
+
     if (
       typeof data === 'object' &&
       data !== null &&

@@ -1,4 +1,4 @@
-import { Config } from "effect"
+import { Config } from 'effect'
 
 /**
  * Typed environment config (Effect `Config`).
@@ -8,13 +8,13 @@ import { Config } from "effect"
  * to process env + defaults.
  */
 export const AppConfig = Config.all({
-  apiBaseUrl: Config.String("API_BASE_URL").pipe(
-    Config.withDefault("http://localhost:8787")
+  apiBaseUrl: Config.String('API_BASE_URL').pipe(
+    Config.withDefault('http://localhost:8787'),
   ),
-  d1DatabaseName: Config.String("D1_DATABASE_NAME").pipe(
-    Config.withDefault("tali-db")
+  d1DatabaseName: Config.String('D1_DATABASE_NAME').pipe(
+    Config.withDefault('tali-db'),
   ),
-  logLevel: Config.String("LOG_LEVEL").pipe(Config.withDefault("info"))
+  logLevel: Config.String('LOG_LEVEL').pipe(Config.withDefault('info')),
 })
 
 /**
@@ -24,9 +24,13 @@ export const AppConfig = Config.all({
  * change silently run the reminder sweep instead of the maintenance job.
  */
 export const CRON = {
-  reminder: "* * * * *",
-  purge: "17 3 * * *",
-  backup: "47 3 * * *"
+  reminder: '* * * * *',
+  purge: '17 3 * * *',
+  backup: '47 3 * * *',
 } as const
 
-export const CRON_EXPRESSIONS = [CRON.reminder, CRON.purge, CRON.backup] as const
+export const CRON_EXPRESSIONS = [
+  CRON.reminder,
+  CRON.purge,
+  CRON.backup,
+] as const

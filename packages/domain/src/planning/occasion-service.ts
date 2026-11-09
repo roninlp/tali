@@ -1,12 +1,12 @@
-import { Schema } from "effect"
-import { Visibility } from "../common.js"
-import { LocalDate, OccasionId, TimeZone } from "./common.js"
-import { Occasion } from "./occasion.js"
+import { Schema } from 'effect'
+import { Visibility } from '../common.js'
+import { LocalDate, OccasionId, TimeZone } from './common.js'
+import { Occasion } from './occasion.js'
 import {
   OccasionAdvanceReminder,
-  OccasionOccurrence
-} from "./occasion-projection.js"
-import { Task } from "./task.js"
+  OccasionOccurrence,
+} from './occasion-projection.js'
+import { Task } from './task.js'
 
 /**
  * `OccasionService` contract (ticket #59; FR-CAL-02).
@@ -26,50 +26,52 @@ import { Task } from "./task.js"
 
 /** The occasion does not exist, or is not visible to this viewer. */
 export class OccasionNotFound extends Schema.TaggedError<OccasionNotFound>()(
-  "OccasionNotFound",
-  { id: OccasionId }
+  'OccasionNotFound',
+  { id: OccasionId },
 ) {}
 
 /** The row exists but this viewer may not read/write it. */
 export class OccasionForbidden extends Schema.TaggedError<OccasionForbidden>()(
-  "OccasionForbidden",
+  'OccasionForbidden',
   {
     id: Schema.NullOr(Schema.String),
-    reason: Schema.Literals(["private", "household", "noHousehold"])
-  }
+    reason: Schema.Literals(['private', 'household', 'noHousehold']),
+  },
 ) {}
 
 /** Field-level validation (empty title, impossible date, bad offset, …). */
 export class OccasionValidationError extends Schema.TaggedError<OccasionValidationError>()(
-  "OccasionValidationError",
+  'OccasionValidationError',
   {
     issues: Schema.Array(
       Schema.Struct({
         field: Schema.String,
-        message: Schema.String
-      })
-    )
-  }
+        message: Schema.String,
+      }),
+    ),
+  },
 ) {}
 
 /** A concurrent writer won the version CAS; the caller may retry. */
 export class OccasionConflict extends Schema.TaggedError<OccasionConflict>()(
-  "OccasionConflict",
-  { id: Schema.String }
+  'OccasionConflict',
+  { id: Schema.String },
 ) {}
 
 export const OccasionServiceError = Schema.Union([
   OccasionNotFound,
   OccasionForbidden,
   OccasionValidationError,
-  OccasionConflict
+  OccasionConflict,
 ])
-export type OccasionServiceError = Schema.Schema.Type<typeof OccasionServiceError>
+export type OccasionServiceError = Schema.Schema.Type<
+  typeof OccasionServiceError
+>
 
 // ── Mutation inputs ──────────────────────────────────────────────────────
 
 const advanceDays = Schema.NullOr(
-  Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 365 }))
+  Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 365 })),
 )
 
 const occasionFields = {
@@ -78,7 +80,7 @@ const occasionFields = {
   timeZone: TimeZone,
   yearly: Schema.Boolean,
   advanceReminderDays: advanceDays,
-  color: Schema.NullOr(Schema.String)
+  color: Schema.NullOr(Schema.String),
 }
 
 export const OccasionCreateInput = Schema.Struct({
@@ -91,7 +93,7 @@ export const OccasionCreateInput = Schema.Struct({
   yearly: Schema.optional(occasionFields.yearly),
   advanceReminderDays: Schema.optional(occasionFields.advanceReminderDays),
   color: Schema.optional(occasionFields.color),
-  visibility: Schema.optional(Visibility)
+  visibility: Schema.optional(Visibility),
 })
 export type OccasionCreateInput = Schema.Schema.Type<typeof OccasionCreateInput>
 
@@ -103,7 +105,7 @@ export const OccasionPatch = Schema.Struct({
   yearly: Schema.optional(occasionFields.yearly),
   advanceReminderDays: Schema.optional(occasionFields.advanceReminderDays),
   color: Schema.optional(occasionFields.color),
-  visibility: Schema.optional(Visibility)
+  visibility: Schema.optional(Visibility),
 })
 export type OccasionPatch = Schema.Schema.Type<typeof OccasionPatch>
 
@@ -112,24 +114,28 @@ export const OccasionUpdateInput = Schema.Struct({
   clientMutationId: Schema.String,
   /** Informational; the update re-reads and retries on a lost CAS. */
   baseVersion: Schema.optional(Schema.Int),
-  patch: OccasionPatch
+  patch: OccasionPatch,
 })
 export type OccasionUpdateInput = Schema.Schema.Type<typeof OccasionUpdateInput>
 
 export const OccasionMutationInput = Schema.Struct({
   id: OccasionId,
-  clientMutationId: Schema.String
+  clientMutationId: Schema.String,
 })
-export type OccasionMutationInput = Schema.Schema.Type<typeof OccasionMutationInput>
+export type OccasionMutationInput = Schema.Schema.Type<
+  typeof OccasionMutationInput
+>
 
 // ── Queries ──────────────────────────────────────────────────────────────
 
 /** Inclusive `from` / `to` local-date window (the projection's convention). */
 export const OccasionOccurrenceQuery = Schema.Struct({
   from: LocalDate,
-  to: LocalDate
+  to: LocalDate,
 })
-export type OccasionOccurrenceQuery = Schema.Schema.Type<typeof OccasionOccurrenceQuery>
+export type OccasionOccurrenceQuery = Schema.Schema.Type<
+  typeof OccasionOccurrenceQuery
+>
 
 /** The one-tap preparation task request. */
 export const OccasionPrepareInput = Schema.Struct({
@@ -140,9 +146,11 @@ export const OccasionPrepareInput = Schema.Struct({
   /** Overrides the default task title (`آمادهسازی برای <occasion>`). */
   title: Schema.optional(Schema.String),
   /** Overrides the default due date (the advance-reminder date). */
-  dueDate: Schema.optional(LocalDate)
+  dueDate: Schema.optional(LocalDate),
 })
-export type OccasionPrepareInput = Schema.Schema.Type<typeof OccasionPrepareInput>
+export type OccasionPrepareInput = Schema.Schema.Type<
+  typeof OccasionPrepareInput
+>
 
 /**
  * An occasion plus its next projected occurrence and advance reminder.
@@ -151,7 +159,7 @@ export type OccasionPrepareInput = Schema.Schema.Type<typeof OccasionPrepareInpu
 export const OccasionDetail = Schema.Struct({
   occasion: Occasion,
   next: Schema.NullOr(OccasionOccurrence),
-  nextReminder: Schema.NullOr(OccasionAdvanceReminder)
+  nextReminder: Schema.NullOr(OccasionAdvanceReminder),
 })
 export type OccasionDetail = Schema.Schema.Type<typeof OccasionDetail>
 
@@ -160,6 +168,6 @@ export const OccasionPreparation = Schema.Struct({
   occasion: Occasion,
   task: Task,
   /** `false` when a live preparation task already existed (idempotent tap). */
-  created: Schema.Boolean
+  created: Schema.Boolean,
 })
 export type OccasionPreparation = Schema.Schema.Type<typeof OccasionPreparation>

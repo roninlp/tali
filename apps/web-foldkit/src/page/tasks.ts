@@ -59,6 +59,7 @@ export const QuickAddPanel = Schema.Literals([
   'tags',
   'project',
 ])
+
 export type QuickAddPanel = typeof QuickAddPanel.Type
 
 export const QuickAddDraft = Schema.Struct({
@@ -76,6 +77,7 @@ export const QuickAddDraft = Schema.Struct({
   hasSaved: Schema.Boolean,
   maybeError: Schema.Option(Schema.String),
 })
+
 export type QuickAddDraft = typeof QuickAddDraft.Type
 
 export const TaskSaveState = Schema.Literals([
@@ -84,6 +86,7 @@ export const TaskSaveState = Schema.Literals([
   'saved',
   'error',
 ])
+
 export type TaskSaveState = typeof TaskSaveState.Type
 
 export const TaskEditor = Schema.Struct({
@@ -99,6 +102,7 @@ export const TaskEditor = Schema.Struct({
   statusListbox: Listbox.Model,
   projectListbox: Listbox.Model,
 })
+
 export type TaskEditor = typeof TaskEditor.Type
 
 export const TaskToast = Schema.Struct({
@@ -107,36 +111,44 @@ export const TaskToast = Schema.Struct({
   title: Schema.String,
   maybeStartedAt: Schema.Option(Schema.String),
 })
+
 export type TaskToast = typeof TaskToast.Type
 
 export type PriorityFilterOption = Readonly<{
   value: TaskPriorityFilter
   label: string
 }>
+
 export type StatusFilterOption = Readonly<{
   value: TaskStatusFilter
   label: string
 }>
+
 export type DateFilterOption = Readonly<{
   value: TaskDateFilter
   label: string
 }>
+
 export type SortFieldOption = Readonly<{
   value: TaskSortField
   label: string
 }>
+
 export type ProjectOption = Readonly<{
   value: string
   label: string
 }>
+
 export type TaskPriorityEditorOption = Readonly<{
   value: TaskPriority
   label: string
 }>
+
 export type TaskStatusEditorOption = Readonly<{
   value: TaskStatusOption
   label: string
 }>
+
 export type TaskProjectEditorOption = Readonly<{
   value: string
   label: string
@@ -146,27 +158,33 @@ export const PriorityListbox = Listbox.create<
   PriorityFilterOption,
   TaskPriorityFilter
 >()
+
 export const StatusListbox = Listbox.create<
   StatusFilterOption,
   TaskStatusFilter
 >()
+
 export const DateListbox = Listbox.create<DateFilterOption, TaskDateFilter>()
 export const SortListbox = Listbox.create<SortFieldOption, TaskSortField>()
 export const QuickAddProjectListbox = Listbox.create<ProjectOption, string>()
+
 export const TaskPriorityListbox = Listbox.create<
   TaskPriorityEditorOption,
   TaskPriority
 >()
+
 export const TaskStatusListbox = Listbox.create<
   TaskStatusEditorOption,
   TaskStatusOption
 >()
+
 export const TaskProjectListbox = Listbox.create<
   TaskProjectEditorOption,
   string
 >()
 
 export const CreateSource = Schema.Literals(['quickAdd', 'filters'])
+
 export type CreateSource = typeof CreateSource.Type
 
 export const Model = Schema.Struct({
@@ -192,6 +210,7 @@ export const Model = Schema.Struct({
   quickAddProjectListbox: Listbox.Model,
   picker: Picker.Model,
 })
+
 export type Model = typeof Model.Type
 
 export type InitOptions = Readonly<{
@@ -401,11 +420,13 @@ export const Message = defineMessageUnion({
   },
   CompletedCacheTaskView: {},
 })
+
 export type Message = typeof Message.Type
 
 export const OutMessage = defineMessageUnion({
   WroteLocalData: {},
 })
+
 export type OutMessage = typeof OutMessage.Type
 
 // COMMAND
@@ -764,6 +785,7 @@ export const CacheTaskView = Command.define('CacheTaskView', {
   execute: ({ userId, settings }) =>
     Effect.sync(() => {
       cacheTaskViewSettings(userId, settings)
+
       return Message.CompletedCacheTaskView()
     }),
 })
@@ -849,6 +871,7 @@ const saveTaskPatch = (
   }
 
   const generation = editor.generation + 1
+
   const next = updateEditor(withoutError(model), taskId, current =>
     modifyFields(current, {
       generation: () => generation,
@@ -1232,10 +1255,13 @@ const applyPickerValue = (
   if (target === 'quickAdd:due') {
     return setQuickAddDueDate(model, value)
   }
+
   if (target.startsWith('task:') && target.endsWith(':due')) {
     const taskId = target.slice('task:'.length, -':due'.length)
+
     return setEditorDueDate(model, taskId, value)
   }
+
   return model
 }
 
@@ -1723,6 +1749,7 @@ export const update = (
       }
 
       const task = findTask(inputs, taskId)
+
       const next = updateEditor(model, taskId, current =>
         modifyFields(current, { title: () => value }),
       )
@@ -1751,6 +1778,7 @@ export const update = (
 
       const task = findTask(inputs, taskId)
       const unchanged = value === (task?.description ?? '')
+
       const next = updateEditor(model, taskId, current =>
         modifyFields(current, { description: () => value }),
       )
@@ -1766,6 +1794,7 @@ export const update = (
 
       if (editor.hasPendingSave && task !== undefined) {
         const original = task.description ?? ''
+
         const corrected = updateEditor(next, taskId, current =>
           modifyFields(current, { description: () => original }),
         )
@@ -1837,6 +1866,7 @@ export const update = (
       const tagIds = editor.tagIds.includes(tagId)
         ? editor.tagIds.filter(id => id !== tagId)
         : [...editor.tagIds, tagId]
+
       const next = updateEditor(model, taskId, current =>
         modifyFields(current, { tagIds: () => tagIds }),
       )
@@ -1888,6 +1918,7 @@ export const update = (
     CompletedSaveTaskFields: ({ taskId, generation }) => {
       const editor = findEditor(model, taskId)
       const isCurrent = isCurrentEditorSave(editor, taskId, generation)
+
       const next = isCurrent
         ? updateEditor(
             modifyFields(model, { maybeError: () => Option.none() }),
@@ -2136,6 +2167,7 @@ const clockEvents = Subscription.persistentEntry(
     Stream.fromEffectRepeat(
       Effect.gen(function* () {
         yield* Effect.sleep(Duration.seconds(60))
+
         return yield* clockTick
       }),
     ),

@@ -13,19 +13,21 @@
  * `.env`. A missing key exits non-zero with an explanation.
  */
 
-import { spawnSync } from "node:child_process"
-import { existsSync, readFileSync } from "node:fs"
-import { resolve } from "node:path"
+import { spawnSync } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
-const root = resolve(import.meta.dirname, "..")
+const root = resolve(import.meta.dirname, '..')
 
-const parseEnvFile = (path) => {
+const parseEnvFile = path => {
   if (!existsSync(path)) return {}
   const values = {}
-  for (const raw of readFileSync(path, "utf8").split(/\r?\n/)) {
+  for (const raw of readFileSync(path, 'utf8').split(/\r?\n/)) {
     const line = raw.trim()
-    if (line === "" || line.startsWith("#")) continue
-    const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line)
+    if (line === '' || line.startsWith('#')) continue
+    const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(
+      line,
+    )
     if (match === null) continue
     let value = match[2].trim()
     if (
@@ -39,8 +41,8 @@ const parseEnvFile = (path) => {
   return values
 }
 
-const fromFile = parseEnvFile(resolve(root, ".env"))
-for (const name of ["OPENCODE_API_KEY", "CAPTURE_BASE_URL", "CAPTURE_MODEL"]) {
+const fromFile = parseEnvFile(resolve(root, '.env'))
+for (const name of ['OPENCODE_API_KEY', 'CAPTURE_BASE_URL', 'CAPTURE_MODEL']) {
   if (process.env[name] === undefined && fromFile[name] !== undefined) {
     process.env[name] = fromFile[name]
   }
@@ -48,27 +50,27 @@ for (const name of ["OPENCODE_API_KEY", "CAPTURE_BASE_URL", "CAPTURE_MODEL"]) {
 
 if (
   process.env.OPENCODE_API_KEY === undefined ||
-  process.env.OPENCODE_API_KEY.trim() === ""
+  process.env.OPENCODE_API_KEY.trim() === ''
 ) {
   console.error(
-    "eval:capture needs OPENCODE_API_KEY (in the environment or .env). " +
-      "pnpm test stays offline and does not need it."
+    'eval:capture needs OPENCODE_API_KEY (in the environment or .env). ' +
+      'pnpm test stays offline and does not need it.',
   )
   process.exit(2)
 }
 
 const result = spawnSync(
-  "pnpm",
+  'pnpm',
   [
-    "--filter",
-    "@tali/api",
-    "exec",
-    "vitest",
-    "run",
-    "test/eval-capture.test.ts",
-    "--reporter=verbose",
+    '--filter',
+    '@tali/api',
+    'exec',
+    'vitest',
+    'run',
+    'test/eval-capture.test.ts',
+    '--reporter=verbose',
   ],
-  { stdio: "inherit", cwd: root, env: process.env }
+  { stdio: 'inherit', cwd: root, env: process.env },
 )
 
 process.exit(result.status ?? 1)

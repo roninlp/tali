@@ -13,6 +13,7 @@ import { type LocalStore, openLocalStore } from '@tali/sync-client'
  */
 export const LocalStoreResource =
   ManagedResource.tag<LocalStore>()('LocalStore')
+
 export type LocalStoreService = ManagedResource.ServiceOf<
   typeof LocalStoreResource
 >

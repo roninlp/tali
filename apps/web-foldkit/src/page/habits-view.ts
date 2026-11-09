@@ -391,9 +391,11 @@ const formView = (
   h: HtmlBuilder<Message>,
 ): Html => {
   const digits = inputs.display.digits
+
   const maybeEditing = Option.flatMap(model.maybeEditingId, habitId =>
     findHabit(inputs, habitId),
   )
+
   const heading = Option.match(model.maybeEditingId, {
     onNone: () => 'عادت تازه',
     onSome: () =>
@@ -402,6 +404,7 @@ const formView = (
         onSome: habit => `ویرایش «${habit.title}»`,
       }),
   })
+
   const isDisabled = !inputs.isStoreReady || model.isSaving
 
   return h.form(
@@ -491,10 +494,12 @@ const habitCardView = (
   const stats = habitStatsFor(habit, entries, today, model.windowDays)
   const rate = habitRateCopy(stats, digits)
   const status = entry?.status ?? null
+
   const isPending = Array.contains(
     pendingHabitIds(inputs.pendingKeys),
     habit.id,
   )
+
   const maybeHeat = Option.filter(
     model.maybeHeat,
     heat => heat.habitId === habit.id,

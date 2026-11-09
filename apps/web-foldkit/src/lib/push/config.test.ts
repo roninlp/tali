@@ -14,6 +14,7 @@ describe('urlBase64ToUint8Array', () => {
   test('decodes a VAPID key to an uncompressed P-256 point', () => {
     const key =
       'BGY9jCGmtvj4rGgzFTVWiAEOo-w4yil14BtLctF0hue2dRAd5Da6FYJaoQzBc37EgeBptqsloga-ILzpO9aLOiA'
+
     const bytes = urlBase64ToUint8Array(key)
 
     expect(bytes).toHaveLength(65)

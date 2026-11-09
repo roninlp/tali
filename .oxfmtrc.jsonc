@@ -1,0 +1,50 @@
+// Shared formatter defaults for the workspace.
+// https://oxc.rs/docs/guide/usage/formatter/config-file-reference.html
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "semi": false,
+  "singleQuote": true,
+  "arrowParens": "avoid",
+  "trailingComma": "all",
+  "printWidth": 80,
+  "sortPackageJson": false,
+  "ignorePatterns": [
+    "node_modules",
+    "dist",
+    ".turbo",
+    "coverage",
+    "playwright-report",
+    "test-results",
+    ".state",
+    ".wrangler",
+    "repos",
+    ".agents",
+    ".github",
+    "docs",
+    "README.md",
+    "AGENTS.md",
+    "GLOSSARY.md",
+    "packages/lint-config/anti-slop",
+    "*.tsbuildinfo",
+    "pnpm-lock.yaml",
+  ],
+  "overrides": [
+    {
+      "files": ["apps/web-foldkit/**"],
+      "options": {
+        "sortImports": {
+          "ignoreCase": false,
+          "customGroups": [
+            { "groupName": "scoped", "elementNamePattern": ["@*", "@*/**"] },
+          ],
+          "groups": [
+            ["builtin", "external"],
+            "scoped",
+            ["parent", "sibling", "index"],
+            "unknown",
+          ],
+        },
+      },
+    },
+  ],
+}

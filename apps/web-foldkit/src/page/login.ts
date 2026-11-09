@@ -22,6 +22,7 @@ export const Model = Schema.Struct({
   maybeError: Schema.Option(Schema.String),
   isSubmitting: Schema.Boolean,
 })
+
 export type Model = typeof Model.Type
 
 export const initialModel = (): Model =>
@@ -37,6 +38,7 @@ export const initialModel = (): Model =>
 export const OutMessage = defineMessageUnion({
   SucceededLogin: { session: Session },
 })
+
 export type OutMessage = typeof OutMessage.Type
 
 export const Message = defineMessageUnion({
@@ -46,6 +48,7 @@ export const Message = defineMessageUnion({
   SucceededLogin: { session: Session },
   FailedLogin: { failure: AuthFailure },
 })
+
 export type Message = typeof Message.Type
 
 // COMMAND

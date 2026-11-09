@@ -1,6 +1,6 @@
-import { Schema } from "effect"
-import { Rpc, RpcClient, RpcGroup } from "effect/rpc"
-import type { RpcClientError } from "effect/rpc/RpcClientError"
+import { Schema } from 'effect'
+import { Rpc, RpcClient, RpcGroup } from 'effect/rpc'
+import type { RpcClientError } from 'effect/rpc/RpcClientError'
 import {
   Capture,
   CommitCaptureInput,
@@ -88,8 +88,8 @@ import {
   TaskMutationInput,
   TaskServiceError,
   TaskUpdateInput,
-  Unauthorized
-} from "@tali/domain"
+  Unauthorized,
+} from '@tali/domain'
 
 /**
  * The single RPC contract shared by `apps/api` (serves it via
@@ -108,336 +108,336 @@ import {
 
 const ListRpcError = Schema.Union([ListServiceError, Unauthorized])
 
-class CreateList extends Rpc.make("CreateList", {
+class CreateList extends Rpc.make('CreateList', {
   payload: ListCreateInput,
   success: List,
-  error: ListRpcError
+  error: ListRpcError,
 }) {}
 
-class GetList extends Rpc.make("GetList", {
+class GetList extends Rpc.make('GetList', {
   payload: Schema.Struct({ id: ListId }),
   success: List,
-  error: ListRpcError
+  error: ListRpcError,
 }) {}
 
-class UpdateList extends Rpc.make("UpdateList", {
+class UpdateList extends Rpc.make('UpdateList', {
   payload: ListUpdateInput,
   success: List,
-  error: ListRpcError
+  error: ListRpcError,
 }) {}
 
-class DeleteList extends Rpc.make("DeleteList", {
+class DeleteList extends Rpc.make('DeleteList', {
   payload: ListMutationInput,
   success: List,
-  error: ListRpcError
+  error: ListRpcError,
 }) {}
 
-class ListLists extends Rpc.make("ListLists", {
+class ListLists extends Rpc.make('ListLists', {
   success: Schema.Array(List),
-  error: ListRpcError
+  error: ListRpcError,
 }) {}
 
-class CreateListItem extends Rpc.make("CreateListItem", {
+class CreateListItem extends Rpc.make('CreateListItem', {
   payload: ListItemCreateInput,
   success: PlanningListItem,
-  error: ListRpcError
+  error: ListRpcError,
 }) {}
 
-class AppendListItems extends Rpc.make("AppendListItems", {
+class AppendListItems extends Rpc.make('AppendListItems', {
   payload: ListItemsAppendInput,
   success: Schema.Array(PlanningListItem),
-  error: ListRpcError
+  error: ListRpcError,
 }) {}
 
-class ListListItems extends Rpc.make("ListListItems", {
+class ListListItems extends Rpc.make('ListListItems', {
   payload: ListItemsQuery,
   success: Schema.Array(PlanningListItem),
-  error: ListRpcError
+  error: ListRpcError,
 }) {}
 
-class UpdateListItem extends Rpc.make("UpdateListItem", {
+class UpdateListItem extends Rpc.make('UpdateListItem', {
   payload: ListItemUpdateInput,
   success: PlanningListItem,
-  error: ListRpcError
+  error: ListRpcError,
 }) {}
 
-class SetListItemChecked extends Rpc.make("SetListItemChecked", {
+class SetListItemChecked extends Rpc.make('SetListItemChecked', {
   payload: ListItemCheckInput,
   success: PlanningListItem,
-  error: ListRpcError
+  error: ListRpcError,
 }) {}
 
-class DeleteListItem extends Rpc.make("DeleteListItem", {
+class DeleteListItem extends Rpc.make('DeleteListItem', {
   payload: ListItemMutationInput,
   success: PlanningListItem,
-  error: ListRpcError
+  error: ListRpcError,
 }) {}
 
-class ReorderListItems extends Rpc.make("ReorderListItems", {
+class ReorderListItems extends Rpc.make('ReorderListItems', {
   payload: ListReorderInput,
   success: Schema.Array(PlanningListItem),
-  error: ListRpcError
+  error: ListRpcError,
 }) {}
 
 const TaskRpcError = Schema.Union([TaskServiceError, Unauthorized])
 
-class CreateTask extends Rpc.make("CreateTask", {
+class CreateTask extends Rpc.make('CreateTask', {
   payload: TaskCreateInput,
   success: Task,
-  error: TaskRpcError
+  error: TaskRpcError,
 }) {}
 
-class GetTask extends Rpc.make("GetTask", {
+class GetTask extends Rpc.make('GetTask', {
   payload: Schema.Struct({ id: TaskId }),
   success: Task,
-  error: TaskRpcError
+  error: TaskRpcError,
 }) {}
 
-class UpdateTask extends Rpc.make("UpdateTask", {
+class UpdateTask extends Rpc.make('UpdateTask', {
   payload: TaskUpdateInput,
   success: Task,
-  error: TaskRpcError
+  error: TaskRpcError,
 }) {}
 
-class MoveTask extends Rpc.make("MoveTask", {
+class MoveTask extends Rpc.make('MoveTask', {
   payload: TaskMoveInput,
   success: Task,
-  error: TaskRpcError
+  error: TaskRpcError,
 }) {}
 
-class StartTask extends Rpc.make("StartTask", {
+class StartTask extends Rpc.make('StartTask', {
   payload: TaskMutationInput,
   success: Task,
-  error: TaskRpcError
+  error: TaskRpcError,
 }) {}
 
-class CompleteTask extends Rpc.make("CompleteTask", {
+class CompleteTask extends Rpc.make('CompleteTask', {
   payload: TaskMutationInput,
   success: Task,
-  error: TaskRpcError
+  error: TaskRpcError,
 }) {}
 
-class UndoTask extends Rpc.make("UndoTask", {
+class UndoTask extends Rpc.make('UndoTask', {
   payload: TaskMutationInput,
   success: Task,
-  error: TaskRpcError
+  error: TaskRpcError,
 }) {}
 
-class ListTasks extends Rpc.make("ListTasks", {
+class ListTasks extends Rpc.make('ListTasks', {
   payload: TaskListInput,
   success: Schema.Array(Task),
-  error: TaskRpcError
+  error: TaskRpcError,
 }) {}
 
-class GetTaskBuckets extends Rpc.make("GetTaskBuckets", {
+class GetTaskBuckets extends Rpc.make('GetTaskBuckets', {
   success: TaskBuckets,
-  error: TaskRpcError
+  error: TaskRpcError,
 }) {}
 
-class CreateProject extends Rpc.make("CreateProject", {
+class CreateProject extends Rpc.make('CreateProject', {
   payload: ProjectCreateInput,
   success: Project,
-  error: TaskRpcError
+  error: TaskRpcError,
 }) {}
 
-class RenameProject extends Rpc.make("RenameProject", {
+class RenameProject extends Rpc.make('RenameProject', {
   payload: ProjectRenameInput,
   success: Project,
-  error: TaskRpcError
+  error: TaskRpcError,
 }) {}
 
-class ListProjects extends Rpc.make("ListProjects", {
+class ListProjects extends Rpc.make('ListProjects', {
   success: Schema.Array(Project),
-  error: TaskRpcError
+  error: TaskRpcError,
 }) {}
 
-class CreateTag extends Rpc.make("CreateTag", {
+class CreateTag extends Rpc.make('CreateTag', {
   payload: TagCreateInput,
   success: Tag,
-  error: TaskRpcError
+  error: TaskRpcError,
 }) {}
 
-class RenameTag extends Rpc.make("RenameTag", {
+class RenameTag extends Rpc.make('RenameTag', {
   payload: TagRenameInput,
   success: Tag,
-  error: TaskRpcError
+  error: TaskRpcError,
 }) {}
 
-class ListTags extends Rpc.make("ListTags", {
+class ListTags extends Rpc.make('ListTags', {
   success: Schema.Array(Tag),
-  error: TaskRpcError
+  error: TaskRpcError,
 }) {}
 
 // ── Notes (ticket #40; FR-NOTE-01/03) ────────────────────────────────────
 
 const NoteRpcError = Schema.Union([NoteServiceError, Unauthorized])
 
-class CreateNote extends Rpc.make("CreateNote", {
+class CreateNote extends Rpc.make('CreateNote', {
   payload: NoteCreateInput,
   success: Note,
-  error: NoteRpcError
+  error: NoteRpcError,
 }) {}
 
-class GetNote extends Rpc.make("GetNote", {
+class GetNote extends Rpc.make('GetNote', {
   payload: Schema.Struct({ id: NoteId }),
   success: Note,
-  error: NoteRpcError
+  error: NoteRpcError,
 }) {}
 
 /** Version-keyed autosave; identical text is a no-op, stale text conflicts. */
-class SaveNote extends Rpc.make("SaveNote", {
+class SaveNote extends Rpc.make('SaveNote', {
   payload: NoteSaveInput,
   success: Note,
-  error: NoteRpcError
+  error: NoteRpcError,
 }) {}
 
-class UpdateNote extends Rpc.make("UpdateNote", {
+class UpdateNote extends Rpc.make('UpdateNote', {
   payload: NoteUpdateInput,
   success: Note,
-  error: NoteRpcError
+  error: NoteRpcError,
 }) {}
 
-class SetNotePinned extends Rpc.make("SetNotePinned", {
+class SetNotePinned extends Rpc.make('SetNotePinned', {
   payload: NoteFlagInput,
   success: Note,
-  error: NoteRpcError
+  error: NoteRpcError,
 }) {}
 
-class SetNoteArchived extends Rpc.make("SetNoteArchived", {
+class SetNoteArchived extends Rpc.make('SetNoteArchived', {
   payload: NoteFlagInput,
   success: Note,
-  error: NoteRpcError
+  error: NoteRpcError,
 }) {}
 
-class SetNoteTags extends Rpc.make("SetNoteTags", {
+class SetNoteTags extends Rpc.make('SetNoteTags', {
   payload: NoteTagInput,
   success: Note,
-  error: NoteRpcError
+  error: NoteRpcError,
 }) {}
 
-class TrashNote extends Rpc.make("TrashNote", {
+class TrashNote extends Rpc.make('TrashNote', {
   payload: NoteMutationInput,
   success: Note,
-  error: NoteRpcError
+  error: NoteRpcError,
 }) {}
 
-class RestoreNote extends Rpc.make("RestoreNote", {
+class RestoreNote extends Rpc.make('RestoreNote', {
   payload: NoteMutationInput,
   success: Note,
-  error: NoteRpcError
+  error: NoteRpcError,
 }) {}
 
-class ListNotes extends Rpc.make("ListNotes", {
+class ListNotes extends Rpc.make('ListNotes', {
   payload: NoteListInput,
   success: Schema.Array(Note),
-  error: NoteRpcError
+  error: NoteRpcError,
 }) {}
 
 /** The #42 dashboard seam: pinned, live, non-archived notes. */
-class ListPinnedNotes extends Rpc.make("ListPinnedNotes", {
+class ListPinnedNotes extends Rpc.make('ListPinnedNotes', {
   success: Schema.Array(Note),
-  error: NoteRpcError
+  error: NoteRpcError,
 }) {}
 
-class ListTrashNotes extends Rpc.make("ListTrashNotes", {
+class ListTrashNotes extends Rpc.make('ListTrashNotes', {
   success: Schema.Array(Note),
-  error: NoteRpcError
+  error: NoteRpcError,
 }) {}
 
 // ── Events (tickets #57/#58; FR-CAL-01/03) ───────────────────────────────
 
 const EventRpcError = Schema.Union([EventServiceError, Unauthorized])
 
-class CreateEvent extends Rpc.make("CreateEvent", {
+class CreateEvent extends Rpc.make('CreateEvent', {
   payload: EventCreateInput,
   success: Event,
-  error: EventRpcError
+  error: EventRpcError,
 }) {}
 
-class GetEvent extends Rpc.make("GetEvent", {
+class GetEvent extends Rpc.make('GetEvent', {
   payload: Schema.Struct({ id: EventId }),
   success: Event,
-  error: EventRpcError
+  error: EventRpcError,
 }) {}
 
-class UpdateEvent extends Rpc.make("UpdateEvent", {
+class UpdateEvent extends Rpc.make('UpdateEvent', {
   payload: EventUpdateInput,
   success: Event,
-  error: EventRpcError
+  error: EventRpcError,
 }) {}
 
-class DeleteEvent extends Rpc.make("DeleteEvent", {
+class DeleteEvent extends Rpc.make('DeleteEvent', {
   payload: EventMutationInput,
   success: Event,
-  error: EventRpcError
+  error: EventRpcError,
 }) {}
 
-class ListEvents extends Rpc.make("ListEvents", {
+class ListEvents extends Rpc.make('ListEvents', {
   payload: EventListInput,
   success: Schema.Array(Event),
-  error: EventRpcError
+  error: EventRpcError,
 }) {}
 
 /** Expand every visible series into a window (`before` exclusive). */
-class ListEventOccurrences extends Rpc.make("ListEventOccurrences", {
+class ListEventOccurrences extends Rpc.make('ListEventOccurrences', {
   payload: EventOccurrenceQuery,
   success: Schema.Array(EventOccurrence),
-  error: EventRpcError
+  error: EventRpcError,
 }) {}
 
 /** "This occurrence" / "this and following" edit. */
-class EditEventOccurrence extends Rpc.make("EditEventOccurrence", {
+class EditEventOccurrence extends Rpc.make('EditEventOccurrence', {
   payload: EventOccurrenceEditInput,
   success: EventOccurrenceChange,
-  error: EventRpcError
+  error: EventRpcError,
 }) {}
 
 /** "This occurrence" / "this and following" delete. */
-class DeleteEventOccurrence extends Rpc.make("DeleteEventOccurrence", {
+class DeleteEventOccurrence extends Rpc.make('DeleteEventOccurrence', {
   payload: EventOccurrenceDeleteInput,
   success: EventOccurrenceChange,
-  error: EventRpcError
+  error: EventRpcError,
 }) {}
 
 // ── Habits (ticket #63; FR-HAB-01) ───────────────────────────────────────
 
 const HabitRpcError = Schema.Union([HabitServiceError, Unauthorized])
 
-class CreateHabit extends Rpc.make("CreateHabit", {
+class CreateHabit extends Rpc.make('CreateHabit', {
   payload: HabitCreateInput,
   success: Habit,
-  error: HabitRpcError
+  error: HabitRpcError,
 }) {}
 
-class GetHabit extends Rpc.make("GetHabit", {
+class GetHabit extends Rpc.make('GetHabit', {
   payload: Schema.Struct({ id: HabitId }),
   success: Habit,
-  error: HabitRpcError
+  error: HabitRpcError,
 }) {}
 
-class UpdateHabit extends Rpc.make("UpdateHabit", {
+class UpdateHabit extends Rpc.make('UpdateHabit', {
   payload: HabitUpdateInput,
   success: Habit,
-  error: HabitRpcError
+  error: HabitRpcError,
 }) {}
 
 /** Soft delete — the row keeps its history for the undo toast. */
-class DeleteHabit extends Rpc.make("DeleteHabit", {
+class DeleteHabit extends Rpc.make('DeleteHabit', {
   payload: HabitMutationInput,
   success: Habit,
-  error: HabitRpcError
+  error: HabitRpcError,
 }) {}
 
 /** Undo a soft delete: the same habit comes back, history intact. */
-class RestoreHabit extends Rpc.make("RestoreHabit", {
+class RestoreHabit extends Rpc.make('RestoreHabit', {
   payload: HabitMutationInput,
   success: Habit,
-  error: HabitRpcError
+  error: HabitRpcError,
 }) {}
 
-class ListHabits extends Rpc.make("ListHabits", {
+class ListHabits extends Rpc.make('ListHabits', {
   success: Schema.Array(Habit),
-  error: HabitRpcError
+  error: HabitRpcError,
 }) {}
 
 /**
@@ -446,92 +446,92 @@ class ListHabits extends Rpc.make("ListHabits", {
  * Done → Partial → Missed without ever adding a second row. An old day is a
  * typed `HabitEntryOutOfWindow` failure.
  */
-class LogHabitEntry extends Rpc.make("LogHabitEntry", {
+class LogHabitEntry extends Rpc.make('LogHabitEntry', {
   payload: HabitEntryLogInput,
   success: HabitEntry,
-  error: HabitRpcError
+  error: HabitRpcError,
 }) {}
 
 /** The `[from, before)` range read behind Today and the statistics (#66). */
-class ListHabitEntries extends Rpc.make("ListHabitEntries", {
+class ListHabitEntries extends Rpc.make('ListHabitEntries', {
   payload: HabitEntryRangeInput,
   success: Schema.Array(HabitEntry),
-  error: HabitRpcError
+  error: HabitRpcError,
 }) {}
 
 // ── Reminders (ticket #60; FR-REM-01/03) ─────────────────────────────────
 
 const ReminderRpcError = Schema.Union([ReminderServiceError, Unauthorized])
 
-class CreateReminder extends Rpc.make("CreateReminder", {
+class CreateReminder extends Rpc.make('CreateReminder', {
   payload: ReminderCreateInput,
   success: Reminder,
-  error: ReminderRpcError
+  error: ReminderRpcError,
 }) {}
 
-class GetReminder extends Rpc.make("GetReminder", {
+class GetReminder extends Rpc.make('GetReminder', {
   payload: Schema.Struct({ id: ReminderId }),
   success: Reminder,
-  error: ReminderRpcError
+  error: ReminderRpcError,
 }) {}
 
-class UpdateReminder extends Rpc.make("UpdateReminder", {
+class UpdateReminder extends Rpc.make('UpdateReminder', {
   payload: ReminderUpdateInput,
   success: Reminder,
-  error: ReminderRpcError
+  error: ReminderRpcError,
 }) {}
 
-class DeleteReminder extends Rpc.make("DeleteReminder", {
+class DeleteReminder extends Rpc.make('DeleteReminder', {
   payload: ReminderMutationInput,
   success: Reminder,
-  error: ReminderRpcError
+  error: ReminderRpcError,
 }) {}
 
-class ListReminders extends Rpc.make("ListReminders", {
+class ListReminders extends Rpc.make('ListReminders', {
   payload: ReminderListInput,
   success: Schema.Array(Reminder),
-  error: ReminderRpcError
+  error: ReminderRpcError,
 }) {}
 
 // ── Occasions (ticket #59; FR-CAL-02) ────────────────────────────────────
 
 const OccasionRpcError = Schema.Union([OccasionServiceError, Unauthorized])
 
-class CreateOccasion extends Rpc.make("CreateOccasion", {
+class CreateOccasion extends Rpc.make('CreateOccasion', {
   payload: OccasionCreateInput,
   success: Occasion,
-  error: OccasionRpcError
+  error: OccasionRpcError,
 }) {}
 
 /** The occasion plus its next projected occurrence and advance reminder. */
-class GetOccasion extends Rpc.make("GetOccasion", {
+class GetOccasion extends Rpc.make('GetOccasion', {
   payload: Schema.Struct({ id: OccasionId }),
   success: OccasionDetail,
-  error: OccasionRpcError
+  error: OccasionRpcError,
 }) {}
 
-class UpdateOccasion extends Rpc.make("UpdateOccasion", {
+class UpdateOccasion extends Rpc.make('UpdateOccasion', {
   payload: OccasionUpdateInput,
   success: Occasion,
-  error: OccasionRpcError
+  error: OccasionRpcError,
 }) {}
 
-class DeleteOccasion extends Rpc.make("DeleteOccasion", {
+class DeleteOccasion extends Rpc.make('DeleteOccasion', {
   payload: OccasionMutationInput,
   success: Occasion,
-  error: OccasionRpcError
+  error: OccasionRpcError,
 }) {}
 
-class ListOccasions extends Rpc.make("ListOccasions", {
+class ListOccasions extends Rpc.make('ListOccasions', {
   success: Schema.Array(Occasion),
-  error: OccasionRpcError
+  error: OccasionRpcError,
 }) {}
 
 /** The annual projection (`from`/`to` inclusive) for a month or agenda. */
-class ListOccasionOccurrences extends Rpc.make("ListOccasionOccurrences", {
+class ListOccasionOccurrences extends Rpc.make('ListOccasionOccurrences', {
   payload: OccasionOccurrenceQuery,
   success: Schema.Array(OccasionOccurrence),
-  error: OccasionRpcError
+  error: OccasionRpcError,
 }) {}
 
 /**
@@ -539,10 +539,10 @@ class ListOccasionOccurrences extends Rpc.make("ListOccasionOccurrences", {
  * `reminderKey` and an `occasion` ReminderLink. Materialising one into the
  * reminder table is `MaterialiseOccasionReminders` on the same group.
  */
-class ListOccasionReminders extends Rpc.make("ListOccasionReminders", {
+class ListOccasionReminders extends Rpc.make('ListOccasionReminders', {
   payload: OccasionOccurrenceQuery,
   success: Schema.Array(OccasionAdvanceReminder),
-  error: OccasionRpcError
+  error: OccasionRpcError,
 }) {}
 
 /**
@@ -552,20 +552,23 @@ class ListOccasionReminders extends Rpc.make("ListOccasionReminders", {
 const OccasionReminderRpcError = Schema.Union([
   OccasionServiceError,
   ReminderServiceError,
-  Unauthorized
+  Unauthorized,
 ])
 
-class MaterialiseOccasionReminders extends Rpc.make("MaterialiseOccasionReminders", {
-  payload: OccasionOccurrenceQuery,
-  success: Schema.Array(Reminder),
-  error: OccasionReminderRpcError
-}) {}
+class MaterialiseOccasionReminders extends Rpc.make(
+  'MaterialiseOccasionReminders',
+  {
+    payload: OccasionOccurrenceQuery,
+    success: Schema.Array(Reminder),
+    error: OccasionReminderRpcError,
+  },
+) {}
 
 /** One-tap "prepare gift" task creation from an occasion. */
-class PrepareOccasionTask extends Rpc.make("PrepareOccasionTask", {
+class PrepareOccasionTask extends Rpc.make('PrepareOccasionTask', {
   payload: OccasionPrepareInput,
   success: OccasionPreparation,
-  error: OccasionRpcError
+  error: OccasionRpcError,
 }) {}
 
 // ── Capture (ticket #101; ADR-0012) ──────────────────────────────────────
@@ -573,34 +576,34 @@ class PrepareOccasionTask extends Rpc.make("PrepareOccasionTask", {
 const CaptureRpcError = Schema.Union([CaptureServiceError, Unauthorized])
 
 /** Run the Dissect and return the stored Capture with its drafts. */
-class DissectCapture extends Rpc.make("DissectCapture", {
+class DissectCapture extends Rpc.make('DissectCapture', {
   payload: DissectCaptureInput,
   success: Capture,
-  error: CaptureRpcError
+  error: CaptureRpcError,
 }) {}
 
 /**
  * Validate every reviewed draft, then apply them through the create services.
  * A mid-way failure is a success result that reports what landed.
  */
-class CommitCapture extends Rpc.make("CommitCapture", {
+class CommitCapture extends Rpc.make('CommitCapture', {
   payload: CommitCaptureInput,
   success: CaptureCommitResult,
-  error: CaptureRpcError
+  error: CaptureRpcError,
 }) {}
 
 /** The history screen: one owner's captures, newest first. */
-class ListCaptures extends Rpc.make("ListCaptures", {
+class ListCaptures extends Rpc.make('ListCaptures', {
   payload: ListCapturesInput,
   success: Schema.Array(Capture),
-  error: CaptureRpcError
+  error: CaptureRpcError,
 }) {}
 
 /** Drop one owned history row; the deleted Capture is echoed back. */
-class DeleteCapture extends Rpc.make("DeleteCapture", {
+class DeleteCapture extends Rpc.make('DeleteCapture', {
   payload: DeleteCaptureInput,
   success: Capture,
-  error: CaptureRpcError
+  error: CaptureRpcError,
 }) {}
 
 export const ApiRpcs = RpcGroup.make(
@@ -676,8 +679,11 @@ export const ApiRpcs = RpcGroup.make(
   DissectCapture,
   CommitCapture,
   ListCaptures,
-  DeleteCapture
+  DeleteCapture,
 )
 
 /** The derived, shared client type the web app imports. */
-export type ApiClient = RpcClient.RpcClient<RpcGroup.Rpcs<typeof ApiRpcs>, RpcClientError>
+export type ApiClient = RpcClient.RpcClient<
+  RpcGroup.Rpcs<typeof ApiRpcs>,
+  RpcClientError
+>

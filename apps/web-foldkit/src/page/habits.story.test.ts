@@ -1,6 +1,4 @@
 import { Option } from 'effect'
-import { Animation, Dialog, Toast as UiToast } from '@foldkit/ui'
-import { test as toastTest } from '@foldkit/ui/toast'
 import {
   Command,
   expectNoOutMessage,
@@ -12,6 +10,9 @@ import {
 } from 'foldkit/story'
 import { modifyFields } from 'foldkit/struct'
 import { describe, expect, test } from 'vitest'
+
+import { Animation, Dialog, Toast as UiToast } from '@foldkit/ui'
+import { test as toastTest } from '@foldkit/ui/toast'
 
 import { HABIT_COLORS, HABIT_ICONS } from '../habits-model'
 import { USER_ID } from '../test-fixtures'
@@ -231,6 +232,7 @@ describe('habit create', () => {
     const inputs = habitsInputs({
       mirror: mirrorWith([weeklyHabit({ icon: '🪴' })], []),
     })
+
     const editing = Habits.update(
       habitsModel(),
       Habits.Message.ClickedEditHabit({ habitId: SECOND_HABIT_ID }),
@@ -355,10 +357,7 @@ describe('habit delete and undo', () => {
           title: 'ورزش',
         }),
       ),
-      Command.resolve(
-        Dialog.ShowDialog,
-        Dialog.Message.SucceededShowDialog(),
-      ),
+      Command.resolve(Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()),
       model(next => {
         expect(next.maybePendingDelete).toEqual(
           Option.some(
@@ -396,8 +395,7 @@ describe('habit delete and undo', () => {
             title: 'ورزش',
           }),
         ),
-      confirmDialog: () =>
-        Dialog.boot({ id: 'habits-delete-dialog' }).model,
+      confirmDialog: () => Dialog.boot({ id: 'habits-delete-dialog' }).model,
     })
 
     story(
@@ -447,10 +445,7 @@ describe('habit delete and undo', () => {
           title: 'ورزش',
         }),
       ),
-      Command.resolve(
-        Dialog.ShowDialog,
-        Dialog.Message.SucceededShowDialog(),
-      ),
+      Command.resolve(Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()),
       message(Habits.Message.ConfirmedDeleteHabit()),
       Command.resolve(
         Dialog.CloseDialog,
@@ -520,10 +515,7 @@ describe('habit delete and undo', () => {
           title: 'ورزش',
         }),
       ),
-      Command.resolve(
-        Dialog.ShowDialog,
-        Dialog.Message.SucceededShowDialog(),
-      ),
+      Command.resolve(Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()),
       message(Habits.Message.ConfirmedDeleteHabit()),
       Command.resolve(
         Dialog.CloseDialog,

@@ -26,11 +26,15 @@ const faNumber = new Intl.NumberFormat('fa-IR')
 
 const toneOf = (config: SyncStatusConfig): 'success' | 'warning' | 'error' => {
   if (config.kind === 'failed') return 'error'
+
   // A rejected push is durable and needs the user, unlike a queue that is
   // merely waiting or a network that may come back on its own.
   if (config.isHalted || config.failed > 0) return 'error'
+
   if (!config.isOnline) return 'warning'
+
   if (config.pending > 0) return 'warning'
+
   return 'success'
 }
 
@@ -38,31 +42,42 @@ const labelOf = (config: SyncStatusConfig): string => {
   if (config.kind === 'idle' || config.kind === 'opening') {
     return 'در حال آماده‌سازی…'
   }
+
   if (config.kind === 'failed') return 'حافظه‌ی محلی در دسترس نیست'
+
   if (config.isHalted) return 'نشست منقضی شد'
+
   if (config.failed > 0)
     return `${faNumber.format(config.failed)} تغییر ذخیره نشد`
+
   if (!config.isOnline) return 'آفلاین'
+
   if (config.pending > 0) {
     return `${faNumber.format(config.pending)} تغییر در انتظار ارسال`
   }
+
   return config.canSync ? 'همگام' : 'حافظه‌ی محلی فعال'
 }
 
 const dotClass = (config: SyncStatusConfig): string => {
   const tone = toneOf(config)
+
   if (tone === 'error') return 'bg-error'
+
   if (tone === 'warning') return 'bg-warning'
+
   return 'bg-success'
 }
 
 const hintOf = (config: SyncStatusConfig): Option.Option<string> => {
   if (Option.isSome(config.maybeError)) return config.maybeError
+
   if (config.failed > 0) {
     return Option.some(
       'این تغییرات روی سرور ذخیره نشدند؛ از داخل یادداشت دوباره تلاش کنید.',
     )
   }
+
   return Option.none()
 }
 

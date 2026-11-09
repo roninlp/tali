@@ -468,6 +468,7 @@ export const notesIndexView = (
 ): Html => {
   const query = model.query.trim()
   const sections = noteSections(inputs.mirror.notes, model.selectedTagIds)
+
   const sectionsView =
     query !== ''
       ? h.empty

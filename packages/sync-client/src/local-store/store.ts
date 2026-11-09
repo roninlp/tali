@@ -1,12 +1,12 @@
-import { uuidV7 } from "@tali/domain"
+import { uuidV7 } from '@tali/domain'
 
 import {
   coalesceOutboxEntry,
   newOutboxEntry,
   nextMirrorRecord,
-  withoutSyncError
-} from "./coalescing"
-import { countFailedRows, failedRows, liveRows, trashedRows } from "./mirror"
+  withoutSyncError,
+} from './coalescing'
+import { countFailedRows, failedRows, liveRows, trashedRows } from './mirror'
 import type {
   DraftRecord,
   LocalStore,
@@ -14,8 +14,8 @@ import type {
   LocalWrite,
   MirrorRecord,
   OutboxRecord,
-  ServerRow
-} from "./types"
+  ServerRow,
+} from './types'
 
 /**
  * The IndexedDB-backed local-first store.
@@ -35,33 +35,39 @@ import type {
  */
 
 const DB_VERSION = 1
-const MIRROR = "mirror"
-const OUTBOX = "outbox"
-const META = "meta"
-const DRAFTS = "drafts"
+const MIRROR = 'mirror'
+const OUTBOX = 'outbox'
+const META = 'meta'
+const DRAFTS = 'drafts'
 
-const CURSOR_KEY = "lastCursor"
+const CURSOR_KEY = 'lastCursor'
 
 const databaseName = (userId: string): string => `tali.mirror.v1.${userId}`
 
 const txDone = (tx: IDBTransaction): Promise<void> =>
   new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error ?? new Error("IndexedDB transaction failed"))
-    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"))
+    tx.onerror = () =>
+      reject(tx.error ?? new Error('IndexedDB transaction failed'))
+    tx.onabort = () =>
+      reject(tx.error ?? new Error('IndexedDB transaction aborted'))
   })
 
 const requestResult = <A>(request: IDBRequest<A>): Promise<A> =>
   new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error ?? new Error("IndexedDB request failed"))
+    request.onerror = () =>
+      reject(request.error ?? new Error('IndexedDB request failed'))
   })
 
 /** Write the cursor only when it moves forward; a stale pull must not rewind it. */
 const advanceCursor = (meta: IDBObjectStore, seq: number): void => {
-  const read = meta.get(CURSOR_KEY) as IDBRequest<{ key: string; value: unknown } | undefined>
+  const read = meta.get(CURSOR_KEY) as IDBRequest<
+    { key: string; value: unknown } | undefined
+  >
   read.onsuccess = () => {
-    const current = typeof read.result?.value === "number" ? read.result.value : 0
+    const current =
+      typeof read.result?.value === 'number' ? read.result.value : 0
     if (seq > current) meta.put({ key: CURSOR_KEY, value: seq })
   }
 }
@@ -74,11 +80,11 @@ export interface OpenLocalStoreOptions {
 /** Open (or create) the mirror database for one user. */
 export const openLocalStore = async (
   userId: string,
-  options: OpenLocalStoreOptions = {}
+  options: OpenLocalStoreOptions = {},
 ): Promise<LocalStore> => {
   const factory = options.factory ?? globalThis.indexedDB
   if (factory === undefined) {
-    throw new Error("IndexedDB is not available in this environment")
+    throw new Error('IndexedDB is not available in this environment')
   }
 
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -86,19 +92,26 @@ export const openLocalStore = async (
     request.onupgradeneeded = () => {
       const upgraded = request.result
       if (!upgraded.objectStoreNames.contains(MIRROR)) {
-        const mirror = upgraded.createObjectStore(MIRROR, { keyPath: ["entityType", "entityId"] })
-        mirror.createIndex("byEntityType", "entityType")
+        const mirror = upgraded.createObjectStore(MIRROR, {
+          keyPath: ['entityType', 'entityId'],
+        })
+        mirror.createIndex('byEntityType', 'entityType')
       }
       if (!upgraded.objectStoreNames.contains(OUTBOX)) {
-        const outbox = upgraded.createObjectStore(OUTBOX, { keyPath: "seq", autoIncrement: true })
-        outbox.createIndex("byClientMutationId", "clientMutationId", { unique: true })
-        outbox.createIndex("byEntity", ["entityType", "entityId"])
+        const outbox = upgraded.createObjectStore(OUTBOX, {
+          keyPath: 'seq',
+          autoIncrement: true,
+        })
+        outbox.createIndex('byClientMutationId', 'clientMutationId', {
+          unique: true,
+        })
+        outbox.createIndex('byEntity', ['entityType', 'entityId'])
       }
       if (!upgraded.objectStoreNames.contains(META)) {
-        upgraded.createObjectStore(META, { keyPath: "key" })
+        upgraded.createObjectStore(META, { keyPath: 'key' })
       }
       if (!upgraded.objectStoreNames.contains(DRAFTS)) {
-        upgraded.createObjectStore(DRAFTS, { keyPath: "key" })
+        upgraded.createObjectStore(DRAFTS, { keyPath: 'key' })
       }
     }
     request.onsuccess = () => {
@@ -106,7 +119,8 @@ export const openLocalStore = async (
       opened.onversionchange = () => opened.close()
       resolve(opened)
     }
-    request.onerror = () => reject(request.error ?? new Error("Could not open the local mirror"))
+    request.onerror = () =>
+      reject(request.error ?? new Error('Could not open the local mirror'))
   })
 
   const listeners = new Set<LocalStoreListener>()
@@ -117,7 +131,7 @@ export const openLocalStore = async (
   }
 
   const ensureOpen = () => {
-    if (closed) throw new Error("The local store is closed")
+    if (closed) throw new Error('The local store is closed')
   }
 
   const store: LocalStore = {
@@ -128,52 +142,63 @@ export const openLocalStore = async (
 
     async list(entityType) {
       ensureOpen()
-      const tx = db.transaction(MIRROR, "readonly")
-      const index = tx.objectStore(MIRROR).index("byEntityType")
-      const rows = await requestResult(index.getAll(entityType)) as ReadonlyArray<MirrorRecord>
+      const tx = db.transaction(MIRROR, 'readonly')
+      const index = tx.objectStore(MIRROR).index('byEntityType')
+      const rows = (await requestResult(
+        index.getAll(entityType),
+      )) as ReadonlyArray<MirrorRecord>
       return liveRows(rows)
     },
 
     async listFailed() {
       ensureOpen()
-      const tx = db.transaction(MIRROR, "readonly")
-      const rows = await requestResult(tx.objectStore(MIRROR).getAll()) as ReadonlyArray<MirrorRecord>
+      const tx = db.transaction(MIRROR, 'readonly')
+      const rows = (await requestResult(
+        tx.objectStore(MIRROR).getAll(),
+      )) as ReadonlyArray<MirrorRecord>
       return failedRows(rows)
     },
 
     async failedCount() {
       ensureOpen()
-      const tx = db.transaction(MIRROR, "readonly")
-      const rows = await requestResult(tx.objectStore(MIRROR).getAll()) as ReadonlyArray<MirrorRecord>
+      const tx = db.transaction(MIRROR, 'readonly')
+      const rows = (await requestResult(
+        tx.objectStore(MIRROR).getAll(),
+      )) as ReadonlyArray<MirrorRecord>
       return countFailedRows(rows)
     },
 
     async listTrashed(entityType) {
       ensureOpen()
-      const tx = db.transaction(MIRROR, "readonly")
-      const index = tx.objectStore(MIRROR).index("byEntityType")
-      const rows = await requestResult(index.getAll(entityType)) as ReadonlyArray<MirrorRecord>
+      const tx = db.transaction(MIRROR, 'readonly')
+      const index = tx.objectStore(MIRROR).index('byEntityType')
+      const rows = (await requestResult(
+        index.getAll(entityType),
+      )) as ReadonlyArray<MirrorRecord>
       return trashedRows(rows)
     },
 
     async get(entityType, entityId) {
       ensureOpen()
-      const tx = db.transaction(MIRROR, "readonly")
-      const row = await requestResult(tx.objectStore(MIRROR).get([entityType, entityId]))
+      const tx = db.transaction(MIRROR, 'readonly')
+      const row = await requestResult(
+        tx.objectStore(MIRROR).get([entityType, entityId]),
+      )
       return row as MirrorRecord | undefined
     },
 
     async writeLocal(write: LocalWrite) {
       ensureOpen()
       const now = write.now ?? new Date().toISOString()
-      const tx = db.transaction([MIRROR, OUTBOX], "readwrite")
+      const tx = db.transaction([MIRROR, OUTBOX], 'readwrite')
       const mirror = tx.objectStore(MIRROR)
       const outbox = tx.objectStore(OUTBOX)
 
       let committed: MirrorRecord | undefined
-      const existing = mirror.get([write.entityType, write.entityId]) as IDBRequest<
-        MirrorRecord | undefined
-      >
+      const existing = mirror.get([
+        write.entityType,
+        write.entityId,
+      ]) as IDBRequest<MirrorRecord | undefined>
       existing.onsuccess = () => {
         const current = existing.result
         const record = nextMirrorRecord(current, write, now)
@@ -184,14 +209,20 @@ export const openLocalStore = async (
           current,
           write,
           write.clientMutationId ?? uuidV7(),
-          now
+          now,
         )
 
         const queued = outbox
-          .index("byEntity")
-          .getAll([write.entityType, write.entityId]) as IDBRequest<Array<OutboxRecord>>
+          .index('byEntity')
+          .getAll([write.entityType, write.entityId]) as IDBRequest<
+          Array<OutboxRecord>
+        >
         queued.onsuccess = () => {
-          const folded = coalesceOutboxEntry(queued.result[queued.result.length - 1], write, now)
+          const folded = coalesceOutboxEntry(
+            queued.result[queued.result.length - 1],
+            write,
+            now,
+          )
           if (folded !== undefined) {
             outbox.put(folded)
             return
@@ -208,52 +239,57 @@ export const openLocalStore = async (
 
     async pending() {
       ensureOpen()
-      const tx = db.transaction(OUTBOX, "readonly")
-      return await requestResult(tx.objectStore(OUTBOX).getAll()) as ReadonlyArray<OutboxRecord>
+      const tx = db.transaction(OUTBOX, 'readonly')
+      return (await requestResult(
+        tx.objectStore(OUTBOX).getAll(),
+      )) as ReadonlyArray<OutboxRecord>
     },
 
     async pendingBatch(limit) {
       ensureOpen()
       if (limit <= 0) return []
-      const tx = db.transaction(OUTBOX, "readonly")
+      const tx = db.transaction(OUTBOX, 'readonly')
       const cursor = tx.objectStore(OUTBOX).openCursor()
       const batch: Array<OutboxRecord> = []
       const seen = new Set<string>()
-      return await new Promise<ReadonlyArray<OutboxRecord>>((resolve, reject) => {
-        cursor.onsuccess = () => {
-          const position = cursor.result
-          if (position === null) {
-            resolve(batch)
-            return
-          }
-          const entry = position.value as OutboxRecord
-          const key = `${entry.entityType}\u0000${entry.entityId}`
-          if (!seen.has(key)) {
-            seen.add(key)
-            batch.push(entry)
-            // Enough distinct entities for one push: stop reading. This
-            // entity's own chain (and the rest of the queue) waits its turn.
-            if (batch.length === limit) {
+      return await new Promise<ReadonlyArray<OutboxRecord>>(
+        (resolve, reject) => {
+          cursor.onsuccess = () => {
+            const position = cursor.result
+            if (position === null) {
               resolve(batch)
               return
             }
+            const entry = position.value as OutboxRecord
+            const key = `${entry.entityType}\u0000${entry.entityId}`
+            if (!seen.has(key)) {
+              seen.add(key)
+              batch.push(entry)
+              // Enough distinct entities for one push: stop reading. This
+              // entity's own chain (and the rest of the queue) waits its turn.
+              if (batch.length === limit) {
+                resolve(batch)
+                return
+              }
+            }
+            position.continue()
           }
-          position.continue()
-        }
-        cursor.onerror = () => reject(cursor.error ?? new Error("IndexedDB request failed"))
-      })
+          cursor.onerror = () =>
+            reject(cursor.error ?? new Error('IndexedDB request failed'))
+        },
+      )
     },
 
     async pendingCount() {
       ensureOpen()
-      const tx = db.transaction(OUTBOX, "readonly")
+      const tx = db.transaction(OUTBOX, 'readonly')
       return await requestResult(tx.objectStore(OUTBOX).count())
     },
 
     async hasPending(entityType, entityId) {
       ensureOpen()
-      const tx = db.transaction(OUTBOX, "readonly")
-      const index = tx.objectStore(OUTBOX).index("byEntity")
+      const tx = db.transaction(OUTBOX, 'readonly')
+      const index = tx.objectStore(OUTBOX).index('byEntity')
       const count = await requestResult(index.count([entityType, entityId]))
       return count > 0
     },
@@ -261,9 +297,9 @@ export const openLocalStore = async (
     async markSent(clientMutationIds) {
       ensureOpen()
       if (clientMutationIds.length === 0) return []
-      const tx = db.transaction(OUTBOX, "readwrite")
+      const tx = db.transaction(OUTBOX, 'readwrite')
       const outbox = tx.objectStore(OUTBOX)
-      const byMutation = outbox.index("byClientMutationId")
+      const byMutation = outbox.index('byClientMutationId')
       const marked: Array<OutboxRecord> = []
       // `byClientMutationId` is unique, so a batch is one indexed lookup per
       // id. The full cursor this replaces made marking a push chunk O(outbox).
@@ -290,9 +326,9 @@ export const openLocalStore = async (
 
     async mergeServer(rows: ReadonlyArray<ServerRow>) {
       ensureOpen()
-      const tx = db.transaction([MIRROR, OUTBOX], "readwrite")
+      const tx = db.transaction([MIRROR, OUTBOX], 'readwrite')
       const mirror = tx.objectStore(MIRROR)
-      const byEntity = tx.objectStore(OUTBOX).index("byEntity")
+      const byEntity = tx.objectStore(OUTBOX).index('byEntity')
 
       let applied = 0
       // One indexed lookup per incoming row, not a full outbox scan per pull
@@ -319,10 +355,11 @@ export const openLocalStore = async (
         rows.length === 0 &&
         failures.length === 0 &&
         resolved.length === 0
-      ) return
-      const tx = db.transaction([MIRROR, OUTBOX], "readwrite")
+      )
+        return
+      const tx = db.transaction([MIRROR, OUTBOX], 'readwrite')
       const outbox = tx.objectStore(OUTBOX)
-      const byMutation = outbox.index("byClientMutationId")
+      const byMutation = outbox.index('byClientMutationId')
 
       for (const id of clientMutationIds) {
         const key = byMutation.getKey(id)
@@ -345,8 +382,11 @@ export const openLocalStore = async (
         }
       }
       for (const failure of failures) {
-        const { entityType, entityId, code, message, at, clientMutationId } = failure
-        const read = mirror.get([entityType, entityId]) as IDBRequest<MirrorRecord | undefined>
+        const { entityType, entityId, code, message, at, clientMutationId } =
+          failure
+        const read = mirror.get([entityType, entityId]) as IDBRequest<
+          MirrorRecord | undefined
+        >
         read.onsuccess = () => {
           const current = read.result
           // A rejected upsert always wrote its mirror row locally first; if the
@@ -354,7 +394,7 @@ export const openLocalStore = async (
           if (current === undefined) return
           mirror.put({
             ...current,
-            syncError: { code, message, at, clientMutationId }
+            syncError: { code, message, at, clientMutationId },
           })
         }
       }
@@ -366,7 +406,7 @@ export const openLocalStore = async (
     async retryFailed(entityType, entityId) {
       ensureOpen()
       const now = new Date().toISOString()
-      const tx = db.transaction([MIRROR, OUTBOX], "readwrite")
+      const tx = db.transaction([MIRROR, OUTBOX], 'readwrite')
       const mirror = tx.objectStore(MIRROR)
       const outbox = tx.objectStore(OUTBOX)
 
@@ -384,11 +424,11 @@ export const openLocalStore = async (
           entityType,
           entityId,
           baseVersion: current.version,
-          op: "upsert",
+          op: 'upsert',
           patch: { ...current.data },
           clientUpdatedAt: now,
-          sent: false
-        } satisfies Omit<OutboxRecord, "seq">)
+          sent: false,
+        } satisfies Omit<OutboxRecord, 'seq'>)
       }
 
       await txDone(tx)
@@ -398,7 +438,7 @@ export const openLocalStore = async (
 
     async removeFromMirror(entityType, entityId) {
       ensureOpen()
-      const tx = db.transaction(MIRROR, "readwrite")
+      const tx = db.transaction(MIRROR, 'readwrite')
       tx.objectStore(MIRROR).delete([entityType, entityId])
       await txDone(tx)
       notify()
@@ -406,7 +446,7 @@ export const openLocalStore = async (
 
     async clearMirror() {
       ensureOpen()
-      const tx = db.transaction(MIRROR, "readwrite")
+      const tx = db.transaction(MIRROR, 'readwrite')
       tx.objectStore(MIRROR).clear()
       await txDone(tx)
       notify()
@@ -414,37 +454,43 @@ export const openLocalStore = async (
 
     async cursor() {
       ensureOpen()
-      const tx = db.transaction(META, "readonly")
-      const row = await requestResult(tx.objectStore(META).get(CURSOR_KEY)) as
-        | { key: string; value: unknown }
-        | undefined
-      return typeof row?.value === "number" ? row.value : 0
+      const tx = db.transaction(META, 'readonly')
+      const row = (await requestResult(
+        tx.objectStore(META).get(CURSOR_KEY),
+      )) as { key: string; value: unknown } | undefined
+      return typeof row?.value === 'number' ? row.value : 0
     },
 
     async setCursor(seq) {
       ensureOpen()
-      const tx = db.transaction(META, "readwrite")
+      const tx = db.transaction(META, 'readwrite')
       advanceCursor(tx.objectStore(META), seq)
       await txDone(tx)
     },
 
     async saveDraft(key, value) {
       ensureOpen()
-      const tx = db.transaction(DRAFTS, "readwrite")
-      tx.objectStore(DRAFTS).put({ key, value, updatedAt: new Date().toISOString() })
+      const tx = db.transaction(DRAFTS, 'readwrite')
+      tx.objectStore(DRAFTS).put({
+        key,
+        value,
+        updatedAt: new Date().toISOString(),
+      })
       await txDone(tx)
     },
 
     async readDraft(key) {
       ensureOpen()
-      const tx = db.transaction(DRAFTS, "readonly")
-      const row = await requestResult(tx.objectStore(DRAFTS).get(key)) as DraftRecord | undefined
+      const tx = db.transaction(DRAFTS, 'readonly')
+      const row = (await requestResult(tx.objectStore(DRAFTS).get(key))) as
+        | DraftRecord
+        | undefined
       return row?.value
     },
 
     async clearDraft(key) {
       ensureOpen()
-      const tx = db.transaction(DRAFTS, "readwrite")
+      const tx = db.transaction(DRAFTS, 'readwrite')
       tx.objectStore(DRAFTS).delete(key)
       await txDone(tx)
     },
@@ -458,7 +504,7 @@ export const openLocalStore = async (
 
     async clear() {
       ensureOpen()
-      const tx = db.transaction([MIRROR, OUTBOX, META, DRAFTS], "readwrite")
+      const tx = db.transaction([MIRROR, OUTBOX, META, DRAFTS], 'readwrite')
       for (const name of [MIRROR, OUTBOX, META, DRAFTS]) {
         tx.objectStore(name).clear()
       }
@@ -471,7 +517,7 @@ export const openLocalStore = async (
       closed = true
       listeners.clear()
       db.close()
-    }
+    },
   }
 
   return store

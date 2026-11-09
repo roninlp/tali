@@ -76,6 +76,7 @@ export const Model = Schema.Struct({
   settings: Settings.Model,
   morePopover: Popover.Model,
 })
+
 export type Model = typeof Model.Type
 
 export const Flags = Schema.Struct({
@@ -90,6 +91,7 @@ export const Flags = Schema.Struct({
   isVisible: Schema.Boolean,
   now: Schema.Number,
 })
+
 export type Flags = typeof Flags.Type
 
 // MESSAGE
@@ -119,6 +121,7 @@ export const Message = defineMessageUnion({
   GotSettingsMessage: { message: Settings.Message },
   GotMorePopoverMessage: { message: Popover.Message },
 })
+
 export type Message = typeof Message.Type
 
 // INIT
@@ -131,14 +134,17 @@ export const init: Runtime.RoutingApplicationInit<
   Sync.LocalStoreService
 > = (flags: Flags, url: Url) => {
   const route = urlToAppRoute(url)
+
   const themeInit = Theme.init({
     maybeSavedTheme: flags.maybeSavedTheme,
     maybeSavedMode: flags.maybeSavedMode,
     isSystemDark: flags.isSystemDark,
   })
+
   const authInit = Auth.init(flags.maybeCachedSession)
   const maybeSession = Auth.maybeSession(authInit.model)
   const maybeUserId = Option.map(maybeSession, session => session.user.id)
+
   const preferencesInit = Preferences.init({
     maybeUserId: Option.map(maybeSession, session => session.user.id),
     maybeProfileDefaults: Option.map(
@@ -147,10 +153,12 @@ export const init: Runtime.RoutingApplicationInit<
     ),
     maybeCachedPreferences: flags.maybeCachedPreferences,
   })
+
   const pushInit = Push.init({
     maybeUserId: Option.map(maybeSession, session => session.user.id),
     environment: flags.pushEnvironment,
   })
+
   const syncInit = Sync.init({
     maybeUserId: Option.map(maybeSession, session => session.user.id),
     hasHousehold: Option.exists(
@@ -160,17 +168,21 @@ export const init: Runtime.RoutingApplicationInit<
     isOnline: flags.isOnline,
     isVisible: flags.isVisible,
   })
+
   const todayInit = Today.init({ now: flags.now })
   const listsInit = Lists.init()
+
   const tasksInit = Tasks.init({
     now: flags.now,
     maybeUserId,
     maybeSettings: flags.maybeCachedTaskView,
   })
+
   const habitsInit = Habits.init({ now: flags.now })
   const calendarInit = Calendar.init({ now: flags.now })
   const remindersInit = Reminders.init()
   const captureInit = Capture.init({ maybeUserId })
+
   const model = Model.make({
     route,
     theme: themeInit.model,
@@ -192,7 +204,9 @@ export const init: Runtime.RoutingApplicationInit<
     settings: Settings.initialModel(),
     morePopover: Popover.init({ id: 'mobile-more-menu' }),
   })
+
   const guarded = enforceGuard(model, route)
+
   const entered = enterRoute(
     guarded.model,
     Transition.coldLoad(guarded.model.route),
@@ -382,6 +396,7 @@ const calendarInputs = (model: Model): Calendar.Inputs => ({
 /** Capture reads the display preference and the live connectivity state. */
 const captureInputs = (model: Model): Capture.Inputs => {
   const display = Preferences.currentDisplayFields(model.preferences)
+
   return {
     display,
     isOnline: model.sync.isOnline,
@@ -601,6 +616,7 @@ const foldLoginOutMessage = Login.OutMessage.match<
         login: () => Login.initialModel(),
         route: () => landingRoute(session),
       })
+
       const sessionState = applySessionState(next)
       const entered = enterCurrentRoute(sessionState.model)
 
@@ -643,6 +659,7 @@ const foldRegisterOutMessage = Register.OutMessage.match<
         register: () => Register.initialModel(),
         route: () => landingRoute(session),
       })
+
       const sessionState = applySessionState(next)
       const entered = enterCurrentRoute(sessionState.model)
 
@@ -708,6 +725,7 @@ const foldHouseholdOutMessage = Household.OutMessage.match<
           ),
         route: () => AppRoute.Today(),
       })
+
       const entered = enterCurrentRoute(next)
 
       return {
@@ -722,6 +740,7 @@ const foldHouseholdOutMessage = Household.OutMessage.match<
 
   AlreadyInHousehold: () => stepModel => {
     const refreshed = refreshAuth(stepModel)
+
     const entered = enterCurrentRoute(
       modifyFields(refreshed.model, {
         route: () => AppRoute.Today(),
@@ -887,6 +906,7 @@ const foldLists = Update.foldChild({
       ({ listId }) =>
       stepModel => {
         const refreshed = foldSyncRefresh(stepModel)
+
         const wasCurrent =
           stepModel.route._tag === 'List' && stepModel.route.listId === listId
 
@@ -982,6 +1002,7 @@ const foldNotesOutMessage = Notes.OutMessage.match<
     ({ noteId }) =>
     stepModel => {
       const refreshed = foldSyncRefresh(stepModel)
+
       const wasCurrent =
         stepModel.route._tag === 'Note' && stepModel.route.noteId === noteId
 
@@ -1000,6 +1021,7 @@ const foldNotesOutMessage = Notes.OutMessage.match<
     ({ noteId }) =>
     stepModel => {
       const refreshed = foldSyncRefresh(stepModel)
+
       const wasCurrent =
         stepModel.route._tag === 'Note' && stepModel.route.noteId === noteId
 
@@ -1405,6 +1427,7 @@ const enterRoute = (
 
   if (model.route._tag === 'List') {
     const listId = model.route.listId
+
     const isNewList =
       Option.isNone(transition.maybePreviousRoute) ||
       Option.exists(
@@ -1433,6 +1456,7 @@ const enterRoute = (
 
   if (model.route._tag === 'Note') {
     const noteId = model.route.noteId
+
     const isNewNote =
       Option.isNone(transition.maybePreviousRoute) ||
       Option.exists(
@@ -1485,20 +1509,25 @@ const isMirrorSettledMessage = (message: Sync.Message): boolean =>
 const foldSyncMessage = (model: Model, message: Sync.Message): UpdateReturn => {
   const wasPending = model.sync.pending
   const folded = foldSync(model, message)
+
   const listsStep =
     folded.model.route._tag === 'List' && isMirrorReadResult(message)
       ? foldListsMirrorSettled(folded.model, listsInputs(folded.model))
       : { model: folded.model }
+
   const notesStep =
     AppRoute.isAnyOf(['Notes', 'Note', 'NotesTrash'])(folded.model.route) &&
     isMirrorSettledMessage(message)
       ? foldNotesMirrorSettled(folded.model, notesInputs(folded.model))
       : { model: listsStep.model }
+
   const settled = wasPending > 0 && folded.model.sync.pending === 0
+
   const todayStep =
     settled && notesStep.model.route._tag === 'Today'
       ? foldTodaySyncSettled(notesStep.model, todayInputs(notesStep.model))
       : { model: notesStep.model }
+
   const calendarStep =
     settled && todayStep.model.route._tag === 'Calendar'
       ? foldCalendarSyncSettled(
@@ -1524,13 +1553,16 @@ export const update = (model: Model, message: Message) =>
     ChangedUrl: ({ url }) => {
       const nextRoute = urlToAppRoute(url)
       const guarded = enforceGuard(model, nextRoute)
+
       const leavingNote =
         model.route._tag === 'Note' &&
         (guarded.model.route._tag !== 'Note' ||
           guarded.model.route.noteId !== model.route.noteId)
+
       const leavingSettings =
         model.route._tag === 'Settings' &&
         guarded.model.route._tag !== 'Settings'
+
       const left = leavingNote
         ? foldNotesLeftNote(guarded.model)
         : leavingSettings
@@ -1956,17 +1988,21 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): Html =>
 export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
   const copy = pageCopy(model.route)
   const maybeActiveSection = Shell.sectionForRoute(model.route)
+
   const themeToggle = h.submodel({
     slotId: 'theme-toggle',
     model: model.theme,
     view: Theme.view,
     toParentMessage: message => Message.GotThemeMessage({ message }),
   })
+
   const maybeSession = Auth.maybeSession(model.auth)
+
   const maybeDisplayName = Option.map(
     maybeSession,
     session => session.user.displayName,
   )
+
   const syncStatus = Option.match(maybeSession, {
     onNone: () => h.empty,
     onSome: () =>
@@ -1977,12 +2013,14 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
         toParentMessage: message => Message.GotSyncMessage({ message }),
       }),
   })
+
   const accountMenu = h.submodel({
     slotId: 'account-menu',
     model: model.auth,
     view: Auth.view,
     toParentMessage: toAuthMessage,
   })
+
   const authBoot = () =>
     h.submodel({
       slotId: 'auth-boot',
@@ -1990,6 +2028,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
       view: Auth.bootView,
       toParentMessage: toAuthMessage,
     })
+
   const moreMenu = h.submodel({
     slotId: model.morePopover.id,
     model: model.morePopover,
@@ -2008,10 +2047,12 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
     },
     toParentMessage: message => Message.GotMorePopoverMessage({ message }),
   })
+
   const actions = h.div(
     [h.Class('flex items-center gap-1')],
     [syncStatus, themeToggle, accountMenu],
   )
+
   const guard = GuardDecision.match<
     Readonly<{
       isAllowed: boolean

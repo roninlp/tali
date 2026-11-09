@@ -14,12 +14,15 @@ import type { MirrorRecord } from '@tali/sync-client'
  */
 
 export const ListSort = Schema.Literals(['manual', 'alpha', 'status'])
+
 export type ListSort = typeof ListSort.Type
 
 export const CheckedPlacement = Schema.Literals(['inPlace', 'bottom'])
+
 export type CheckedPlacement = typeof CheckedPlacement.Type
 
 export const ListVisibility = Schema.Literals(['private', 'shared'])
+
 export type ListVisibility = typeof ListVisibility.Type
 
 export const ListRow = Schema.Struct({
@@ -39,6 +42,7 @@ export const ListRow = Schema.Struct({
   version: Schema.Int,
   hasSyncError: Schema.Boolean,
 })
+
 export type ListRow = typeof ListRow.Type
 
 export const ListItemRow = Schema.Struct({
@@ -58,6 +62,7 @@ export const ListItemRow = Schema.Struct({
   version: Schema.Int,
   hasSyncError: Schema.Boolean,
 })
+
 export type ListItemRow = typeof ListItemRow.Type
 
 export const COLOR_CHOICES: ReadonlyArray<string> = [

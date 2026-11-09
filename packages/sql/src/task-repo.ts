@@ -1,5 +1,5 @@
-import { Context, Effect, Layer, Option } from "effect"
-import { SqlClient, Statement } from "effect/sql"
+import { Context, Effect, Layer, Option } from 'effect'
+import { SqlClient, Statement } from 'effect/sql'
 import {
   type Priority,
   type ProjectId,
@@ -7,8 +7,8 @@ import {
   Task,
   type TaskId,
   type TaskStatus,
-  type UserId
-} from "@tali/domain"
+  type UserId,
+} from '@tali/domain'
 
 /**
  * D1-backed repository for `Task` (ticket #33; FR-TASK-01/02/05).
@@ -39,7 +39,7 @@ const TASK_COLUMNS =
   `started_at AS startedAt, completed_at AS completedAt, created_at AS createdAt, ` +
   `updated_at AS updatedAt, version, deleted_at AS deletedAt`
 
-interface TaskRow extends Omit<Task, "tagIds" | "recurrence"> {
+interface TaskRow extends Omit<Task, 'tagIds' | 'recurrence'> {
   readonly tagIds: string
   /** JSON text in SQLite; parsed into the structured rule by `toTask`. */
   readonly recurrence: string | null
@@ -49,15 +49,16 @@ const toTask = (row: TaskRow): Task =>
   new Task({
     ...row,
     tagIds: JSON.parse(row.tagIds) as ReadonlyArray<TagId>,
-    recurrence: row.recurrence === null
-      ? null
-      : (JSON.parse(row.recurrence) as Task["recurrence"])
+    recurrence:
+      row.recurrence === null
+        ? null
+        : (JSON.parse(row.recurrence) as Task['recurrence']),
   })
 
 const encodeTagIds = (ids: ReadonlyArray<TagId>): string => JSON.stringify(ids)
 
 /** Rules are JSON text, `NULL` for a one-off task. */
-const encodeRecurrence = (rule: Task["recurrence"]): string | null =>
+const encodeRecurrence = (rule: Task['recurrence']): string | null =>
   rule === null ? null : JSON.stringify(rule)
 
 export interface TaskQuery {
@@ -77,8 +78,14 @@ export interface TaskQuery {
   /** ISO cutoff; done rows completed before it are archived out of normal reads. */
   readonly completionCutoff?: string
   readonly sort?: {
-    readonly by: "dueDate" | "priority" | "status" | "createdAt" | "updatedAt" | "title"
-    readonly direction: "asc" | "desc"
+    readonly by:
+      | 'dueDate'
+      | 'priority'
+      | 'status'
+      | 'createdAt'
+      | 'updatedAt'
+      | 'title'
+    readonly direction: 'asc' | 'desc'
   }
 }
 
@@ -87,24 +94,24 @@ export interface TaskQuery {
  * the contract's literal schema; client values are never interpolated. The
  * trailing `id ASC` is the stable tiebreak for equal keys.
  */
-const orderBy = (sort: NonNullable<TaskQuery["sort"]>): string => {
-  const direction = sort.direction === "desc" ? "DESC" : "ASC"
+const orderBy = (sort: NonNullable<TaskQuery['sort']>): string => {
+  const direction = sort.direction === 'desc' ? 'DESC' : 'ASC'
   switch (sort.by) {
-    case "priority":
+    case 'priority':
       return `CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END ${direction},
         CASE status WHEN 'todo' THEN 0 WHEN 'doing' THEN 1 ELSE 2 END ASC,
         due_date IS NULL, due_date ASC, due_at ASC, id ASC`
-    case "status":
+    case 'status':
       return `CASE status WHEN 'todo' THEN 0 WHEN 'doing' THEN 1 ELSE 2 END ${direction},
         CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END ASC,
         due_date IS NULL, due_date ASC, due_at ASC, id ASC`
-    case "createdAt":
+    case 'createdAt':
       return `created_at ${direction}, id ASC`
-    case "updatedAt":
+    case 'updatedAt':
       return `updated_at ${direction}, id ASC`
-    case "title":
+    case 'title':
       return `title COLLATE NOCASE ${direction}, id ASC`
-    case "dueDate":
+    case 'dueDate':
     default:
       return `due_date IS NULL, due_date ${direction}, due_at ${direction}, id ASC`
   }
@@ -115,8 +122,8 @@ const bucketOrder = `
   due_date IS NULL, due_date ASC, due_at ASC, id ASC
 `
 
-export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
-  make: Effect.gen(function*() {
+export class TaskRepo extends Context.Service<TaskRepo>()('TaskRepo', {
+  make: Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
 
     /** The visibility filter every task read shares (private owner-only, else shared). */
@@ -133,7 +140,7 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
     const findById = (id: TaskId) =>
       Effect.map(
         sql<TaskRow>`SELECT ${sql.literal(TASK_COLUMNS)} FROM tasks WHERE id = ${id}`,
-        (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toTask)
+        rows => Option.map(Option.fromUndefinedOr(rows[0]), toTask),
       )
 
     /**
@@ -150,7 +157,7 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
           WHERE ${visibleScope(input)}
           ORDER BY due_date IS NULL, due_date ASC, due_at ASC, updated_at DESC
         `,
-        (rows) => rows.map(toTask)
+        rows => rows.map(toTask),
       )
 
     /**
@@ -158,14 +165,14 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
      * parameters; the only interpolated SQL is the trusted ORDER BY above.
      */
     const listFiltered = (input: TaskQuery) =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const conditions: Array<Statement.Fragment> = [visibleScope(input)]
 
         if (input.projectId !== undefined) {
           conditions.push(
             input.projectId === null
               ? sql`project_id IS NULL`
-              : sql`project_id = ${input.projectId}`
+              : sql`project_id = ${input.projectId}`,
           )
         }
         if (input.tagIds !== undefined && input.tagIds.length > 0) {
@@ -173,13 +180,14 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
           // qualified `alias.column` passed to `sql.in` as a table name.
           conditions.push(
             sql`(${sql.or(
-              input.tagIds.map((tagId) =>
-                sql`EXISTS (
+              input.tagIds.map(
+                tagId =>
+                  sql`EXISTS (
                   SELECT 1 FROM json_each(tasks.tag_ids) AS jt
                   WHERE jt.value = ${tagId}
-                )`
-              )
-            )})`
+                )`,
+              ),
+            )})`,
           )
         }
         if (input.priority !== undefined) {
@@ -194,19 +202,25 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
         if (input.noDue === true) {
           conditions.push(sql`due_at IS NULL AND due_date IS NULL`)
         }
-        if (input.includeArchived !== true && input.completionCutoff !== undefined) {
+        if (
+          input.includeArchived !== true &&
+          input.completionCutoff !== undefined
+        ) {
           conditions.push(
-            sql`(status != 'done' OR (completed_at IS NOT NULL AND completed_at >= ${input.completionCutoff}))`
+            sql`(status != 'done' OR (completed_at IS NOT NULL AND completed_at >= ${input.completionCutoff}))`,
           )
         }
 
         // A date range and an instant range are alternatives (a task has one
         // due shape), so they are OR'ed rather than AND'ed.
         const dueRanges: Array<Statement.Fragment> = []
-        if (input.dueDateFrom !== undefined || input.dueDateBefore !== undefined) {
+        if (
+          input.dueDateFrom !== undefined ||
+          input.dueDateBefore !== undefined
+        ) {
           const parts: Array<Statement.Fragment> = [
             sql`due_at IS NULL`,
-            sql`due_date IS NOT NULL`
+            sql`due_date IS NOT NULL`,
           ]
           if (input.dueDateFrom !== undefined) {
             parts.push(sql`due_date >= ${input.dueDateFrom}`)
@@ -216,7 +230,10 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
           }
           dueRanges.push(sql`(${sql.and(parts)})`)
         }
-        if (input.dueInstantFrom !== undefined || input.dueInstantBefore !== undefined) {
+        if (
+          input.dueInstantFrom !== undefined ||
+          input.dueInstantBefore !== undefined
+        ) {
           const parts: Array<Statement.Fragment> = [sql`due_at IS NOT NULL`]
           if (input.dueInstantFrom !== undefined) {
             parts.push(sql`due_at >= ${input.dueInstantFrom}`)
@@ -233,7 +250,7 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
         const rows = yield* sql<TaskRow>`
           SELECT ${sql.literal(TASK_COLUMNS)} FROM tasks
           WHERE ${sql.and(conditions)}
-          ORDER BY ${sql.literal(orderBy(input.sort ?? { by: "dueDate", direction: "asc" }))}
+          ORDER BY ${sql.literal(orderBy(input.sort ?? { by: 'dueDate', direction: 'asc' }))}
         `
         return rows.map(toTask)
       })
@@ -245,10 +262,15 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
       readonly from?: string
       readonly before?: string
     }) =>
-      Effect.gen(function*() {
-        const bounds: Array<Statement.Fragment> = [sql`due_at IS NULL`, sql`due_date IS NOT NULL`]
-        if (input.from !== undefined) bounds.push(sql`due_date >= ${input.from}`)
-        if (input.before !== undefined) bounds.push(sql`due_date < ${input.before}`)
+      Effect.gen(function* () {
+        const bounds: Array<Statement.Fragment> = [
+          sql`due_at IS NULL`,
+          sql`due_date IS NOT NULL`,
+        ]
+        if (input.from !== undefined)
+          bounds.push(sql`due_date >= ${input.from}`)
+        if (input.before !== undefined)
+          bounds.push(sql`due_date < ${input.before}`)
         const rows = yield* sql<TaskRow>`
           SELECT ${sql.literal(TASK_COLUMNS)} FROM tasks
           WHERE ${visibleScope(input)}
@@ -270,10 +292,11 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
       readonly from?: string
       readonly before?: string
     }) =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const bounds: Array<Statement.Fragment> = [sql`due_at IS NOT NULL`]
         if (input.from !== undefined) bounds.push(sql`due_at >= ${input.from}`)
-        if (input.before !== undefined) bounds.push(sql`due_at < ${input.before}`)
+        if (input.before !== undefined)
+          bounds.push(sql`due_at < ${input.before}`)
         const rows = yield* sql<TaskRow>`
           SELECT ${sql.literal(TASK_COLUMNS)} FROM tasks
           WHERE ${visibleScope(input)}
@@ -297,7 +320,7 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
             AND due_at IS NULL AND due_date IS NULL
           ORDER BY ${sql.literal(bucketOrder)}
         `,
-        (rows) => rows.map(toTask)
+        rows => rows.map(toTask),
       )
 
     /**
@@ -320,7 +343,7 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
             AND recurrence IS NOT NULL
           ORDER BY due_date IS NULL, due_date ASC, due_at ASC, id ASC
         `,
-        (rows) => rows.map(toTask)
+        rows => rows.map(toTask),
       )
 
     /**
@@ -345,7 +368,7 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
             CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
             id ASC
         `,
-        (rows) => rows.map(toTask)
+        rows => rows.map(toTask),
       )
 
     const insert = (task: Task) =>
@@ -366,7 +389,7 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
              ${task.createdAt}, ${task.updatedAt}, ${task.version}, ${task.deletedAt})
           RETURNING ${sql.literal(TASK_COLUMNS)}
         `,
-        (rows) => toTask(rows[0]!)
+        rows => toTask(rows[0]!),
       )
 
     /**
@@ -399,7 +422,7 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
           WHERE id = ${task.id}
           RETURNING ${sql.literal(TASK_COLUMNS)}
         `,
-        (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toTask)
+        rows => Option.map(Option.fromUndefinedOr(rows[0]), toTask),
       )
 
     /**
@@ -543,9 +566,9 @@ export class TaskRepo extends Context.Service<TaskRepo>()("TaskRepo", {
       update,
       insertStatement,
       insertStatementGated,
-      insertRecurrenceChildStatement
+      insertRecurrenceChildStatement,
     } as const
-  })
+  }),
 }) {}
 
 export const TaskRepoLive = Layer.effect(TaskRepo, TaskRepo.make)

@@ -1,13 +1,19 @@
-import { Schema } from "effect"
-import { Visibility } from "../common.js"
-import { RecurrenceRule } from "../recurrence.js"
-import { EventExceptionId, EventId, LocalDate, OccasionId, TimeZone } from "./common.js"
+import { Schema } from 'effect'
+import { Visibility } from '../common.js'
+import { RecurrenceRule } from '../recurrence.js'
+import {
+  EventExceptionId,
+  EventId,
+  LocalDate,
+  OccasionId,
+  TimeZone,
+} from './common.js'
 import {
   Event,
   EventException,
   EventExceptionOverrides,
-  EventTiming
-} from "./event.js"
+  EventTiming,
+} from './event.js'
 
 /**
  * EventService contract (ticket #57; FR-CAL-01).
@@ -39,46 +45,54 @@ const eventFields = {
   timeZone: TimeZone,
   recurrence: Schema.NullOr(RecurrenceRule),
   exceptions: Schema.Array(EventException),
-  occasionId: Schema.NullOr(OccasionId)
+  occasionId: Schema.NullOr(OccasionId),
 }
-
 
 // ── Typed errors (`docs/error-model-draft.md` §2) ────────────────────────
 
 /** The event does not exist, or is not visible to this viewer. */
-export class EventNotFound extends Schema.TaggedError<EventNotFound>()("EventNotFound", {
-  id: EventId
-}) {}
+export class EventNotFound extends Schema.TaggedError<EventNotFound>()(
+  'EventNotFound',
+  {
+    id: EventId,
+  },
+) {}
 
 /** The row exists but this viewer may not read/write it. */
-export class EventForbidden extends Schema.TaggedError<EventForbidden>()("EventForbidden", {
-  id: Schema.NullOr(Schema.String),
-  reason: Schema.Literals(["private", "household", "noHousehold"])
-}) {}
+export class EventForbidden extends Schema.TaggedError<EventForbidden>()(
+  'EventForbidden',
+  {
+    id: Schema.NullOr(Schema.String),
+    reason: Schema.Literals(['private', 'household', 'noHousehold']),
+  },
+) {}
 
 /** Field-level validation (empty title, both timing shapes, end before start, …). */
 export class EventValidationError extends Schema.TaggedError<EventValidationError>()(
-  "EventValidationError",
+  'EventValidationError',
   {
     issues: Schema.Array(
       Schema.Struct({
         field: Schema.String,
-        message: Schema.String
-      })
-    )
-  }
+        message: Schema.String,
+      }),
+    ),
+  },
 ) {}
 
 /** A concurrent writer won the version CAS; the caller may retry. */
-export class EventConflict extends Schema.TaggedError<EventConflict>()("EventConflict", {
-  id: Schema.String
-}) {}
+export class EventConflict extends Schema.TaggedError<EventConflict>()(
+  'EventConflict',
+  {
+    id: Schema.String,
+  },
+) {}
 
 export const EventServiceError = Schema.Union([
   EventNotFound,
   EventForbidden,
   EventValidationError,
-  EventConflict
+  EventConflict,
 ])
 export type EventServiceError = Schema.Schema.Type<typeof EventServiceError>
 
@@ -107,7 +121,7 @@ export const EventCreateInput = Schema.Struct({
   recurrence: Schema.optional(eventFields.recurrence),
   exceptions: Schema.optional(eventFields.exceptions),
   occasionId: Schema.optional(eventFields.occasionId),
-  visibility: Schema.optional(Visibility)
+  visibility: Schema.optional(Visibility),
 })
 export type EventCreateInput = Schema.Schema.Type<typeof EventCreateInput>
 
@@ -124,7 +138,7 @@ export const EventPatch = Schema.Struct({
   recurrence: Schema.optional(eventFields.recurrence),
   exceptions: Schema.optional(eventFields.exceptions),
   occasionId: Schema.optional(eventFields.occasionId),
-  visibility: Schema.optional(Visibility)
+  visibility: Schema.optional(Visibility),
 })
 export type EventPatch = Schema.Schema.Type<typeof EventPatch>
 
@@ -133,14 +147,14 @@ export const EventUpdateInput = Schema.Struct({
   clientMutationId: Schema.String,
   /** Informational; the update re-reads and retries on a lost CAS. */
   baseVersion: Schema.optional(Schema.Int),
-  patch: EventPatch
+  patch: EventPatch,
 })
 export type EventUpdateInput = Schema.Schema.Type<typeof EventUpdateInput>
 
 /** Delete carries only the row id plus the replay key. */
 export const EventMutationInput = Schema.Struct({
   id: EventId,
-  clientMutationId: Schema.String
+  clientMutationId: Schema.String,
 })
 export type EventMutationInput = Schema.Schema.Type<typeof EventMutationInput>
 
@@ -152,7 +166,10 @@ export type EventMutationInput = Schema.Schema.Type<typeof EventMutationInput>
  * - `thisOccurrence` writes one exception on the series row.
  * - `thisAndFollowing` splits the series at the occurrence.
  */
-export const EventEditScope = Schema.Literals(["thisOccurrence", "thisAndFollowing"])
+export const EventEditScope = Schema.Literals([
+  'thisOccurrence',
+  'thisAndFollowing',
+])
 export type EventEditScope = Schema.Schema.Type<typeof EventEditScope>
 
 /**
@@ -175,9 +192,11 @@ export const EventOccurrenceEditInput = Schema.Struct({
   followingId: Schema.optional(EventId),
   /** The new series row's replay key, for `thisAndFollowing`. */
   followingMutationId: Schema.optional(Schema.String),
-  overrides: EventExceptionOverrides
+  overrides: EventExceptionOverrides,
 })
-export type EventOccurrenceEditInput = Schema.Schema.Type<typeof EventOccurrenceEditInput>
+export type EventOccurrenceEditInput = Schema.Schema.Type<
+  typeof EventOccurrenceEditInput
+>
 
 /** Delete one occurrence, or everything from it on. */
 export const EventOccurrenceDeleteInput = Schema.Struct({
@@ -186,9 +205,11 @@ export const EventOccurrenceDeleteInput = Schema.Struct({
   clientMutationId: Schema.String,
   scope: EventEditScope,
   /** Optional client-minted exception id for a `thisOccurrence` delete. */
-  exceptionId: Schema.optional(EventExceptionId)
+  exceptionId: Schema.optional(EventExceptionId),
 })
-export type EventOccurrenceDeleteInput = Schema.Schema.Type<typeof EventOccurrenceDeleteInput>
+export type EventOccurrenceDeleteInput = Schema.Schema.Type<
+  typeof EventOccurrenceDeleteInput
+>
 
 /**
  * What an occurrence edit wrote: the series row (as stored) and, for a split,
@@ -196,9 +217,11 @@ export type EventOccurrenceDeleteInput = Schema.Schema.Type<typeof EventOccurren
  */
 export const EventOccurrenceChange = Schema.Struct({
   series: Event,
-  following: Schema.NullOr(Event)
+  following: Schema.NullOr(Event),
 })
-export type EventOccurrenceChange = Schema.Schema.Type<typeof EventOccurrenceChange>
+export type EventOccurrenceChange = Schema.Schema.Type<
+  typeof EventOccurrenceChange
+>
 
 // ── Query inputs ─────────────────────────────────────────────────────────
 
@@ -206,6 +229,6 @@ export const EventListInput = Schema.Struct({
   /** Inclusive local-date lower bound, in the viewer's zone. */
   from: Schema.optional(LocalDate),
   /** Exclusive local-date upper bound, in the viewer's zone. */
-  before: Schema.optional(LocalDate)
+  before: Schema.optional(LocalDate),
 })
 export type EventListInput = Schema.Schema.Type<typeof EventListInput>

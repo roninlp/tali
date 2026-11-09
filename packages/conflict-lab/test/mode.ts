@@ -16,10 +16,10 @@ export interface LabMode {
 }
 
 export const resolveLabMode = (raw: string | undefined): LabMode => {
-  const nightly = raw === "1"
+  const nightly = raw === '1'
   return {
     nightly,
     numRuns: nightly ? 100 : 20,
-    maxSteps: nightly ? 70 : 40
+    maxSteps: nightly ? 70 : 40,
   }
 }

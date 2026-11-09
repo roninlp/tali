@@ -8,20 +8,20 @@
  */
 ;(function () {
   try {
-    var theme = localStorage.getItem("tali.theme")
-    var mode = localStorage.getItem("tali.mode") || "system"
-    var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches
-    var isHouseTheme = theme === "tali" || theme === "talidark"
+    var theme = localStorage.getItem('tali.theme')
+    var mode = localStorage.getItem('tali.mode') || 'system'
+    var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    var isHouseTheme = theme === 'tali' || theme === 'talidark'
     var resolved = isHouseTheme
       ? theme
-      : mode === "system"
+      : mode === 'system'
         ? prefersDark
-          ? "talidark"
-          : "tali"
-        : mode === "dark"
-          ? "talidark"
-          : "tali"
-    document.documentElement.setAttribute("data-theme", resolved)
+          ? 'talidark'
+          : 'tali'
+        : mode === 'dark'
+          ? 'talidark'
+          : 'tali'
+    document.documentElement.setAttribute('data-theme', resolved)
   } catch (error) {
     // Storage can be unavailable (private mode); the default theme applies.
   }

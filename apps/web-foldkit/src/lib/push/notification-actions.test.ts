@@ -33,6 +33,7 @@ const seed = (
 
     request.onupgradeneeded = () => {
       const db = request.result
+
       if (!db.objectStoreNames.contains(PUSH_ACTIONS_STORE)) {
         db.createObjectStore(PUSH_ACTIONS_STORE, {
           keyPath: 'seq',
@@ -54,6 +55,7 @@ const seed = (
         db.close()
         resolve()
       }
+
       transaction.onerror = () =>
         reject(transaction.error ?? new Error('seed failed'))
     }
@@ -116,6 +118,7 @@ describe('queued reminder actions', () => {
     const result = await Effect.runPromise(
       flushQueuedReminderActions(record => {
         posted.push(record)
+
         // The second one is offline: keep it queued for the next open.
         return Effect.succeed(record.dispatchId === 'dispatch-1')
       }),
@@ -144,8 +147,10 @@ describe('queued reminder actions', () => {
       },
     ])
     let calls = 0
+
     const send = () => {
       calls += 1
+
       return Effect.succeed(true)
     }
 
@@ -172,7 +177,9 @@ describe('respondToDispatch', () => {
     const fetchStub = vi.fn(
       async (_input: RequestInfo | URL, _init?: RequestInit) => response,
     )
+
     vi.stubGlobal('fetch', fetchStub)
+
     return fetchStub
   }
 

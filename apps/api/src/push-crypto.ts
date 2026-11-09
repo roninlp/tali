@@ -17,11 +17,9 @@
  * the RFC 8291 Appendix A vector is pinned in `test/push-crypto.test.ts`.
  */
 
-const P256 = { name: "ECDH", namedCurve: "P-256" } as const
-const AES_GCM = { name: "AES-GCM", length: 128 } as const
+const P256 = { name: 'ECDH', namedCurve: 'P-256' } as const
+const AES_GCM = { name: 'AES-GCM', length: 128 } as const
 const ECDH_BITS = 256
-/** RFC 8291 §4: a single record, and the server picks a record size above it. */
-const RECORD_SIZE = 4096
 /** RFC 8188: the last (here: only) record's padding delimiter. */
 const LAST_RECORD_DELIMITER = 0x02
 const AUTH_SECRET_BYTES = 16
@@ -30,14 +28,17 @@ const SALT_BYTES = 16
 const VAPID_EXPIRY_SECONDS = 12 * 60 * 60
 
 export const base64UrlEncode = (bytes: Uint8Array): string => {
-  let binary = ""
+  let binary = ''
   for (const byte of bytes) binary += String.fromCharCode(byte)
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/u, "")
+  return btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/u, '')
 }
 
 export const base64UrlDecode = (value: string): Uint8Array => {
-  const normalized = value.replace(/-/g, "+").replace(/_/g, "/")
-  const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4)
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/')
+  const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4)
   const binary = atob(padded)
   const bytes = new Uint8Array(binary.length)
   for (let index = 0; index < binary.length; index += 1) {
@@ -62,34 +63,49 @@ const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value)
 /** The uncompressed X9.62 point (0x04 || X || Y) split into a JWK. */
 const pointJwk = (publicKey: Uint8Array): JsonWebKey => {
   if (publicKey.length !== 65 || publicKey[0] !== 0x04) {
-    throw new Error("a P-256 public key must be a 65-byte uncompressed point")
+    throw new Error('a P-256 public key must be a 65-byte uncompressed point')
   }
   return {
-    kty: "EC",
-    crv: "P-256",
+    kty: 'EC',
+    crv: 'P-256',
     x: base64UrlEncode(publicKey.slice(1, 33)),
-    y: base64UrlEncode(publicKey.slice(33, 65))
+    y: base64UrlEncode(publicKey.slice(33, 65)),
   }
 }
 
 const importPublicKey = (publicKey: Uint8Array): Promise<CryptoKey> =>
-  crypto.subtle.importKey("raw", publicKey, P256, false, [])
+  crypto.subtle.importKey('raw', publicKey, P256, false, [])
 
-const privateJwk = (privateKey: Uint8Array, publicKey: Uint8Array): JsonWebKey => ({
+const privateJwk = (
+  privateKey: Uint8Array,
+  publicKey: Uint8Array,
+): JsonWebKey => ({
   ...pointJwk(publicKey),
-  d: base64UrlEncode(privateKey)
+  d: base64UrlEncode(privateKey),
 })
 
-const importEcdhPrivateKey = (privateKey: Uint8Array, publicKey: Uint8Array): Promise<CryptoKey> =>
-  crypto.subtle.importKey("jwk", privateJwk(privateKey, publicKey), P256, false, ["deriveBits"])
-
-const importSigningKey = (privateKey: Uint8Array, publicKey: Uint8Array): Promise<CryptoKey> =>
+const importEcdhPrivateKey = (
+  privateKey: Uint8Array,
+  publicKey: Uint8Array,
+): Promise<CryptoKey> =>
   crypto.subtle.importKey(
-    "jwk",
+    'jwk',
     privateJwk(privateKey, publicKey),
-    { name: "ECDSA", namedCurve: "P-256" },
+    P256,
     false,
-    ["sign"]
+    ['deriveBits'],
+  )
+
+const importSigningKey = (
+  privateKey: Uint8Array,
+  publicKey: Uint8Array,
+): Promise<CryptoKey> =>
+  crypto.subtle.importKey(
+    'jwk',
+    privateJwk(privateKey, publicKey),
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    false,
+    ['sign'],
   )
 
 /** HKDF-SHA-256 extract+expand via WebCrypto (RFC 5869). */
@@ -97,20 +113,22 @@ const hkdf = async (
   ikm: Uint8Array,
   salt: Uint8Array,
   info: Uint8Array,
-  length: number
+  length: number,
 ): Promise<Uint8Array> => {
-  const key = await crypto.subtle.importKey("raw", ikm, "HKDF", false, ["deriveBits"])
+  const key = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, [
+    'deriveBits',
+  ])
   const bits = await crypto.subtle.deriveBits(
-    { name: "HKDF", hash: "SHA-256", salt, info },
+    { name: 'HKDF', hash: 'SHA-256', salt, info },
     key,
-    length * 8
+    length * 8,
   )
   return new Uint8Array(bits)
 }
 
 const deriveEcdhSecret = async (
   own: P256KeyPair,
-  peerPublicKey: Uint8Array
+  peerPublicKey: Uint8Array,
 ): Promise<Uint8Array> => {
   // WebCrypto can only import a private EC key as a JWK, which needs both
   // halves of the pair — hence the key pair, not just the scalar.
@@ -118,7 +136,10 @@ const deriveEcdhSecret = async (
   const peer = await importPublicKey(peerPublicKey)
   // `@cloudflare/workers-types` spells the peer point `$public`; the runtime
   // (and the DOM typing) spell it `public`. Cast, keeping the runtime shape.
-  const algorithm = { name: "ECDH", public: peer } as unknown as SubtleCryptoDeriveKeyAlgorithm
+  const algorithm = {
+    name: 'ECDH',
+    public: peer,
+  } as unknown as SubtleCryptoDeriveKeyAlgorithm
   const bits = await crypto.subtle.deriveBits(algorithm, privateKey, ECDH_BITS)
   return new Uint8Array(bits)
 }
@@ -132,14 +153,18 @@ export interface P256KeyPair {
 
 /** Generate a fresh sender key pair; the public half is the `keyid` header. */
 export const generateP256KeyPair = async (): Promise<P256KeyPair> => {
-  const pair = await crypto.subtle.generateKey(P256, true, [
-    "deriveBits"
-  ]) as unknown as CryptoKeyPair
+  const pair = (await crypto.subtle.generateKey(P256, true, [
+    'deriveBits',
+  ])) as unknown as CryptoKeyPair
   const publicKey = new Uint8Array(
-    await crypto.subtle.exportKey("raw", pair.publicKey) as ArrayBuffer
+    (await crypto.subtle.exportKey('raw', pair.publicKey)) as ArrayBuffer,
   )
-  const jwk = await crypto.subtle.exportKey("jwk", pair.privateKey) as JsonWebKey
-  if (jwk.d === undefined) throw new Error("the generated P-256 key has no private scalar")
+  const jwk = (await crypto.subtle.exportKey(
+    'jwk',
+    pair.privateKey,
+  )) as JsonWebKey
+  if (jwk.d === undefined)
+    throw new Error('the generated P-256 key has no private scalar')
   return { privateKey: base64UrlDecode(jwk.d), publicKey }
 }
 
@@ -169,24 +194,30 @@ export const createVapidJwt = async (input: {
   const issuedAt = Math.floor(Date.parse(input.now) / 1000)
   const expiresIn = Math.min(
     Math.max(1, input.expiresInSeconds ?? VAPID_EXPIRY_SECONDS),
-    24 * 60 * 60
+    24 * 60 * 60,
   )
-  const header = base64UrlEncode(utf8(JSON.stringify({ typ: "JWT", alg: "ES256" })))
+  const header = base64UrlEncode(
+    utf8(JSON.stringify({ typ: 'JWT', alg: 'ES256' })),
+  )
   const claims = base64UrlEncode(
     utf8(
       JSON.stringify({
         aud: input.audience,
         exp: issuedAt + expiresIn,
-        sub: input.subject
-      })
-    )
+        sub: input.subject,
+      }),
+    ),
   )
   const signingInput = utf8(`${header}.${claims}`)
   const privateKey = base64UrlDecode(input.keys.privateKey)
   const publicKey = base64UrlDecode(input.keys.publicKey)
   const key = await importSigningKey(privateKey, publicKey)
   const signature = new Uint8Array(
-    await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, signingInput)
+    await crypto.subtle.sign(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      key,
+      signingInput,
+    ),
   )
   if (signature.length !== 64) {
     throw new Error(`unexpected ES256 signature length: ${signature.length}`)
@@ -224,31 +255,45 @@ export const encryptPushPayload = async (input: {
 }): Promise<EncryptedPushPayload> => {
   const uaPublicKey = base64UrlDecode(input.p256dh)
   if (uaPublicKey.length !== 65) {
-    throw new Error("p256dh must be a 65-byte uncompressed P-256 point")
+    throw new Error('p256dh must be a 65-byte uncompressed P-256 point')
   }
   const authSecret = base64UrlDecode(input.auth)
   if (authSecret.length !== AUTH_SECRET_BYTES) {
-    throw new Error("auth must be 16 bytes")
+    throw new Error('auth must be 16 bytes')
   }
 
-  const sender = input.sender ?? await generateP256KeyPair()
+  const sender = input.sender ?? (await generateP256KeyPair())
   const salt = input.salt ?? crypto.getRandomValues(new Uint8Array(SALT_BYTES))
   const ecdhSecret = await deriveEcdhSecret(sender, uaPublicKey)
 
   // RFC 8291 §3.3: mix the ECDH secret with the subscription's auth secret.
-  const keyInfo = concat(utf8("WebPush: info"), Uint8Array.of(0), uaPublicKey, sender.publicKey)
+  const keyInfo = concat(
+    utf8('WebPush: info'),
+    Uint8Array.of(0),
+    uaPublicKey,
+    sender.publicKey,
+  )
   const ikm = await hkdf(ecdhSecret, authSecret, keyInfo, 32)
 
   // RFC 8291 §3.4 → RFC 8188 §2.2: content-encoding key + nonce from the salt.
-  const contentEncryptionKey = await hkdf(ikm, salt, utf8("Content-Encoding: aes128gcm\0"), 16)
-  const nonce = await hkdf(ikm, salt, utf8("Content-Encoding: nonce\0"), 12)
+  const contentEncryptionKey = await hkdf(
+    ikm,
+    salt,
+    utf8('Content-Encoding: aes128gcm\0'),
+    16,
+  )
+  const nonce = await hkdf(ikm, salt, utf8('Content-Encoding: nonce\0'), 12)
 
-  const aesKey = await crypto.subtle.importKey("raw", contentEncryptionKey, AES_GCM, false, [
-    "encrypt"
-  ])
+  const aesKey = await crypto.subtle.importKey(
+    'raw',
+    contentEncryptionKey,
+    AES_GCM,
+    false,
+    ['encrypt'],
+  )
   const record = concat(input.payload, Uint8Array.of(LAST_RECORD_DELIMITER))
   const ciphertext = new Uint8Array(
-    await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, aesKey, record)
+    await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, aesKey, record),
   )
 
   const header = concat(
@@ -256,13 +301,13 @@ export const encryptPushPayload = async (input: {
     // rs: always 4096 here — one record, far below the limit.
     Uint8Array.of(0x00, 0x00, 0x10, 0x00),
     Uint8Array.of(sender.publicKey.length),
-    sender.publicKey
+    sender.publicKey,
   )
 
   return {
     body: concat(header, ciphertext),
     salt,
-    senderPublicKey: sender.publicKey
+    senderPublicKey: sender.publicKey,
   }
 }
 
@@ -273,7 +318,7 @@ export const encryptPushPayload = async (input: {
  * them into one visible notification.
  */
 export const pushTopic = async (dispatchId: string): Promise<string> => {
-  const digest = await crypto.subtle.digest("SHA-256", utf8(dispatchId))
+  const digest = await crypto.subtle.digest('SHA-256', utf8(dispatchId))
   return base64UrlEncode(new Uint8Array(digest).slice(0, 16))
 }
 

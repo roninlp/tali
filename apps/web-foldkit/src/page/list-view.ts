@@ -107,10 +107,12 @@ const headerView = (
 ): Html => {
   const titleValue = Option.getOrElse(model.maybeTitleDraft, () => list.title)
   const sortValue = Option.getOrElse(model.maybeSortDraft, () => list.sort)
+
   const placementValue = Option.getOrElse(
     model.maybePlacementDraft,
     () => list.checkedPlacement,
   )
+
   const visibilityValue = Option.getOrElse(
     model.maybeVisibilityDraft,
     () => list.visibility,
@@ -572,9 +574,11 @@ const detailBodyView = (
   const view = buildListItemsView(list, items)
   const pendingListIds = pendingIdsOf(inputs.pendingKeys, 'list')
   const pendingItemIds = pendingIdsOf(inputs.pendingKeys, 'listItem')
+
   const isPending =
     Array.contains(pendingListIds, list.id) ||
     Array.some(items, item => Array.contains(pendingItemIds, item.id))
+
   const isOwner = Option.exists(inputs.maybeUserId, id => id === list.ownerId)
 
   return h.div(

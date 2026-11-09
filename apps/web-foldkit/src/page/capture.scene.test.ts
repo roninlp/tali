@@ -1,12 +1,5 @@
 import { Option } from 'effect'
-import {
-  expect,
-  given,
-  role,
-  scene,
-  text,
-  withViewInputs,
-} from 'foldkit/scene'
+import { expect, given, role, scene, text, withViewInputs } from 'foldkit/scene'
 import { describe, test } from 'vitest'
 
 import {
@@ -30,7 +23,11 @@ import type { Inputs, Model } from './capture'
  */
 
 const inputs = (overrides: Partial<Inputs> = {}): Inputs => ({
-  display: { timeZone: 'Asia/Tehran', weekStart: 'saturday', digits: 'persian' },
+  display: {
+    timeZone: 'Asia/Tehran',
+    weekStart: 'saturday',
+    digits: 'persian',
+  },
   isOnline: true,
   maybeUserId: Option.some(USER_ID),
   today: '2026-11-09',
@@ -39,6 +36,7 @@ const inputs = (overrides: Partial<Inputs> = {}): Inputs => ({
 
 const setup = (overrides: Partial<Inputs> = {}) => {
   const viewInputs = inputs(overrides)
+
   return {
     update: (capture: Model, message: CapturePage.Message) =>
       CapturePage.update(capture, message, viewInputs),
@@ -58,7 +56,11 @@ const blockedDraft: CaptureDraft = {
   title: 'دکتر',
   sourceQuote: 'فردا دکتر',
   missing: [
-    { field: 'timing', shape: 'localDate', question: 'این رویداد چه روزی است؟' },
+    {
+      field: 'timing',
+      shape: 'localDate',
+      question: 'این رویداد چه روزی است؟',
+    },
   ],
 }
 
@@ -130,6 +132,7 @@ describe('capture view', () => {
       timing: { _tag: 'timed', start: '17:00', end: '18:00' },
       missing: [],
     }
+
     scene(
       setup(),
       given(model({ phase: 'review', cards: [cardOf(broken)] })),
@@ -153,6 +156,7 @@ describe('capture view', () => {
         { field: 'timing.start', shape: 'clockTime', question: 'ساعت شروع؟' },
       ],
     }
+
     scene(
       setup(),
       given(model({ phase: 'review', cards: [cardOf(event)] })),
@@ -167,6 +171,7 @@ describe('capture view', () => {
       error: 'مدل در ۶۰ ثانیه پاسخ نداد',
       drafts: [],
     })
+
     scene(
       setup(),
       given(

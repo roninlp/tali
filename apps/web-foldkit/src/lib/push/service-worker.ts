@@ -23,6 +23,7 @@ export const PushPermission = Schema.Literals([
   'default',
   'unsupported',
 ])
+
 export type PushPermission = typeof PushPermission.Type
 
 export const PushEnvironment = Schema.Struct({
@@ -31,6 +32,7 @@ export const PushEnvironment = Schema.Struct({
   isInstalled: Schema.Boolean,
   permission: PushPermission,
 })
+
 export type PushEnvironment = typeof PushEnvironment.Type
 
 export const isSecureContext = (): boolean =>
@@ -89,6 +91,7 @@ export const registerServiceWorker = async (): Promise<
     })
   } catch (cause) {
     console.warn('[tali] service worker registration failed', cause)
+
     return undefined
   }
 }
@@ -157,12 +160,14 @@ export const findSubscription = async (): Promise<
   PushSubscriptionJson | undefined
 > => {
   const registration = await readyRegistration()
+
   if (registration === undefined) {
     return undefined
   }
 
   try {
     const subscription = await registration.pushManager.getSubscription()
+
     return subscription === null ? undefined : subscriptionJsonOf(subscription)
   } catch {
     return undefined
@@ -179,6 +184,7 @@ export const subscribeThisDevice = async (
   apiUrl: string,
 ): Promise<PushSubscriptionJson | undefined> => {
   const registration = await registerServiceWorker()
+
   if (registration === undefined) {
     return undefined
   }
@@ -187,6 +193,7 @@ export const subscribeThisDevice = async (
   await shareConfigWithWorker(publicKey, apiUrl)
 
   const existing = await registration.pushManager.getSubscription()
+
   if (existing !== null) {
     return subscriptionJsonOf(existing)
   }
@@ -201,12 +208,14 @@ export const subscribeThisDevice = async (
 
 export const unsubscribeThisDevice = async (): Promise<boolean> => {
   const registration = await readyRegistration()
+
   if (registration === undefined) {
     return false
   }
 
   try {
     const subscription = await registration.pushManager.getSubscription()
+
     return subscription === null ? true : await subscription.unsubscribe()
   } catch {
     return false

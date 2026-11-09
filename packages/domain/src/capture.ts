@@ -1,19 +1,21 @@
-import { Effect, Result, Schema, SchemaIssue } from "effect"
-import { Temporal } from "temporal-polyfill/full"
-import type { RecurrenceRule } from "./recurrence.js"
-import type { HabitFrequency } from "./planning/habit.js"
-import type { ReminderRepeat } from "./planning/reminder.js"
-import type { EventTiming } from "./planning/event.js"
-import type { WeekStart } from "./common.js"
-import { UserId } from "./common.js"
-import { toLatinDigits } from "./digits.js"
-import { normalizePersian } from "./persian.js"
-import { TimestampUtc } from "./planning/common.js"
-import { EventCreateInput } from "./planning/event-service.js"
-import { HabitCreateInput } from "./planning/habit-service.js"
-import { NoteCreateInput, plainTextToNoteBody } from "./planning/note-service.js"
-import { ReminderCreateInput } from "./planning/reminder-service.js"
-import { TaskCreateInput } from "./planning/task-service.js"
+import { Effect, Result, Schema, SchemaIssue } from 'effect'
+import { Temporal } from 'temporal-polyfill/full'
+import type { HabitFrequency } from './planning/habit.js'
+import type { ReminderRepeat } from './planning/reminder.js'
+import type { EventTiming } from './planning/event.js'
+import type { WeekStart } from './common.js'
+import { UserId } from './common.js'
+import { toLatinDigits } from './digits.js'
+import { normalizePersian } from './persian.js'
+import { TimestampUtc } from './planning/common.js'
+import { EventCreateInput } from './planning/event-service.js'
+import { HabitCreateInput } from './planning/habit-service.js'
+import {
+  NoteCreateInput,
+  plainTextToNoteBody,
+} from './planning/note-service.js'
+import { ReminderCreateInput } from './planning/reminder-service.js'
+import { TaskCreateInput } from './planning/task-service.js'
 
 /**
  * Capture domain model (ADR-0012; ticket #101).
@@ -60,26 +62,26 @@ export const CAPTURE_RETENTION_MS = CAPTURE_RETENTION_DAYS * 24 * 60 * 60 * 1000
 
 /** A Capture is owner-only and outside sync, so its id is a plain UUID v7. */
 export const CaptureId = Schema.String.check(Schema.isUUID(7)).pipe(
-  Schema.brand("CaptureId")
+  Schema.brand('CaptureId'),
 )
 export type CaptureId = Schema.Schema.Type<typeof CaptureId>
 
 /** The lifecycle in `GLOSSARY.md` § Capture Status. */
 export const CaptureStatus = Schema.Literals([
-  "pending",
-  "parsed",
-  "failed",
-  "committed"
+  'pending',
+  'parsed',
+  'failed',
+  'committed',
 ])
 export type CaptureStatus = Schema.Schema.Type<typeof CaptureStatus>
 
 /** The five aggregates a Dissect may propose. */
 export const CaptureDraftKind = Schema.Literals([
-  "task",
-  "event",
-  "note",
-  "habit",
-  "reminder"
+  'task',
+  'event',
+  'note',
+  'habit',
+  'reminder',
 ])
 export type CaptureDraftKind = Schema.Schema.Type<typeof CaptureDraftKind>
 
@@ -90,11 +92,11 @@ export type CaptureDraftKind = Schema.Schema.Type<typeof CaptureDraftKind>
  * answer and never a second model call.
  */
 export const NeedsInputShape = Schema.Literals([
-  "instant",
-  "localDate",
-  "clockTime",
-  "frequency",
-  "repeat"
+  'instant',
+  'localDate',
+  'clockTime',
+  'frequency',
+  'repeat',
 ])
 export type NeedsInputShape = Schema.Schema.Type<typeof NeedsInputShape>
 
@@ -109,7 +111,7 @@ export type NeedsInputShape = Schema.Schema.Type<typeof NeedsInputShape>
 export const NeedsInput = Schema.Struct({
   field: Schema.String.check(Schema.isMinLength(1)),
   shape: NeedsInputShape,
-  question: Schema.String.check(Schema.isMinLength(1))
+  question: Schema.String.check(Schema.isMinLength(1)),
 })
 export type NeedsInput = Schema.Schema.Type<typeof NeedsInput>
 
@@ -122,7 +124,7 @@ export type SourceQuote = Schema.Schema.Type<typeof SourceQuote>
 const draftEnvelope = {
   sourceQuote: SourceQuote,
   /** Fields the text does not supply; a non-empty list blocks the commit. */
-  missing: Schema.Array(NeedsInput)
+  missing: Schema.Array(NeedsInput),
 } as const
 
 /**
@@ -130,7 +132,7 @@ const draftEnvelope = {
  * shape are the card-editable structural fields.
  */
 export const TaskDraft = Schema.Struct({
-  _tag: Schema.Literal("task"),
+  _tag: Schema.Literal('task'),
   title: Schema.optional(TaskCreateInput.fields.title),
   description: Schema.optional(TaskCreateInput.fields.description),
   status: Schema.optional(TaskCreateInput.fields.status),
@@ -141,13 +143,13 @@ export const TaskDraft = Schema.Struct({
   recurrence: Schema.optional(TaskCreateInput.fields.recurrence),
   recurrenceMode: Schema.optional(TaskCreateInput.fields.recurrenceMode),
   color: Schema.optional(TaskCreateInput.fields.color),
-  ...draftEnvelope
+  ...draftEnvelope,
 })
 export type TaskDraft = Schema.Schema.Type<typeof TaskDraft>
 
 /** A proposed event. `timing` is the structural field the card edits. */
 export const EventDraft = Schema.Struct({
-  _tag: Schema.Literal("event"),
+  _tag: Schema.Literal('event'),
   title: Schema.optional(EventCreateInput.fields.title),
   description: Schema.optional(EventCreateInput.fields.description),
   location: Schema.optional(EventCreateInput.fields.location),
@@ -157,7 +159,7 @@ export const EventDraft = Schema.Struct({
   timing: Schema.optional(EventCreateInput.fields.timing),
   timeZone: Schema.optional(EventCreateInput.fields.timeZone),
   recurrence: Schema.optional(EventCreateInput.fields.recurrence),
-  ...draftEnvelope
+  ...draftEnvelope,
 })
 export type EventDraft = Schema.Schema.Type<typeof EventDraft>
 
@@ -166,19 +168,19 @@ export type EventDraft = Schema.Schema.Type<typeof EventDraft>
  * ProseMirror tree; the commit wraps it.
  */
 export const NoteDraft = Schema.Struct({
-  _tag: Schema.Literal("note"),
+  _tag: Schema.Literal('note'),
   title: Schema.optional(NoteCreateInput.fields.title),
   body: Schema.optional(Schema.String),
   isPinned: Schema.optional(NoteCreateInput.fields.isPinned),
   isArchived: Schema.optional(NoteCreateInput.fields.isArchived),
   color: Schema.optional(NoteCreateInput.fields.color),
-  ...draftEnvelope
+  ...draftEnvelope,
 })
 export type NoteDraft = Schema.Schema.Type<typeof NoteDraft>
 
 /** A proposed habit. `frequency` is the structural field the card edits. */
 export const HabitDraft = Schema.Struct({
-  _tag: Schema.Literal("habit"),
+  _tag: Schema.Literal('habit'),
   title: Schema.optional(HabitCreateInput.fields.title),
   description: Schema.optional(HabitCreateInput.fields.description),
   color: Schema.optional(HabitCreateInput.fields.color),
@@ -186,13 +188,13 @@ export const HabitDraft = Schema.Struct({
   frequency: Schema.optional(HabitCreateInput.fields.frequency),
   reminderTime: Schema.optional(HabitCreateInput.fields.reminderTime),
   timeZone: Schema.optional(HabitCreateInput.fields.timeZone),
-  ...draftEnvelope
+  ...draftEnvelope,
 })
 export type HabitDraft = Schema.Schema.Type<typeof HabitDraft>
 
 /** A proposed reminder. `repeat` is the structural field the card edits. */
 export const ReminderDraft = Schema.Struct({
-  _tag: Schema.Literal("reminder"),
+  _tag: Schema.Literal('reminder'),
   title: Schema.optional(ReminderCreateInput.fields.title),
   note: Schema.optional(ReminderCreateInput.fields.note),
   kind: Schema.optional(ReminderCreateInput.fields.kind),
@@ -202,7 +204,7 @@ export const ReminderDraft = Schema.Struct({
   silencedUntil: Schema.optional(ReminderCreateInput.fields.silencedUntil),
   timeZone: Schema.optional(ReminderCreateInput.fields.timeZone),
   color: Schema.optional(ReminderCreateInput.fields.color),
-  ...draftEnvelope
+  ...draftEnvelope,
 })
 export type ReminderDraft = Schema.Schema.Type<typeof ReminderDraft>
 
@@ -212,7 +214,7 @@ export const CaptureDraft = Schema.Union([
   EventDraft,
   NoteDraft,
   HabitDraft,
-  ReminderDraft
+  ReminderDraft,
 ])
 export type CaptureDraft = Schema.Schema.Type<typeof CaptureDraft>
 
@@ -222,7 +224,7 @@ export type CaptureDraft = Schema.Schema.Type<typeof CaptureDraft>
 export const CaptureCreatedRow = Schema.Struct({
   type: CaptureDraftKind,
   id: Schema.String,
-  title: Schema.String
+  title: Schema.String,
 })
 export type CaptureCreatedRow = Schema.Schema.Type<typeof CaptureCreatedRow>
 
@@ -240,7 +242,7 @@ export const Capture = Schema.Struct({
   /** The model/network failure message while `status` is `failed`. */
   error: Schema.NullOr(Schema.String),
   createdAt: TimestampUtc,
-  committedAt: Schema.NullOr(TimestampUtc)
+  committedAt: Schema.NullOr(TimestampUtc),
 })
 export type Capture = Schema.Schema.Type<typeof Capture>
 
@@ -248,7 +250,7 @@ export type Capture = Schema.Schema.Type<typeof Capture>
 
 /** `DissectCapture` payload: the raw text box contents. */
 export const DissectCaptureInput = Schema.Struct({
-  text: Schema.String
+  text: Schema.String,
 })
 export type DissectCaptureInput = Schema.Schema.Type<typeof DissectCaptureInput>
 
@@ -260,35 +262,39 @@ export type DissectCaptureInput = Schema.Schema.Type<typeof DissectCaptureInput>
  */
 export const CommitCaptureInput = Schema.Struct({
   captureId: CaptureId,
-  drafts: Schema.Array(CaptureDraft)
+  drafts: Schema.Array(CaptureDraft),
 })
 export type CommitCaptureInput = Schema.Schema.Type<typeof CommitCaptureInput>
 
 /** `ListCaptures` payload: the history screen's page size. */
 export const ListCapturesInput = Schema.Struct({
-  limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 })))
+  limit: Schema.optional(
+    Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 })),
+  ),
 })
 export type ListCapturesInput = Schema.Schema.Type<typeof ListCapturesInput>
 
 /** `DeleteCapture` payload: one history row to drop. */
 export const DeleteCaptureInput = Schema.Struct({
-  captureId: CaptureId
+  captureId: CaptureId,
 })
 export type DeleteCaptureInput = Schema.Schema.Type<typeof DeleteCaptureInput>
 
 /** A mid-way service failure, reported without discarding what landed. */
 export const CaptureCommitFailure = Schema.Struct({
   draftIndex: Schema.Int,
-  error: Schema.String
+  error: Schema.String,
 })
-export type CaptureCommitFailure = Schema.Schema.Type<typeof CaptureCommitFailure>
+export type CaptureCommitFailure = Schema.Schema.Type<
+  typeof CaptureCommitFailure
+>
 
 /** The commit result: the stored Capture plus the rows this attempt landed. */
 export const CaptureCommitResult = Schema.Struct({
   capture: Capture,
   created: Schema.Array(CaptureCreatedRow),
   failure: Schema.NullOr(CaptureCommitFailure),
-  remaining: Schema.Int
+  remaining: Schema.Int,
 })
 export type CaptureCommitResult = Schema.Schema.Type<typeof CaptureCommitResult>
 
@@ -296,53 +302,62 @@ export type CaptureCommitResult = Schema.Schema.Type<typeof CaptureCommitResult>
 
 /** The text exceeds the 4000-character cap. */
 export class CaptureTooLong extends Schema.TaggedError<CaptureTooLong>()(
-  "CaptureTooLong",
-  { length: Schema.Int, max: Schema.Int }
+  'CaptureTooLong',
+  { length: Schema.Int, max: Schema.Int },
 ) {}
 
 /** Empty or whitespace-only input never reaches the model. */
-export class CaptureEmpty extends Schema.TaggedError<CaptureEmpty>()("CaptureEmpty", {}) {}
+export class CaptureEmpty extends Schema.TaggedError<CaptureEmpty>()(
+  'CaptureEmpty',
+  {},
+) {}
 
 /** The per-user hourly window is exhausted. */
 export class CaptureRateLimited extends Schema.TaggedError<CaptureRateLimited>()(
-  "CaptureRateLimited",
-  { retryAfterSeconds: Schema.Int }
+  'CaptureRateLimited',
+  { retryAfterSeconds: Schema.Int },
 ) {}
 
 /** The model call could not start or failed; the Capture row stays retryable. */
 export class ModelUnavailable extends Schema.TaggedError<ModelUnavailable>()(
-  "ModelUnavailable",
-  { message: Schema.String }
+  'ModelUnavailable',
+  { message: Schema.String },
 ) {}
 
 /** The model call exceeded the 60-second budget (including its one retry). */
-export class ModelTimeout extends Schema.TaggedError<ModelTimeout>()("ModelTimeout", {
-  seconds: Schema.Int
-}) {}
+export class ModelTimeout extends Schema.TaggedError<ModelTimeout>()(
+  'ModelTimeout',
+  {
+    seconds: Schema.Int,
+  },
+) {}
 
 /** A draft failed its real create schema; nothing was written. */
-export class InvalidDraft extends Schema.TaggedError<InvalidDraft>()("InvalidDraft", {
-  draftIndex: Schema.Int,
-  field: Schema.String,
-  message: Schema.String
-}) {}
+export class InvalidDraft extends Schema.TaggedError<InvalidDraft>()(
+  'InvalidDraft',
+  {
+    draftIndex: Schema.Int,
+    field: Schema.String,
+    message: Schema.String,
+  },
+) {}
 
 /** A required field is still absent (usually an unanswered Needs Input). */
 export class DraftIncomplete extends Schema.TaggedError<DraftIncomplete>()(
-  "DraftIncomplete",
-  { draftIndex: Schema.Int, fields: Schema.Array(Schema.String) }
+  'DraftIncomplete',
+  { draftIndex: Schema.Int, fields: Schema.Array(Schema.String) },
 ) {}
 
 /** The Capture row does not exist or belongs to another owner. */
 export class CaptureNotFound extends Schema.TaggedError<CaptureNotFound>()(
-  "CaptureNotFound",
-  { id: CaptureId }
+  'CaptureNotFound',
+  { id: CaptureId },
 ) {}
 
 /** The viewer cannot use Capture (no household yet). */
 export class CaptureForbidden extends Schema.TaggedError<CaptureForbidden>()(
-  "CaptureForbidden",
-  { reason: Schema.Literals(["private", "household", "noHousehold"]) }
+  'CaptureForbidden',
+  { reason: Schema.Literals(['private', 'household', 'noHousehold']) },
 ) {}
 
 export const CaptureServiceError = Schema.Union([
@@ -354,7 +369,7 @@ export const CaptureServiceError = Schema.Union([
   InvalidDraft,
   DraftIncomplete,
   CaptureNotFound,
-  CaptureForbidden
+  CaptureForbidden,
 ])
 export type CaptureServiceError = Schema.Schema.Type<typeof CaptureServiceError>
 
@@ -365,7 +380,7 @@ export type CaptureServiceError = Schema.Schema.Type<typeof CaptureServiceError>
  * whitespace trimmed. The user's wording is never rewritten.
  */
 export const normalizeCaptureText = (text: string): string =>
-  text.replace(/\r\n?/g, "\n").trim()
+  text.replace(/\r\n?/g, '\n').trim()
 
 /**
  * The dedupe key: the same Persian folding the search path uses, so two
@@ -375,7 +390,8 @@ export const captureDedupeKey = (text: string): string =>
   normalizePersian(normalizeCaptureText(text))
 
 /** Persian/Arabic-Indic digits to ASCII for a validated field value. */
-export const normalizeCaptureDigits = (value: string): string => toLatinDigits(value).trim()
+export const normalizeCaptureDigits = (value: string): string =>
+  toLatinDigits(value).trim()
 
 /**
  * An ISO instant normalized to UTC `Z`.
@@ -391,19 +407,19 @@ export const normalizeCaptureInstant = (value: string): string => {
 }
 
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
-  value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
     : undefined
 
 const normalizeDigitsValue = (value: unknown): unknown =>
-  typeof value === "string" ? normalizeCaptureDigits(value) : value
+  typeof value === 'string' ? normalizeCaptureDigits(value) : value
 
 const normalizeInstantValue = (value: unknown): unknown =>
-  typeof value === "string" ? normalizeCaptureInstant(value) : value
+  typeof value === 'string' ? normalizeCaptureInstant(value) : value
 
 const normalizeNumberValue = (value: unknown): unknown => {
-  if (typeof value === "number") return value
-  if (typeof value === "string") {
+  if (typeof value === 'number') return value
+  if (typeof value === 'string') {
     const parsed = Number(normalizeCaptureDigits(value))
     return Number.isNaN(parsed) ? value : parsed
   }
@@ -416,14 +432,14 @@ const normalizeNumberArray = (value: unknown): unknown =>
 const normalizeTimingInput = (value: unknown): unknown => {
   const record = asRecord(value)
   if (record === undefined) return value
-  if (record._tag === "timed") {
+  if (record._tag === 'timed') {
     return {
       ...record,
       start: normalizeInstantValue(record.start),
-      end: normalizeInstantValue(record.end)
+      end: normalizeInstantValue(record.end),
     }
   }
-  if (record._tag === "allDay") {
+  if (record._tag === 'allDay') {
     return { ...record, date: normalizeDigitsValue(record.date) }
   }
   return value
@@ -442,31 +458,32 @@ const normalizeRecurrenceInput = (value: unknown): unknown => {
     ...(nthWeekday === undefined
       ? {}
       : {
-        nthWeekday: {
-          ...nthWeekday,
-          nth: normalizeNumberValue(nthWeekday.nth),
-          day: normalizeNumberValue(nthWeekday.day)
-        }
-      }),
+          nthWeekday: {
+            ...nthWeekday,
+            nth: normalizeNumberValue(nthWeekday.nth),
+            day: normalizeNumberValue(nthWeekday.day),
+          },
+        }),
     ...(end === undefined
       ? {}
       : {
-        end: end._tag === "until"
-          ? { ...end, date: normalizeDigitsValue(end.date) }
-          : end._tag === "count"
-          ? { ...end, count: normalizeNumberValue(end.count) }
-          : end
-      })
+          end:
+            end._tag === 'until'
+              ? { ...end, date: normalizeDigitsValue(end.date) }
+              : end._tag === 'count'
+                ? { ...end, count: normalizeNumberValue(end.count) }
+                : end,
+        }),
   }
 }
 
 const normalizeFrequencyInput = (value: unknown): unknown => {
   const record = asRecord(value)
   if (record === undefined) return value
-  if (record._tag === "weekdays") {
+  if (record._tag === 'weekdays') {
     return { ...record, days: normalizeNumberArray(record.days) }
   }
-  if (record._tag === "weekly") {
+  if (record._tag === 'weekly') {
     return { ...record, times: normalizeNumberValue(record.times) }
   }
   return value
@@ -475,17 +492,17 @@ const normalizeFrequencyInput = (value: unknown): unknown => {
 const normalizeRepeatInput = (value: unknown): unknown => {
   const record = asRecord(value)
   if (record === undefined) return value
-  if (record._tag === "daily") {
+  if (record._tag === 'daily') {
     return { ...record, time: normalizeDigitsValue(record.time) }
   }
-  if (record._tag === "weekly") {
+  if (record._tag === 'weekly') {
     return {
       ...record,
       days: normalizeNumberArray(record.days),
-      time: normalizeDigitsValue(record.time)
+      time: normalizeDigitsValue(record.time),
     }
   }
-  if (record._tag === "interval") {
+  if (record._tag === 'interval') {
     return { ...record, hours: normalizeNumberValue(record.hours) }
   }
   return value
@@ -497,24 +514,25 @@ const normalizeRepeatInput = (value: unknown): unknown => {
  * observed aliases before validation so the answer lands in the right field.
  */
 const MISSING_FIELD_ALIASES: Readonly<Record<string, string>> = {
-  startTime: "timing.start",
-  startsAt: "timing.start",
-  start_at: "timing.start",
-  endTime: "timing.end",
-  endsAt: "timing.end",
-  end_at: "timing.end"
+  startTime: 'timing.start',
+  startsAt: 'timing.start',
+  start_at: 'timing.start',
+  endTime: 'timing.end',
+  endsAt: 'timing.end',
+  end_at: 'timing.end',
 }
 
 const normalizeMissingInput = (value: unknown): unknown =>
   Array.isArray(value)
-    ? value.map((entry) => {
-      const record = asRecord(entry)
-      if (record === undefined) return entry
-      const field = typeof record.field === "string"
-        ? MISSING_FIELD_ALIASES[record.field] ?? record.field
-        : record.field
-      return { ...record, field }
-    })
+    ? value.map(entry => {
+        const record = asRecord(entry)
+        if (record === undefined) return entry
+        const field =
+          typeof record.field === 'string'
+            ? (MISSING_FIELD_ALIASES[record.field] ?? record.field)
+            : record.field
+        return { ...record, field }
+      })
     : value
 
 /**
@@ -526,35 +544,50 @@ const normalizeMissingInput = (value: unknown): unknown =>
  * Persian/Arabic-Indic digits in dates, times and counts become ASCII.
  */
 export const normalizeCaptureDraftInput = (
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
 ): Record<string, unknown> => ({
   ...input,
-  ...(input.dueAt !== undefined ? { dueAt: normalizeInstantValue(input.dueAt) } : {}),
-  ...(input.dueDate !== undefined ? { dueDate: normalizeDigitsValue(input.dueDate) } : {}),
-  ...(input.fireAt !== undefined ? { fireAt: normalizeInstantValue(input.fireAt) } : {}),
+  ...(input.dueAt !== undefined
+    ? { dueAt: normalizeInstantValue(input.dueAt) }
+    : {}),
+  ...(input.dueDate !== undefined
+    ? { dueDate: normalizeDigitsValue(input.dueDate) }
+    : {}),
+  ...(input.fireAt !== undefined
+    ? { fireAt: normalizeInstantValue(input.fireAt) }
+    : {}),
   ...(input.silencedUntil !== undefined
     ? {
-      silencedUntil: input.silencedUntil === null
-        ? null
-        : normalizeInstantValue(input.silencedUntil)
-    }
+        silencedUntil:
+          input.silencedUntil === null
+            ? null
+            : normalizeInstantValue(input.silencedUntil),
+      }
     : {}),
   ...(input.reminderTime !== undefined
     ? { reminderTime: normalizeDigitsValue(input.reminderTime) }
     : {}),
-  ...(input.timeZone !== undefined ? { timeZone: normalizeDigitsValue(input.timeZone) } : {}),
+  ...(input.timeZone !== undefined
+    ? { timeZone: normalizeDigitsValue(input.timeZone) }
+    : {}),
   ...(input.offsetMinutes !== undefined
     ? { offsetMinutes: normalizeNumberValue(input.offsetMinutes) }
     : {}),
-  ...(input.timing !== undefined ? { timing: normalizeTimingInput(input.timing) } : {}),
+  ...(input.timing !== undefined
+    ? { timing: normalizeTimingInput(input.timing) }
+    : {}),
   ...(input.recurrence !== undefined
     ? { recurrence: normalizeRecurrenceInput(input.recurrence) }
     : {}),
   ...(input.frequency !== undefined
     ? { frequency: normalizeFrequencyInput(input.frequency) }
     : {}),
-  ...(input.repeat !== undefined ? { repeat: normalizeRepeatInput(input.repeat) } : {}),
-  ...(input.missing !== undefined ? { missing: normalizeMissingInput(input.missing) } : {})
+  ...(input.repeat !== undefined
+    ? { repeat: normalizeRepeatInput(input.repeat) }
+    : {}),
+  ...(input.missing !== undefined
+    ? { missing: normalizeMissingInput(input.missing) }
+    : {}),
 })
 
 // ── Draft → real create input (ADR-0012 §5) ───────────────────────────────
@@ -571,41 +604,52 @@ export interface CaptureCommitContext {
 
 /** The create input a draft becomes, tagged by aggregate. */
 export const CaptureCreateInput = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal("task"), input: TaskCreateInput }),
-  Schema.Struct({ _tag: Schema.Literal("event"), input: EventCreateInput }),
-  Schema.Struct({ _tag: Schema.Literal("note"), input: NoteCreateInput }),
-  Schema.Struct({ _tag: Schema.Literal("habit"), input: HabitCreateInput }),
-  Schema.Struct({ _tag: Schema.Literal("reminder"), input: ReminderCreateInput })
+  Schema.Struct({ _tag: Schema.Literal('task'), input: TaskCreateInput }),
+  Schema.Struct({ _tag: Schema.Literal('event'), input: EventCreateInput }),
+  Schema.Struct({ _tag: Schema.Literal('note'), input: NoteCreateInput }),
+  Schema.Struct({ _tag: Schema.Literal('habit'), input: HabitCreateInput }),
+  Schema.Struct({
+    _tag: Schema.Literal('reminder'),
+    input: ReminderCreateInput,
+  }),
 ])
 export type CaptureCreateInput = Schema.Schema.Type<typeof CaptureCreateInput>
 
 const incomplete = (
   context: CaptureCommitContext,
-  fields: ReadonlyArray<string>
+  fields: ReadonlyArray<string>,
 ): Effect.Effect<never, DraftIncomplete> =>
-  Effect.fail(new DraftIncomplete({ draftIndex: context.draftIndex, fields: [...fields] }))
+  Effect.fail(
+    new DraftIncomplete({
+      draftIndex: context.draftIndex,
+      fields: [...fields],
+    }),
+  )
 
 const firstLine = (text: string): string =>
   text
-    .split("\n")
-    .map((line) => line.trim())
-    .find((line) => line !== "") ?? ""
+    .split('\n')
+    .map(line => line.trim())
+    .find(line => line !== '') ?? ''
 
 const validateCreateInput = <S extends Schema.ConstraintDecoder<unknown>>(
   schema: S,
   raw: unknown,
-  draftIndex: number
-): Effect.Effect<S["Type"], InvalidDraft> => {
+  draftIndex: number,
+): Effect.Effect<S['Type'], InvalidDraft> => {
   const result = Schema.decodeUnknownResult(schema)(raw)
   if (Result.isFailure(result)) {
-    const issues = SchemaIssue.makeFormatterStandardSchemaV1()(result.failure.issue).issues
+    const issues = SchemaIssue.makeFormatterStandardSchemaV1()(
+      result.failure.issue,
+    ).issues
     const first = issues[0]
     return Effect.fail(
       new InvalidDraft({
         draftIndex,
-        field: first?.path === undefined ? "" : first.path.map(String).join("."),
-        message: first?.message ?? result.failure.message
-      })
+        field:
+          first?.path === undefined ? '' : first.path.map(String).join('.'),
+        message: first?.message ?? result.failure.message,
+      }),
     )
   }
   return Effect.succeed(result.success)
@@ -622,74 +666,92 @@ const validateCreateInput = <S extends Schema.ConstraintDecoder<unknown>>(
  */
 export const toCreateInput = (
   draft: CaptureDraft,
-  context: CaptureCommitContext
+  context: CaptureCommitContext,
 ): Effect.Effect<CaptureCreateInput, InvalidDraft | DraftIncomplete> =>
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     switch (draft._tag) {
-      case "task": {
+      case 'task': {
         if (draft.title === undefined) {
-          return yield* incomplete(context, ["title"])
+          return yield* incomplete(context, ['title'])
         }
         const raw = {
           clientMutationId: context.clientMutationId,
           title: draft.title,
-          status: draft.status ?? "todo",
+          status: draft.status ?? 'todo',
           timeZone: draft.timeZone ?? context.timeZone,
-          ...(draft.description !== undefined ? { description: draft.description } : {}),
+          ...(draft.description !== undefined
+            ? { description: draft.description }
+            : {}),
           ...(draft.priority !== undefined ? { priority: draft.priority } : {}),
           ...(draft.dueAt !== undefined
             ? {
-              dueAt: draft.dueAt === null
-                ? null
-                : normalizeCaptureInstant(draft.dueAt)
-            }
+                dueAt:
+                  draft.dueAt === null
+                    ? null
+                    : normalizeCaptureInstant(draft.dueAt),
+              }
             : {}),
           ...(draft.dueDate !== undefined ? { dueDate: draft.dueDate } : {}),
-          ...(draft.recurrence !== undefined ? { recurrence: draft.recurrence } : {}),
+          ...(draft.recurrence !== undefined
+            ? { recurrence: draft.recurrence }
+            : {}),
           ...(draft.recurrenceMode !== undefined
             ? { recurrenceMode: draft.recurrenceMode }
             : {}),
-          ...(draft.color !== undefined ? { color: draft.color } : {})
+          ...(draft.color !== undefined ? { color: draft.color } : {}),
         }
-        const input = yield* validateCreateInput(TaskCreateInput, raw, context.draftIndex)
-        return { _tag: "task" as const, input }
+        const input = yield* validateCreateInput(
+          TaskCreateInput,
+          raw,
+          context.draftIndex,
+        )
+        return { _tag: 'task' as const, input }
       }
 
-      case "event": {
+      case 'event': {
         const missing: Array<string> = []
-        if (draft.title === undefined) missing.push("title")
-        if (draft.timing === undefined) missing.push("timing")
+        if (draft.title === undefined) missing.push('title')
+        if (draft.timing === undefined) missing.push('timing')
         if (missing.length > 0) {
           return yield* incomplete(context, missing)
         }
-        const timing: EventTiming = draft.timing!._tag === "timed"
-          ? {
-            _tag: "timed",
-            start: normalizeCaptureInstant(draft.timing!.start),
-            end: normalizeCaptureInstant(draft.timing!.end)
-          }
-          : draft.timing!
+        const timing: EventTiming =
+          draft.timing!._tag === 'timed'
+            ? {
+                _tag: 'timed',
+                start: normalizeCaptureInstant(draft.timing!.start),
+                end: normalizeCaptureInstant(draft.timing!.end),
+              }
+            : draft.timing!
         const raw = {
           clientMutationId: context.clientMutationId,
           title: draft.title!,
           timing,
           timeZone: draft.timeZone ?? context.timeZone,
-          ...(draft.description !== undefined ? { description: draft.description } : {}),
+          ...(draft.description !== undefined
+            ? { description: draft.description }
+            : {}),
           ...(draft.location !== undefined ? { location: draft.location } : {}),
           ...(draft.category !== undefined ? { category: draft.category } : {}),
           ...(draft.color !== undefined ? { color: draft.color } : {}),
           ...(draft.people !== undefined ? { people: draft.people } : {}),
-          ...(draft.recurrence !== undefined ? { recurrence: draft.recurrence } : {})
+          ...(draft.recurrence !== undefined
+            ? { recurrence: draft.recurrence }
+            : {}),
         }
-        const input = yield* validateCreateInput(EventCreateInput, raw, context.draftIndex)
-        return { _tag: "event" as const, input }
+        const input = yield* validateCreateInput(
+          EventCreateInput,
+          raw,
+          context.draftIndex,
+        )
+        return { _tag: 'event' as const, input }
       }
 
-      case "note": {
-        const bodyText = draft.body ?? draft.title ?? ""
+      case 'note': {
+        const bodyText = draft.body ?? draft.title ?? ''
         const title = draft.title ?? firstLine(bodyText)
-        if (bodyText.trim() === "" && title.trim() === "") {
-          return yield* incomplete(context, ["title", "body"])
+        if (bodyText.trim() === '' && title.trim() === '') {
+          return yield* incomplete(context, ['title', 'body'])
         }
         const raw = {
           clientMutationId: context.clientMutationId,
@@ -697,43 +759,52 @@ export const toCreateInput = (
           body: plainTextToNoteBody(bodyText),
           plainText: bodyText,
           ...(draft.isPinned !== undefined ? { isPinned: draft.isPinned } : {}),
-          ...(draft.isArchived !== undefined ? { isArchived: draft.isArchived } : {}),
-          ...(draft.color !== undefined ? { color: draft.color } : {})
+          ...(draft.isArchived !== undefined
+            ? { isArchived: draft.isArchived }
+            : {}),
+          ...(draft.color !== undefined ? { color: draft.color } : {}),
         }
-        const input = yield* validateCreateInput(NoteCreateInput, raw, context.draftIndex)
-        return { _tag: "note" as const, input }
+        const input = yield* validateCreateInput(
+          NoteCreateInput,
+          raw,
+          context.draftIndex,
+        )
+        return { _tag: 'note' as const, input }
       }
 
-      case "habit": {
+      case 'habit': {
         if (draft.title === undefined) {
-          return yield* incomplete(context, ["title"])
+          return yield* incomplete(context, ['title'])
         }
-        const frequency: HabitFrequency = draft.frequency ?? { _tag: "daily" }
+        const frequency: HabitFrequency = draft.frequency ?? { _tag: 'daily' }
         const raw = {
           clientMutationId: context.clientMutationId,
           title: draft.title,
           frequency,
           timeZone: draft.timeZone ?? context.timeZone,
-          ...(draft.description !== undefined ? { description: draft.description } : {}),
+          ...(draft.description !== undefined
+            ? { description: draft.description }
+            : {}),
           ...(draft.color !== undefined ? { color: draft.color } : {}),
           ...(draft.icon !== undefined ? { icon: draft.icon } : {}),
           ...(draft.reminderTime !== undefined
             ? { reminderTime: draft.reminderTime }
-            : {})
+            : {}),
         }
-        const input = yield* validateCreateInput(HabitCreateInput, raw, context.draftIndex)
-        return { _tag: "habit" as const, input }
+        const input = yield* validateCreateInput(
+          HabitCreateInput,
+          raw,
+          context.draftIndex,
+        )
+        return { _tag: 'habit' as const, input }
       }
 
-      case "reminder": {
+      case 'reminder': {
         const missing: Array<string> = []
-        if (draft.title === undefined) missing.push("title")
-        if (draft.repeat === undefined) missing.push("repeat")
-        if (
-          draft.repeat?._tag === "once" &&
-          draft.fireAt === undefined
-        ) {
-          missing.push("fireAt")
+        if (draft.title === undefined) missing.push('title')
+        if (draft.repeat === undefined) missing.push('repeat')
+        if (draft.repeat?._tag === 'once' && draft.fireAt === undefined) {
+          missing.push('fireAt')
         }
         if (missing.length > 0) {
           return yield* incomplete(context, missing)
@@ -742,31 +813,37 @@ export const toCreateInput = (
         const raw = {
           clientMutationId: context.clientMutationId,
           title: draft.title!,
-          kind: draft.kind ?? "general",
+          kind: draft.kind ?? 'general',
           repeat,
           timeZone: draft.timeZone ?? context.timeZone,
           ...(draft.note !== undefined ? { note: draft.note } : {}),
           ...(draft.fireAt !== undefined
             ? {
-              fireAt: draft.fireAt === null
-                ? null
-                : normalizeCaptureInstant(draft.fireAt)
-            }
+                fireAt:
+                  draft.fireAt === null
+                    ? null
+                    : normalizeCaptureInstant(draft.fireAt),
+              }
             : {}),
           ...(draft.offsetMinutes !== undefined
             ? { offsetMinutes: draft.offsetMinutes }
             : {}),
           ...(draft.silencedUntil !== undefined
             ? {
-              silencedUntil: draft.silencedUntil === null
-                ? null
-                : normalizeCaptureInstant(draft.silencedUntil)
-            }
+                silencedUntil:
+                  draft.silencedUntil === null
+                    ? null
+                    : normalizeCaptureInstant(draft.silencedUntil),
+              }
             : {}),
-          ...(draft.color !== undefined ? { color: draft.color } : {})
+          ...(draft.color !== undefined ? { color: draft.color } : {}),
         }
-        const input = yield* validateCreateInput(ReminderCreateInput, raw, context.draftIndex)
-        return { _tag: "reminder" as const, input }
+        const input = yield* validateCreateInput(
+          ReminderCreateInput,
+          raw,
+          context.draftIndex,
+        )
+        return { _tag: 'reminder' as const, input }
       }
     }
   })
@@ -783,7 +860,7 @@ export const toCreateInput = (
 export const localDateTimeToInstant = (
   localDate: string,
   clockTime: string,
-  timeZone: string
+  timeZone: string,
 ): string =>
   Temporal.PlainDateTime.from(`${localDate}T${clockTime}`)
     .toZonedDateTime(timeZone)
@@ -793,12 +870,12 @@ export const localDateTimeToInstant = (
 /** The local date (`YYYY-MM-DD`) and `HH:mm` of a UTC instant in a zone. */
 export const instantToLocalParts = (
   instant: string,
-  timeZone: string
+  timeZone: string,
 ): { readonly date: string; readonly time: string } => {
   const zoned = Temporal.Instant.from(instant).toZonedDateTimeISO(timeZone)
   return {
     date: zoned.toPlainDate().toString(),
-    time: zoned.toPlainTime().toString({ smallestUnit: "minute" })
+    time: zoned.toPlainTime().toString({ smallestUnit: 'minute' }),
   }
 }
 

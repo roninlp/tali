@@ -1,5 +1,5 @@
-import { Context, Data, DateTime, Effect, Layer, Option, Schema } from "effect"
-import type { Statement } from "effect/sql"
+import { Context, Data, DateTime, Effect, Layer, Option, Schema } from 'effect'
+import type { Statement } from 'effect/sql'
 import {
   type ChangeFeedEntry,
   defaultVisibilityFor,
@@ -12,8 +12,8 @@ import {
   type SyncPushResponse,
   type SyncPushResult,
   type Visibility,
-  visibilityPolicyOf
-} from "@tali/domain"
+  visibilityPolicyOf,
+} from '@tali/domain'
 import {
   entityKey,
   SyncRepo,
@@ -23,8 +23,8 @@ import {
   type FeedRow,
   type SyncEntityDefinition,
   type SyncEntityMeta,
-  type SyncEntityState
-} from "@tali/sql"
+  type SyncEntityState,
+} from '@tali/sql'
 
 /**
  * The server-side sync engine (tickets #18, #34, `docs/sync-protocol-draft.md`).
@@ -58,20 +58,26 @@ const MAX_PUSH_ENTRIES = 200
  */
 export const MAX_ISOLATION_BATCHES = 32
 
-export class UnsupportedSyncEntity extends Data.TaggedError("UnsupportedSyncEntity")<{
+export class UnsupportedSyncEntity extends Data.TaggedError(
+  'UnsupportedSyncEntity',
+)<{
   readonly entityType: string
 }> {}
 
-export class SyncPayloadTooLarge extends Data.TaggedError("SyncPayloadTooLarge")<{
+export class SyncPayloadTooLarge extends Data.TaggedError(
+  'SyncPayloadTooLarge',
+)<{
   readonly count: number
 }> {}
 
-export class SyncEntityForbidden extends Data.TaggedError("SyncEntityForbidden")<{
+export class SyncEntityForbidden extends Data.TaggedError(
+  'SyncEntityForbidden',
+)<{
   readonly entityId: string
 }> {}
 
 /** A patch that the aggregate's schema rejects (wrong type/shape for its fields). */
-export class SyncInvalidPatch extends Data.TaggedError("SyncInvalidPatch")<{
+export class SyncInvalidPatch extends Data.TaggedError('SyncInvalidPatch')<{
   readonly entityType: string
   readonly entityId: string
 }> {}
@@ -81,7 +87,7 @@ export class SyncInvalidPatch extends Data.TaggedError("SyncInvalidPatch")<{
  * gated CAS wrote nothing for the losing entries, so the client can retry the
  * push; every entry that did land is deduped by `clientMutationId`.
  */
-export class SyncContended extends Data.TaggedError("SyncContended")<{
+export class SyncContended extends Data.TaggedError('SyncContended')<{
   readonly count: number
 }> {}
 
@@ -98,41 +104,41 @@ type DecodedPushEntry = Schema.Schema.Type<typeof SyncPushEntry>
  * The service accepts both the decoded wire value (an Effect `DateTime`) and
  * the encoded ISO string the test harness/replay path uses.
  */
-type PushEntry = Omit<DecodedPushEntry, "clientUpdatedAt"> & {
-  readonly clientUpdatedAt: DecodedPushEntry["clientUpdatedAt"] | string
+type PushEntry = Omit<DecodedPushEntry, 'clientUpdatedAt'> & {
+  readonly clientUpdatedAt: DecodedPushEntry['clientUpdatedAt'] | string
 }
 
-const asIso = (value: DecodedPushEntry["clientUpdatedAt"] | string): string =>
-  typeof value === "string" ? value : DateTime.formatIso(value)
+const asIso = (value: DecodedPushEntry['clientUpdatedAt'] | string): string =>
+  typeof value === 'string' ? value : DateTime.formatIso(value)
 
-type WriteTag = "applied" | "conflict"
+type WriteTag = 'applied' | 'conflict'
 
 type Plan =
   | {
-    readonly kind: "dedupe"
-    readonly entry: PushEntry
-    readonly mutation: AppliedMutation
-  }
+      readonly kind: 'dedupe'
+      readonly entry: PushEntry
+      readonly mutation: AppliedMutation
+    }
   | {
-    readonly kind: "nowrite"
-    readonly entry: PushEntry
-    readonly tag: "conflict" | "tombstone"
-    readonly state: SyncEntityState
-  }
+      readonly kind: 'nowrite'
+      readonly entry: PushEntry
+      readonly tag: 'conflict' | 'tombstone'
+      readonly state: SyncEntityState
+    }
   | {
-    readonly kind: "write"
-    readonly entry: PushEntry
-    readonly tag: WriteTag
-    readonly state: SyncEntityState
-    /** Index into the planned write groups (statements are applied per group). */
-    readonly group: number
-  }
+      readonly kind: 'write'
+      readonly entry: PushEntry
+      readonly tag: WriteTag
+      readonly state: SyncEntityState
+      /** Index into the planned write groups (statements are applied per group). */
+      readonly group: number
+    }
   | {
-    readonly kind: "rejected"
-    readonly entry: PushEntry
-    readonly code: string
-    readonly message: string
-  }
+      readonly kind: 'rejected'
+      readonly entry: PushEntry
+      readonly code: string
+      readonly message: string
+    }
 
 /** A non-retryable per-entry failure surfaced as `_tag: "rejected"`. */
 interface ConstraintFailure {
@@ -145,11 +151,11 @@ interface ConstraintFailure {
  * SQLite message is kept for diagnosis; the code is what clients branch on.
  */
 const CONSTRAINT_CODES: ReadonlyArray<readonly [RegExp, string]> = [
-  [/UNIQUE constraint failed/i, "UniqueViolation"],
-  [/FOREIGN KEY constraint failed/i, "ForeignKeyViolation"],
-  [/NOT NULL constraint failed/i, "NotNullViolation"],
-  [/CHECK constraint failed/i, "CheckViolation"],
-  [/constraint failed/i, "ConstraintViolation"]
+  [/UNIQUE constraint failed/i, 'UniqueViolation'],
+  [/FOREIGN KEY constraint failed/i, 'ForeignKeyViolation'],
+  [/NOT NULL constraint failed/i, 'NotNullViolation'],
+  [/CHECK constraint failed/i, 'CheckViolation'],
+  [/constraint failed/i, 'ConstraintViolation'],
 ]
 
 /**
@@ -157,18 +163,21 @@ const CONSTRAINT_CODES: ReadonlyArray<readonly [RegExp, string]> = [
  * native cause), so collect messages/codes down the whole cause chain rather
  * than matching only the top-level error.
  */
-const errorTexts = (error: unknown, seen = new Set<unknown>()): ReadonlyArray<string> => {
+const errorTexts = (
+  error: unknown,
+  seen = new Set<unknown>(),
+): ReadonlyArray<string> => {
   if (error === null || error === undefined) return []
-  if (typeof error === "string") return [error]
-  if (typeof error !== "object" || seen.has(error)) return []
+  if (typeof error === 'string') return [error]
+  if (typeof error !== 'object' || seen.has(error)) return []
   seen.add(error)
   const record = error as Record<string, unknown>
   const texts: Array<string> = []
-  for (const key of ["message", "code", "errstr"]) {
+  for (const key of ['message', 'code', 'errstr']) {
     const value = record[key]
-    if (typeof value === "string") texts.push(value)
+    if (typeof value === 'string') texts.push(value)
   }
-  for (const key of ["cause", "reason", "error"]) {
+  for (const key of ['cause', 'reason', 'error']) {
     texts.push(...errorTexts(record[key], seen))
   }
   return texts
@@ -178,10 +187,10 @@ const errorTexts = (error: unknown, seen = new Set<unknown>()): ReadonlyArray<st
 const constraintFailureOf = (error: unknown): ConstraintFailure | undefined => {
   const texts = errorTexts(error)
   if (texts.length === 0) return undefined
-  const joined = texts.join("\n")
+  const joined = texts.join('\n')
   for (const [pattern, code] of CONSTRAINT_CODES) {
     if (!pattern.test(joined)) continue
-    const detail = texts.find((text) => pattern.test(text)) ?? joined
+    const detail = texts.find(text => pattern.test(text)) ?? joined
     return { code, message: detail.slice(0, 500) }
   }
   return undefined
@@ -195,17 +204,17 @@ const constraintFailureOf = (error: unknown): ConstraintFailure | undefined => {
  */
 const dependencyRank = (entityType: SyncEntityType): number => {
   switch (entityType) {
-    case "project":
-    case "tag":
-    case "list":
+    case 'project':
+    case 'tag':
+    case 'list':
     // A habit is the parent of its daily entries (#63): an offline push may
     // carry the habit and a tap in the same batch.
-    case "habit":
+    case 'habit':
       return 0
-    case "task":
-    case "note":
-    case "listItem":
-    case "habitEntry":
+    case 'task':
+    case 'note':
+    case 'listItem':
+    case 'habitEntry':
       // `habitEntry` follows the `habit` it logs (rank 0) in the same batch.
       return 1
     default:
@@ -214,7 +223,7 @@ const dependencyRank = (entityType: SyncEntityType): number => {
 }
 
 const requestedVisibility = (value: unknown): Visibility | undefined =>
-  value === "private" || value === "shared" ? value : undefined
+  value === 'private' || value === 'shared' ? value : undefined
 
 /**
  * The visibility a push stores, derived from the aggregate's policy (ADR-0011).
@@ -226,23 +235,25 @@ const requestedVisibility = (value: unknown): Visibility | undefined =>
 const resolvedVisibility = (
   entityType: SyncEntityType,
   data: Record<string, unknown>,
-  fallback: Visibility
+  fallback: Visibility,
 ): Visibility => {
   const policy = visibilityPolicyOf(entityType)
   switch (policy._tag) {
-    case "ownerOnly":
-      return "private"
-    case "household":
-      return "shared"
-    case "shareable":
-    case "inherited":
+    case 'ownerOnly':
+      return 'private'
+    case 'household':
+      return 'shared'
+    case 'shareable':
+    case 'inherited':
       return requestedVisibility(data.visibility) ?? fallback
   }
 }
 
 /** A feed row's denormalized visibility; an unknown value follows the policy. */
-const feedVisibility = (entityType: SyncEntityType, value: unknown): Visibility =>
-  requestedVisibility(value) ?? defaultVisibilityFor(entityType)
+const feedVisibility = (
+  entityType: SyncEntityType,
+  value: unknown,
+): Visibility => requestedVisibility(value) ?? defaultVisibilityFor(entityType)
 
 /**
  * The effective visibility of a row another entry in this push may parent off.
@@ -253,17 +264,17 @@ const feedVisibility = (entityType: SyncEntityType, value: unknown): Visibility 
 const incomingVisibility = (
   entityType: SyncEntityType,
   patch: Record<string, unknown>,
-  current: Visibility | undefined
+  current: Visibility | undefined,
 ): Visibility => {
   const requested = requestedVisibility(patch.visibility)
   const policy = visibilityPolicyOf(entityType)
   switch (policy._tag) {
-    case "ownerOnly":
-      return "private"
-    case "household":
-      return "shared"
-    case "shareable":
-    case "inherited":
+    case 'ownerOnly':
+      return 'private'
+    case 'household':
+      return 'shared'
+    case 'shareable':
+    case 'inherited':
       return requested ?? current ?? defaultVisibilityFor(entityType)
   }
 }
@@ -274,30 +285,31 @@ const toRow = (state: SyncEntityState): SyncEntityRow => ({
   version: state.version,
   updatedAt: state.updatedAt,
   deletedAt: state.deletedAt,
-  data: state.data
+  data: state.data,
 })
 
 /** The two aggregates whose visibility is owned by a parent row. */
 const isInheritedChild = (entityType: SyncEntityType): boolean =>
-  entityType === "listItem" || entityType === "habitEntry"
+  entityType === 'listItem' || entityType === 'habitEntry'
 
 /** The parent reference carried in a hydrated child row. */
 const inheritedParentRef = (row: {
   readonly entityType: SyncEntityType
   readonly data: Record<string, unknown>
 }): EntityRef | undefined => {
-  const field = row.entityType === "listItem"
-    ? "listId"
-    : row.entityType === "habitEntry"
-    ? "habitId"
-    : undefined
+  const field =
+    row.entityType === 'listItem'
+      ? 'listId'
+      : row.entityType === 'habitEntry'
+        ? 'habitId'
+        : undefined
   if (field === undefined) return undefined
   const value = row.data[field]
-  return typeof value === "string" && value !== ""
+  return typeof value === 'string' && value !== ''
     ? {
-      entityType: row.entityType === "listItem" ? "list" : "habit",
-      entityId: value
-    }
+        entityType: row.entityType === 'listItem' ? 'list' : 'habit',
+        entityId: value,
+      }
     : undefined
 }
 
@@ -310,11 +322,11 @@ const inheritedParentRef = (row: {
  * parent's own tombstone already hides the list/habit from the UI.
  */
 const parentAllowsChild = (
-  parent: Pick<SyncEntityState, "householdId" | "ownerId" | "visibility">,
-  viewer: { readonly householdId: string; readonly userId: string }
+  parent: Pick<SyncEntityState, 'householdId' | 'ownerId' | 'visibility'>,
+  viewer: { readonly householdId: string; readonly userId: string },
 ): boolean =>
   parent.householdId === viewer.householdId &&
-  !(parent.visibility === "private" && parent.ownerId !== viewer.userId)
+  !(parent.visibility === 'private' && parent.ownerId !== viewer.userId)
 
 /**
  * A legacy listItem may have **no** list id — the pre-Slice-2 scaffold shape.
@@ -325,11 +337,11 @@ const parentAllowsChild = (
  * no legacy shape and are never deliverable without their habit.
  */
 const orphanChildIsDeliverable = (entityType: SyncEntityType): boolean =>
-  entityType === "listItem"
+  entityType === 'listItem'
 
 const sameData = (
   a: Record<string, unknown>,
-  b: Record<string, unknown>
+  b: Record<string, unknown>,
 ): boolean => JSON.stringify(a) === JSON.stringify(b)
 
 /**
@@ -343,21 +355,21 @@ const sameData = (
 const sanitizePatch = (
   definition: SyncEntityDefinition,
   patch: Record<string, unknown>,
-  options: { readonly allowCreatedAt: boolean }
+  options: { readonly allowCreatedAt: boolean },
 ): Record<string, unknown> => {
   const out: Record<string, unknown> = {}
   for (const [field, guard] of definition.writable) {
     const value = patch[field]
     if (value !== undefined && guard(value)) out[field] = value
   }
-  if (options.allowCreatedAt && typeof patch.createdAt === "string") {
+  if (options.allowCreatedAt && typeof patch.createdAt === 'string') {
     out.createdAt = patch.createdAt
   }
   return out
 }
 
-export class SyncService extends Context.Service<SyncService>()("SyncService", {
-  make: Effect.gen(function*() {
+export class SyncService extends Context.Service<SyncService>()('SyncService', {
+  make: Effect.gen(function* () {
     const repo = yield* SyncRepo
 
     /**
@@ -375,7 +387,8 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
       readonly statements: ReadonlyArray<WriteStatement>
     }
 
-    const entityTypeOf = (entityType: SyncEntityType) => repo.definition(entityType)
+    const entityTypeOf = (entityType: SyncEntityType) =>
+      repo.definition(entityType)
 
     /**
      * Commit a statement sequence, distinguishing a SQLite constraint failure
@@ -385,10 +398,12 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
     const commitOrConstraint = (statements: ReadonlyArray<WriteStatement>) =>
       repo.commit(statements).pipe(
         Effect.map(() => undefined as ConstraintFailure | undefined),
-        Effect.catchTag("SqlError", (error) => {
+        Effect.catchTag('SqlError', error => {
           const constraint = constraintFailureOf(error)
-          return constraint === undefined ? Effect.die(error) : Effect.succeed(constraint)
-        })
+          return constraint === undefined
+            ? Effect.die(error)
+            : Effect.succeed(constraint)
+        }),
       )
 
     const push = (input: {
@@ -396,27 +411,35 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
       readonly householdId: string
       readonly entries: ReadonlyArray<PushEntry>
     }): Effect.Effect<SyncPushResponse, SyncServiceError> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         if (input.entries.length > MAX_PUSH_ENTRIES) {
-          return yield* Effect.fail(new SyncPayloadTooLarge({ count: input.entries.length }))
+          return yield* Effect.fail(
+            new SyncPayloadTooLarge({ count: input.entries.length }),
+          )
         }
         for (const entry of input.entries) {
           if (entityTypeOf(entry.entityType) === undefined) {
-            return yield* Effect.fail(new UnsupportedSyncEntity({ entityType: entry.entityType }))
+            return yield* Effect.fail(
+              new UnsupportedSyncEntity({ entityType: entry.entityType }),
+            )
           }
         }
 
         const deduped = yield* repo
           .findApplied({
             householdId: input.householdId,
-            clientMutationIds: input.entries.map((entry) => entry.clientMutationId)
+            clientMutationIds: input.entries.map(
+              entry => entry.clientMutationId,
+            ),
           })
           .pipe(Effect.orDie)
         const states = yield* repo
-          .findEntities(input.entries.map((entry) => ({
-            entityType: entry.entityType,
-            entityId: entry.entityId
-          })))
+          .findEntities(
+            input.entries.map(entry => ({
+              entityType: entry.entityType,
+              entityId: entry.entityId,
+            })),
+          )
           .pipe(Effect.orDie)
         const planned = new Map(states)
         const plans: Array<Plan> = []
@@ -434,13 +457,14 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           if (rule === undefined) return undefined
           if (Object.prototype.hasOwnProperty.call(entry.patch, rule.field)) {
             const value = entry.patch[rule.field]
-            return typeof value === "string" ? value : undefined
+            return typeof value === 'string' ? value : undefined
           }
           // A prior entry in this same push may already have moved the row, so
           // prefer the planned state over the DB pre-read.
-          const current = planned.get(entityKey(entry)) ?? states.get(entityKey(entry))
+          const current =
+            planned.get(entityKey(entry)) ?? states.get(entityKey(entry))
           const value = current?.data[rule.field]
-          return typeof value === "string" ? value : undefined
+          return typeof value === 'string' ? value : undefined
         }
 
         /**
@@ -448,8 +472,8 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
          * written here. The entry pre-read only fetches the entry's own row, so
          * a parent reference needs its own scoped lookup.
          */
-        const parentRefs = input.entries.flatMap((entry) => {
-          if (entry.op === "delete") return []
+        const parentRefs = input.entries.flatMap(entry => {
+          if (entry.op === 'delete') return []
           const rule = entityTypeOf(entry.entityType)?.parent
           if (rule === undefined) return []
           const parentId = effectiveParentId(entry)
@@ -457,9 +481,10 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
             ? []
             : [{ entityType: rule.entityType, entityId: parentId }]
         })
-        const parentStates = parentRefs.length === 0
-          ? new Map<string, SyncEntityState>()
-          : yield* repo.findEntities(parentRefs).pipe(Effect.orDie)
+        const parentStates =
+          parentRefs.length === 0
+            ? new Map<string, SyncEntityState>()
+            : yield* repo.findEntities(parentRefs).pipe(Effect.orDie)
 
         /**
          * Scope of the rows this push intends to write, keyed like `planned`.
@@ -470,26 +495,36 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
          */
         const incoming = new Map<
           string,
-          Pick<SyncEntityState, "householdId" | "ownerId" | "visibility" | "deletedAt">
+          Pick<
+            SyncEntityState,
+            'householdId' | 'ownerId' | 'visibility' | 'deletedAt'
+          >
         >()
         for (const entry of input.entries) {
           const current = states.get(entityKey(entry))
           incoming.set(entityKey(entry), {
             householdId: current?.householdId ?? input.householdId,
             ownerId: current?.ownerId ?? input.userId,
-            visibility: entry.op === "delete"
-              ? current?.visibility ?? defaultVisibilityFor(entry.entityType)
-              : incomingVisibility(entry.entityType, entry.patch, current?.visibility),
+            visibility:
+              entry.op === 'delete'
+                ? (current?.visibility ??
+                  defaultVisibilityFor(entry.entityType))
+                : incomingVisibility(
+                    entry.entityType,
+                    entry.patch,
+                    current?.visibility,
+                  ),
             // A delete in this push is a tombstone for the child's parent
             // lookup even when the delete entry appears later in the wire.
-            deletedAt: entry.op === "delete"
-              ? current?.deletedAt ?? now
-              : current?.deletedAt ?? null
+            deletedAt:
+              entry.op === 'delete'
+                ? (current?.deletedAt ?? now)
+                : (current?.deletedAt ?? null),
           })
         }
 
         const reject = (entry: PushEntry, code: string, message: string) => {
-          plans.push({ kind: "rejected", entry, code, message })
+          plans.push({ kind: 'rejected', entry, code, message })
         }
 
         /** Strict decode boundary for client-authored data. */
@@ -497,27 +532,30 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           definition: SyncEntityDefinition,
           data: Record<string, unknown>,
           meta: SyncEntityMeta,
-          entry: PushEntry
+          entry: PushEntry,
         ): Effect.Effect<Record<string, unknown>, SyncInvalidPatch> =>
           Effect.flatMap(
             Effect.sync(() => {
               try {
-                return { ok: true as const, data: definition.validate(data, meta) }
+                return {
+                  ok: true as const,
+                  data: definition.validate(data, meta),
+                }
               } catch (error) {
                 return { ok: false as const, error }
               }
             }),
-            (result) =>
+            result =>
               result.ok
                 ? Effect.succeed(result.data)
                 : Schema.isSchemaError(result.error)
-                ? Effect.fail(
-                  new SyncInvalidPatch({
-                    entityType: entry.entityType,
-                    entityId: entry.entityId
-                  })
-                )
-                : Effect.die(result.error)
+                  ? Effect.fail(
+                      new SyncInvalidPatch({
+                        entityType: entry.entityType,
+                        entityId: entry.entityId,
+                      }),
+                    )
+                  : Effect.die(result.error),
           )
 
         /**
@@ -528,31 +566,34 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           definition: SyncEntityDefinition,
           data: Record<string, unknown>,
           meta: SyncEntityMeta,
-          entry: PushEntry
+          entry: PushEntry,
         ) =>
           validate(definition, data, meta, entry).pipe(
             Effect.map(Option.some),
-            Effect.catchTag("SyncInvalidPatch", () => Effect.succeed(Option.none()))
+            Effect.catchTag('SyncInvalidPatch', () =>
+              Effect.succeed(Option.none()),
+            ),
           )
 
         const write = (
           entry: PushEntry,
           inputState: SyncEntityState,
           expectedVersion: number | null,
-          op: "upsert" | "delete",
+          op: 'upsert' | 'delete',
           tag: WriteTag,
           previous?: SyncEntityState,
-          patch?: Record<string, unknown>
+          patch?: Record<string, unknown>,
         ) => {
           // Server-stamped attribution for the list "updated by" label (#39).
           // Only the list aggregates carry the column; other entities ignore
           // the extra data field.
           const state: SyncEntityState =
-            inputState.entityType === "list" || inputState.entityType === "listItem"
+            inputState.entityType === 'list' ||
+            inputState.entityType === 'listItem'
               ? {
-                ...inputState,
-                data: { ...inputState.data, lastWriterId: input.userId }
-              }
+                  ...inputState,
+                  data: { ...inputState.data, lastWriterId: input.userId },
+                }
               : inputState
           const statements: Array<Statement.Statement<unknown>> = [
             repo.writeEntity({ state, expectedVersion }),
@@ -564,7 +605,7 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
               version: state.version,
               updatedAt: state.updatedAt,
               ownerId: state.ownerId,
-              visibility: state.visibility
+              visibility: state.visibility,
             }),
             repo.recordApplied({
               clientMutationId: entry.clientMutationId,
@@ -572,14 +613,14 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
               entityType: state.entityType,
               entityId: state.entityId,
               version: state.version,
-              createdAt: now
+              createdAt: now,
             }),
             // Derived indexes ride the same batch (#41): the note search
             // index is written by the same statements that write the row, so
             // a committed note is findable straight away. The hook sees the
             // previous row and patch, so an edit that cannot change the
             // indexed text skips its statements instead of rewriting them.
-            ...repo.indexStatements(state, { previous, patch })
+            ...repo.indexStatements(state, { previous, patch }),
           ]
 
           // A server-generated successor (task recurrence, #38) joins this
@@ -596,11 +637,11 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
                 householdId: input.householdId,
                 entityType: spawn.state.entityType,
                 entityId: spawn.state.entityId,
-                op: "upsert",
+                op: 'upsert',
                 version: spawn.state.version,
                 updatedAt: spawn.state.updatedAt,
                 ownerId: spawn.state.ownerId,
-                visibility: spawn.state.visibility
+                visibility: spawn.state.visibility,
               }),
               repo.recordApplied({
                 clientMutationId: `recurrence:${spawn.parentId}`,
@@ -608,9 +649,9 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
                 entityType: spawn.state.entityType,
                 entityId: spawn.state.entityId,
                 version: spawn.state.version,
-                createdAt: now
+                createdAt: now,
               }),
-              ...(spawn.joins?.(spawn.state) ?? [])
+              ...(spawn.joins?.(spawn.state) ?? []),
             )
           }
 
@@ -619,32 +660,32 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
             entry,
             state,
             expectedVersion,
-            statements
+            statements,
           }
           groups.push(group)
           planned.set(entityKey(state), state)
-          plans.push({ kind: "write", entry, tag, state, group: group.index })
+          plans.push({ kind: 'write', entry, tag, state, group: group.index })
         }
 
         /** Insert data for an offline create, validated against the aggregate. */
         const insertData = (
           definition: SyncEntityDefinition,
           entry: PushEntry,
-          patch: Record<string, unknown>
+          patch: Record<string, unknown>,
         ): Effect.Effect<Record<string, unknown>, SyncInvalidPatch> =>
-          Effect.gen(function*() {
+          Effect.gen(function* () {
             const raw = definition.defaults(patch, {
               entityId: entry.entityId,
               userId: input.userId,
               householdId: input.householdId,
               now,
-              clientUpdatedAt: asIso(entry.clientUpdatedAt)
+              clientUpdatedAt: asIso(entry.clientUpdatedAt),
             })
             return yield* validate(
               definition,
               raw,
               { version: 1, updatedAt: now, deletedAt: null },
-              entry
+              entry,
             )
           })
 
@@ -653,26 +694,39 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           const key = entityKey(entry)
           const mutation = deduped.get(entry.clientMutationId)
           if (mutation !== undefined) {
-            plans.push({ kind: "dedupe", entry, mutation })
+            plans.push({ kind: 'dedupe', entry, mutation })
             continue
           }
 
           const current = planned.get(key)
           // Households are hard boundaries: a row in another household (or an
           // unclaimed pre-sync row with no household at all) is not writable.
-          if (current !== undefined && current.householdId !== input.householdId) {
-            return yield* Effect.fail(new SyncEntityForbidden({ entityId: entry.entityId }))
+          if (
+            current !== undefined &&
+            current.householdId !== input.householdId
+          ) {
+            return yield* Effect.fail(
+              new SyncEntityForbidden({ entityId: entry.entityId }),
+            )
           }
           // Private rows are owner-only; shared rows are household-wide.
           if (
-            current !== undefined && current.ownerId !== "" &&
-            current.ownerId !== input.userId && current.visibility === "private"
+            current !== undefined &&
+            current.ownerId !== '' &&
+            current.ownerId !== input.userId &&
+            current.visibility === 'private'
           ) {
-            return yield* Effect.fail(new SyncEntityForbidden({ entityId: entry.entityId }))
+            return yield* Effect.fail(
+              new SyncEntityForbidden({ entityId: entry.entityId }),
+            )
           }
 
-          const patch = sanitizePatch(definition, entry.patch, { allowCreatedAt: true })
-          const updatePatch = sanitizePatch(definition, entry.patch, { allowCreatedAt: false })
+          const patch = sanitizePatch(definition, entry.patch, {
+            allowCreatedAt: true,
+          })
+          const updatePatch = sanitizePatch(definition, entry.patch, {
+            allowCreatedAt: false,
+          })
 
           // Only a `shareable` aggregate has a user-facing choice (ADR-0011).
           // A patch that tries to set a fixed or exact-inherited visibility is
@@ -681,15 +735,18 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           // against the parent below.
           const visibilityPolicy = visibilityPolicyOf(entry.entityType)
           if (
-            entry.op !== "delete" &&
+            entry.op !== 'delete' &&
             entry.patch.visibility !== undefined &&
-            visibilityPolicy._tag !== "shareable" &&
-            !(visibilityPolicy._tag === "inherited" && entry.entityType === "listItem")
+            visibilityPolicy._tag !== 'shareable' &&
+            !(
+              visibilityPolicy._tag === 'inherited' &&
+              entry.entityType === 'listItem'
+            )
           ) {
             reject(
               entry,
-              "VisibilityFixed",
-              `Visibility is fixed by policy for "${entry.entityType}"`
+              'VisibilityFixed',
+              `Visibility is fixed by policy for "${entry.entityType}"`,
             )
             continue
           }
@@ -698,13 +755,17 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           // service path enforces the same rule, and a push must not be a way
           // around it.
           if (
-            entry.op !== "delete" &&
-            entry.patch.visibility === "private" &&
+            entry.op !== 'delete' &&
+            entry.patch.visibility === 'private' &&
             current !== undefined &&
-            current.ownerId !== "" &&
+            current.ownerId !== '' &&
             current.ownerId !== input.userId
           ) {
-            reject(entry, "VisibilityForbidden", "Only the row owner can make it private")
+            reject(
+              entry,
+              'VisibilityForbidden',
+              'Only the row owner can make it private',
+            )
             continue
           }
 
@@ -712,33 +773,46 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
           // rather than dropped: silently substituting a default would record a
           // different day/status than the user chose (#63). Deletes are exempt:
           // a tombstone must always be able to land.
-          const invalidStrict = entry.op === "delete"
-            ? undefined
-            : definition.strict?.find((field) => {
-              const value = entry.patch[field]
-              return value !== undefined && definition.writable.get(field)?.(value) !== true
-            })
+          const invalidStrict =
+            entry.op === 'delete'
+              ? undefined
+              : definition.strict?.find(field => {
+                  const value = entry.patch[field]
+                  return (
+                    value !== undefined &&
+                    definition.writable.get(field)?.(value) !== true
+                  )
+                })
           if (invalidStrict !== undefined) {
-            reject(entry, "InvalidPatch", `The patch value for "${invalidStrict}" is not valid`)
+            reject(
+              entry,
+              'InvalidPatch',
+              `The patch value for "${invalidStrict}" is not valid`,
+            )
             continue
           }
 
           const parentRule = definition.parent
-          if (parentRule !== undefined && entry.op !== "delete") {
+          if (parentRule !== undefined && entry.op !== 'delete') {
             const parentId = effectiveParentId(entry)
-            const parentKey = parentId === undefined
-              ? undefined
-              : entityKey({ entityType: parentRule.entityType, entityId: parentId })
+            const parentKey =
+              parentId === undefined
+                ? undefined
+                : entityKey({
+                    entityType: parentRule.entityType,
+                    entityId: parentId,
+                  })
             // Resolve the **post-push** parent first: `planned` holds a parent
             // already written in this batch, `incoming` the proposed state of
             // one later in the wire (upsert or delete). The DB pre-read is only
             // the fallback, so a list/habit flipped private in the same push
             // cannot leave its child shared.
-            const parent = parentKey === undefined
-              ? undefined
-              : planned.get(parentKey) ??
-                incoming.get(parentKey) ??
-                parentStates.get(parentKey)
+            const parent =
+              parentKey === undefined
+                ? undefined
+                : (planned.get(parentKey) ??
+                  incoming.get(parentKey) ??
+                  parentStates.get(parentKey))
             // A child never outlives or out-shares its parent: a missing
             // required row, another household, a trashed parent or a private
             // parent owned by someone else all reject the entry instead of
@@ -752,43 +826,52 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
               // the item, and an omitted visibility keeps the legacy shared
               // default. Every other parent link is required.
               if (parentRule.optional !== true) {
-                reject(entry, "ParentNotFound", "The parent row does not exist")
+                reject(entry, 'ParentNotFound', 'The parent row does not exist')
                 continue
               }
-              const currentParentId = typeof current?.data[parentRule.field] === "string"
-                ? String(current.data[parentRule.field])
-                : undefined
+              const currentParentId =
+                typeof current?.data[parentRule.field] === 'string'
+                  ? String(current.data[parentRule.field])
+                  : undefined
               const patchNamesParent = Object.prototype.hasOwnProperty.call(
                 entry.patch,
-                parentRule.field
+                parentRule.field,
               )
               // Only the true legacy no-id shape (no parent now, and the patch
               // does not try to set/clear one) may pass. A named-but-missing
               // parent, an explicit clear, or an already-dangling row is a
               // missing parent, not a visibility choice.
-              const legacyNoParent = !patchNamesParent && currentParentId === undefined
+              const legacyNoParent =
+                !patchNamesParent && currentParentId === undefined
               if (!legacyNoParent) {
-                reject(entry, "ParentNotFound", "The parent row does not exist")
+                reject(entry, 'ParentNotFound', 'The parent row does not exist')
                 continue
               }
               if (entry.patch.visibility !== undefined) {
-                patch.visibility = "private"
-                updatePatch.visibility = "private"
+                patch.visibility = 'private'
+                updatePatch.visibility = 'private'
               }
             } else {
               if (parent.householdId !== input.householdId) {
-                reject(entry, "ParentForbidden", "The parent row belongs to another household")
+                reject(
+                  entry,
+                  'ParentForbidden',
+                  'The parent row belongs to another household',
+                )
                 continue
               }
               if (parent.deletedAt !== null) {
-                reject(entry, "ParentDeleted", "The parent row is in the trash")
+                reject(entry, 'ParentDeleted', 'The parent row is in the trash')
                 continue
               }
-              if (parent.visibility === "private" && parent.ownerId !== input.userId) {
-                reject(entry, "ParentForbidden", "The parent row is private")
+              if (
+                parent.visibility === 'private' &&
+                parent.ownerId !== input.userId
+              ) {
+                reject(entry, 'ParentForbidden', 'The parent row is private')
                 continue
               }
-              if (parentRule.visibility === "copy") {
+              if (parentRule.visibility === 'copy') {
                 // Exact inheritance: the parent is the only authority, so a
                 // client value that differs is a change attempt.
                 if (
@@ -797,38 +880,38 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
                 ) {
                   reject(
                     entry,
-                    "VisibilityInherited",
-                    "Visibility is inherited from the parent row"
+                    'VisibilityInherited',
+                    'Visibility is inherited from the parent row',
                   )
                   continue
                 }
                 patch.visibility = parent.visibility
                 updatePatch.visibility = parent.visibility
-              } else if (parent.visibility === "private") {
+              } else if (parent.visibility === 'private') {
                 // Ceiling: a child of a private parent is private, always.
-                if (entry.patch.visibility === "shared") {
+                if (entry.patch.visibility === 'shared') {
                   reject(
                     entry,
-                    "VisibilityInherited",
-                    "The child cannot be shared inside a private parent"
+                    'VisibilityInherited',
+                    'The child cannot be shared inside a private parent',
                   )
                   continue
                 }
-                patch.visibility = "private"
-                updatePatch.visibility = "private"
+                patch.visibility = 'private'
+                updatePatch.visibility = 'private'
               } else if (current === undefined) {
                 // Insert under a shared parent: inherit the parent unless the
                 // client asked for the (allowed) narrower private value.
                 const resolved = resolveInheritedVisibility(
                   entry.entityType,
                   parent.visibility,
-                  requestedVisibility(entry.patch.visibility)
+                  requestedVisibility(entry.patch.visibility),
                 )
-                if (resolved._tag === "refused") {
+                if (resolved._tag === 'refused') {
                   reject(
                     entry,
-                    "VisibilityInherited",
-                    "Visibility is inherited from the parent row"
+                    'VisibilityInherited',
+                    'Visibility is inherited from the parent row',
                   )
                   continue
                 }
@@ -838,7 +921,7 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
             }
           }
 
-          if (entry.op === "delete") {
+          if (entry.op === 'delete') {
             if (current === undefined) {
               // A delete for a row the server never saw still needs a tombstone
               // so the other device learns the id is gone. It is not validated:
@@ -848,12 +931,12 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
                 userId: input.userId,
                 householdId: input.householdId,
                 now,
-                clientUpdatedAt: asIso(entry.clientUpdatedAt)
+                clientUpdatedAt: asIso(entry.clientUpdatedAt),
               })
               const visibility = resolvedVisibility(
                 entry.entityType,
                 raw,
-                defaultVisibilityFor(entry.entityType)
+                defaultVisibilityFor(entry.entityType),
               )
               const state: SyncEntityState = {
                 entityType: entry.entityType,
@@ -864,13 +947,18 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
                 version: 1,
                 updatedAt: now,
                 deletedAt: now,
-                data: { ...raw, ownerId: input.userId, visibility }
+                data: { ...raw, ownerId: input.userId, visibility },
               }
-              write(entry, state, null, "delete", "applied", undefined, patch)
+              write(entry, state, null, 'delete', 'applied', undefined, patch)
               continue
             }
             if (current.deletedAt !== null) {
-              plans.push({ kind: "nowrite", entry, tag: "tombstone", state: current })
+              plans.push({
+                kind: 'nowrite',
+                entry,
+                tag: 'tombstone',
+                state: current,
+              })
               continue
             }
             // Delete wins over a concurrent edit; the edit stays recoverable
@@ -880,23 +968,37 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
               householdId: input.householdId,
               version: current.version + 1,
               updatedAt: now,
-              deletedAt: now
+              deletedAt: now,
             }
-            write(entry, state, current.version, "delete", "applied", current, patch)
+            write(
+              entry,
+              state,
+              current.version,
+              'delete',
+              'applied',
+              current,
+              patch,
+            )
             continue
           }
 
           if (current === undefined) {
-            const inserted = yield* Effect.option(insertData(definition, entry, patch))
+            const inserted = yield* Effect.option(
+              insertData(definition, entry, patch),
+            )
             if (Option.isNone(inserted)) {
-              reject(entry, "InvalidPatch", "The patch does not match this entity")
+              reject(
+                entry,
+                'InvalidPatch',
+                'The patch does not match this entity',
+              )
               continue
             }
             const data = inserted.value
             const visibility = resolvedVisibility(
               entry.entityType,
               data,
-              defaultVisibilityFor(entry.entityType)
+              defaultVisibilityFor(entry.entityType),
             )
             const state: SyncEntityState = {
               entityType: entry.entityType,
@@ -907,15 +1009,20 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
               version: 1,
               updatedAt: now,
               deletedAt: null,
-              data: { ...data, ownerId: input.userId, visibility }
+              data: { ...data, ownerId: input.userId, visibility },
             }
-            write(entry, state, null, "upsert", "applied", undefined, patch)
+            write(entry, state, null, 'upsert', 'applied', undefined, patch)
             continue
           }
 
           // 1. Tombstone wins: an offline edit never resurrects a deleted row.
           if (current.deletedAt !== null) {
-            plans.push({ kind: "nowrite", entry, tag: "tombstone", state: current })
+            plans.push({
+              kind: 'nowrite',
+              entry,
+              tag: 'tombstone',
+              state: current,
+            })
             continue
           }
 
@@ -926,58 +1033,92 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
               patch: updatePatch,
               incomingNewer: true,
               conflict: false,
-              now
+              now,
             })
             const validated = yield* validateEntry(
               definition,
               merged,
               { version: current.version + 1, updatedAt: now, deletedAt: null },
-              entry
+              entry,
             )
             if (Option.isNone(validated)) {
-              reject(entry, "InvalidPatch", "The patch does not match this entity")
+              reject(
+                entry,
+                'InvalidPatch',
+                'The patch does not match this entity',
+              )
               continue
             }
             const data = validated.value
-            const visibility = resolvedVisibility(entry.entityType, data, current.visibility)
+            const visibility = resolvedVisibility(
+              entry.entityType,
+              data,
+              current.visibility,
+            )
             const state: SyncEntityState = {
               ...current,
               householdId: input.householdId,
               visibility,
               data: { ...data, ownerId: current.ownerId, visibility },
               version: current.version + 1,
-              updatedAt: now
+              updatedAt: now,
             }
-            write(entry, state, current.version, "upsert", "applied", current, updatePatch)
+            write(
+              entry,
+              state,
+              current.version,
+              'upsert',
+              'applied',
+              current,
+              updatePatch,
+            )
             continue
           }
 
           // 3. Conflict: field-level LWW on the fields in the patch, with
           // checklist done-wins / task completion as the settled exception
           // (§6.3/§6.5).
-          const incomingNewer = Date.parse(asIso(entry.clientUpdatedAt)) > Date.parse(current.updatedAt)
+          const incomingNewer =
+            Date.parse(asIso(entry.clientUpdatedAt)) >
+            Date.parse(current.updatedAt)
           const merged = definition.merge({
             current: current.data,
             patch: updatePatch,
             incomingNewer,
             conflict: true,
-            now
+            now,
           })
           const validated = yield* validateEntry(
             definition,
             merged,
             { version: current.version + 1, updatedAt: now, deletedAt: null },
-            entry
+            entry,
           )
           if (Option.isNone(validated)) {
-            reject(entry, "InvalidPatch", "The patch does not match this entity")
+            reject(
+              entry,
+              'InvalidPatch',
+              'The patch does not match this entity',
+            )
             continue
           }
           const data = validated.value
-          const visibility = resolvedVisibility(entry.entityType, data, current.visibility)
+          const visibility = resolvedVisibility(
+            entry.entityType,
+            data,
+            current.visibility,
+          )
 
-          if (sameData(data, current.data) && visibility === current.visibility) {
-            plans.push({ kind: "nowrite", entry, tag: "conflict", state: current })
+          if (
+            sameData(data, current.data) &&
+            visibility === current.visibility
+          ) {
+            plans.push({
+              kind: 'nowrite',
+              entry,
+              tag: 'conflict',
+              state: current,
+            })
             continue
           }
           const state: SyncEntityState = {
@@ -986,16 +1127,26 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
             visibility,
             data: { ...data, ownerId: current.ownerId, visibility },
             version: current.version + 1,
-            updatedAt: now
+            updatedAt: now,
           }
-          write(entry, state, current.version, "upsert", "conflict", current, updatePatch)
+          write(
+            entry,
+            state,
+            current.version,
+            'upsert',
+            'conflict',
+            current,
+            updatePatch,
+          )
         }
 
         // Parents before children (stable within a type), so a project/tag/list
         // created in the same push exists before the task/note/listItem that
         // references it. The happy path is still exactly one D1 batch.
         const orderedGroups = [...groups].sort(
-          (a, b) => dependencyRank(a.state.entityType) - dependencyRank(b.state.entityType)
+          (a, b) =>
+            dependencyRank(a.state.entityType) -
+            dependencyRank(b.state.entityType),
         )
         const rejectedGroups = new Map<number, ConstraintFailure>()
         let batchesUsed = 0
@@ -1003,7 +1154,7 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
         const commit = (subset: ReadonlyArray<WriteGroup>) =>
           Effect.suspend(() => {
             batchesUsed += 1
-            return commitOrConstraint(subset.flatMap((group) => group.statements))
+            return commitOrConstraint(subset.flatMap(group => group.statements))
           })
 
         /**
@@ -1020,13 +1171,14 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
          * batches have run, the unattempted remainder is marked rejected with
          * `AttributionLimit` so an unlucky chunk can never wedge the outbox.
          */
-        const attribute = (subset: ReadonlyArray<WriteGroup>): Effect.Effect<void> =>
+        const attribute = (
+          subset: ReadonlyArray<WriteGroup>,
+        ): Effect.Effect<void> =>
           Effect.suspend(() => {
             if (batchesUsed >= MAX_ISOLATION_BATCHES) {
               const limit: ConstraintFailure = {
-                code: "AttributionLimit",
-                message:
-                  `Isolation stopped after ${MAX_ISOLATION_BATCHES} batches; this entry could not be attributed`
+                code: 'AttributionLimit',
+                message: `Isolation stopped after ${MAX_ISOLATION_BATCHES} batches; this entry could not be attributed`,
               }
               for (const group of subset) rejectedGroups.set(group.index, limit)
               return Effect.void
@@ -1034,25 +1186,27 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
             if (subset.length === 1) {
               const group = subset[0]!
               return commit(subset).pipe(
-                Effect.map((failure) => {
-                  if (failure !== undefined) rejectedGroups.set(group.index, failure)
-                })
+                Effect.map(failure => {
+                  if (failure !== undefined)
+                    rejectedGroups.set(group.index, failure)
+                }),
               )
             }
             const mid = Math.floor(subset.length / 2)
             const halves = [subset.slice(0, mid), subset.slice(mid)]
             return Effect.forEach(
               halves,
-              (half) =>
+              half =>
                 Effect.suspend(() => {
-                  if (batchesUsed >= MAX_ISOLATION_BATCHES) return attribute(half)
+                  if (batchesUsed >= MAX_ISOLATION_BATCHES)
+                    return attribute(half)
                   return commit(half).pipe(
-                    Effect.flatMap((failure) =>
-                      failure === undefined ? Effect.void : attribute(half)
-                    )
+                    Effect.flatMap(failure =>
+                      failure === undefined ? Effect.void : attribute(half),
+                    ),
                   )
                 }),
-              { discard: true }
+              { discard: true },
             )
           })
 
@@ -1065,13 +1219,13 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
         }
 
         const writes = plans.filter(
-          (plan): plan is Extract<Plan, { readonly kind: "write" }> =>
-            plan.kind === "write" && !rejectedGroups.has(plan.group)
+          (plan): plan is Extract<Plan, { readonly kind: 'write' }> =>
+            plan.kind === 'write' && !rejectedGroups.has(plan.group),
         )
         const applied = yield* repo
           .findApplied({
             householdId: input.householdId,
-            clientMutationIds: writes.map((plan) => plan.entry.clientMutationId)
+            clientMutationIds: writes.map(plan => plan.entry.clientMutationId),
           })
           .pipe(Effect.orDie)
 
@@ -1087,68 +1241,74 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
         // row and applies the delete through the CAS), so it stays retryable;
         // rejecting it would drop the delete and resurrect the row on the next
         // pull.
-        const contended: Array<Extract<Plan, { readonly kind: "write" }>> = []
+        const contended: Array<Extract<Plan, { readonly kind: 'write' }>> = []
         for (const plan of writes) {
           if (applied.has(plan.entry.clientMutationId)) continue
           const group = groups[plan.group]!
-          if (group.expectedVersion === null && group.entry.op === "upsert") {
+          if (group.expectedVersion === null && group.entry.op === 'upsert') {
             rejectedGroups.set(plan.group, {
-              code: "UniqueViolation",
-              message: "Insert conflicted with a row that is already live"
+              code: 'UniqueViolation',
+              message: 'Insert conflicted with a row that is already live',
             })
           } else {
             contended.push(plan)
           }
         }
         if (contended.length > 0) {
-          return yield* Effect.fail(new SyncContended({ count: contended.length }))
+          return yield* Effect.fail(
+            new SyncContended({ count: contended.length }),
+          )
         }
 
         const authoritative = yield* repo
-          .findEntities(input.entries.map((entry) => ({
-            entityType: entry.entityType,
-            entityId: entry.entityId
-          })))
+          .findEntities(
+            input.entries.map(entry => ({
+              entityType: entry.entityType,
+              entityId: entry.entityId,
+            })),
+          )
           .pipe(Effect.orDie)
 
-        const results: Array<SyncPushResult> = plans.map((plan) => {
-          if (plan.kind === "rejected") {
+        const results: Array<SyncPushResult> = plans.map(plan => {
+          if (plan.kind === 'rejected') {
             return {
-              _tag: "rejected" as const,
+              _tag: 'rejected' as const,
               clientMutationId: plan.entry.clientMutationId,
               entityType: plan.entry.entityType,
               entityId: plan.entry.entityId,
               code: plan.code,
-              message: plan.message
+              message: plan.message,
             }
           }
-          if (plan.kind === "write") {
+          if (plan.kind === 'write') {
             const rejection = rejectedGroups.get(plan.group)
             if (rejection !== undefined) {
               return {
-                _tag: "rejected" as const,
+                _tag: 'rejected' as const,
                 clientMutationId: plan.entry.clientMutationId,
                 entityType: plan.entry.entityType,
                 entityId: plan.entry.entityId,
                 code: rejection.code,
-                message: rejection.message
+                message: rejection.message,
               }
             }
           }
-          const state = authoritative.get(entityKey(plan.entry)) ??
-            (plan.kind === "dedupe" ? undefined : plan.state)
-          const item = state === undefined || state.householdId !== input.householdId
-            ? {}
-            : { item: toRow(state) }
-          if (plan.kind === "dedupe") {
+          const state =
+            authoritative.get(entityKey(plan.entry)) ??
+            (plan.kind === 'dedupe' ? undefined : plan.state)
+          const item =
+            state === undefined || state.householdId !== input.householdId
+              ? {}
+              : { item: toRow(state) }
+          if (plan.kind === 'dedupe') {
             return {
-              _tag: "alreadyApplied" as const,
+              _tag: 'alreadyApplied' as const,
               clientMutationId: plan.entry.clientMutationId,
               entityType: plan.entry.entityType,
               entityId: plan.entry.entityId,
               version: plan.mutation.version,
               seq: plan.mutation.seq,
-              ...item
+              ...item,
             }
           }
           const mutation = applied.get(plan.entry.clientMutationId)
@@ -1159,13 +1319,14 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
             entityId: plan.entry.entityId,
             version: state?.version ?? plan.state.version,
             seq: mutation?.seq ?? 0,
-            ...item
+            ...item,
           }
         })
 
         const cursor = results.reduce(
-          (max, result) => result._tag === "rejected" ? max : Math.max(max, result.seq),
-          0
+          (max, result) =>
+            result._tag === 'rejected' ? max : Math.max(max, result.seq),
+          0,
         )
         return { results, cursor }
       })
@@ -1176,8 +1337,11 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
       readonly cursor: number
       readonly limit?: number
     }): Effect.Effect<SyncPullResponse> =>
-      Effect.gen(function*() {
-        const limit = Math.min(Math.max(input.limit ?? DEFAULT_PULL_LIMIT, 1), MAX_PULL_LIMIT)
+      Effect.gen(function* () {
+        const limit = Math.min(
+          Math.max(input.limit ?? DEFAULT_PULL_LIMIT, 1),
+          MAX_PULL_LIMIT,
+        )
 
         // A pull is read-only: feed pruning runs in the nightly purge (with a
         // once-a-day fallback in the reminder sweep), never on the poll itself.
@@ -1201,39 +1365,51 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
             removed: [],
             nextCursor: input.cursor,
             hasMore: false,
-            resetRequired: true
+            resetRequired: true,
           }
         }
 
-        const rows = yield* repo.pullFeed({
-          householdId: input.householdId,
-          cursor: input.cursor,
-          limit
-        }).pipe(Effect.orDie)
+        const rows = yield* repo
+          .pullFeed({
+            householdId: input.householdId,
+            cursor: input.cursor,
+            limit,
+          })
+          .pipe(Effect.orDie)
         const hasMore = rows.length > limit
-        const page: ReadonlyArray<FeedRow> = hasMore ? rows.slice(0, limit) : rows
-        const nextCursor = page.length > 0 ? page[page.length - 1]!.seq : input.cursor
+        const page: ReadonlyArray<FeedRow> = hasMore
+          ? rows.slice(0, limit)
+          : rows
+        const nextCursor =
+          page.length > 0 ? page[page.length - 1]!.seq : input.cursor
 
-        const states = yield* repo.findEntities(page.map((row) => ({
-          entityType: row.entityType,
-          entityId: row.entityId
-        }))).pipe(Effect.orDie)
+        const states = yield* repo
+          .findEntities(
+            page.map(row => ({
+              entityType: row.entityType,
+              entityId: row.entityId,
+            })),
+          )
+          .pipe(Effect.orDie)
 
         // The child rows in this page may name a parent that is not itself on
         // the page. Read those parents now so the child's *current* visibility
         // decides delivery, not the write-time column on the child.
-        const inheritedParentRefs = page.flatMap((row) => {
+        const inheritedParentRefs = page.flatMap(row => {
           const state = states.get(entityKey(row))
-          const ref = state === undefined ? undefined : inheritedParentRef(state)
+          const ref =
+            state === undefined ? undefined : inheritedParentRef(state)
           return ref === undefined ? [] : [ref]
         })
-        const inheritedParentStates = inheritedParentRefs.length === 0
-          ? new Map<string, SyncEntityState>()
-          : yield* repo.findEntities(inheritedParentRefs).pipe(Effect.orDie)
+        const inheritedParentStates =
+          inheritedParentRefs.length === 0
+            ? new Map<string, SyncEntityState>()
+            : yield* repo.findEntities(inheritedParentRefs).pipe(Effect.orDie)
 
         const entries: Array<ChangeFeedEntry> = []
         const items: Array<SyncEntityRow> = []
-        const removed: Array<{ entityType: SyncEntityType; entityId: string }> = []
+        const removed: Array<{ entityType: SyncEntityType; entityId: string }> =
+          []
         const removedKeys = new Set<string>()
         const addRemoved = (ref: EntityRef) => {
           const key = entityKey(ref)
@@ -1245,37 +1421,46 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
 
         for (const row of page) {
           const state = states.get(entityKey(row))
-          const householdMatches = state === undefined || state.householdId === input.householdId
-          const ownVisible = householdMatches &&
+          const householdMatches =
+            state === undefined || state.householdId === input.householdId
+          const ownVisible =
+            householdMatches &&
             (state === undefined
-              // Hard-purged row: the feed entry still advances the cursor.
-              ? row.ownerId === input.userId || feedVisibility(row.entityType, row.visibility) === "shared"
-              : state.ownerId === input.userId || state.visibility === "shared")
+              ? // Hard-purged row: the feed entry still advances the cursor.
+                row.ownerId === input.userId ||
+                feedVisibility(row.entityType, row.visibility) === 'shared'
+              : state.ownerId === input.userId || state.visibility === 'shared')
 
           // An inherited child is deliverable only while its parent is visible
           // to this member *now*. The child's own visibility is a write-time
           // snapshot; a habit/list flip to private must take the child with it.
-          const parentRef = state === undefined ? undefined : inheritedParentRef(state)
-          const parent = parentRef === undefined
-            ? undefined
-            : states.get(entityKey(parentRef)) ?? inheritedParentStates.get(entityKey(parentRef))
+          const parentRef =
+            state === undefined ? undefined : inheritedParentRef(state)
+          const parent =
+            parentRef === undefined
+              ? undefined
+              : (states.get(entityKey(parentRef)) ??
+                inheritedParentStates.get(entityKey(parentRef)))
           const inheritedVisible = !isInheritedChild(row.entityType)
             ? true
             : parentRef === undefined
-            ? orphanChildIsDeliverable(row.entityType)
-            : parent === undefined
-            ? false
-            : parentAllowsChild(parent, input)
+              ? orphanChildIsDeliverable(row.entityType)
+              : parent === undefined
+                ? false
+                : parentAllowsChild(parent, input)
           const visible = ownVisible && inheritedVisible
 
           // A list/habit that becomes invisible (private to the other member,
           // or hard-purged) must remove its children from the partner's mirror
           // even when those children have no new feed rows of their own.
           if (
-            (row.entityType === "list" || row.entityType === "habit") &&
+            (row.entityType === 'list' || row.entityType === 'habit') &&
             (state === undefined || !ownVisible)
           ) {
-            parentsToCascade.push({ entityType: row.entityType, entityId: row.entityId })
+            parentsToCascade.push({
+              entityType: row.entityType,
+              entityId: row.entityId,
+            })
           }
 
           if (visible) {
@@ -1287,7 +1472,9 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
               version: state?.version ?? row.version,
               updatedAt: state?.updatedAt ?? row.updatedAt,
               ownerId: state?.ownerId ?? row.ownerId,
-              visibility: state?.visibility ?? feedVisibility(row.entityType, row.visibility)
+              visibility:
+                state?.visibility ??
+                feedVisibility(row.entityType, row.visibility),
             })
             if (state !== undefined) items.push(toRow(state))
             else {
@@ -1304,11 +1491,20 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
         }
 
         if (parentsToCascade.length > 0) {
-          const children = yield* repo.findChildIds(parentsToCascade).pipe(Effect.orDie)
+          const children = yield* repo
+            .findChildIds(parentsToCascade)
+            .pipe(Effect.orDie)
           for (const child of children) addRemoved(child)
         }
 
-        return { entries, items, removed, nextCursor, hasMore, resetRequired: false }
+        return {
+          entries,
+          items,
+          removed,
+          nextCursor,
+          hasMore,
+          resetRequired: false,
+        }
       })
 
     const bootstrap = (input: {
@@ -1317,20 +1513,25 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
       readonly offset?: number
       readonly limit?: number
     }): Effect.Effect<SyncBootstrapResponse> =>
-      Effect.gen(function*() {
-        const limit = Math.min(Math.max(input.limit ?? DEFAULT_PULL_LIMIT, 1), MAX_PULL_LIMIT)
+      Effect.gen(function* () {
+        const limit = Math.min(
+          Math.max(input.limit ?? DEFAULT_PULL_LIMIT, 1),
+          MAX_PULL_LIMIT,
+        )
         const offset = Math.max(input.offset ?? 0, 0)
         // Read the high-water cursor *before* the visible rows. A write that
         // lands during paging then has a `seq` above the cursor and is delivered
         // by the next incremental pull; reading it afterwards could skip a row
         // that the page did not include.
         const cursor = yield* repo.maxSeq.pipe(Effect.orDie)
-        const refs = yield* repo.bootstrapPage({
-          householdId: input.householdId,
-          userId: input.userId,
-          offset,
-          limit
-        }).pipe(Effect.orDie)
+        const refs = yield* repo
+          .bootstrapPage({
+            householdId: input.householdId,
+            userId: input.userId,
+            offset,
+            limit,
+          })
+          .pipe(Effect.orDie)
         const hasMore = refs.length > limit
         const page = hasMore ? refs.slice(0, limit) : refs
         const hydrated = yield* repo.bootstrapEntities(page).pipe(Effect.orDie)
@@ -1338,14 +1539,15 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
         // Parent-gate inherited children exactly like `/sync/pull`: a fresh
         // mirror must not be seeded with a shared item/entry whose list/habit
         // is private to this member (or already hard-purged).
-        const inheritedParentRefs = hydrated.flatMap((item) => {
+        const inheritedParentRefs = hydrated.flatMap(item => {
           const ref = inheritedParentRef(item)
           return ref === undefined ? [] : [ref]
         })
-        const inheritedParentStates = inheritedParentRefs.length === 0
-          ? new Map<string, SyncEntityState>()
-          : yield* repo.findEntities(inheritedParentRefs).pipe(Effect.orDie)
-        const items = hydrated.filter((item) => {
+        const inheritedParentStates =
+          inheritedParentRefs.length === 0
+            ? new Map<string, SyncEntityState>()
+            : yield* repo.findEntities(inheritedParentRefs).pipe(Effect.orDie)
+        const items = hydrated.filter(item => {
           if (!isInheritedChild(item.entityType)) return true
           const parentRef = inheritedParentRef(item)
           if (parentRef === undefined) {
@@ -1365,9 +1567,9 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
       })
 
     return { pull, bootstrap, push } as const
-  })
+  }),
 }) {}
 
 export const SyncServiceLive = Layer.effect(SyncService, SyncService.make).pipe(
-  Layer.provide(SyncRepoLive)
+  Layer.provide(SyncRepoLive),
 )

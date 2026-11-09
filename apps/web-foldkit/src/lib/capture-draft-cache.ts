@@ -26,20 +26,29 @@ const storage = (): Storage | undefined => {
 
 export const loadCaptureText = (userId: string | undefined): string => {
   const store = storage()
+
   if (store === undefined) {
     return ''
   }
+
   return store.getItem(keyFor(userId)) ?? ''
 }
 
-export const saveCaptureText = (userId: string | undefined, text: string): void => {
+export const saveCaptureText = (
+  userId: string | undefined,
+  text: string,
+): void => {
   const store = storage()
+
   if (store === undefined) {
     return
   }
+
   if (text === '') {
     store.removeItem(keyFor(userId))
+
     return
   }
+
   store.setItem(keyFor(userId), text)
 }

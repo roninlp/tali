@@ -75,10 +75,13 @@ const MIN_BLOCK_MINUTES = 28
 /* Dense-row recipes reused across the week cards and the month detail. */
 const TASK_ROW_CLASS =
   'grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-1.5 py-0.5'
+
 const TASK_TITLE_CLASS =
   'break-words text-[0.84rem] leading-6 no-underline hover:underline group-data-[priority=high]:text-warning'
+
 const TASK_BADGE_CLASS =
   'justify-self-start rounded-full border border-primary/25 bg-primary/10 px-1.5 text-[0.68rem] leading-5 text-primary'
+
 const TASK_CHECK_CLASS =
   'relative grid size-5 flex-none place-items-center rounded-full border-[1.5px] border-base-300 bg-base-100 text-[0.62rem] text-base-content/55 transition-colors before:absolute before:-inset-1.5 before:content-[""] hover:border-secondary hover:text-secondary disabled:opacity-45'
 
@@ -87,21 +90,27 @@ const QUICK_INPUT_CLASS =
 
 const NAV_BUTTON_CLASS = 'btn btn-sm btn-outline min-h-10 rounded-full px-3.5'
 const PRIMARY_BUTTON_CLASS = 'btn btn-primary min-h-10 rounded-xl'
+
 const DANGER_BUTTON_CLASS =
   'btn min-h-10 rounded-xl border-error/30 bg-error/8 text-error hover:bg-error/14 hover:text-error'
+
 const SMALL_BUTTON_CLASS = 'btn btn-sm btn-outline min-h-10 rounded-full px-3'
 
 const EVENT_CHIP_CLASS =
   'flex w-full min-w-0 items-center gap-1 rounded-lg bg-secondary/12 px-1.5 py-0.5 text-start text-[0.66rem] leading-6 text-secondary data-[allday=true]:bg-info/12 data-[allday=true]:text-info'
+
 const EVENT_CHIP_MONTH_CLASS =
   'flex w-full min-w-0 items-center justify-center gap-1 rounded-full bg-secondary/12 px-1 text-[0.5rem] leading-5 text-secondary data-[allday=true]:bg-info/12 data-[allday=true]:text-info'
+
 const EVENT_CHIP_MORE_CLASS =
   'flex w-full items-center justify-center rounded-lg px-1.5 py-0.5 text-[0.66rem] leading-6 text-base-content/55'
 
 const OCCASION_CHIP_CLASS =
   'min-w-0 truncate rounded-full bg-error/12 px-1.5 text-[0.55rem] leading-5 text-error'
+
 const OCCASION_CHIP_WEEK_CLASS =
   'w-full truncate rounded-full bg-error/12 px-1.5 py-0.5 text-[0.64rem] leading-5 text-error'
+
 const OCCASION_CHIP_MORE_CLASS =
   'min-w-0 rounded-full px-1.5 text-center text-[0.55rem] leading-5 text-base-content/55'
 
@@ -111,8 +120,10 @@ const FIELD_LABEL_CLASS = 'text-[0.78rem] text-base-content/55'
 
 const DIALOG_BACKDROP_CLASS =
   'fixed inset-0 z-[60] grid place-items-center bg-black/40 p-3 backdrop-blur-[2px]'
+
 const DIALOG_CLASS =
   'grid max-h-[calc(100dvh-1.5rem)] w-full max-w-[27.5rem] gap-3 overflow-y-auto rounded-2xl border border-base-300 bg-base-100 p-5 text-base-content shadow-float'
+
 const DIALOG_TITLE_CLASS = 'm-0 text-base font-semibold outline-none'
 const DIALOG_HINT_CLASS = 'm-0 text-[0.78rem] leading-6 text-base-content/55'
 const DIALOG_ACTIONS_CLASS = 'flex flex-wrap justify-end gap-2'
@@ -144,6 +155,7 @@ const pickerField = (
     },
     h,
   )
+
 const SCOPE_HINT_CLASS = 'text-[0.7rem] leading-6 text-base-content/55'
 
 const viewOf = (model: Model, inputs: ViewInputs): CalendarView =>
@@ -266,6 +278,7 @@ const taskRow = (
   h: HtmlBuilder<Message>,
 ): Html => {
   const busy = Option.contains(model.maybeBusyKey, `done:${item.id}`)
+
   const taskBody = h.div(
     [h.Class('grid min-w-0 gap-px')],
     [
@@ -639,10 +652,12 @@ const timeGridView = (
   h: HtmlBuilder<Message>,
 ): Html => {
   const base = windowStart(occurrences, timeZone)
+
   const hours = Array.makeBy(
     windowEnd(occurrences, timeZone) - base,
     index => base + index,
   )
+
   const positioned = occurrences
     .flatMap(occurrence => {
       const start = occurrenceStartMinutes(occurrence, timeZone)
@@ -732,10 +747,12 @@ const eventLanes = (
   h: HtmlBuilder<Message>,
 ): ReadonlyArray<Html> => {
   const label = dayLabel(day.date, digits)
+
   const allDay = Array.filter(
     day.events,
     occurrence => occurrence.timing._tag === 'allDay',
   )
+
   const timed = Array.filter(
     day.events,
     occurrence => occurrence.timing._tag === 'timed',
@@ -1101,10 +1118,12 @@ const monthGrid = (
             Option.fromNullishOr(view.monthEvents.get(cell.date)),
             () => [],
           )
+
           const dayOccasions = Option.getOrElse(
             Option.fromNullishOr(view.monthOccasions.get(cell.date)),
             () => [],
           )
+
           const parts = [
             `${dayLabel(cell.date, digits)} — ${taskCountLabel(cell.tasks, digits)}`,
           ]
@@ -1481,6 +1500,7 @@ const monthAgenda = (
     Array.map(week.days, day => {
       const isSelected = Option.contains(model.maybeSelectedDay, day.date)
       const isToday = day.date === view.today
+
       const laneCount =
         day.tasks.length + day.events.length + day.occasions.length
 
@@ -1547,8 +1567,10 @@ const monthAgenda = (
     Array.map(week.days, day => {
       const isSelected = Option.contains(model.maybeSelectedDay, day.date)
       const isToday = day.date === view.today
+
       const laneCount =
         day.tasks.length + day.events.length + day.occasions.length
+
       const label = dayLabel(day.date, digits)
 
       return h.li(
@@ -1833,16 +1855,19 @@ const occasionsPanel = (
   const preview = occasionsPreview(model.occasionOriginDate, digits)
   const busy = Option.isSome(model.maybeOccasionBusy)
   const isEditing = Option.isSome(model.occasionEditingId)
+
   const editingOccasion = Option.flatMap(model.occasionEditingId, occasionId =>
     Array.findFirst(
       inputs.mirror.occasions,
       occasion => occasion.id === occasionId,
     ),
   )
+
   const canShare = Option.match(editingOccasion, {
     onNone: () => false,
     onSome: occasion => Option.contains(inputs.maybeUserId, occasion.ownerId),
   })
+
   const editingVisibility = Option.getOrElse(
     Option.map(editingOccasion, occasion => occasion.visibility),
     () => 'private' as const,
@@ -2053,18 +2078,22 @@ const eventEditorView = (
       const digits = inputs.display.digits
       const today = todayIn(inputs.display.timeZone, new Date(model.now))
       const inactive = Option.isSome(model.maybePendingScope)
+
       const seriesRow = Array.findFirst(
         inputs.mirror.events,
         row => row.id === occurrence.id,
       )
+
       const isOwner = Option.match(seriesRow, {
         onNone: () => false,
         onSome: row => Option.contains(inputs.maybeUserId, row.ownerId),
       })
+
       const visibility = Option.getOrElse(
         Option.map(seriesRow, row => row.visibility),
         () => 'private' as const,
       )
+
       const canEdit =
         Option.isSome(
           Array.findFirst(
@@ -2297,6 +2326,7 @@ const scopePromptView = (
         onNone: () => pending.occurrence.title,
         onSome: draft => draft.title,
       })
+
       const splitAvailable =
         pending.action === 'delete' ||
         (inputs.isOnline &&
@@ -2304,6 +2334,7 @@ const scopePromptView = (
             inputs.pendingKeys,
             entityKey('event', pending.occurrence.id),
           ))
+
       const confirmDisabled =
         model.isEventBusy ||
         Option.isNone(pending.maybeIds) ||
@@ -2479,6 +2510,7 @@ const weekView = (
   h: HtmlBuilder<Message>,
 ): Html => {
   const digits = inputs.display.digits
+
   return h.div(
     [h.Class('grid min-w-0 gap-3')],
     [

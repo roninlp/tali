@@ -88,6 +88,7 @@ const read = <A>(
         catch: () => undefined,
       }),
     )
+
     const json: unknown = Option.getOrUndefined(maybeJson)
 
     if (!response.ok) {

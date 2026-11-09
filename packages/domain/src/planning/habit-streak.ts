@@ -1,6 +1,6 @@
-import { Temporal } from "temporal-polyfill/full"
-import type { LocalDate } from "./common.js"
-import type { HabitEntryStatus, HabitFrequency } from "./habit.js"
+import { Temporal } from 'temporal-polyfill/full'
+import type { LocalDate } from './common.js'
+import type { HabitEntryStatus, HabitFrequency } from './habit.js'
 
 /**
  * The habit streak and success-rate algorithm (ticket #65, shipped with #66;
@@ -34,7 +34,7 @@ import type { HabitEntryStatus, HabitFrequency } from "./habit.js"
  *   `null`; the UI shows progress instead of `0%`.
  */
 
-export type StreakUnit = "day" | "week"
+export type StreakUnit = 'day' | 'week'
 
 /** One era of one frequency. `effectiveFrom` is the era's first period start (era 0: `startedOn`). */
 export interface StreakFrequencyEra {
@@ -110,15 +110,15 @@ export interface StreakResult {
 
 /** The counting unit of a frequency. */
 export const streakUnitOf = (frequency: HabitFrequency): StreakUnit =>
-  frequency._tag === "weekly" ? "week" : "day"
+  frequency._tag === 'weekly' ? 'week' : 'day'
 
 const SATURDAY = 6
-const FRIDAY = 5
 
 const addDays = (date: LocalDate, days: number): LocalDate =>
   Temporal.PlainDate.from(date).add({ days }).toString() as LocalDate
 
-const dayOfWeek = (date: LocalDate): number => Temporal.PlainDate.from(date).dayOfWeek
+const dayOfWeek = (date: LocalDate): number =>
+  Temporal.PlainDate.from(date).dayOfWeek
 
 /** The Saturday on or before `date` (the fixed counting week, R6). */
 const saturdayOnOrBefore = (date: LocalDate): LocalDate =>
@@ -137,61 +137,66 @@ const countingWeekEnd = (start: LocalDate): LocalDate =>
 const CREDIT: Readonly<Record<HabitEntryStatus, number>> = {
   done: 1,
   partial: 1,
-  missed: 0
+  missed: 0,
 }
 
 const WEIGHT: Readonly<Record<HabitEntryStatus, number>> = {
   done: 1,
   partial: 0.5,
-  missed: 0
+  missed: 0,
 }
 
 const assertFrequency = (frequency: HabitFrequency): void => {
   switch (frequency._tag) {
-    case "daily":
+    case 'daily':
       return
-    case "weekdays": {
+    case 'weekdays': {
       if (!Array.isArray(frequency.days) || frequency.days.length === 0) {
-        throw new Error("habit streak: a weekdays frequency needs at least one day")
+        throw new Error(
+          'habit streak: a weekdays frequency needs at least one day',
+        )
       }
       const seen = new Set<number>()
       for (const day of frequency.days) {
         if (!Number.isInteger(day) || day < 1 || day > 7) {
-          throw new Error("habit streak: a weekday must be an integer in 1..7")
+          throw new Error('habit streak: a weekday must be an integer in 1..7')
         }
         if (seen.has(day)) {
-          throw new Error("habit streak: a weekdays frequency must not repeat a day")
+          throw new Error(
+            'habit streak: a weekdays frequency must not repeat a day',
+          )
         }
         seen.add(day)
       }
       return
     }
-    case "weekly":
+    case 'weekly':
       if (
         !Number.isInteger(frequency.times) ||
         frequency.times < 1 ||
         frequency.times > 7
       ) {
-        throw new Error("habit streak: weekly times must be an integer in 1..7")
+        throw new Error('habit streak: weekly times must be an integer in 1..7')
       }
       return
     default:
-      throw new Error("habit streak: unknown frequency")
+      throw new Error('habit streak: unknown frequency')
   }
 }
 
 const weekdaySet = (frequency: HabitFrequency): ReadonlySet<number> | null =>
-  frequency._tag === "weekdays" ? new Set(frequency.days) : null
+  frequency._tag === 'weekdays' ? new Set(frequency.days) : null
 
 /** Is `date` an expected day under a **day-unit** frequency? */
 const isExpectedDay = (frequency: HabitFrequency, date: LocalDate): boolean => {
-  if (frequency._tag === "daily") return true
-  if (frequency._tag === "weekdays") return weekdaySet(frequency)!.has(dayOfWeek(date))
+  if (frequency._tag === 'daily') return true
+  if (frequency._tag === 'weekdays')
+    return weekdaySet(frequency)!.has(dayOfWeek(date))
   return false
 }
 
 const requirementOf = (frequency: HabitFrequency): number =>
-  frequency._tag === "weekly" ? frequency.times : 1
+  frequency._tag === 'weekly' ? frequency.times : 1
 
 /**
  * The era in force on `date`: the last era whose boundary is at or before it.
@@ -200,7 +205,7 @@ const requirementOf = (frequency: HabitFrequency): number =>
  */
 const eraIndexAt = (
   eras: ReadonlyArray<StreakFrequencyEra>,
-  date: LocalDate
+  date: LocalDate,
 ): number => {
   let index = 0
   for (let cursor = 1; cursor < eras.length; cursor += 1) {
@@ -222,7 +227,7 @@ const EMPTY_RESULT = (unit: StreakUnit): StreakResult => ({
   best: { days: 0, weeks: 0 },
   rate: null,
   periods: [],
-  unitChanges: []
+  unitChanges: [],
 })
 
 /**
@@ -233,19 +238,30 @@ const EMPTY_RESULT = (unit: StreakUnit): StreakResult => ({
  */
 export const habitStreak = (input: StreakInput): StreakResult => {
   const eras = input.frequencyHistory
-  if (eras.length === 0) throw new Error("habit streak: the frequency history is empty")
+  if (eras.length === 0)
+    throw new Error('habit streak: the frequency history is empty')
   for (let index = 0; index < eras.length; index += 1) {
     assertFrequency(eras[index]!.frequency)
-    if (index > 0 && !(eras[index]!.effectiveFrom > eras[index - 1]!.effectiveFrom)) {
-      throw new Error("habit streak: frequency eras must have strictly increasing dates")
+    if (
+      index > 0 &&
+      !(eras[index]!.effectiveFrom > eras[index - 1]!.effectiveFrom)
+    ) {
+      throw new Error(
+        'habit streak: frequency eras must have strictly increasing dates',
+      )
     }
   }
 
-  const unitChanges: Array<{ on: LocalDate; from: StreakUnit; to: StreakUnit }> = []
+  const unitChanges: Array<{
+    on: LocalDate
+    from: StreakUnit
+    to: StreakUnit
+  }> = []
   for (let index = 1; index < eras.length; index += 1) {
     const from = streakUnitOf(eras[index - 1]!.frequency)
     const to = streakUnitOf(eras[index]!.frequency)
-    if (from !== to) unitChanges.push({ on: eras[index]!.effectiveFrom, from, to })
+    if (from !== to)
+      unitChanges.push({ on: eras[index]!.effectiveFrom, from, to })
   }
 
   const startedOn = input.startedOn
@@ -261,8 +277,12 @@ export const habitStreak = (input: StreakInput): StreakResult => {
   const entries = new Map<LocalDate, HabitEntryStatus>()
   for (const entry of input.entries) {
     if (entry.localDate < startedOn || entry.localDate > today) continue
-    if (entry.status !== "done" && entry.status !== "partial" && entry.status !== "missed") {
-      throw new Error("habit streak: unknown habit entry status")
+    if (
+      entry.status !== 'done' &&
+      entry.status !== 'partial' &&
+      entry.status !== 'missed'
+    ) {
+      throw new Error('habit streak: unknown habit entry status')
     }
     entries.set(entry.localDate, entry.status)
   }
@@ -285,7 +305,7 @@ export const habitStreak = (input: StreakInput): StreakResult => {
     const era = eras[eraIndex]!
     const unit = streakUnitOf(era.frequency)
 
-    if (unit === "day") {
+    if (unit === 'day') {
       // Every day is stepped over; only expected days are periods, so a rest
       // day is transparent (R5) and never breaks or extends a run.
       const day = cursor
@@ -297,10 +317,11 @@ export const habitStreak = (input: StreakInput): StreakResult => {
       const open = day === today
       const frequency = era.frequency
       const requirement = requirementOf(frequency)
-      const weighted = WEIGHT[entries.get(day) ?? "missed"] ?? 0
+      const weighted = WEIGHT[entries.get(day) ?? 'missed'] ?? 0
       const credit = entries.has(day) ? CREDIT[entries.get(day)!]! : 0
       const satisfied = credit >= requirement
-      const inWindow = start >= windowStart && end <= today && start >= startedOn
+      const inWindow =
+        start >= windowStart && end <= today && start >= startedOn
       const period: StreakPeriod = {
         unit,
         start,
@@ -311,7 +332,7 @@ export const habitStreak = (input: StreakInput): StreakResult => {
         weighted,
         satisfied,
         open,
-        inWindow
+        inWindow,
       }
       periods.push(period)
 
@@ -337,7 +358,8 @@ export const habitStreak = (input: StreakInput): StreakResult => {
     // Week unit. The opening week is the one containing `startedOn`, even
     // though its Saturday precedes it (R11); later eras are guaranteed to
     // open on a Saturday by #63, so the cursor is already a period start.
-    const start = firstPeriod && eraIndex === 0 ? saturdayOnOrBefore(startedOn) : cursor
+    const start =
+      firstPeriod && eraIndex === 0 ? saturdayOnOrBefore(startedOn) : cursor
     const end = countingWeekEnd(start)
     cursor = addDays(end, 1)
 
@@ -368,7 +390,7 @@ export const habitStreak = (input: StreakInput): StreakResult => {
       weighted,
       satisfied,
       open,
-      inWindow
+      inWindow,
     }
     periods.push(period)
 
@@ -390,8 +412,9 @@ export const habitStreak = (input: StreakInput): StreakResult => {
     firstPeriod = false
   }
 
-  const currentUnit = periods.length > 0 ? periods[periods.length - 1]!.unit : firstUnit
-  const openPeriod = periods.find((period) => period.open) ?? null
+  const currentUnit =
+    periods.length > 0 ? periods[periods.length - 1]!.unit : firstUnit
+  const openPeriod = periods.find(period => period.open) ?? null
 
   // ── Success rate (§5.5) ────────────────────────────────────────────────
   //
@@ -407,13 +430,16 @@ export const habitStreak = (input: StreakInput): StreakResult => {
       (period.open && period.satisfied && period.start >= startedOn))
 
   let rate: number | null = null
-  if (currentUnit === "day") {
+  if (currentUnit === 'day') {
     const included = periods.filter(
-      (period) => period.unit === "day" && qualifies(period)
+      period => period.unit === 'day' && qualifies(period),
     )
     const denominator = included.length
     if (denominator > 0) {
-      let numerator = included.reduce((total, period) => total + period.weighted, 0)
+      let numerator = included.reduce(
+        (total, period) => total + period.weighted,
+        0,
+      )
       // A rest-day entry is bonus weight, never a denominator place (E12).
       for (
         let day = maxDate(windowStart, startedOn);
@@ -423,7 +449,7 @@ export const habitStreak = (input: StreakInput): StreakResult => {
         const status = entries.get(day)
         if (status === undefined) continue
         const era = eras[eraIndexAt(eras, day)]!
-        if (streakUnitOf(era.frequency) !== "day") continue
+        if (streakUnitOf(era.frequency) !== 'day') continue
         if (isExpectedDay(era.frequency, day)) continue
         numerator += WEIGHT[status]!
       }
@@ -433,12 +459,13 @@ export const habitStreak = (input: StreakInput): StreakResult => {
     // `currentUnit === "week"` means the last applicable period is a week, so
     // every week period has a `times` requirement.
     const included = periods.filter(
-      (period) => period.unit === "week" && qualifies(period)
+      period => period.unit === 'week' && qualifies(period),
     )
     if (included.length > 0) {
       const total = included.reduce(
-        (sum, period) => sum + Math.min(1, period.weighted / period.requirement),
-        0
+        (sum, period) =>
+          sum + Math.min(1, period.weighted / period.requirement),
+        0,
       )
       rate = total / included.length
     }
@@ -449,12 +476,12 @@ export const habitStreak = (input: StreakInput): StreakResult => {
       unit: currentUnit,
       count: run,
       since:
-        runStart === null || run === 0 ? null : maxDate(runStart, startedOn)
+        runStart === null || run === 0 ? null : maxDate(runStart, startedOn),
     },
     open: openPeriod,
     best: { days: bestDays, weeks: bestWeeks },
     rate,
     periods,
-    unitChanges
+    unitChanges,
   }
 }

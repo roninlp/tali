@@ -33,6 +33,7 @@ export const CalendarTiming = Schema.Union([
     date: Schema.String,
   }),
 ])
+
 export type CalendarTiming = typeof CalendarTiming.Type
 
 export const CalendarRecurrenceEnd = Schema.Union([
@@ -40,6 +41,7 @@ export const CalendarRecurrenceEnd = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal('count'), count: Schema.Int }),
   Schema.Struct({ _tag: Schema.Literal('until'), date: Schema.String }),
 ])
+
 export type CalendarRecurrenceEnd = typeof CalendarRecurrenceEnd.Type
 
 export const CalendarRecurrenceRule = Schema.Struct({
@@ -52,6 +54,7 @@ export const CalendarRecurrenceRule = Schema.Struct({
   ),
   end: CalendarRecurrenceEnd,
 })
+
 export type CalendarRecurrenceRule = typeof CalendarRecurrenceRule.Type
 
 export const CalendarExceptionOverrides = Schema.Struct({
@@ -62,6 +65,7 @@ export const CalendarExceptionOverrides = Schema.Struct({
   timing: Schema.optional(CalendarTiming),
   timeZone: Schema.optional(Schema.String),
 })
+
 export type CalendarExceptionOverrides = typeof CalendarExceptionOverrides.Type
 
 export const CalendarEventException = Schema.Struct({
@@ -71,6 +75,7 @@ export const CalendarEventException = Schema.Struct({
   overrides: Schema.NullOr(CalendarExceptionOverrides),
   createdAt: Schema.String,
 })
+
 export type CalendarEventException = typeof CalendarEventException.Type
 
 export const CalendarWeekStart = Schema.Literals([
@@ -78,12 +83,15 @@ export const CalendarWeekStart = Schema.Literals([
   'sunday',
   'monday',
 ])
+
 export type CalendarWeekStart = typeof CalendarWeekStart.Type
 
 export const CalendarTaskStatus = Schema.Literals(['todo', 'doing', 'done'])
+
 export type CalendarTaskStatus = typeof CalendarTaskStatus.Type
 
 export const CalendarPriority = Schema.Literals(['high', 'medium', 'low'])
+
 export type CalendarPriority = typeof CalendarPriority.Type
 
 export const CalendarTaskSource = Schema.Struct({
@@ -96,6 +104,7 @@ export const CalendarTaskSource = Schema.Struct({
   recurrence: Schema.NullOr(CalendarRecurrenceRule),
   recurrenceMode: Schema.NullOr(Schema.Literals(['onCompletion', 'onDueDate'])),
 })
+
 export type CalendarTaskSource = typeof CalendarTaskSource.Type
 
 export const CalendarEventSource = Schema.Struct({
@@ -111,6 +120,7 @@ export const CalendarEventSource = Schema.Struct({
   recurrence: Schema.NullOr(CalendarRecurrenceRule),
   exceptions: Schema.Array(CalendarEventException),
 })
+
 export type CalendarEventSource = typeof CalendarEventSource.Type
 
 export const CalendarOccasionSource = Schema.Struct({
@@ -122,6 +132,7 @@ export const CalendarOccasionSource = Schema.Struct({
   yearly: Schema.Boolean,
   advanceReminderDays: Schema.NullOr(Schema.Int),
 })
+
 export type CalendarOccasionSource = typeof CalendarOccasionSource.Type
 
 export const CalendarTaskItem = Schema.Struct({
@@ -134,6 +145,7 @@ export const CalendarTaskItem = Schema.Struct({
   projected: Schema.Boolean,
   recurring: Schema.Boolean,
 })
+
 export type CalendarTaskItem = typeof CalendarTaskItem.Type
 
 export const CalendarEventOccurrence = Schema.Struct({
@@ -154,6 +166,7 @@ export const CalendarEventOccurrence = Schema.Struct({
   overridden: Schema.Boolean,
   exceptionId: Schema.NullOr(Schema.String),
 })
+
 export type CalendarEventOccurrence = typeof CalendarEventOccurrence.Type
 
 export const CalendarCalendarDate = Schema.Struct({
@@ -161,6 +174,7 @@ export const CalendarCalendarDate = Schema.Struct({
   month: Schema.Int,
   day: Schema.Int,
 })
+
 export type CalendarCalendarDate = typeof CalendarCalendarDate.Type
 
 export const CalendarOccasionOccurrence = Schema.Struct({
@@ -177,6 +191,7 @@ export const CalendarOccasionOccurrence = Schema.Struct({
   advanceReminderDate: Schema.NullOr(Schema.String),
   advanceReminderAt: Schema.NullOr(Schema.String),
 })
+
 export type CalendarOccasionOccurrence = typeof CalendarOccasionOccurrence.Type
 
 export const CalendarLaneCounts = Schema.Struct({
@@ -186,6 +201,7 @@ export const CalendarLaneCounts = Schema.Struct({
   reminders: Schema.Int,
   habits: Schema.Int,
 })
+
 export type CalendarLaneCounts = typeof CalendarLaneCounts.Type
 
 export const CalendarLaneEmpty = Schema.Struct({
@@ -195,6 +211,7 @@ export const CalendarLaneEmpty = Schema.Struct({
   reminders: Schema.Boolean,
   habits: Schema.Boolean,
 })
+
 export type CalendarLaneEmpty = typeof CalendarLaneEmpty.Type
 
 export const CalendarDay = Schema.Struct({
@@ -205,6 +222,7 @@ export const CalendarDay = Schema.Struct({
   counts: CalendarLaneCounts,
   empty: CalendarLaneEmpty,
 })
+
 export type CalendarDay = typeof CalendarDay.Type
 
 /**
@@ -221,6 +239,7 @@ export const CalendarWeekPayload = Schema.Struct({
   events: Schema.Array(CalendarEventSource),
   occasions: Schema.Array(CalendarOccasionSource),
 })
+
 export type CalendarWeekPayload = typeof CalendarWeekPayload.Type
 
 /** The subset of `GET /month` the screen needs; `day` is rebuilt locally. */
@@ -235,6 +254,7 @@ export const CalendarMonthPayload = Schema.Struct({
   events: Schema.Array(CalendarEventSource),
   occasions: Schema.Array(CalendarOccasionSource),
 })
+
 export type CalendarMonthPayload = typeof CalendarMonthPayload.Type
 
 /**

@@ -1,6 +1,6 @@
-import { env } from "cloudflare:workers"
-import { describe, expect, it } from "vitest"
-import type { SyncPushResult } from "@tali/domain"
+import { env } from 'cloudflare:workers'
+import { describe, expect, it } from 'vitest'
+import type { SyncPushResult } from '@tali/domain'
 import {
   assertAcknowledgements,
   assertCursorsNonDecreasing,
@@ -8,10 +8,10 @@ import {
   newTelemetry,
   withRpc,
   type Account,
-  type AckSource
-} from "./harness"
-import { resolveLabMode } from "./mode"
-import { decodeWriteToken, SLOT_COUNT, WRITE_TOKEN_COUNT } from "./program"
+  type AckSource,
+} from './harness'
+import { resolveLabMode } from './mode'
+import { decodeWriteToken, SLOT_COUNT, WRITE_TOKEN_COUNT } from './program'
 
 /**
  * Unit tests for the harness itself.
@@ -26,50 +26,54 @@ import { decodeWriteToken, SLOT_COUNT, WRITE_TOKEN_COUNT } from "./program"
 const account = (userId: string): Account => ({
   userId,
   email: `${userId}@example.com`,
-  cookie: `tali_session=${userId}`
+  cookie: `tali_session=${userId}`,
 })
 
 const result = (
-  tag: SyncPushResult["_tag"],
+  tag: SyncPushResult['_tag'],
   clientMutationId: string,
-  code = "UniqueViolation"
+  code = 'UniqueViolation',
 ): SyncPushResult =>
-  (tag === "rejected"
+  (tag === 'rejected'
     ? {
         _tag: tag,
         clientMutationId,
-        entityType: "task",
-        entityId: "entity",
+        entityType: 'task',
+        entityId: 'entity',
         code,
-        message: "synthetic"
+        message: 'synthetic',
       }
     : {
         _tag: tag,
         clientMutationId,
-        entityType: "task",
-        entityId: "entity",
+        entityType: 'task',
+        entityId: 'entity',
         version: 1,
-        seq: 1
+        seq: 1,
       }) as SyncPushResult
 
 const ackSource = (results: ReadonlyArray<SyncPushResult>): AckSource => {
   const telemetry = newTelemetry()
   telemetry.results.push(...results)
   return {
-    label: "A",
-    mutationIds: new Set(results.map((entry) => entry.clientMutationId)),
-    telemetry
+    label: 'A',
+    mutationIds: new Set(results.map(entry => entry.clientMutationId)),
+    telemetry,
   }
 }
 
-describe("conflict lab harness", () => {
-  it("carries the nightly flag into the worker", () => {
+describe('conflict lab harness', () => {
+  it('carries the nightly flag into the worker', () => {
     expect(LAB_MODE).toEqual(resolveLabMode(env.CONFLICT_LAB_NIGHTLY))
-    expect(resolveLabMode("1").numRuns).toBeGreaterThan(resolveLabMode(undefined).numRuns)
-    expect(resolveLabMode("1").maxSteps).toBeGreaterThan(resolveLabMode(undefined).maxSteps)
+    expect(resolveLabMode('1').numRuns).toBeGreaterThan(
+      resolveLabMode(undefined).numRuns,
+    )
+    expect(resolveLabMode('1').maxSteps).toBeGreaterThan(
+      resolveLabMode(undefined).maxSteps,
+    )
   })
 
-  it("generates every write kind, both devices and every slot", () => {
+  it('generates every write kind, both devices and every slot', () => {
     const kinds = new Set<number>()
     const devices = new Set<number>()
     const slots = new Set<number>()
@@ -86,52 +90,62 @@ describe("conflict lab harness", () => {
     expect(slots.size).toBe(SLOT_COUNT)
   })
 
-  it("accepts exactly-once replay but rejects a re-executed mutation", () => {
-    expect(() => assertAcknowledgements([
-      ackSource([result("applied", "m"), result("alreadyApplied", "m")])
-    ])).not.toThrow()
+  it('accepts exactly-once replay but rejects a re-executed mutation', () => {
+    expect(() =>
+      assertAcknowledgements([
+        ackSource([result('applied', 'm'), result('alreadyApplied', 'm')]),
+      ]),
+    ).not.toThrow()
     // The shapes a broken `applied_mutations` dedupe produces: a replayed
     // create comes back as a second rejection, a replayed edit as a conflict.
-    expect(() => assertAcknowledgements([
-      ackSource([result("applied", "m"), result("rejected", "m")])
-    ])).toThrow(/re-executed/)
-    expect(() => assertAcknowledgements([
-      ackSource([result("applied", "m"), result("conflict", "m")])
-    ])).toThrow(/re-executed/)
+    expect(() =>
+      assertAcknowledgements([
+        ackSource([result('applied', 'm'), result('rejected', 'm')]),
+      ]),
+    ).toThrow(/re-executed/)
+    expect(() =>
+      assertAcknowledgements([
+        ackSource([result('applied', 'm'), result('conflict', 'm')]),
+      ]),
+    ).toThrow(/re-executed/)
   })
 
-  it("accepts the documented create-create race and rejects a lost ack", () => {
-    expect(() => assertAcknowledgements([
-      ackSource([result("rejected", "m")])
-    ])).not.toThrow()
+  it('accepts the documented create-create race and rejects a lost ack', () => {
+    expect(() =>
+      assertAcknowledgements([ackSource([result('rejected', 'm')])]),
+    ).not.toThrow()
     // Queued but never answered.
-    expect(() => assertAcknowledgements([{
-      label: "A",
-      mutationIds: new Set(["m"]),
-      telemetry: newTelemetry()
-    }])).toThrow(/lost the ack/)
+    expect(() =>
+      assertAcknowledgements([
+        {
+          label: 'A',
+          mutationIds: new Set(['m']),
+          telemetry: newTelemetry(),
+        },
+      ]),
+    ).toThrow(/lost the ack/)
   })
 
-  it("rejects a cursor that moves backwards", () => {
-    expect(() => assertCursorsNonDecreasing("A", [1, 4, 3])).toThrow(/rewound/)
-    expect(() => assertCursorsNonDecreasing("A", [1, 4, 4])).not.toThrow()
+  it('rejects a cursor that moves backwards', () => {
+    expect(() => assertCursorsNonDecreasing('A', [1, 4, 3])).toThrow(/rewound/)
+    expect(() => assertCursorsNonDecreasing('A', [1, 4, 4])).not.toThrow()
   })
 
-  it("restores the original fetch after overlapping RPC calls", async () => {
+  it('restores the original fetch after overlapping RPC calls', async () => {
     const original = globalThis.fetch
     const delay = (): Promise<void> =>
-      new Promise((resolve) => setTimeout(resolve, 5))
+      new Promise(resolve => setTimeout(resolve, 5))
     const values = await Promise.all([
-      withRpc(account("a"), async () => {
+      withRpc(account('a'), async () => {
         await delay()
-        return "a"
+        return 'a'
       }),
-      withRpc(account("b"), async () => {
+      withRpc(account('b'), async () => {
         await delay()
-        return "b"
-      })
+        return 'b'
+      }),
     ])
-    expect(values).toEqual(["a", "b"])
+    expect(values).toEqual(['a', 'b'])
     expect(globalThis.fetch).toBe(original)
   })
 })

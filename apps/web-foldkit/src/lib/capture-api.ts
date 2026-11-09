@@ -22,6 +22,7 @@ export const CaptureFailure = Schema.Struct({
   message: Schema.String,
   retryAfterSeconds: Schema.optional(Schema.Int),
 })
+
 export type CaptureFailure = typeof CaptureFailure.Type
 
 export type CaptureApiResult<A> =
@@ -62,12 +63,15 @@ const messageFor = (tag: string | undefined): string => {
 
 export const captureFailureOf = (error: unknown): CaptureFailure => {
   const tag = tagOf(error)
+
   const rawRetry =
     error !== null && typeof error === 'object' && 'retryAfterSeconds' in error
       ? Number(error.retryAfterSeconds)
       : undefined
+
   const retryAfterSeconds =
     rawRetry !== undefined && Number.isFinite(rawRetry) ? rawRetry : undefined
+
   return {
     code: tag ?? 'Network',
     message: messageFor(tag),
@@ -80,25 +84,29 @@ const run = <A, E>(
 ): Effect.Effect<CaptureApiResult<A>> =>
   effect.pipe(
     Effect.match({
-      onFailure: (error) => ({ ok: false as const, error: captureFailureOf(error) }),
-      onSuccess: (value) => ({ ok: true as const, value }),
+      onFailure: error => ({
+        ok: false as const,
+        error: captureFailureOf(error),
+      }),
+      onSuccess: value => ({ ok: true as const, value }),
     }),
   )
 
 export const dissectCapture = (input: { readonly text: string }) =>
-  run(withRpcClient((client) => client.DissectCapture(input)))
+  run(withRpcClient(client => client.DissectCapture(input)))
 
 export const commitCapture = (input: {
   readonly captureId: CaptureId
   readonly drafts: ReadonlyArray<CaptureDraft>
-}) => run(withRpcClient((client) => client.CommitCapture(input)))
+}) => run(withRpcClient(client => client.CommitCapture(input)))
 
 export const listCaptures = (input: { readonly limit?: number } = {}) =>
-  run(withRpcClient((client) => client.ListCaptures(input)))
+  run(withRpcClient(client => client.ListCaptures(input)))
 
 export const deleteCapture = (input: { readonly captureId: CaptureId }) =>
-  run(withRpcClient((client) => client.DeleteCapture(input)))
+  run(withRpcClient(client => client.DeleteCapture(input)))
 
 /** The result strip's rows are links; the page maps the type to a route. */
 export type CaptureCreatedRow = Capture['createdIds'][number]
+
 export type CaptureCommitOutcome = CaptureCommitResult

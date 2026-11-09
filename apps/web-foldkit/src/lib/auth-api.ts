@@ -35,15 +35,18 @@ import { API_URL } from './config'
 const REQUEST_TIMEOUT_MS = 15_000
 
 export const AuthErrorCode = Schema.Literals(AUTH_ERROR_CODES)
+
 export type AuthErrorCode = typeof AuthErrorCode.Type
 
 export const AuthFailureCode = Schema.Literals([...AUTH_ERROR_CODES, 'Network'])
+
 export type AuthFailureCode = typeof AuthFailureCode.Type
 
 export const AuthFailure = Schema.Struct({
   code: AuthFailureCode,
   retryable: Schema.Boolean,
 })
+
 export type AuthFailure = typeof AuthFailure.Type
 
 const ErrorEnvelope = Schema.Struct({
@@ -124,12 +127,14 @@ const send = <A>(
     }
 
     const response = maybeResponse.value
+
     const maybeJson = yield* Effect.option(
       Effect.tryPromise({
         try: () => response.json(),
         catch: () => undefined,
       }),
     )
+
     const json: unknown = Option.getOrUndefined(maybeJson)
 
     if (!response.ok) {

@@ -8,9 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "format": "oxfmt",
     "test": "vitest run",
-    "lint": "oxlint src && effect-tsgo patch --no-typescript --oxlint && oxlint --config .oxlintrc.effect.json --deny-warnings src"
+    "lint:effect": "effect-tsgo patch --no-typescript --oxlint && oxlint --config .oxlintrc.effect.json --deny-warnings src"
   },
   "dependencies": {
     "@effect/platform-browser": "catalog:",
@@ -32,12 +31,13 @@
     "@tailwindcss/vite": "catalog:",
     "fake-indexeddb": "catalog:",
     "happy-dom": "^20.14.5",
-    "oxfmt": "^0.66.0",
     "oxlint": "catalog:",
     "oxlint-tsgolint": "7.0.2003",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "@tali/lint-config": "workspace:*",
+    "@tali/tsconfig": "workspace:*"
   }
 }

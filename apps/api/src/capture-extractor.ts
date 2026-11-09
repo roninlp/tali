@@ -1,6 +1,6 @@
-import { Context, Duration, Effect, Layer, Ref, Result, Schedule } from "effect"
-import { chat as aiChat } from "@tanstack/ai-effect"
-import { openaiCompatibleText } from "@tanstack/ai-openai/compatible"
+import { Context, Duration, Effect, Layer, Ref, Result, Schedule } from 'effect'
+import { chat as aiChat } from '@tanstack/ai-effect'
+import { openaiCompatibleText } from '@tanstack/ai-openai/compatible'
 import {
   CAPTURE_MAX_DRAFTS,
   type CaptureDraft,
@@ -12,10 +12,10 @@ import {
   normalizeCaptureText,
   toJalaliDateInZone,
   toIsoDate,
-  formatJalaliDate
-} from "@tali/domain"
-import type { UserId, WeekStart } from "@tali/domain"
-import { makeDraftTools } from "./capture-tools.js"
+  formatJalaliDate,
+} from '@tali/domain'
+import type { UserId, WeekStart } from '@tali/domain'
+import { makeDraftTools } from './capture-tools.js'
 
 /**
  * `Extractor` — the one model run behind a Capture (ADR-0012 §7; ticket #101).
@@ -37,10 +37,11 @@ import { makeDraftTools } from "./capture-tools.js"
 // ── Config ────────────────────────────────────────────────────────────────
 
 /** The OpenCode Go gateway root. The pay-as-you-go root is different. */
-export const DEFAULT_CAPTURE_BASE_URL = "https://opencode.ai/inference/go/openai/v1"
-export const DEFAULT_CAPTURE_MODEL = "deepseek-v4.1-flash"
+export const DEFAULT_CAPTURE_BASE_URL =
+  'https://opencode.ai/inference/go/openai/v1'
+export const DEFAULT_CAPTURE_MODEL = 'deepseek-v4.1-flash'
 /** A non-generic UA; the gateway rejects the SDK default. */
-export const DEFAULT_CAPTURE_USER_AGENT = "tali-capture/0.1"
+export const DEFAULT_CAPTURE_USER_AGENT = 'tali-capture/0.1'
 /**
  * The whole Dissect budget, retry included (ADR-0012 §9).
  *
@@ -60,7 +61,7 @@ export const CAPTURE_TIMEOUT_SECONDS = 60
  * so it cannot map the normalized `reasoning` option to a provider value; the
  * field has to ride `modelOptions`, which the adapter spreads into the request.
  */
-export const CAPTURE_MODEL_OPTIONS = { reasoning_effort: "none" } as const
+export const CAPTURE_MODEL_OPTIONS = { reasoning_effort: 'none' } as const
 
 export interface CaptureConfigValue {
   /** `undefined` means the feature is inert: Dissect fails typed, not raw. */
@@ -69,9 +70,10 @@ export interface CaptureConfigValue {
   readonly model: string
 }
 
-export class CaptureConfig extends Context.Service<CaptureConfig, CaptureConfigValue>()(
-  "CaptureConfig"
-) {}
+export class CaptureConfig extends Context.Service<
+  CaptureConfig,
+  CaptureConfigValue
+>()('CaptureConfig') {}
 
 export interface CaptureEnv {
   readonly OPENCODE_API_KEY?: string | undefined
@@ -83,7 +85,7 @@ export interface CaptureEnv {
 export const captureConfigOf = (env: CaptureEnv): CaptureConfigValue => ({
   apiKey: env.OPENCODE_API_KEY?.trim() || undefined,
   baseUrl: env.CAPTURE_BASE_URL?.trim() || DEFAULT_CAPTURE_BASE_URL,
-  model: env.CAPTURE_MODEL?.trim() || DEFAULT_CAPTURE_MODEL
+  model: env.CAPTURE_MODEL?.trim() || DEFAULT_CAPTURE_MODEL,
 })
 
 // ── Service contract ──────────────────────────────────────────────────────
@@ -103,18 +105,20 @@ export interface ExtractInput {
 
 export interface ExtractorApi {
   readonly dissect: (
-    input: ExtractInput
+    input: ExtractInput,
   ) => Effect.Effect<ReadonlyArray<CaptureDraft>, CaptureServiceError>
 }
 
-export class Extractor extends Context.Service<Extractor, ExtractorApi>()("Extractor") {}
+export class Extractor extends Context.Service<Extractor, ExtractorApi>()(
+  'Extractor',
+) {}
 
 // ── Prompt ────────────────────────────────────────────────────────────────
 
 const WEEK_START_LABELS: Readonly<Record<WeekStart, string>> = {
-  saturday: "شنبه",
-  sunday: "یکشنبه",
-  monday: "دوشنبه"
+  saturday: 'شنبه',
+  sunday: 'یکشنبه',
+  monday: 'دوشنبه',
 }
 
 /**
@@ -125,56 +129,58 @@ const WEEK_START_LABELS: Readonly<Record<WeekStart, string>> = {
 export const captureSystemPrompt = (input: ExtractInput): string => {
   const today = toJalaliDateInZone(new Date(input.now), input.timeZone)
   const todayIso = toIsoDate(today)
-  const todayJalali = formatJalaliDate(today, { style: "long" })
+  const todayJalali = formatJalaliDate(today, { style: 'long' })
 
   return [
-    "تو «تجزیه‌کننده‌ی کپچر» تالی هستی. متن فارسی کاربر را می‌خوانی و فقط با فراخوانی ابزارها، ردیف‌های پیشنهادی می‌سازی. چت نمی‌کنی و پاسخ متنی نمی‌دهی.",
-    "",
+    'تو «تجزیه‌کننده‌ی کپچر» تالی هستی. متن فارسی کاربر را می‌خوانی و فقط با فراخوانی ابزارها، ردیف‌های پیشنهادی می‌سازی. چت نمی‌کنی و پاسخ متنی نمی‌دهی.',
+    '',
     `امروز: ${todayIso} (${todayJalali})`,
     `منطقه‌ی زمانی: ${input.timeZone}`,
     `شروع هفته: ${WEEK_START_LABELS[input.weekStart]}`,
-    "",
-    "قواعد الزامی:",
-    "۱. برای هر نیت مستقل دقیقاً یک فراخوانی ابزار بزن. دو نیت را در یک پیش‌نویس ادغام نکن و هیچ نیتی را جا نینداز. مثال: «فردا ساعت ۵ دکتر دارم و یادم باشه قرص رو بگیرم» دو پیش‌نویس است: یک رویداد دکتر و یک یادآور قرص.",
-    "۲. هیچ تاریخ، ساعت، تکرار یا زمان یادآوری‌ای را که در متن نیست از خودت نساز. اگر برای کامل‌شدن پیش‌نویس لازم است و متن آن را نگفته، در آرایه‌ی missing یک ورودی با field، shape و question فارسی بگذار. shape یکی از instant، localDate، clockTime، frequency یا repeat است.",
-    "۳. sourceQuote باید دقیقاً یک برش لفظی از متن کاربر باشد؛ بازنویسی، خلاصه یا ترجمه ممنوع.",
-    "۴. عنوان و متن را با کلمات خود کاربر بنویس و بازنویسی نکن. عنوان کوتاه اما وفادار باشد.",
-    "۵. پیش‌فرض‌های بی‌صدا فقط برای فیلدهای قابل ویرایش روی کارت: وضعیت کار todo؛ رویدادی که روز دارد ولی ساعت ندارد allDay؛ kind یادآور general؛ عادتی که ریتم ندارد daily. هیچ تاریخ/ساعت/تکرار دیگری را پیش‌فرض نگیر.",
-    "۶. حداکثر ۱۲ پیش‌نویس. اگر متن بیشتر از این دارد، نیت‌های مرتبط را در یک پیش‌نویس ادغام کن، نه اینکه از سقف رد شوی.",
-    "۷. متن غیرقابل‌اقدام یا یک ایده را به‌صورت یک note بده: عنوان از خط اول، body کل متن به‌صورت متن ساده (نه ProseMirror).",
-    "۸. فقط task، event، note، habit و reminder بساز. فهرست، آیتم فهرست، مناسبت، پروژه، برچسب، ویرایش ردیف موجود و پیوند به ردیف موجود ممنوع است.",
-    "۹. تاریخ‌ها YYYY-MM-DD، لحظه‌ها ISO با Z (یا با offset که سرور به UTC تبدیل می‌کند)، ساعت‌ها HH:mm.",
-    "۱۰. اگر متن هیچ نیت قابل‌اقدامی ندارد، یک note با کل متن بساز؛ سکوت نتیجه نیست.",
-    "",
-    "راهنمای فیلدها:",
-    "- draft_task: title؛ در صورت وجود description، status، priority، dueDate یا dueAt، recurrence. اگر فقط روز گفته شده dueDate بگذار؛ اگر ساعت هم گفته شده dueAt.",
-    "- draft_event: title و timing (timed با start/end یا allDay با date)؛ location، people، recurrence در صورت وجود.",
-    "- draft_note: title و body متن ساده.",
-    "- draft_habit: title و frequency (daily/weekdays/weekly) فقط اگر متن گفته باشد؛ reminderTime اگر ساعت محلی گفته شده.",
-    "- draft_reminder: title، kind و repeat؛ برای once اگر fireAt در متن نیست، آن را در missing بگذار.",
-    "",
-    "برای هر پیش‌نویس، missing را حتی وقتی خالی است بفرست. نام فیلد در missing باید دقیقاً یکی از این‌ها باشد: dueDate، dueAt، timing، timing.start، timing.end، repeat، repeat.time، frequency، fireAt، reminderTime. برای رویداد از timing.start و timing.end استفاده کن، نه startTime/endTime."
-  ].join("\n")
+    '',
+    'قواعد الزامی:',
+    '۱. برای هر نیت مستقل دقیقاً یک فراخوانی ابزار بزن. دو نیت را در یک پیش‌نویس ادغام نکن و هیچ نیتی را جا نینداز. مثال: «فردا ساعت ۵ دکتر دارم و یادم باشه قرص رو بگیرم» دو پیش‌نویس است: یک رویداد دکتر و یک یادآور قرص.',
+    '۲. هیچ تاریخ، ساعت، تکرار یا زمان یادآوری‌ای را که در متن نیست از خودت نساز. اگر برای کامل‌شدن پیش‌نویس لازم است و متن آن را نگفته، در آرایه‌ی missing یک ورودی با field، shape و question فارسی بگذار. shape یکی از instant، localDate، clockTime، frequency یا repeat است.',
+    '۳. sourceQuote باید دقیقاً یک برش لفظی از متن کاربر باشد؛ بازنویسی، خلاصه یا ترجمه ممنوع.',
+    '۴. عنوان و متن را با کلمات خود کاربر بنویس و بازنویسی نکن. عنوان کوتاه اما وفادار باشد.',
+    '۵. پیش‌فرض‌های بی‌صدا فقط برای فیلدهای قابل ویرایش روی کارت: وضعیت کار todo؛ رویدادی که روز دارد ولی ساعت ندارد allDay؛ kind یادآور general؛ عادتی که ریتم ندارد daily. هیچ تاریخ/ساعت/تکرار دیگری را پیش‌فرض نگیر.',
+    '۶. حداکثر ۱۲ پیش‌نویس. اگر متن بیشتر از این دارد، نیت‌های مرتبط را در یک پیش‌نویس ادغام کن، نه اینکه از سقف رد شوی.',
+    '۷. متن غیرقابل‌اقدام یا یک ایده را به‌صورت یک note بده: عنوان از خط اول، body کل متن به‌صورت متن ساده (نه ProseMirror).',
+    '۸. فقط task، event، note، habit و reminder بساز. فهرست، آیتم فهرست، مناسبت، پروژه، برچسب، ویرایش ردیف موجود و پیوند به ردیف موجود ممنوع است.',
+    '۹. تاریخ‌ها YYYY-MM-DD، لحظه‌ها ISO با Z (یا با offset که سرور به UTC تبدیل می‌کند)، ساعت‌ها HH:mm.',
+    '۱۰. اگر متن هیچ نیت قابل‌اقدامی ندارد، یک note با کل متن بساز؛ سکوت نتیجه نیست.',
+    '',
+    'راهنمای فیلدها:',
+    '- draft_task: title؛ در صورت وجود description، status، priority، dueDate یا dueAt، recurrence. اگر فقط روز گفته شده dueDate بگذار؛ اگر ساعت هم گفته شده dueAt.',
+    '- draft_event: title و timing (timed با start/end یا allDay با date)؛ location، people، recurrence در صورت وجود.',
+    '- draft_note: title و body متن ساده.',
+    '- draft_habit: title و frequency (daily/weekdays/weekly) فقط اگر متن گفته باشد؛ reminderTime اگر ساعت محلی گفته شده.',
+    '- draft_reminder: title، kind و repeat؛ برای once اگر fireAt در متن نیست، آن را در missing بگذار.',
+    '',
+    'برای هر پیش‌نویس، missing را حتی وقتی خالی است بفرست. نام فیلد در missing باید دقیقاً یکی از این‌ها باشد: dueDate، dueAt، timing، timing.start، timing.end، repeat، repeat.time، frequency، fireAt، reminderTime. برای رویداد از timing.start و timing.end استفاده کن، نه startTime/endTime.',
+  ].join('\n')
 }
 
 // ── Live layer ────────────────────────────────────────────────────────────
 
-const sessionIdFor = (userId: string): Effect.Effect<string, ModelUnavailable> =>
+const sessionIdFor = (
+  userId: string,
+): Effect.Effect<string, ModelUnavailable> =>
   Effect.tryPromise({
     try: async () => {
       const bytes = new TextEncoder().encode(userId)
-      const digest = await crypto.subtle.digest("SHA-256", bytes)
-      const hex = Array.from(new Uint8Array(digest), (byte) =>
-        byte.toString(16).padStart(2, "0")
-      ).join("")
+      const digest = await crypto.subtle.digest('SHA-256', bytes)
+      const hex = Array.from(new Uint8Array(digest), byte =>
+        byte.toString(16).padStart(2, '0'),
+      ).join('')
       return `ses_${hex.slice(0, 32)}`
     },
-    catch: (error) =>
+    catch: error =>
       new ModelUnavailable({
         message: `could not derive the OpenCode session id: ${
           error instanceof Error ? error.message : String(error)
-        }`
-      })
+        }`,
+      }),
   })
 
 /**
@@ -182,45 +188,46 @@ const sessionIdFor = (userId: string): Effect.Effect<string, ModelUnavailable> =
  * generic User-Agent. `wrapFetch` is the adapter's middleware point, so both
  * ride every request the SDK makes (including retries).
  */
-const captureFetchWrapper = (config: { readonly apiKey: string; readonly sessionId: string }) =>
+const captureFetchWrapper =
+  (config: { readonly apiKey: string; readonly sessionId: string }) =>
   (next: typeof fetch): typeof fetch =>
-    (input, init) => {
-      const headers = new Headers(init?.headers)
-      headers.set("authorization", `Bearer ${config.apiKey}`)
-      headers.set("x-opencode-session", config.sessionId)
-      headers.set("user-agent", DEFAULT_CAPTURE_USER_AGENT)
-      return next(input, { ...init, headers })
-    }
+  (input, init) => {
+    const headers = new Headers(init?.headers)
+    headers.set('authorization', `Bearer ${config.apiKey}`)
+    headers.set('x-opencode-session', config.sessionId)
+    headers.set('user-agent', DEFAULT_CAPTURE_USER_AGENT)
+    return next(input, { ...init, headers })
+  }
 
 const toModelError = (error: unknown): ModelTimeout | ModelUnavailable => {
   if (
     error !== null &&
-    typeof error === "object" &&
-    "_tag" in error &&
-    error._tag === "TimeoutError"
+    typeof error === 'object' &&
+    '_tag' in error &&
+    error._tag === 'TimeoutError'
   ) {
     return new ModelTimeout({ seconds: CAPTURE_TIMEOUT_SECONDS })
   }
   return new ModelUnavailable({
-    message: error instanceof Error ? error.message : String(error)
+    message: error instanceof Error ? error.message : String(error),
   })
 }
 
 export const ExtractorLive = Layer.effect(
   Extractor,
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     const config = yield* CaptureConfig
 
     const dissect = (
-      input: ExtractInput
+      input: ExtractInput,
     ): Effect.Effect<ReadonlyArray<CaptureDraft>, CaptureServiceError> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         if (config.apiKey === undefined) {
           return yield* Effect.fail(
             new ModelUnavailable({
               message:
-                "OPENCODE_API_KEY is not configured; Capture is inert until it is set"
-            })
+                'OPENCODE_API_KEY is not configured; Capture is inert until it is set',
+            }),
           )
         }
 
@@ -229,17 +236,17 @@ export const ExtractorLive = Layer.effect(
         const adapter = openaiCompatibleText(config.model, {
           baseURL: config.baseUrl,
           apiKey,
-          api: "chat-completions"
+          api: 'chat-completions',
         })
 
-        const attempt = Effect.gen(function*() {
+        const attempt = Effect.gen(function* () {
           const collector = yield* Ref.make<ReadonlyArray<CaptureDraft>>([])
           const tools = makeDraftTools(collector, input.text)
 
           yield* aiChat({
             adapter,
             threadId: `capture-${input.userId}`,
-            messages: [{ role: "user", content: input.text }],
+            messages: [{ role: 'user', content: input.text }],
             systemPrompts: [captureSystemPrompt(input)],
             tools,
             stream: false as const,
@@ -249,7 +256,7 @@ export const ExtractorLive = Layer.effect(
             // the model's draft payloads: user titles, bodies, quotes, and
             // questions. Workers Logs would keep them for a week. Typed errors
             // and the spans below carry the diagnosis without the text.
-            debug: false
+            debug: false,
           })
 
           return yield* Ref.get(collector)
@@ -261,7 +268,7 @@ export const ExtractorLive = Layer.effect(
           Effect.timeout(Duration.seconds(CAPTURE_TIMEOUT_SECONDS)),
           Effect.mapError(toModelError),
           Effect.result,
-          Effect.timed
+          Effect.timed,
         )
 
         const drafts = Result.isSuccess(modelOutcome)
@@ -269,9 +276,11 @@ export const ExtractorLive = Layer.effect(
           : []
 
         yield* Effect.annotateCurrentSpan({
-          "capture.outcome": Result.isSuccess(modelOutcome) ? "ok" : "failed",
-          "capture.model.duration_ms": Math.round(Duration.toMillis(modelDuration)),
-          "capture.proposal_count": drafts.length
+          'capture.outcome': Result.isSuccess(modelOutcome) ? 'ok' : 'failed',
+          'capture.model.duration_ms': Math.round(
+            Duration.toMillis(modelDuration),
+          ),
+          'capture.proposal_count': drafts.length,
         })
 
         if (Result.isFailure(modelOutcome)) {
@@ -279,16 +288,16 @@ export const ExtractorLive = Layer.effect(
         }
         return drafts
       }).pipe(
-        Effect.withSpan("capture.model.call", {
+        Effect.withSpan('capture.model.call', {
           attributes: {
-            "capture.id": input.captureId,
-            "capture.model.name": config.model
-          }
-        })
+            'capture.id': input.captureId,
+            'capture.model.name': config.model,
+          },
+        }),
       )
 
     return { dissect } as const
-  })
+  }),
 )
 
 // ── Replay layer ──────────────────────────────────────────────────────────
@@ -303,19 +312,23 @@ export interface CaptureFixture {
  * The offline Extractor. Fixtures are looked up by the same Persian-folded key
  * the service dedupes on, so a spelling variant still finds its recording.
  */
-export const ExtractorReplay = (fixtures: ReadonlyArray<CaptureFixture>): Layer.Layer<Extractor> =>
+export const ExtractorReplay = (
+  fixtures: ReadonlyArray<CaptureFixture>,
+): Layer.Layer<Extractor> =>
   Layer.succeed(Extractor, {
-    dissect: (input) => {
+    dissect: input => {
       const key = captureDedupeKey(input.text)
-      const fixture = fixtures.find((candidate) => captureDedupeKey(candidate.text) === key)
+      const fixture = fixtures.find(
+        candidate => captureDedupeKey(candidate.text) === key,
+      )
       return fixture === undefined
         ? Effect.fail(
-          new ModelUnavailable({
-            message: `no replay fixture for Capture text: ${input.text}`
-          })
-        )
+            new ModelUnavailable({
+              message: `no replay fixture for Capture text: ${input.text}`,
+            }),
+          )
         : Effect.succeed(ensureCaptureDrafts(input.text, fixture.drafts))
-    }
+    },
   })
 
 // ── Shared post-processing ────────────────────────────────────────────────
@@ -327,7 +340,7 @@ export const ExtractorReplay = (fixtures: ReadonlyArray<CaptureFixture>): Layer.
  */
 export const ensureCaptureDrafts = (
   text: string,
-  drafts: ReadonlyArray<CaptureDraft>
+  drafts: ReadonlyArray<CaptureDraft>,
 ): ReadonlyArray<CaptureDraft> =>
   drafts.length > 0
     ? drafts.slice(0, CAPTURE_MAX_DRAFTS)
@@ -336,15 +349,16 @@ export const ensureCaptureDrafts = (
 /** A Note draft for non-actionable prose: title from the first line. */
 export const noteDraftFromText = (text: string): CaptureDraft => {
   const body = normalizeCaptureText(text)
-  const title = body
-    .split("\n")
-    .map((line) => line.trim())
-    .find((line) => line !== "") ?? "یادداشت"
+  const title =
+    body
+      .split('\n')
+      .map(line => line.trim())
+      .find(line => line !== '') ?? 'یادداشت'
   return {
-    _tag: "note",
+    _tag: 'note',
     title,
     body,
-    sourceQuote: body === "" ? text : body,
-    missing: []
+    sourceQuote: body === '' ? text : body,
+    missing: [],
   }
 }

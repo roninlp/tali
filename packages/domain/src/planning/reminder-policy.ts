@@ -1,10 +1,10 @@
-import { Temporal } from "temporal-polyfill/full"
+import { Temporal } from 'temporal-polyfill/full'
 import type {
   DispatchResponse,
   ReminderRepeat,
   ReminderTier,
-  ReminderType
-} from "./reminder.js"
+  ReminderType,
+} from './reminder.js'
 
 /**
  * The reminder scheduling policy (ticket #13, settled by ADR-0005).
@@ -61,24 +61,32 @@ const HOUR_MS = 60 * MINUTE_MS
 
 /** `medication` is the only critical tier in the MVP (#13 §2.2). */
 export const reminderTierFor = (kind: ReminderType): ReminderTier =>
-  kind === "medication" ? "critical" : "normal"
+  kind === 'medication' ? 'critical' : 'normal'
 
-const asInstant = (value: string): Temporal.Instant => Temporal.Instant.from(value)
+const asInstant = (value: string): Temporal.Instant =>
+  Temporal.Instant.from(value)
 
 const iso = (instant: Temporal.Instant): string =>
   new Date(Number(instant.epochMilliseconds)).toISOString()
 
 /** Parse a local `HH:mm` into hour/minute. */
-const clockOf = (time: string): { readonly hour: number; readonly minute: number } => {
-  const [hour, minute] = time.split(":").map(Number)
+const clockOf = (
+  time: string,
+): { readonly hour: number; readonly minute: number } => {
+  const [hour, minute] = time.split(':').map(Number)
   return { hour: hour ?? 0, minute: minute ?? 0 }
 }
 
 /** Is `instant` inside quiet hours in `timeZone`? (start inclusive, end exclusive) */
-export const isQuietHoursInstant = (instant: string, timeZone: string): boolean => {
+export const isQuietHoursInstant = (
+  instant: string,
+  timeZone: string,
+): boolean => {
   const zoned = asInstant(instant).toZonedDateTimeISO(timeZone)
   const minutes = zoned.hour * 60 + zoned.minute
-  return minutes >= QUIET_HOURS_START_MINUTES || minutes < QUIET_HOURS_END_MINUTES
+  return (
+    minutes >= QUIET_HOURS_START_MINUTES || minutes < QUIET_HOURS_END_MINUTES
+  )
 }
 
 /**
@@ -86,16 +94,23 @@ export const isQuietHoursInstant = (instant: string, timeZone: string): boolean 
  * a quiet-hours hold is flushed. Returns `null` when the instant is outside
  * the window.
  */
-export const quietHoursEndAfter = (instant: string, timeZone: string): string | null => {
+export const quietHoursEndAfter = (
+  instant: string,
+  timeZone: string,
+): string | null => {
   const zoned = asInstant(instant).toZonedDateTimeISO(timeZone)
   const minutes = zoned.hour * 60 + zoned.minute
-  if (minutes < QUIET_HOURS_START_MINUTES && minutes >= QUIET_HOURS_END_MINUTES) {
+  if (
+    minutes < QUIET_HOURS_START_MINUTES &&
+    minutes >= QUIET_HOURS_END_MINUTES
+  ) {
     return null
   }
   // Before 07:00 the flush is today; at/after 23:00 it is tomorrow.
-  const date = minutes >= QUIET_HOURS_START_MINUTES
-    ? zoned.toPlainDate().add({ days: 1 })
-    : zoned.toPlainDate()
+  const date =
+    minutes >= QUIET_HOURS_START_MINUTES
+      ? zoned.toPlainDate().add({ days: 1 })
+      : zoned.toPlainDate()
   const flush = date
     .toPlainDateTime({ hour: 7, minute: 0 })
     .toZonedDateTime(timeZone)
@@ -109,8 +124,8 @@ export const quietHoursEndAfter = (instant: string, timeZone: string): string | 
  * - `claim` — a dispatch row is written with `deliverAt`.
  */
 export type ReminderClaimPlan =
-  | { readonly _tag: "suppress" }
-  | { readonly _tag: "claim"; readonly deliverAt: string }
+  | { readonly _tag: 'suppress' }
+  | { readonly _tag: 'claim'; readonly deliverAt: string }
 
 /**
  * Evaluate one fire. `ownerTimeZone` comes from `user_preferences.time_zone`
@@ -123,19 +138,19 @@ export const reminderDeliverAt = (
     readonly silencedUntil: string | null
   },
   ownerTimeZone: string,
-  scheduledFor: string
+  scheduledFor: string,
 ): ReminderClaimPlan => {
   if (
     reminder.silencedUntil !== null &&
     Date.parse(reminder.silencedUntil) > Date.parse(scheduledFor)
   ) {
-    return { _tag: "suppress" }
+    return { _tag: 'suppress' }
   }
-  if (reminder.tier === "critical") {
-    return { _tag: "claim", deliverAt: scheduledFor }
+  if (reminder.tier === 'critical') {
+    return { _tag: 'claim', deliverAt: scheduledFor }
   }
   const flush = quietHoursEndAfter(scheduledFor, ownerTimeZone)
-  return { _tag: "claim", deliverAt: flush ?? scheduledFor }
+  return { _tag: 'claim', deliverAt: flush ?? scheduledFor }
 }
 
 /** Is a preset snooze length legal? */
@@ -153,7 +168,10 @@ export const isSnoozeMinutes = (minutes: number): minutes is SnoozeMinutes =>
  * Returns `null` for a length outside the preset set, so the caller can answer
  * with a typed validation error instead of inventing a schedule.
  */
-export const snoozeInstant = (respondedAt: string, minutes: number): string | null =>
+export const snoozeInstant = (
+  respondedAt: string,
+  minutes: number,
+): string | null =>
   isSnoozeMinutes(minutes)
     ? new Date(Date.parse(respondedAt) + minutes * MINUTE_MS).toISOString()
     : null
@@ -163,18 +181,18 @@ const nextOccurrence = (
   repeat: ReminderRepeat,
   timeZone: string,
   after: string,
-  inclusive: boolean
+  inclusive: boolean,
 ): string | null => {
   const afterInstant = asInstant(after)
-  if (repeat._tag === "once") return null
-  if (repeat._tag === "interval") {
+  if (repeat._tag === 'once') return null
+  if (repeat._tag === 'interval') {
     return iso(afterInstant.add({ hours: repeat.hours }))
   }
 
   const zoned = afterInstant.toZonedDateTimeISO(timeZone)
   const today = zoned.toPlainDate()
   const clock = clockOf(repeat.time)
-  const days = repeat._tag === "weekly" ? repeat.days : null
+  const days = repeat._tag === 'weekly' ? repeat.days : null
   // A week is enough to find the next matching weekday (8 days of headroom).
   for (let offset = 0; offset <= 8; offset += 1) {
     const date = today.add({ days: offset })
@@ -182,7 +200,10 @@ const nextOccurrence = (
     const candidate = date
       .toPlainDateTime({ hour: clock.hour, minute: clock.minute })
       .toZonedDateTime(timeZone)
-    const comparison = Temporal.Instant.compare(candidate.toInstant(), afterInstant)
+    const comparison = Temporal.Instant.compare(
+      candidate.toInstant(),
+      afterInstant,
+    )
     if (comparison > 0 || (inclusive && comparison === 0)) {
       return iso(candidate.toInstant())
     }
@@ -194,7 +215,7 @@ const nextOccurrence = (
 export const reminderNextFireAfter = (
   repeat: ReminderRepeat,
   timeZone: string,
-  after: string
+  after: string,
 ): string | null => nextOccurrence(repeat, timeZone, after, false)
 
 /**
@@ -213,15 +234,16 @@ export const reminderNextFireAfterNow = (
   repeat: ReminderRepeat,
   timeZone: string,
   claimedFor: string,
-  now: string
+  now: string,
 ): string | null => {
-  if (repeat._tag === "once") return null
+  if (repeat._tag === 'once') return null
   if (Date.parse(now) <= Date.parse(claimedFor)) {
     return reminderNextFireAfter(repeat, timeZone, claimedFor)
   }
-  if (repeat._tag === "interval") {
+  if (repeat._tag === 'interval') {
     const step = repeat.hours * HOUR_MS
-    const steps = Math.floor((Date.parse(now) - Date.parse(claimedFor)) / step) + 1
+    const steps =
+      Math.floor((Date.parse(now) - Date.parse(claimedFor)) / step) + 1
     return iso(asInstant(claimedFor).add({ hours: repeat.hours * steps }))
   }
   return reminderNextFireAfter(repeat, timeZone, now)
@@ -231,7 +253,7 @@ export const reminderNextFireAfterNow = (
 export const reminderFirstFireAt = (
   repeat: ReminderRepeat,
   timeZone: string,
-  now: string
+  now: string,
 ): string | null => nextOccurrence(repeat, timeZone, now, true)
 
 /** `YYYY-MM-DD` + 09:00 local — the default instant of an all-day linked item. */
@@ -240,7 +262,7 @@ export const allDayReminderInstant = (date: string, timeZone: string): string =>
     Temporal.PlainDate.from(date)
       .toPlainDateTime({ hour: ALL_DAY_REMINDER_HOUR, minute: 0 })
       .toZonedDateTime(timeZone)
-      .toInstant()
+      .toInstant(),
   )
 
 /**
@@ -265,7 +287,7 @@ export const reminderFireAt = (input: {
   readonly explicitFireAt?: string | null
   readonly linkInstant?: string | null
 }): string | null => {
-  if (input.repeat._tag !== "once") {
+  if (input.repeat._tag !== 'once') {
     return reminderFirstFireAt(input.repeat, input.timeZone, input.now)
   }
   // An explicit fire time is the user's own answer and wins over the link's
@@ -288,13 +310,15 @@ export const inboxStateOf = (
     readonly response: DispatchResponse | null
     readonly scheduledFor: string
   },
-  now: string
-): "answered" | "upcoming" | "inbox" | "history" => {
-  if (dispatch.response !== null) return "answered"
+  now: string,
+): 'answered' | 'upcoming' | 'inbox' | 'history' => {
+  if (dispatch.response !== null) return 'answered'
   const scheduled = Date.parse(dispatch.scheduledFor)
   const current = Date.parse(now)
-  if (scheduled >= current) return "upcoming"
-  return current - scheduled > MISSED_INBOX_HOURS * HOUR_MS ? "history" : "inbox"
+  if (scheduled >= current) return 'upcoming'
+  return current - scheduled > MISSED_INBOX_HOURS * HOUR_MS
+    ? 'history'
+    : 'inbox'
 }
 
 /** "Missed" is a predicate, not a job (ADR-0005 §7). */
@@ -303,8 +327,10 @@ export const isMissed = (
     readonly response: DispatchResponse | null
     readonly scheduledFor: string
   },
-  now: string
-): boolean => inboxStateOf(dispatch, now) !== "answered" && Date.parse(dispatch.scheduledFor) < Date.parse(now)
+  now: string,
+): boolean =>
+  inboxStateOf(dispatch, now) !== 'answered' &&
+  Date.parse(dispatch.scheduledFor) < Date.parse(now)
 
 /**
  * On-time adherence: `done` with `respondedAt <= rootScheduledFor + grace`.
@@ -316,12 +342,13 @@ export const isOnTime = (
     readonly rootScheduledFor: string
     readonly respondedAt: string | null
   },
-  graceMinutes: number = ON_TIME_GRACE_MINUTES
+  graceMinutes: number = ON_TIME_GRACE_MINUTES,
 ): boolean => {
-  if (dispatch.response !== "done" || dispatch.respondedAt === null) return false
+  if (dispatch.response !== 'done' || dispatch.respondedAt === null)
+    return false
   return (
     Date.parse(dispatch.respondedAt) <=
-      Date.parse(dispatch.rootScheduledFor) + graceMinutes * MINUTE_MS
+    Date.parse(dispatch.rootScheduledFor) + graceMinutes * MINUTE_MS
   )
 }
 

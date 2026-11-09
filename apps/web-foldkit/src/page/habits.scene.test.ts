@@ -1,5 +1,4 @@
 import { Option } from 'effect'
-import { Animation, Dialog, Toast as UiToast } from '@foldkit/ui'
 import {
   Command,
   Mount,
@@ -17,6 +16,8 @@ import {
 } from 'foldkit/scene'
 import { modifyFields } from 'foldkit/struct'
 import { describe, test } from 'vitest'
+
+import { Animation, Dialog, Toast as UiToast } from '@foldkit/ui'
 
 import { HABIT_COLORS } from '../habits-model'
 import { entityKey } from '../mirror'
@@ -212,10 +213,7 @@ describe('Habits screen', () => {
         Dialog.AcquireResources,
         Dialog.Message.SucceededAcquireResources(),
       ),
-      Command.resolve(
-        Dialog.ShowDialog,
-        Dialog.Message.SucceededShowDialog(),
-      ),
+      Command.resolve(Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()),
       expect(text('عادت «ورزش» حذف شود؟')).toExist(),
       click(role('button', { name: 'حذف' })),
       Command.resolve(
@@ -272,10 +270,7 @@ describe('Habits screen', () => {
         Dialog.AcquireResources,
         Dialog.Message.SucceededAcquireResources(),
       ),
-      Command.resolve(
-        Dialog.ShowDialog,
-        Dialog.Message.SucceededShowDialog(),
-      ),
+      Command.resolve(Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()),
       click(role('button', { name: 'حذف' })),
       Command.resolve(
         Dialog.CloseDialog,
@@ -427,9 +422,7 @@ describe('habit visibility action', () => {
         maybeUserId: Option.some(USER_ID),
       }),
       given(habitsModel()),
-      expect(
-        role('button', { name: 'اشتراک آب خوردن با خانه' }),
-      ).toExist(),
+      expect(role('button', { name: 'اشتراک آب خوردن با خانه' })).toExist(),
     )
   })
 
@@ -440,9 +433,7 @@ describe('habit visibility action', () => {
         maybeUserId: Option.some('another-user'),
       }),
       given(habitsModel()),
-      expect(
-        role('button', { name: 'اشتراک آب خوردن با خانه' }),
-      ).toBeAbsent(),
+      expect(role('button', { name: 'اشتراک آب خوردن با خانه' })).toBeAbsent(),
     )
   })
 })

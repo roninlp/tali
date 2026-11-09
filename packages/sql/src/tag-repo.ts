@@ -1,6 +1,6 @@
-import { Context, Effect, Layer, Option } from "effect"
-import { SqlClient } from "effect/sql"
-import { type ItemType, Tag, type TagId, type UserId } from "@tali/domain"
+import { Context, Effect, Layer, Option } from 'effect'
+import { SqlClient } from 'effect/sql'
+import { type ItemType, Tag, type TagId, type UserId } from '@tali/domain'
 
 /**
  * D1-backed repository for `Tag` and the `item_tags` join (ticket #33;
@@ -20,14 +20,14 @@ const TAG_COLUMNS_QUALIFIED =
   `t.id, t.type, t.name, t.owner_id AS ownerId, t.household_id AS householdId, t.visibility, ` +
   `t.color, t.created_at AS createdAt, t.updated_at AS updatedAt, t.version, t.deleted_at AS deletedAt`
 
-export class TagRepo extends Context.Service<TagRepo>()("TagRepo", {
-  make: Effect.gen(function*() {
+export class TagRepo extends Context.Service<TagRepo>()('TagRepo', {
+  make: Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
 
     const findById = (id: TagId) =>
       Effect.map(
         sql<Tag>`SELECT ${sql.literal(TAG_COLUMNS)} FROM tags WHERE id = ${id}`,
-        (rows) => Option.fromUndefinedOr(rows[0])
+        rows => Option.fromUndefinedOr(rows[0]),
       )
 
     const listVisible = (input: {
@@ -42,7 +42,7 @@ export class TagRepo extends Context.Service<TagRepo>()("TagRepo", {
             AND (owner_id = ${input.userId} OR visibility = 'shared')
           ORDER BY name ASC, id ASC
         `,
-        (rows) => rows
+        rows => rows,
       )
 
     /**
@@ -62,7 +62,7 @@ export class TagRepo extends Context.Service<TagRepo>()("TagRepo", {
             AND deleted_at IS NULL
           LIMIT 1
         `,
-        (rows) => Option.fromUndefinedOr(rows[0])
+        rows => Option.fromUndefinedOr(rows[0]),
       )
 
     const insert = (tag: Tag) =>
@@ -77,7 +77,7 @@ export class TagRepo extends Context.Service<TagRepo>()("TagRepo", {
              ${tag.version}, ${tag.deletedAt})
           RETURNING ${sql.literal(TAG_COLUMNS)}
         `,
-        (rows) => rows[0]!
+        rows => rows[0]!,
       )
 
     const update = (tag: Tag) =>
@@ -93,7 +93,7 @@ export class TagRepo extends Context.Service<TagRepo>()("TagRepo", {
           WHERE id = ${tag.id}
           RETURNING ${sql.literal(TAG_COLUMNS)}
         `,
-        (rows) => Option.fromUndefinedOr(rows[0])
+        rows => Option.fromUndefinedOr(rows[0]),
       )
 
     /** Tag rows assigned to one item (join is canonical). */
@@ -110,7 +110,7 @@ export class TagRepo extends Context.Service<TagRepo>()("TagRepo", {
             AND t.deleted_at IS NULL
           ORDER BY t.name ASC, t.id ASC
         `,
-        (rows) => rows
+        rows => rows,
       )
 
     const attach = (input: {
@@ -154,9 +154,9 @@ export class TagRepo extends Context.Service<TagRepo>()("TagRepo", {
       listForItem,
       attach,
       detach,
-      detachAllForItem
+      detachAllForItem,
     } as const
-  })
+  }),
 }) {}
 
 export const TagRepoLive = Layer.effect(TagRepo, TagRepo.make)

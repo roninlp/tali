@@ -1,13 +1,13 @@
-import { Context, Effect, Layer, Option } from "effect"
-import { SqlClient, Statement } from "effect/sql"
+import { Context, Effect, Layer, Option } from 'effect'
+import { SqlClient, Statement } from 'effect/sql'
 import {
   Occasion,
   type HouseholdId,
   type OccasionId,
   type TaskId,
   type UserId,
-  type Visibility
-} from "@tali/domain"
+  type Visibility,
+} from '@tali/domain'
 
 /**
  * D1-backed repository for `Occasion` (ticket #59; FR-CAL-02).
@@ -51,17 +51,17 @@ export interface OccasionRow extends Record<string, unknown> {
 }
 
 const asNullableNumber = (value: unknown): number | null =>
-  typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : null
+  typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : null
 
 const asNullableString = (value: unknown): string | null =>
-  typeof value === "string" ? value : null
+  typeof value === 'string' ? value : null
 
 /** The model's plain shape, built from a D1 row. */
 export const occasionPropsOf = (row: OccasionRow) => ({
-  id: row.id as Occasion["id"],
-  type: "occasion" as const,
+  id: row.id as Occasion['id'],
+  type: 'occasion' as const,
   title: row.title,
-  originDate: row.originDate as Occasion["originDate"],
+  originDate: row.originDate as Occasion['originDate'],
   timeZone: row.timeZone,
   yearly: row.yearly === 1,
   advanceReminderDays: asNullableNumber(row.advanceReminderDays),
@@ -73,95 +73,99 @@ export const occasionPropsOf = (row: OccasionRow) => ({
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
   version: Number(row.version),
-  deletedAt: row.deletedAt
+  deletedAt: row.deletedAt,
 })
 
-export const toOccasion = (row: OccasionRow): Occasion => new Occasion(occasionPropsOf(row))
+export const toOccasion = (row: OccasionRow): Occasion =>
+  new Occasion(occasionPropsOf(row))
 
-export class OccasionRepo extends Context.Service<OccasionRepo>()("OccasionRepo", {
-  make: Effect.gen(function*() {
-    const sql = yield* SqlClient.SqlClient
+export class OccasionRepo extends Context.Service<OccasionRepo>()(
+  'OccasionRepo',
+  {
+    make: Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
 
-    /** The visibility filter every occasion read shares (private owner-only). */
-    const visibleScope = (input: {
-      readonly householdId: string
-      readonly userId: UserId
-    }): Statement.Fragment =>
-      sql`
+      /** The visibility filter every occasion read shares (private owner-only). */
+      const visibleScope = (input: {
+        readonly householdId: string
+        readonly userId: UserId
+      }): Statement.Fragment =>
+        sql`
         household_id = ${input.householdId}
         AND deleted_at IS NULL
         AND (owner_id = ${input.userId} OR visibility = 'shared')
       `
 
-    const findById = (id: OccasionId) =>
-      Effect.map(
-        sql<OccasionRow>`SELECT ${sql.literal(OCCASION_SELECT)} FROM occasions WHERE id = ${id}`,
-        (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toOccasion)
-      )
+      const findById = (id: OccasionId) =>
+        Effect.map(
+          sql<OccasionRow>`SELECT ${sql.literal(OCCASION_SELECT)} FROM occasions WHERE id = ${id}`,
+          rows => Option.map(Option.fromUndefinedOr(rows[0]), toOccasion),
+        )
 
-    /**
-     * Live rows visible to one member: shared occasions plus their own private
-     * ones. Mirrors the sync pull filter (`docs/sync-protocol-draft.md` §3.2).
-     */
-    const listVisible = (input: {
-      readonly householdId: string
-      readonly userId: UserId
-    }) =>
-      Effect.map(
-        sql<OccasionRow>`
+      /**
+       * Live rows visible to one member: shared occasions plus their own private
+       * ones. Mirrors the sync pull filter (`docs/sync-protocol-draft.md` §3.2).
+       */
+      const listVisible = (input: {
+        readonly householdId: string
+        readonly userId: UserId
+      }) =>
+        Effect.map(
+          sql<OccasionRow>`
           SELECT ${sql.literal(OCCASION_SELECT)} FROM occasions
           WHERE ${visibleScope(input)}
           ORDER BY origin_date ASC, title ASC, id ASC
         `,
-        (rows) => rows.map(toOccasion)
-      )
+          rows => rows.map(toOccasion),
+        )
 
-    /**
-     * Every live occasion in one household, regardless of visibility.
-     *
-     * For the **system** materialiser only (ticket #61's per-minute sweep): it
-     * has no viewer, so it must see shared and private occasions alike to
-     * create each one's advance reminder under that occasion's own owner. A
-     * reminder row inherits the occasion's visibility, so a private occasion
-     * still yields a private reminder and nothing leaks across members.
-     * User-facing reads must keep using `listVisible`.
-     */
-    const listByHousehold = (householdId: string) =>
-      Effect.map(
-        sql<OccasionRow>`
+      /**
+       * Every live occasion in one household, regardless of visibility.
+       *
+       * For the **system** materialiser only (ticket #61's per-minute sweep): it
+       * has no viewer, so it must see shared and private occasions alike to
+       * create each one's advance reminder under that occasion's own owner. A
+       * reminder row inherits the occasion's visibility, so a private occasion
+       * still yields a private reminder and nothing leaks across members.
+       * User-facing reads must keep using `listVisible`.
+       */
+      const listByHousehold = (householdId: string) =>
+        Effect.map(
+          sql<OccasionRow>`
           SELECT ${sql.literal(OCCASION_SELECT)} FROM occasions
           WHERE household_id = ${householdId} AND deleted_at IS NULL
           ORDER BY origin_date ASC, title ASC, id ASC
         `,
-        (rows) => rows.map(toOccasion)
-      )
+          rows => rows.map(toOccasion),
+        )
 
-    /**
-     * Every live occasion that wants an advance reminder, across households,
-     * bounded.
-     *
-     * One read is the whole discovery cost of the sweep's materialisation pass
-     * (#61), so the tick does not pay a query per household. The caller groups
-     * by `householdId`; ordering by household keeps the bound deterministic.
-     */
-    const listAdvanceReminderSources = (limit: number) =>
-      Effect.map(
-        sql<OccasionRow>`
+      /**
+       * Every live occasion that wants an advance reminder, across households,
+       * bounded.
+       *
+       * One read is the whole discovery cost of the sweep's materialisation pass
+       * (#61), so the tick does not pay a query per household. The caller groups
+       * by `householdId`; ordering by household keeps the bound deterministic.
+       */
+      const listAdvanceReminderSources = (limit: number) =>
+        Effect.map(
+          sql<OccasionRow>`
           SELECT ${sql.literal(OCCASION_SELECT)} FROM occasions
           WHERE deleted_at IS NULL AND advance_reminder_days IS NOT NULL
           ORDER BY household_id ASC, origin_date ASC, id ASC
           LIMIT ${limit}
         `,
-        (rows) => rows.map(toOccasion)
-      )
+          rows => rows.map(toOccasion),
+        )
 
-    return {
-      findById,
-      listVisible,
-      listByHousehold,
-      listAdvanceReminderSources
-    } as const
-  })
-}) {}
+      return {
+        findById,
+        listVisible,
+        listByHousehold,
+        listAdvanceReminderSources,
+      } as const
+    }),
+  },
+) {}
 
 export const OccasionRepoLive = Layer.effect(OccasionRepo, OccasionRepo.make)

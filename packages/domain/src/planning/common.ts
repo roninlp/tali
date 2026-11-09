@@ -1,6 +1,6 @@
-import { Schema } from "effect"
-import { Model } from "effect/schema"
-import { HouseholdId, UserId } from "../common.js"
+import { Schema } from 'effect'
+import { Model } from 'effect/schema'
+import { HouseholdId, UserId } from '../common.js'
 
 /**
  * Shared building blocks for the core-planning aggregates (Slice 2).
@@ -26,26 +26,40 @@ import { HouseholdId, UserId } from "../common.js"
 // UUID v7 is time-ordered and client-mintable, which is what makes offline
 // inserts possible. Branding forbids accidental cross-aggregate assignment.
 
-export const TaskId = Schema.String.check(Schema.isUUID(7)).pipe(Schema.brand("TaskId"))
+export const TaskId = Schema.String.check(Schema.isUUID(7)).pipe(
+  Schema.brand('TaskId'),
+)
 export type TaskId = Schema.Schema.Type<typeof TaskId>
 
-export const ProjectId = Schema.String.check(Schema.isUUID(7)).pipe(Schema.brand("ProjectId"))
+export const ProjectId = Schema.String.check(Schema.isUUID(7)).pipe(
+  Schema.brand('ProjectId'),
+)
 export type ProjectId = Schema.Schema.Type<typeof ProjectId>
 
-export const TagId = Schema.String.check(Schema.isUUID(7)).pipe(Schema.brand("TagId"))
+export const TagId = Schema.String.check(Schema.isUUID(7)).pipe(
+  Schema.brand('TagId'),
+)
 export type TagId = Schema.Schema.Type<typeof TagId>
 
-export const ListId = Schema.String.check(Schema.isUUID(7)).pipe(Schema.brand("ListId"))
+export const ListId = Schema.String.check(Schema.isUUID(7)).pipe(
+  Schema.brand('ListId'),
+)
 export type ListId = Schema.Schema.Type<typeof ListId>
 
-export const ListItemId = Schema.String.check(Schema.isUUID(7)).pipe(Schema.brand("ListItemId"))
+export const ListItemId = Schema.String.check(Schema.isUUID(7)).pipe(
+  Schema.brand('ListItemId'),
+)
 export type ListItemId = Schema.Schema.Type<typeof ListItemId>
 
-export const NoteId = Schema.String.check(Schema.isUUID(7)).pipe(Schema.brand("NoteId"))
+export const NoteId = Schema.String.check(Schema.isUUID(7)).pipe(
+  Schema.brand('NoteId'),
+)
 export type NoteId = Schema.Schema.Type<typeof NoteId>
 
 /** `Event` aggregate id (Slice 3 / ticket #57). */
-export const EventId = Schema.String.check(Schema.isUUID(7)).pipe(Schema.brand("EventId"))
+export const EventId = Schema.String.check(Schema.isUUID(7)).pipe(
+  Schema.brand('EventId'),
+)
 export type EventId = Schema.Schema.Type<typeof EventId>
 
 /**
@@ -56,7 +70,7 @@ export type EventId = Schema.Schema.Type<typeof EventId>
  * occurrence ("this occurrence only") without addressing the series.
  */
 export const EventExceptionId = Schema.String.check(Schema.isUUID(7)).pipe(
-  Schema.brand("EventExceptionId")
+  Schema.brand('EventExceptionId'),
 )
 export type EventExceptionId = Schema.Schema.Type<typeof EventExceptionId>
 
@@ -67,7 +81,9 @@ export type EventExceptionId = Schema.Schema.Type<typeof EventExceptionId>
  * event and the annual date it comes from) is part of the event shape, so the
  * occasions slice lands without touching the events table.
  */
-export const OccasionId = Schema.String.check(Schema.isUUID(7)).pipe(Schema.brand("OccasionId"))
+export const OccasionId = Schema.String.check(Schema.isUUID(7)).pipe(
+  Schema.brand('OccasionId'),
+)
 export type OccasionId = Schema.Schema.Type<typeof OccasionId>
 
 /**
@@ -76,7 +92,9 @@ export type OccasionId = Schema.Schema.Type<typeof OccasionId>
  * The brand existed before the aggregate (the `ReminderLink` union's habit
  * variant) so the reminder slice needs no redefinition.
  */
-export const HabitId = Schema.String.check(Schema.isUUID(7)).pipe(Schema.brand("HabitId"))
+export const HabitId = Schema.String.check(Schema.isUUID(7)).pipe(
+  Schema.brand('HabitId'),
+)
 export type HabitId = Schema.Schema.Type<typeof HabitId>
 
 /**
@@ -88,17 +106,19 @@ export type HabitId = Schema.Schema.Type<typeof HabitId>
  * row so an offline tap can write immediately.
  */
 export const HabitEntryId = Schema.String.check(Schema.isUUID(7)).pipe(
-  Schema.brand("HabitEntryId")
+  Schema.brand('HabitEntryId'),
 )
 export type HabitEntryId = Schema.Schema.Type<typeof HabitEntryId>
 
 /** `Reminder` aggregate id (Slice 3 / ticket #60). */
-export const ReminderId = Schema.String.check(Schema.isUUID(7)).pipe(Schema.brand("ReminderId"))
+export const ReminderId = Schema.String.check(Schema.isUUID(7)).pipe(
+  Schema.brand('ReminderId'),
+)
 export type ReminderId = Schema.Schema.Type<typeof ReminderId>
 
 /** One dispatch-ledger row (ADR-0005); also the address of a notification action. */
 export const ReminderDispatchId = Schema.String.check(Schema.isUUID(7)).pipe(
-  Schema.brand("ReminderDispatchId")
+  Schema.brand('ReminderDispatchId'),
 )
 export type ReminderDispatchId = Schema.Schema.Type<typeof ReminderDispatchId>
 
@@ -110,29 +130,29 @@ export type ReminderDispatchId = Schema.Schema.Type<typeof ReminderDispatchId>
  * before its model lands.
  */
 export const ItemType = Schema.Literals([
-  "habit",
-  "habitEntry",
-  "event",
-  "occasion",
-  "task",
-  "reminder",
-  "note",
-  "tag",
-  "list",
-  "listItem",
-  "project"
+  'habit',
+  'habitEntry',
+  'event',
+  'occasion',
+  'task',
+  'reminder',
+  'note',
+  'tag',
+  'list',
+  'listItem',
+  'project',
 ])
 export type ItemType = Schema.Schema.Type<typeof ItemType>
 
 /** Task lifecycle. Transitions stamp `startedAt` / `completedAt` server-side. */
-export const TaskStatus = Schema.Literals(["todo", "doing", "done"])
+export const TaskStatus = Schema.Literals(['todo', 'doing', 'done'])
 export type TaskStatus = Schema.Schema.Type<typeof TaskStatus>
 
-export const Priority = Schema.Literals(["high", "medium", "low"])
+export const Priority = Schema.Literals(['high', 'medium', 'low'])
 export type Priority = Schema.Schema.Type<typeof Priority>
 
 /** Per-list default ordering for list items. */
-export const ListItemSort = Schema.Literals(["manual", "alpha", "status"])
+export const ListItemSort = Schema.Literals(['manual', 'alpha', 'status'])
 export type ListItemSort = Schema.Schema.Type<typeof ListItemSort>
 
 /**
@@ -140,8 +160,10 @@ export type ListItemSort = Schema.Schema.Type<typeof ListItemSort>
  * (FR-LIST-02: "move checked to bottom (configurable)"); `inPlace` keeps them
  * in manual order.
  */
-export const ListCheckedPlacement = Schema.Literals(["inPlace", "bottom"])
-export type ListCheckedPlacement = Schema.Schema.Type<typeof ListCheckedPlacement>
+export const ListCheckedPlacement = Schema.Literals(['inPlace', 'bottom'])
+export type ListCheckedPlacement = Schema.Schema.Type<
+  typeof ListCheckedPlacement
+>
 
 // ── Scalar conventions ────────────────────────────────────────────────────
 
@@ -150,15 +172,17 @@ export const TimestampUtc = Schema.String
 export type TimestampUtc = Schema.Schema.Type<typeof TimestampUtc>
 
 /** Local calendar date `YYYY-MM-DD`, with the owning item's IANA time zone. */
-export const LocalDate = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/))
+export const LocalDate = Schema.String.check(
+  Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/),
+)
 export type LocalDate = Schema.Schema.Type<typeof LocalDate>
 
-const isIanaTimeZone = Schema.makeFilter<string>((value) => {
+const isIanaTimeZone = Schema.makeFilter<string>(value => {
   try {
-    new Intl.DateTimeFormat("en-US", { timeZone: value })
+    new Intl.DateTimeFormat('en-US', { timeZone: value })
     return true
   } catch {
-    return "must be a valid IANA time zone identifier"
+    return 'must be a valid IANA time zone identifier'
   }
 })
 
@@ -180,9 +204,12 @@ export type TagIds = Schema.Schema.Type<typeof TagIds>
  * insert-generated field; the server stamps timestamps and versions on write,
  * so the model only declares their shape.
  */
-export const commonItemFields = <const T extends ItemType, const B extends string>(
+export const commonItemFields = <
+  const T extends ItemType,
+  const B extends string,
+>(
   type: T,
-  id: Schema.brand<Schema.String, B>
+  id: Schema.brand<Schema.String, B>,
 ) => ({
   id: Model.UuidV7Insert(id),
   type: Schema.Literal(type),
@@ -192,5 +219,5 @@ export const commonItemFields = <const T extends ItemType, const B extends strin
   createdAt: TimestampUtc,
   updatedAt: TimestampUtc,
   version: Schema.Int,
-  deletedAt: Schema.NullOr(TimestampUtc)
+  deletedAt: Schema.NullOr(TimestampUtc),
 })

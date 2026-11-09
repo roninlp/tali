@@ -1,5 +1,5 @@
-import { applyD1Migrations } from "cloudflare:test"
-import { env } from "cloudflare:workers"
+import { applyD1Migrations } from 'cloudflare:test'
+import { env } from 'cloudflare:workers'
 
 /**
  * Every test file starts from the same schema the deployed Worker has: the

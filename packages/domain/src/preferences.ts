@@ -1,9 +1,9 @@
-import { Schema } from "effect"
-import { Model } from "effect/schema"
-import { Digits, UserId, WeekStart } from "./common.js"
-import { DEFAULT_DIGITS } from "./digits.js"
-import { DEFAULT_TIME_ZONE } from "./jalali.js"
-import { ListCheckedPlacement, TimeZone } from "./planning/common.js"
+import { Schema } from 'effect'
+import { Model } from 'effect/schema'
+import { Digits, UserId, WeekStart } from './common.js'
+import { DEFAULT_DIGITS } from './digits.js'
+import { DEFAULT_TIME_ZONE } from './jalali.js'
+import { ListCheckedPlacement, TimeZone } from './planning/common.js'
 
 /**
  * Per-user display preferences (ticket #35).
@@ -21,11 +21,11 @@ import { ListCheckedPlacement, TimeZone } from "./planning/common.js"
 
 /** Dashboard sections, in the product's default order (FR-VIEW-01). */
 export const DASHBOARD_SECTIONS = [
-  "tasks",
-  "events",
-  "reminders",
-  "habits",
-  "notes"
+  'tasks',
+  'events',
+  'reminders',
+  'habits',
+  'notes',
 ] as const
 
 export const DashboardSection = Schema.Literals(DASHBOARD_SECTIONS)
@@ -34,9 +34,9 @@ export type DashboardSection = Schema.Schema.Type<typeof DashboardSection>
 export const DEFAULT_DASHBOARD_SECTION_ORDER: ReadonlyArray<DashboardSection> =
   DASHBOARD_SECTIONS
 
-export const DEFAULT_WEEK_START: WeekStart = "saturday"
+export const DEFAULT_WEEK_START: WeekStart = 'saturday'
 export const DEFAULT_DIGITS_STYLE: Digits = DEFAULT_DIGITS
-export const DEFAULT_CHECKED_ITEM_PLACEMENT: ListCheckedPlacement = "bottom"
+export const DEFAULT_CHECKED_ITEM_PLACEMENT: ListCheckedPlacement = 'bottom'
 
 /**
  * A dashboard order is a full permutation: every known section exactly once.
@@ -45,25 +45,27 @@ export const DEFAULT_CHECKED_ITEM_PLACEMENT: ListCheckedPlacement = "bottom"
  * array round-trips verbatim today, before the dashboard consumes it, and a
  * later reordering UI only has to send the seven (eventually) known ids.
  */
-const isDashboardSectionOrder = Schema.makeFilter<ReadonlyArray<DashboardSection>>(
-  (sections) => {
-    if (sections.length !== DASHBOARD_SECTIONS.length) {
-      return `must contain all ${DASHBOARD_SECTIONS.length} dashboard sections`
-    }
-    const unique = new Set(sections)
-    if (unique.size !== sections.length) {
-      return "must not repeat a dashboard section"
-    }
-    return DASHBOARD_SECTIONS.every((section) => unique.has(section))
-      ? true
-      : "must contain only known dashboard sections"
+const isDashboardSectionOrder = Schema.makeFilter<
+  ReadonlyArray<DashboardSection>
+>(sections => {
+  if (sections.length !== DASHBOARD_SECTIONS.length) {
+    return `must contain all ${DASHBOARD_SECTIONS.length} dashboard sections`
   }
-)
+  const unique = new Set(sections)
+  if (unique.size !== sections.length) {
+    return 'must not repeat a dashboard section'
+  }
+  return DASHBOARD_SECTIONS.every(section => unique.has(section))
+    ? true
+    : 'must contain only known dashboard sections'
+})
 
 export const DashboardSectionOrder = Schema.Array(DashboardSection).check(
-  isDashboardSectionOrder
+  isDashboardSectionOrder,
 )
-export type DashboardSectionOrder = Schema.Schema.Type<typeof DashboardSectionOrder>
+export type DashboardSectionOrder = Schema.Schema.Type<
+  typeof DashboardSectionOrder
+>
 
 /**
  * Defensive display order for consumers reading a possibly stale cache.
@@ -75,12 +77,13 @@ export type DashboardSectionOrder = Schema.Schema.Type<typeof DashboardSectionOr
  * hiding a new one.
  */
 export const normalizeDashboardSectionOrder = (
-  order: ReadonlyArray<string> | undefined
+  order: ReadonlyArray<string> | undefined,
 ): ReadonlyArray<DashboardSection> => {
   const seen = new Set<DashboardSection>()
   const result: Array<DashboardSection> = []
   for (const candidate of order ?? []) {
-    if (!(DASHBOARD_SECTIONS as ReadonlyArray<string>).includes(candidate)) continue
+    if (!(DASHBOARD_SECTIONS as ReadonlyArray<string>).includes(candidate))
+      continue
     const section = candidate as DashboardSection
     if (seen.has(section)) continue
     seen.add(section)
@@ -92,7 +95,7 @@ export const normalizeDashboardSectionOrder = (
   return result
 }
 
-export type DashboardSectionMove = "up" | "down"
+export type DashboardSectionMove = 'up' | 'down'
 
 /**
  * The one operation the reorder control needs: swap a section with its
@@ -103,12 +106,12 @@ export type DashboardSectionMove = "up" | "down"
 export const moveDashboardSection = (
   order: ReadonlyArray<string>,
   section: DashboardSection,
-  direction: DashboardSectionMove
+  direction: DashboardSectionMove,
 ): DashboardSectionOrder => {
   const current = normalizeDashboardSectionOrder(order)
   const from = current.indexOf(section)
   if (from < 0) return current
-  const to = direction === "up" ? from - 1 : from + 1
+  const to = direction === 'up' ? from - 1 : from + 1
   if (to < 0 || to >= current.length) return current
   const next = [...current]
   next[from] = current[to]!
@@ -116,7 +119,9 @@ export const moveDashboardSection = (
   return next
 }
 
-export class UserPreferences extends Model.Class<UserPreferences>("UserPreferences")({
+export class UserPreferences extends Model.Class<UserPreferences>(
+  'UserPreferences',
+)({
   userId: UserId,
   /** IANA zone used for "today", week boundaries and all-day dates. */
   timeZone: TimeZone,
@@ -125,11 +130,13 @@ export class UserPreferences extends Model.Class<UserPreferences>("UserPreferenc
   dashboardSectionOrder: DashboardSectionOrder,
   checkedItemPlacement: ListCheckedPlacement,
   createdAt: Schema.String,
-  updatedAt: Schema.String
+  updatedAt: Schema.String,
 }) {}
 
 /** `GET /preferences` and `PATCH /preferences` body. */
-export const PreferencesResponse = Schema.Struct({ preferences: UserPreferences })
+export const PreferencesResponse = Schema.Struct({
+  preferences: UserPreferences,
+})
 export type PreferencesResponse = Schema.Schema.Type<typeof PreferencesResponse>
 
 /**
@@ -141,7 +148,7 @@ export const PreferencesPatch = Schema.Struct({
   weekStart: Schema.optional(WeekStart),
   digits: Schema.optional(Digits),
   dashboardSectionOrder: Schema.optional(DashboardSectionOrder),
-  checkedItemPlacement: Schema.optional(ListCheckedPlacement)
+  checkedItemPlacement: Schema.optional(ListCheckedPlacement),
 })
 export type PreferencesPatch = Schema.Schema.Type<typeof PreferencesPatch>
 
@@ -159,7 +166,7 @@ export interface PreferenceDefaults {
  */
 export const defaultPreferences = (
   userId: UserId,
-  defaults: PreferenceDefaults = {}
+  defaults: PreferenceDefaults = {},
 ): UserPreferences =>
   new UserPreferences({
     userId,
@@ -169,5 +176,5 @@ export const defaultPreferences = (
     dashboardSectionOrder: DEFAULT_DASHBOARD_SECTION_ORDER,
     checkedItemPlacement: DEFAULT_CHECKED_ITEM_PLACEMENT,
     createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
   })

@@ -1,34 +1,34 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "extends": ["./node_modules/@foldkit/oxlint-plugin/recommended.json"],
-  "plugins": ["typescript"],
+  "extends": [
+    "../../.oxlintrc.json",
+    "./node_modules/@tali/lint-config/oxlint/strict.json",
+    "./node_modules/@tali/lint-config/oxlint/effect.json",
+    "./node_modules/@foldkit/oxlint-plugin/recommended.json"
+  ],
+  "plugins": ["typescript", "oxc"],
   "categories": {
     "correctness": "off"
   },
   "rules": {
-    "no-unused-vars": [
-      "error",
-      {
-        "argsIgnorePattern": "^_",
-        "varsIgnorePattern": "^_",
-        "caughtErrorsIgnorePattern": "^_",
-        "destructuredArrayIgnorePattern": "^_"
-      }
-    ],
-    "typescript/no-explicit-any": "error",
     "typescript/consistent-type-assertions": [
       "error",
-      { "assertionStyle": "never" }
+      {
+        "assertionStyle": "never"
+      }
     ],
     "sort-imports": [
       "error",
-      { "ignoreDeclarationSort": true, "ignoreCase": false }
+      {
+        "ignoreDeclarationSort": true,
+        "ignoreCase": false
+      }
     ]
   },
   "ignorePatterns": [
-    "dist/",
-    "node_modules/",
-    "repos/",
+    "dist",
+    "node_modules",
+    "public",
     "**/*.d.ts",
     "vite.config.ts",
     "vitest.config.ts",

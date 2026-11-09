@@ -101,6 +101,7 @@ export const tapHabitEntry = async (
     input.habitId,
     input.localDate,
   )
+
   const status =
     input.status ?? nextHabitEntryStatus(habitEntryStatusOf(current))
 

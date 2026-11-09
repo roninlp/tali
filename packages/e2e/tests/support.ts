@@ -5,11 +5,11 @@ import {
   type APIRequestContext,
   type BrowserContext,
   type Page,
-  type TestInfo
-} from "@playwright/test"
-import { readFileSync } from "node:fs"
-import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
+  type TestInfo,
+} from '@playwright/test'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 /**
  * Shared harness for the five gate flows (#84): seeded identities, client-side
@@ -17,30 +17,44 @@ import { fileURLToPath } from "node:url"
  * through (`/sync/push`, the reminder inbox).
  */
 
-export const WEB_URL = "http://localhost:3001"
-export const API_URL = "http://localhost:8787"
+export const WEB_URL = 'http://localhost:3001'
+export const API_URL = 'http://localhost:8787'
 
 /** The session cookie minted by `/auth/register` (auth-routes.ts). */
-export const SESSION_COOKIE = "tali_session"
+export const SESSION_COOKIE = 'tali_session'
 
 /** The Alchemy stage `scripts/stack.mjs` boots and the seed project fills. */
-export const STATE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", ".state")
+export const STATE_DIR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '.state',
+)
 
 export interface SeededPeople {
   readonly householdId: string
   readonly inviteCode: string
-  readonly alice: { readonly userId: string; readonly email: string; readonly storageState: string }
-  readonly bob: { readonly userId: string; readonly email: string; readonly storageState: string }
+  readonly alice: {
+    readonly userId: string
+    readonly email: string
+    readonly storageState: string
+  }
+  readonly bob: {
+    readonly userId: string
+    readonly email: string
+    readonly storageState: string
+  }
   readonly runTag: string
 }
 
 /** The seed project's output — identities, the household and the run tag. */
 export const readSeed = (): SeededPeople =>
-  JSON.parse(readFileSync(join(STATE_DIR, "seed.json"), "utf8")) as SeededPeople
+  JSON.parse(readFileSync(join(STATE_DIR, 'seed.json'), 'utf8')) as SeededPeople
 
 // ── Ids ────────────────────────────────────────────────────────────────────
 
-const HEX = Array.from({ length: 256 }, (_, index) => index.toString(16).padStart(2, "0"))
+const HEX = Array.from({ length: 256 }, (_, index) =>
+  index.toString(16).padStart(2, '0'),
+)
 
 /**
  * UUID v7, the client-mintable id the domain requires (`packages/domain/src/ids.ts`).
@@ -60,12 +74,26 @@ export const uuidV7 = (now: number = Date.now()): string => {
   bytes[6] = (bytes[6]! & 0x0f) | 0x70
   bytes[8] = (bytes[8]! & 0x3f) | 0x80
   return (
-    HEX[bytes[0]!]! + HEX[bytes[1]!]! + HEX[bytes[2]!]! + HEX[bytes[3]!]! +
-    "-" + HEX[bytes[4]!]! + HEX[bytes[5]!]! +
-    "-" + HEX[bytes[6]!]! + HEX[bytes[7]!]! +
-    "-" + HEX[bytes[8]!]! + HEX[bytes[9]!]! +
-    "-" + HEX[bytes[10]!]! + HEX[bytes[11]!]! + HEX[bytes[12]!]! +
-    HEX[bytes[13]!]! + HEX[bytes[14]!]! + HEX[bytes[15]!]!
+    HEX[bytes[0]!]! +
+    HEX[bytes[1]!]! +
+    HEX[bytes[2]!]! +
+    HEX[bytes[3]!]! +
+    '-' +
+    HEX[bytes[4]!]! +
+    HEX[bytes[5]!]! +
+    '-' +
+    HEX[bytes[6]!]! +
+    HEX[bytes[7]!]! +
+    '-' +
+    HEX[bytes[8]!]! +
+    HEX[bytes[9]!]! +
+    '-' +
+    HEX[bytes[10]!]! +
+    HEX[bytes[11]!]! +
+    HEX[bytes[12]!]! +
+    HEX[bytes[13]!]! +
+    HEX[bytes[14]!]! +
+    HEX[bytes[15]!]!
   )
 }
 
@@ -77,16 +105,16 @@ export const uniqueTag = (): string =>
 
 /** Today's date in the account's zone, as `YYYY-MM-DD`. */
 export const tehranToday = (now: Date = new Date()): string =>
-  new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Tehran",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tehran',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
   }).format(now)
 
 /** Plain calendar-day arithmetic on a `YYYY-MM-DD` string. */
 export const addDays = (date: string, days: number): string => {
-  const [year, month, day] = date.split("-").map(Number)
+  const [year, month, day] = date.split('-').map(Number)
   const value = new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1))
   value.setUTCDate(value.getUTCDate() + days)
   return value.toISOString().slice(0, 10)
@@ -123,9 +151,9 @@ export const pushApplied = async (
     readonly entityId: string
     readonly patch: Record<string, unknown>
     readonly baseVersion?: number
-  }
+  },
 ): Promise<PushResult> => {
-  const response = await api.post("/sync/push", {
+  const response = await api.post('/sync/push', {
     data: {
       entries: [
         {
@@ -133,27 +161,30 @@ export const pushApplied = async (
           entityType: entry.entityType,
           entityId: entry.entityId,
           baseVersion: entry.baseVersion ?? 0,
-          op: "upsert",
+          op: 'upsert',
           clientUpdatedAt: new Date().toISOString(),
-          patch: entry.patch
-        }
-      ]
-    }
+          patch: entry.patch,
+        },
+      ],
+    },
   })
-  expect(response.ok(), `push ${entry.entityType} → ${response.status()}`).toBeTruthy()
+  expect(
+    response.ok(),
+    `push ${entry.entityType} → ${response.status()}`,
+  ).toBeTruthy()
   const body = (await response.json()) as { results: PushResult[] }
   const result = body.results[0]
   expect(result, `push ${entry.entityType} returned no result`).toBeDefined()
   expect(
     result!._tag,
-    `push ${entry.entityType} was ${result!._tag}: ${result!.message ?? ""}`
-  ).toBe("applied")
+    `push ${entry.entityType} was ${result!._tag}: ${result!.message ?? ''}`,
+  ).toBe('applied')
   return result!
 }
 
 /** Every live row this household can see, following `hasMore`. */
 export const pullAll = async (
-  api: APIRequestContext
+  api: APIRequestContext,
 ): Promise<
   ReadonlyArray<{
     entityType: string
@@ -191,7 +222,7 @@ export const pullAll = async (
 /** The reminder ledger rows `/reminders` is rendering. */
 export const inboxItems = async (
   api: APIRequestContext,
-  history = false
+  history = false,
 ): Promise<
   ReadonlyArray<{
     dispatch: { id: string; response: string | null }
@@ -199,10 +230,16 @@ export const inboxItems = async (
     kind: string
   }>
 > => {
-  const response = await api.get(`/reminders/inbox${history ? "?history=1" : ""}`)
+  const response = await api.get(
+    `/reminders/inbox${history ? '?history=1' : ''}`,
+  )
   expect(response.ok(), `inbox → ${response.status()}`).toBeTruthy()
   const body = (await response.json()) as {
-    items: Array<{ dispatch: { id: string; response: string | null }; title: string; kind: string }>
+    items: Array<{
+      dispatch: { id: string; response: string | null }
+      title: string
+      kind: string
+    }>
   }
   return body.items
 }
@@ -210,21 +247,31 @@ export const inboxItems = async (
 /** Trigger the dev-only catch-up sweep (`alchemy dev` runs no crons). */
 export const sweepReminders = async (
   api: APIRequestContext,
-  at: Date = new Date()
+  at: Date = new Date(),
 ): Promise<{ claimed: number; pushed: number; expired: number }> => {
-  const response = await api.post(`/dev/reminders/sweep?at=${encodeURIComponent(at.toISOString())}`)
+  const response = await api.post(
+    `/dev/reminders/sweep?at=${encodeURIComponent(at.toISOString())}`,
+  )
   expect(response.ok(), `sweep → ${response.status()}`).toBeTruthy()
-  return (await response.json()) as { claimed: number; pushed: number; expired: number }
+  return (await response.json()) as {
+    claimed: number
+    pushed: number
+    expired: number
+  }
 }
 
 /** The sync-status pill lives in the app header; its text is the sync truth. */
-export const syncStatus = (page: Page) => page.locator("header span[role='status']")
+export const syncStatus = (page: Page) =>
+  page.locator("header span[role='status']")
 
 /** Attach the ids a flow created, so a failure leaves the seeded state (#84). */
-export const attachSeed = async (testInfo: TestInfo, seed: Record<string, unknown>) => {
-  await testInfo.attach("seeded-state.json", {
+export const attachSeed = async (
+  testInfo: TestInfo,
+  seed: Record<string, unknown>,
+) => {
+  await testInfo.attach('seeded-state.json', {
     body: JSON.stringify(seed, null, 2),
-    contentType: "application/json"
+    contentType: 'application/json',
   })
 }
 
@@ -250,16 +297,20 @@ export interface GateFixtures {
  * about registration and builds its own users.
  */
 export const test = base.extend<GateFixtures>({
-  people: async ({}, use) => {
+  people: async (_fixtures, use) => {
     await use(readSeed())
   },
   alice: async ({ browser, people }, use) => {
-    const context = await browser.newContext({ storageState: people.alice.storageState })
+    const context = await browser.newContext({
+      storageState: people.alice.storageState,
+    })
     await use(context)
     await context.close()
   },
   bob: async ({ browser, people }, use) => {
-    const context = await browser.newContext({ storageState: people.bob.storageState })
+    const context = await browser.newContext({
+      storageState: people.bob.storageState,
+    })
     await use(context)
     await context.close()
   },
@@ -278,7 +329,7 @@ export const test = base.extend<GateFixtures>({
     const api = await apiFor(people.bob.storageState)
     await use(api)
     await api.dispose()
-  }
+  },
 })
 
 export { expect }

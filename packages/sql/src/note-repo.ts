@@ -1,6 +1,6 @@
-import { Context, Effect, Layer, Option } from "effect"
-import { SqlClient } from "effect/sql"
-import { Note, type NoteId, type TagId, type UserId } from "@tali/domain"
+import { Context, Effect, Layer, Option } from 'effect'
+import { SqlClient } from 'effect/sql'
+import { Note, type NoteId, type TagId, type UserId } from '@tali/domain'
 
 /**
  * D1-backed repository for `Note` (ticket #33; FR-NOTE-01/03).
@@ -16,7 +16,10 @@ const NOTE_COLUMNS =
   `is_archived AS isArchived, tag_ids AS tagIds, color, ` +
   `created_at AS createdAt, updated_at AS updatedAt, version, deleted_at AS deletedAt`
 
-interface NoteRow extends Omit<Note, "body" | "isPinned" | "isArchived" | "tagIds"> {
+interface NoteRow extends Omit<
+  Note,
+  'body' | 'isPinned' | 'isArchived' | 'tagIds'
+> {
   readonly body: string | null
   readonly isPinned: number | boolean
   readonly isArchived: number | boolean
@@ -29,20 +32,20 @@ const encodeTagIds = (ids: ReadonlyArray<TagId>): string => JSON.stringify(ids)
 const toNote = (row: NoteRow): Note =>
   new Note({
     ...row,
-    body: row.body === null ? null : (JSON.parse(row.body) as Note["body"]),
+    body: row.body === null ? null : (JSON.parse(row.body) as Note['body']),
     isPinned: row.isPinned === true || row.isPinned === 1,
     isArchived: row.isArchived === true || row.isArchived === 1,
-    tagIds: JSON.parse(row.tagIds) as ReadonlyArray<TagId>
+    tagIds: JSON.parse(row.tagIds) as ReadonlyArray<TagId>,
   })
 
-export class NoteRepo extends Context.Service<NoteRepo>()("NoteRepo", {
-  make: Effect.gen(function*() {
+export class NoteRepo extends Context.Service<NoteRepo>()('NoteRepo', {
+  make: Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
 
     const findById = (id: NoteId) =>
       Effect.map(
         sql<NoteRow>`SELECT ${sql.literal(NOTE_COLUMNS)} FROM notes WHERE id = ${id}`,
-        (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toNote)
+        rows => Option.map(Option.fromUndefinedOr(rows[0]), toNote),
       )
 
     const listVisible = (input: {
@@ -57,7 +60,7 @@ export class NoteRepo extends Context.Service<NoteRepo>()("NoteRepo", {
             AND (owner_id = ${input.userId} OR visibility = 'shared')
           ORDER BY is_pinned DESC, updated_at DESC, id ASC
         `,
-        (rows) => rows.map(toNote)
+        rows => rows.map(toNote),
       )
 
     /** The default notes list: live, not archived. Pinned first (FR-NOTE-03). */
@@ -74,7 +77,7 @@ export class NoteRepo extends Context.Service<NoteRepo>()("NoteRepo", {
             AND (owner_id = ${input.userId} OR visibility = 'shared')
           ORDER BY is_pinned DESC, updated_at DESC, id ASC
         `,
-        (rows) => rows.map(toNote)
+        rows => rows.map(toNote),
       )
 
     /** Trash view (FR-NOTE-03): soft-deleted notes, most recently trashed first. */
@@ -90,11 +93,14 @@ export class NoteRepo extends Context.Service<NoteRepo>()("NoteRepo", {
             AND (owner_id = ${input.userId} OR visibility = 'shared')
           ORDER BY deleted_at DESC, id ASC
         `,
-        (rows) => rows.map(toNote)
+        rows => rows.map(toNote),
       )
 
     /** Dashboard pinned section (pinned notes first, then recency). */
-    const listPinned = (input: { readonly householdId: string; readonly userId: UserId }) =>
+    const listPinned = (input: {
+      readonly householdId: string
+      readonly userId: UserId
+    }) =>
       Effect.map(
         sql<NoteRow>`
           SELECT ${sql.literal(NOTE_COLUMNS)} FROM notes
@@ -105,7 +111,7 @@ export class NoteRepo extends Context.Service<NoteRepo>()("NoteRepo", {
             AND (owner_id = ${input.userId} OR visibility = 'shared')
           ORDER BY updated_at DESC, id ASC
         `,
-        (rows) => rows.map(toNote)
+        rows => rows.map(toNote),
       )
 
     const insert = (note: Note) =>
@@ -122,7 +128,7 @@ export class NoteRepo extends Context.Service<NoteRepo>()("NoteRepo", {
              ${note.color}, ${note.createdAt}, ${note.updatedAt}, ${note.version}, ${note.deletedAt})
           RETURNING ${sql.literal(NOTE_COLUMNS)}
         `,
-        (rows) => toNote(rows[0]!)
+        rows => toNote(rows[0]!),
       )
 
     /**
@@ -186,7 +192,7 @@ export class NoteRepo extends Context.Service<NoteRepo>()("NoteRepo", {
           WHERE id = ${note.id}
           RETURNING ${sql.literal(NOTE_COLUMNS)}
         `,
-        (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toNote)
+        rows => Option.map(Option.fromUndefinedOr(rows[0]), toNote),
       )
 
     return {
@@ -198,9 +204,9 @@ export class NoteRepo extends Context.Service<NoteRepo>()("NoteRepo", {
       insert,
       update,
       detachTagsIfVersion,
-      attachTagIfVersion
+      attachTagIfVersion,
     } as const
-  })
+  }),
 }) {}
 
 export const NoteRepoLive = Layer.effect(NoteRepo, NoteRepo.make)

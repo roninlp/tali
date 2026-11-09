@@ -1,12 +1,12 @@
-import { Context, Effect, Layer, Option } from "effect"
-import { SqlClient } from "effect/sql"
+import { Context, Effect, Layer, Option } from 'effect'
+import { SqlClient } from 'effect/sql'
 import {
   type ListId,
   PlanningListItem as ListItem,
   type PlanningListItemId as ListItemId,
   type TagId,
-  type UserId
-} from "@tali/domain"
+  type UserId,
+} from '@tali/domain'
 
 /**
  * D1-backed repository for the real `ListItem` aggregate (ticket #33;
@@ -26,7 +26,7 @@ const LIST_ITEM_COLUMNS =
   `visibility, color, tag_ids AS tagIds, created_at AS createdAt, ` +
   `updated_at AS updatedAt, version, deleted_at AS deletedAt`
 
-interface ListItemRow extends Omit<ListItem, "done" | "tagIds"> {
+interface ListItemRow extends Omit<ListItem, 'done' | 'tagIds'> {
   readonly done: number | boolean
   readonly tagIds: string
 }
@@ -35,16 +35,16 @@ const toListItem = (row: ListItemRow): ListItem =>
   new ListItem({
     ...row,
     done: row.done === true || row.done === 1,
-    tagIds: JSON.parse(row.tagIds) as ReadonlyArray<TagId>
+    tagIds: JSON.parse(row.tagIds) as ReadonlyArray<TagId>,
   })
 
 const encodeTagIds = (ids: ReadonlyArray<TagId>): string => JSON.stringify(ids)
 const bit = (value: boolean): number => (value ? 1 : 0)
 
 export class PlanningListItemRepo extends Context.Service<PlanningListItemRepo>()(
-  "PlanningListItemRepo",
+  'PlanningListItemRepo',
   {
-    make: Effect.gen(function*() {
+    make: Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient
 
       const findById = (id: ListItemId) =>
@@ -53,7 +53,7 @@ export class PlanningListItemRepo extends Context.Service<PlanningListItemRepo>(
             SELECT ${sql.literal(LIST_ITEM_COLUMNS)} FROM list_items
             WHERE id = ${id} AND list_id IS NOT NULL
           `,
-          (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toListItem)
+          rows => Option.map(Option.fromUndefinedOr(rows[0]), toListItem),
         )
 
       /**
@@ -78,7 +78,7 @@ export class PlanningListItemRepo extends Context.Service<PlanningListItemRepo>(
               AND (owner_id = ${input.userId} OR visibility = 'shared')
             ORDER BY ordering ASC, id ASC
           `,
-          (rows) => rows.map(toListItem)
+          rows => rows.map(toListItem),
         )
 
       /**
@@ -98,7 +98,7 @@ export class PlanningListItemRepo extends Context.Service<PlanningListItemRepo>(
               AND deleted_at IS NULL
             ORDER BY ordering ASC, id ASC
           `,
-          (rows) => rows.map(toListItem)
+          rows => rows.map(toListItem),
         )
 
       const insert = (item: ListItem) =>
@@ -116,7 +116,7 @@ export class PlanningListItemRepo extends Context.Service<PlanningListItemRepo>(
                ${item.checkedAt}, ${item.color}, ${encodeTagIds(item.tagIds)}, ${item.type})
             RETURNING ${sql.literal(LIST_ITEM_COLUMNS)}
           `,
-          (rows) => toListItem(rows[0]!)
+          rows => toListItem(rows[0]!),
         )
 
       const update = (item: ListItem) =>
@@ -139,7 +139,7 @@ export class PlanningListItemRepo extends Context.Service<PlanningListItemRepo>(
             WHERE id = ${item.id}
             RETURNING ${sql.literal(LIST_ITEM_COLUMNS)}
           `,
-          (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toListItem)
+          rows => Option.map(Option.fromUndefinedOr(rows[0]), toListItem),
         )
 
       /**
@@ -190,13 +190,13 @@ export class PlanningListItemRepo extends Context.Service<PlanningListItemRepo>(
         insert,
         update,
         detachTagsIfVersion,
-        attachTagIfVersion
+        attachTagIfVersion,
       } as const
-    })
-  }
+    }),
+  },
 ) {}
 
 export const PlanningListItemRepoLive = Layer.effect(
   PlanningListItemRepo,
-  PlanningListItemRepo.make
+  PlanningListItemRepo.make,
 )

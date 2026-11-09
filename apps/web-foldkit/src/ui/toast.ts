@@ -20,12 +20,14 @@ export const ToastUndo = Schema.Struct({
   id: Schema.String,
   title: Schema.String,
 })
+
 export type ToastUndo = typeof ToastUndo.Type
 
 const ToastPayload = Schema.Struct({
   text: Schema.String,
   maybeUndo: Schema.optionalKey(ToastUndo),
 })
+
 export type ToastPayload = typeof ToastPayload.Type
 
 export const Toast = UiToast.make(ToastPayload)

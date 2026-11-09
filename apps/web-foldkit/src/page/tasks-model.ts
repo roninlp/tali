@@ -33,6 +33,7 @@ import type { ProjectRow, TagRow, TaskRow } from '../mirror'
 // FILTERS AND SORT
 
 export const TaskBoardKey = Schema.Literals(['today', 'upcoming', 'inbox'])
+
 export type TaskBoardKey = typeof TaskBoardKey.Type
 
 export const TaskDateFilter = Schema.Literals([
@@ -43,6 +44,7 @@ export const TaskDateFilter = Schema.Literals([
   'week',
   'none',
 ])
+
 export type TaskDateFilter = typeof TaskDateFilter.Type
 
 export const DATE_FILTERS: ReadonlyArray<TaskDateFilter> = [
@@ -60,15 +62,19 @@ export const TaskPriorityFilter = Schema.Literals([
   'medium',
   'low',
 ])
+
 export type TaskPriorityFilter = typeof TaskPriorityFilter.Type
 
 export const TaskStatusFilter = Schema.Literals(['all', 'todo', 'doing'])
+
 export type TaskStatusFilter = typeof TaskStatusFilter.Type
 
 export const TaskPriority = Schema.Literals(['high', 'medium', 'low'])
+
 export type TaskPriority = typeof TaskPriority.Type
 
 export const TaskStatusOption = Schema.Literals(['todo', 'doing'])
+
 export type TaskStatusOption = typeof TaskStatusOption.Type
 
 /** `All` = every project, `None` = tasks without a project, `Project` = one id. */
@@ -77,6 +83,7 @@ export const ProjectFilter = defineTaggedUnion({
   None: {},
   Project: { projectId: Schema.String },
 })
+
 export type ProjectFilter = typeof ProjectFilter.Type
 
 export const TaskFilters = Schema.Struct({
@@ -87,6 +94,7 @@ export const TaskFilters = Schema.Struct({
   status: TaskStatusFilter,
   date: TaskDateFilter,
 })
+
 export type TaskFilters = typeof TaskFilters.Type
 
 export const TaskSortField = Schema.Literals([
@@ -97,6 +105,7 @@ export const TaskSortField = Schema.Literals([
   'updatedAt',
   'title',
 ])
+
 export type TaskSortField = typeof TaskSortField.Type
 
 export const TASK_SORT_FIELDS: ReadonlyArray<TaskSortField> = [
@@ -109,18 +118,21 @@ export const TASK_SORT_FIELDS: ReadonlyArray<TaskSortField> = [
 ]
 
 export const SortDirection = Schema.Literals(['asc', 'desc'])
+
 export type SortDirection = typeof SortDirection.Type
 
 export const TaskSort = Schema.Struct({
   by: TaskSortField,
   direction: SortDirection,
 })
+
 export type TaskSort = typeof TaskSort.Type
 
 export const TaskViewSettings = Schema.Struct({
   filters: TaskFilters,
   sort: TaskSort,
 })
+
 export type TaskViewSettings = typeof TaskViewSettings.Type
 
 export const DEFAULT_TASK_FILTERS: TaskFilters = TaskFilters.make({
@@ -406,9 +418,11 @@ export const buildTaskView = (
 ): TaskView => {
   const bounds = taskBucketBounds(options.timeZone, options.now)
   const live = Array.filter(rows, task => task.status !== 'done')
+
   const visible = Array.filter(live, task =>
     matchesTaskFilters(task, options.filters, bounds),
   )
+
   const group = (key: TaskBucketPlacement): TaskGroup => ({
     key,
     tasks: sortTasks(
@@ -416,21 +430,26 @@ export const buildTaskView = (
       options.sort,
     ),
   })
+
   const todayGroups = [group('overdue'), group('today')]
   const upcomingGroups = [group('tomorrow'), group('thisWeek'), group('later')]
   const inboxGroups = [group('noDate')]
+
   const countOf = (groups: ReadonlyArray<TaskGroup>): number =>
     Array.reduce(groups, 0, (total, entry) => total + Array.length(entry.tasks))
+
   const today: TaskBoard = {
     key: 'today',
     groups: todayGroups,
     count: countOf(todayGroups),
   }
+
   const upcoming: TaskBoard = {
     key: 'upcoming',
     groups: upcomingGroups,
     count: countOf(upcomingGroups),
   }
+
   const inbox: TaskBoard = {
     key: 'inbox',
     groups: inboxGroups,
@@ -475,6 +494,7 @@ export const projectCountsOf = (
     if (task.projectId !== null) {
       counts.set(task.projectId, (counts.get(task.projectId) ?? 0) + 1)
     }
+
     return counts
   })
 
@@ -522,6 +542,7 @@ export const BOARD_COPY: Readonly<Record<TaskBoardKey, BoardCopy>> = {
 export const validTimeZone = (timeZone: string): string => {
   try {
     new Intl.DateTimeFormat('en-US', { timeZone })
+
     return timeZone
   } catch {
     return 'UTC'
@@ -544,10 +565,12 @@ export const formatCompletionTime = (
   digits: Digits,
 ): string => {
   const instant = new Date(completedAt)
+
   const date = formatJalaliDate(toJalaliDateInZone(instant, timeZone), {
     style: 'medium',
     digits,
   })
+
   const time = new Intl.DateTimeFormat('en-GB', {
     hour: '2-digit',
     minute: '2-digit',
@@ -578,6 +601,7 @@ export const dueLabel = (
 
   if (task.dueDate !== null) {
     const label = formatLocalDate(task.dueDate, digits)
+
     return task.dueDate < bounds.today ? `عقب‌افتاده · ${label}` : label
   }
 

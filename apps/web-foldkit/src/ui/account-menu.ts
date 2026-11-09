@@ -1,5 +1,6 @@
-import { Menu } from '@foldkit/ui'
 import { type Html, type HtmlBuilder, childAttributes } from 'foldkit/html'
+
+import { Menu } from '@foldkit/ui'
 
 import { classNames } from './class-names'
 import { logoutIcon, settingsIcon, userIcon } from './icons'
@@ -28,7 +29,7 @@ const MENU_ANCHOR = {
 const accountItemLabel = (item: AccountItem, isSigningOut: boolean): string =>
   item === 'settings' ? 'تنظیمات' : isSigningOut ? 'در حال خروج…' : 'خروج'
 
-const accountItemIcon = (item: AccountItem): (className: string) => Html =>
+const accountItemIcon = (item: AccountItem): ((className: string) => Html) =>
   item === 'settings' ? settingsIcon : logoutIcon
 
 export const accountMenuView = <Message>(
@@ -58,7 +59,10 @@ export const accountMenuView = <Message>(
               ),
             ),
           ],
-          [accountItemIcon(item)('size-4'), accountItemLabel(item, config.isSigningOut)],
+          [
+            accountItemIcon(item)('size-4'),
+            accountItemLabel(item, config.isSigningOut),
+          ],
         ),
       }),
       isItemDisabled: _item => config.isSigningOut,

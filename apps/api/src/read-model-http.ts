@@ -1,6 +1,6 @@
-import { Effect, Option } from "effect"
-import { HttpServerRequest, HttpServerResponse } from "effect/http"
-import { sha256Hex } from "./bytes.js"
+import { Effect, Option } from 'effect'
+import { HttpServerRequest, HttpServerResponse } from 'effect/http'
+import { sha256Hex } from './bytes.js'
 
 /**
  * Shared HTTP plumbing for the aggregated read models (`GET /today`,
@@ -15,49 +15,52 @@ import { sha256Hex } from "./bytes.js"
  */
 
 export type ReadFailureCode =
-  | "Unauthorized"
-  | "Forbidden"
-  | "BadRequest"
-  | "InternalError"
+  | 'Unauthorized'
+  | 'Forbidden'
+  | 'BadRequest'
+  | 'InternalError'
 
 /** An error envelope with `no-store`, so a failure is never cached. */
 export const json = (
   status: number,
-  body: unknown
+  body: unknown,
 ): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
   HttpServerResponse.json(body, { status }).pipe(
-    Effect.map(HttpServerResponse.setHeader("cache-control", "no-store")),
-    Effect.orDie
+    Effect.map(HttpServerResponse.setHeader('cache-control', 'no-store')),
+    Effect.orDie,
   )
 
 export const fail = (
   status: number,
   code: ReadFailureCode,
   message: string,
-  retryable = false
+  retryable = false,
 ): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
   json(status, { error: { code, message, retryable, details: {} } })
 
 /** A strong hash of the encoded payload; the body alone determines the tag. */
 export const etagOf = (body: unknown): Effect.Effect<string> =>
-  sha256Hex(JSON.stringify(body)).pipe(Effect.map((hex) => `"${hex}"`))
+  sha256Hex(JSON.stringify(body)).pipe(Effect.map(hex => `"${hex}"`))
 
 /**
  * `If-None-Match` uses the weak comparison function even for strong tags, so
  * `W/"x"` matches `"x"`. A comma-separated list and `*` are both legal.
  */
 export const matchesIfNoneMatch = (header: string, etag: string): boolean => {
-  const opaque = (value: string): string => value.trim().replace(/^W\//, "")
+  const opaque = (value: string): string => value.trim().replace(/^W\//, '')
   return header
-    .split(",")
-    .some((candidate) => candidate.trim() === "*" || opaque(candidate) === opaque(etag))
+    .split(',')
+    .some(
+      candidate =>
+        candidate.trim() === '*' || opaque(candidate) === opaque(etag),
+    )
 }
 
 export const cacheHeaders = (etag: string): Record<string, string> => ({
   etag,
-  "cache-control": "private, no-cache",
+  'cache-control': 'private, no-cache',
   // The body is per-session; make that explicit for any intermediary.
-  vary: "cookie"
+  vary: 'cookie',
 })
 
 /**
@@ -68,5 +71,5 @@ export const cacheHeaders = (etag: string): Record<string, string> => ({
 export const requestUrl = (request: HttpServerRequest.HttpServerRequest): URL =>
   Option.getOrElse(
     HttpServerRequest.toURL(request),
-    () => new URL(request.url, "http://localhost")
+    () => new URL(request.url, 'http://localhost'),
   )

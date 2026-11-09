@@ -1,6 +1,6 @@
-import { Schema } from "effect"
-import { Temporal } from "temporal-polyfill/full"
-import type { LocalDate, TaskStatus } from "./common.js"
+import { Schema } from 'effect'
+import { Temporal } from 'temporal-polyfill/full'
+import type { LocalDate, TaskStatus } from './common.js'
 
 /**
  * Due-date buckets for the Today screen (FR-TASK-05, ticket #36).
@@ -19,18 +19,18 @@ import type { LocalDate, TaskStatus } from "./common.js"
  */
 
 export const TASK_BUCKETS = [
-  "overdue",
-  "today",
-  "tomorrow",
-  "thisWeek",
-  "noDate"
+  'overdue',
+  'today',
+  'tomorrow',
+  'thisWeek',
+  'noDate',
 ] as const
 
 export const TaskBucket = Schema.Literals(TASK_BUCKETS)
 export type TaskBucket = Schema.Schema.Type<typeof TaskBucket>
 
 /** Placement includes the two non-bucketed outcomes (done/far future). */
-export type TaskBucketPlacement = TaskBucket | "later" | "done"
+export type TaskBucketPlacement = TaskBucket | 'later' | 'done'
 
 export interface TaskBucketBounds {
   readonly timeZone: string
@@ -56,14 +56,12 @@ export type TaskBucketDateInput = Date | string | Temporal.Instant
 const asInstant = (now: TaskBucketDateInput): Temporal.Instant =>
   now instanceof Temporal.Instant
     ? now
-    : typeof now === "string"
-    ? Temporal.Instant.from(now)
-    : Temporal.Instant.fromEpochMilliseconds(now.getTime())
+    : typeof now === 'string'
+      ? Temporal.Instant.from(now)
+      : Temporal.Instant.fromEpochMilliseconds(now.getTime())
 
-const localDateAt = (
-  date: Temporal.PlainDate,
-  timeZone: string
-): string => date.toZonedDateTime(timeZone).toInstant().toString()
+const localDateAt = (date: Temporal.PlainDate, timeZone: string): string =>
+  date.toZonedDateTime(timeZone).toInstant().toString()
 
 /** UTC instant at which a local calendar date starts in `timeZone`. */
 export const localDateStartInstant = (date: string, timeZone: string): string =>
@@ -81,11 +79,11 @@ export const localDateStartInstant = (date: string, timeZone: string): string =>
 export const localDateTimeInstant = (
   date: string,
   time: string,
-  timeZone: string
+  timeZone: string,
 ): string =>
   Temporal.PlainDate.from(date)
     .toPlainDateTime(Temporal.PlainTime.from(time))
-    .toZonedDateTime(timeZone, { disambiguation: "compatible" })
+    .toZonedDateTime(timeZone, { disambiguation: 'compatible' })
     .toInstant()
     .toString()
 
@@ -96,7 +94,7 @@ export const localDateTimeInstant = (
  */
 export const taskBucketBounds = (
   timeZone: string,
-  now: TaskBucketDateInput
+  now: TaskBucketDateInput,
 ): TaskBucketBounds => {
   const today = asInstant(now).toZonedDateTimeISO(timeZone).toPlainDate()
   const tomorrow = today.add({ days: 1 })
@@ -112,7 +110,7 @@ export const taskBucketBounds = (
     todayStart: localDateAt(today, timeZone),
     tomorrowStart: localDateAt(tomorrow, timeZone),
     dayAfterTomorrowStart: localDateAt(dayAfterTomorrow, timeZone),
-    weekEndExclusive: localDateAt(today.add({ days: 8 }), timeZone)
+    weekEndExclusive: localDateAt(today.add({ days: 8 }), timeZone),
   }
 }
 
@@ -129,25 +127,25 @@ export interface TaskBucketShape {
  */
 export const taskBucketOf = (
   task: TaskBucketShape,
-  bounds: TaskBucketBounds
+  bounds: TaskBucketBounds,
 ): TaskBucketPlacement => {
-  if (task.status === "done") return "done"
-  if (task.dueDate === null && task.dueAt === null) return "noDate"
+  if (task.status === 'done') return 'done'
+  if (task.dueDate === null && task.dueAt === null) return 'noDate'
 
   if (task.dueAt !== null) {
     const due = Date.parse(task.dueAt)
-    if (!Number.isFinite(due)) return "later"
-    if (due < Date.parse(bounds.todayStart)) return "overdue"
-    if (due < Date.parse(bounds.tomorrowStart)) return "today"
-    if (due < Date.parse(bounds.dayAfterTomorrowStart)) return "tomorrow"
-    if (due < Date.parse(bounds.weekEndExclusive)) return "thisWeek"
-    return "later"
+    if (!Number.isFinite(due)) return 'later'
+    if (due < Date.parse(bounds.todayStart)) return 'overdue'
+    if (due < Date.parse(bounds.tomorrowStart)) return 'today'
+    if (due < Date.parse(bounds.dayAfterTomorrowStart)) return 'tomorrow'
+    if (due < Date.parse(bounds.weekEndExclusive)) return 'thisWeek'
+    return 'later'
   }
 
   // `YYYY-MM-DD` strings sort lexicographically by calendar date.
-  if (task.dueDate! < bounds.today) return "overdue"
-  if (task.dueDate === bounds.today) return "today"
-  if (task.dueDate === bounds.tomorrow) return "tomorrow"
-  if (task.dueDate! <= bounds.weekEnd) return "thisWeek"
-  return "later"
+  if (task.dueDate! < bounds.today) return 'overdue'
+  if (task.dueDate === bounds.today) return 'today'
+  if (task.dueDate === bounds.tomorrow) return 'tomorrow'
+  if (task.dueDate! <= bounds.weekEnd) return 'thisWeek'
+  return 'later'
 }

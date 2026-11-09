@@ -1,5 +1,5 @@
-import { Context, Effect, Layer, Schema } from "effect"
-import { SqlClient, SqlSchema } from "effect/sql"
+import { Context, Effect, Layer, Schema } from 'effect'
+import { SqlClient, SqlSchema } from 'effect/sql'
 
 /**
  * D1 fixed-window login limiter (ADR-0001).
@@ -19,7 +19,7 @@ export const LOGIN_MAX_FAILURES = 5
 
 const Attempt = Schema.Struct({
   windowStart: Schema.Int,
-  failures: Schema.Int
+  failures: Schema.Int,
 })
 
 export interface LimitStatus {
@@ -28,24 +28,27 @@ export interface LimitStatus {
   readonly retryAfterSeconds: number
 }
 
-export class LoginRateLimiter extends Context.Service<LoginRateLimiter>()("LoginRateLimiter", {
-  make: Effect.gen(function*() {
-    const sql = yield* SqlClient.SqlClient
+export class LoginRateLimiter extends Context.Service<LoginRateLimiter>()(
+  'LoginRateLimiter',
+  {
+    make: Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
 
-    const windowStartOf = (now: number): number => Math.floor(now / WINDOW_MS) * WINDOW_MS
+      const windowStartOf = (now: number): number =>
+        Math.floor(now / WINDOW_MS) * WINDOW_MS
 
-    /**
-     * Reserve one attempt for `key` and return the updated counter.
-     *
-     * The increment and the read are the same `INSERT … RETURNING` statement,
-     * so concurrent requests serialise on the row: the sixth request sees six
-     * and is blocked instead of every request passing a separate pre-check.
-     * A successful login calls `clear`; every other attempt stays counted.
-     */
-    const consumeAttempt = SqlSchema.findOne({
-      Request: Schema.Struct({ key: Schema.String, windowStart: Schema.Int }),
-      Result: Attempt,
-      execute: ({ key, windowStart }) => sql`
+      /**
+       * Reserve one attempt for `key` and return the updated counter.
+       *
+       * The increment and the read are the same `INSERT … RETURNING` statement,
+       * so concurrent requests serialise on the row: the sixth request sees six
+       * and is blocked instead of every request passing a separate pre-check.
+       * A successful login calls `clear`; every other attempt stays counted.
+       */
+      const consumeAttempt = SqlSchema.findOne({
+        Request: Schema.Struct({ key: Schema.String, windowStart: Schema.Int }),
+        Result: Attempt,
+        execute: ({ key, windowStart }) => sql`
         INSERT INTO login_attempts (key, window_start, failures)
         VALUES (${key}, ${windowStart}, 1)
         ON CONFLICT (key) DO UPDATE SET
@@ -56,35 +59,42 @@ export class LoginRateLimiter extends Context.Service<LoginRateLimiter>()("Login
           END,
           window_start = excluded.window_start
         RETURNING window_start, failures
-      `
-    })
-
-    /** Count this attempt and report whether the window is now exhausted. */
-    const consume = (key: string) =>
-      Effect.gen(function*() {
-        const now = Date.now()
-        const windowStart = windowStartOf(now)
-        const { failures } = yield* consumeAttempt({ key, windowStart })
-        if (failures <= LOGIN_MAX_FAILURES) {
-          return { limited: false, retryAfterSeconds: 0 }
-        }
-        return {
-          limited: true,
-          retryAfterSeconds: Math.max(1, Math.ceil((windowStart + WINDOW_MS - now) / 1000))
-        }
+      `,
       })
 
-    /** A successful login clears the window so a hiccup does not linger. */
-    const clear = SqlSchema.void({
-      Request: Schema.String,
-      execute: (key) => sql`DELETE FROM login_attempts WHERE key = ${key}`
-    })
+      /** Count this attempt and report whether the window is now exhausted. */
+      const consume = (key: string) =>
+        Effect.gen(function* () {
+          const now = Date.now()
+          const windowStart = windowStartOf(now)
+          const { failures } = yield* consumeAttempt({ key, windowStart })
+          if (failures <= LOGIN_MAX_FAILURES) {
+            return { limited: false, retryAfterSeconds: 0 }
+          }
+          return {
+            limited: true,
+            retryAfterSeconds: Math.max(
+              1,
+              Math.ceil((windowStart + WINDOW_MS - now) / 1000),
+            ),
+          }
+        })
 
-    return {
-      consume: (key: string) => consume(key),
-      clear
-    } as const
-  })
-}) {}
+      /** A successful login clears the window so a hiccup does not linger. */
+      const clear = SqlSchema.void({
+        Request: Schema.String,
+        execute: key => sql`DELETE FROM login_attempts WHERE key = ${key}`,
+      })
 
-export const LoginRateLimiterLive = Layer.effect(LoginRateLimiter, LoginRateLimiter.make)
+      return {
+        consume: (key: string) => consume(key),
+        clear,
+      } as const
+    }),
+  },
+) {}
+
+export const LoginRateLimiterLive = Layer.effect(
+  LoginRateLimiter,
+  LoginRateLimiter.make,
+)

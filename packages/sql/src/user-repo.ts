@@ -1,6 +1,6 @@
-import { Context, Effect, Layer, Schema } from "effect"
-import { SqlClient, SqlModel, SqlSchema, Statement } from "effect/sql"
-import { User } from "@tali/domain"
+import { Context, Effect, Layer, Schema } from 'effect'
+import { SqlClient, SqlModel, SqlSchema, Statement } from 'effect/sql'
+import { User } from '@tali/domain'
 
 /**
  * D1-backed repository for `User` (ticket #15).
@@ -11,20 +11,20 @@ import { User } from "@tali/domain"
  * with `transformResultNames`/`transformQueryNames` (snake_case columns ↔
  * camelCase fields) — see `apps/api/src/index.ts`.
  */
-export class UserRepo extends Context.Service<UserRepo>()("UserRepo", {
-  make: Effect.gen(function*() {
+export class UserRepo extends Context.Service<UserRepo>()('UserRepo', {
+  make: Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
 
     const base = yield* SqlModel.makeRepository(User, {
-      tableName: "users",
-      spanPrefix: "Users",
-      idColumn: "id"
+      tableName: 'users',
+      spanPrefix: 'Users',
+      idColumn: 'id',
     })
 
     const findByEmail = SqlSchema.findOneOption({
       Request: Schema.String,
       Result: User,
-      execute: (email) => sql`SELECT * FROM users WHERE email = ${email}`
+      execute: email => sql`SELECT * FROM users WHERE email = ${email}`,
     })
 
     /**
@@ -39,9 +39,9 @@ export class UserRepo extends Context.Service<UserRepo>()("UserRepo", {
       update: base.update,
       findById: base.findById,
       findByEmail,
-      insertStatement
+      insertStatement,
     } as const
-  })
+  }),
 }) {}
 
 export const UserRepoLive = Layer.effect(UserRepo, UserRepo.make)

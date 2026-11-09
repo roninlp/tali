@@ -1,6 +1,10 @@
 import { Duration, Effect, Layer, Tracer } from 'effect'
 import { FetchHttpClient } from 'effect/http'
-import { OtlpExporter, OtlpSerialization, OtlpTracer } from 'effect/observability'
+import {
+  OtlpExporter,
+  OtlpSerialization,
+  OtlpTracer,
+} from 'effect/observability'
 
 import { redactTracer } from '@tali/telemetry'
 
@@ -24,19 +28,30 @@ import { isDevServer } from './config'
 
 const endpoint = import.meta.env.VITE_OTLP_TRACES_URL?.trim()
 
-const stringRecordOf = (raw: string | undefined): Record<string, string> | undefined => {
+const stringRecordOf = (
+  raw: string | undefined,
+): Record<string, string> | undefined => {
   if (raw === undefined || raw.trim() === '') return undefined
+
   try {
     const parsed: unknown = JSON.parse(raw)
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+
+    if (
+      parsed === null ||
+      typeof parsed !== 'object' ||
+      Array.isArray(parsed)
+    ) {
       return undefined
     }
+
     const headers: Record<string, string> = {}
+
     for (const [key, value] of Object.entries(parsed)) {
       if (typeof value === 'string') {
         headers[key] = value
       }
     }
+
     return headers
   } catch {
     return undefined
@@ -53,16 +68,16 @@ const exporter = Layer.effect(
     resource: {
       serviceName: 'tali-web',
       attributes: {
-        'deployment.environment': isDevServer ? 'development' : 'production'
-      }
+        'deployment.environment': isDevServer ? 'development' : 'production',
+      },
     },
     exportInterval: Duration.seconds(2),
-    maxBatchSize: 100
-  }).pipe(Effect.map(redactTracer))
+    maxBatchSize: 100,
+  }).pipe(Effect.map(redactTracer)),
 ).pipe(
   Layer.provide(OtlpExporter.layerFlusher),
   Layer.provide(FetchHttpClient.layer),
-  Layer.provide(OtlpSerialization.layerJson)
+  Layer.provide(OtlpSerialization.layerJson),
 )
 
 export const tracingResources: Layer.Layer<never> =

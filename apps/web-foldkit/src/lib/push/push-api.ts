@@ -41,6 +41,7 @@ export const registerPushSubscription = (
     }
 
     const response = maybeResponse.value
+
     if (response.ok) {
       return { ok: true, value: { ok: true } }
     }

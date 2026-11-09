@@ -1,6 +1,6 @@
-import { Temporal } from "temporal-polyfill/full"
-import type { Digits, WeekStart } from "./common.js"
-import { DEFAULT_DIGITS, localizeDigits } from "./digits.js"
+import { Temporal } from 'temporal-polyfill/full'
+import type { Digits, WeekStart } from './common.js'
+import { DEFAULT_DIGITS, localizeDigits } from './digits.js'
 
 /**
  * Jalali (Persian / Solar Hijri) date engine — the single date-math location
@@ -19,42 +19,42 @@ import { DEFAULT_DIGITS, localizeDigits } from "./digits.js"
  * Jalali year/month/day as the source of truth.
  */
 
-export const JALALI_CALENDAR = "persian"
+export const JALALI_CALENDAR = 'persian'
 
 /** The household's default zone; a user profile can override it. */
-export const DEFAULT_TIME_ZONE = "Asia/Tehran"
+export const DEFAULT_TIME_ZONE = 'Asia/Tehran'
 
 export const JALALI_MONTHS = [
-  "فروردین",
-  "اردیبهشت",
-  "خرداد",
-  "تیر",
-  "مرداد",
-  "شهریور",
-  "مهر",
-  "آبان",
-  "آذر",
-  "دی",
-  "بهمن",
-  "اسفند"
+  'فروردین',
+  'اردیبهشت',
+  'خرداد',
+  'تیر',
+  'مرداد',
+  'شهریور',
+  'مهر',
+  'آبان',
+  'آذر',
+  'دی',
+  'بهمن',
+  'اسفند',
 ] as const
 
 /** Indexed by ISO weekday − 1 (Monday … Sunday). */
 export const JALALI_WEEKDAYS = [
-  "دوشنبه",
-  "سه‌شنبه",
-  "چهارشنبه",
-  "پنج‌شنبه",
-  "جمعه",
-  "شنبه",
-  "یکشنبه"
+  'دوشنبه',
+  'سه‌شنبه',
+  'چهارشنبه',
+  'پنج‌شنبه',
+  'جمعه',
+  'شنبه',
+  'یکشنبه',
 ] as const
 
 /** Monday-indexed start of a configured week. */
 const WEEK_START_INDEX: Record<WeekStart, number> = {
   saturday: 5,
   sunday: 6,
-  monday: 0
+  monday: 0,
 }
 
 export interface JalaliFields {
@@ -66,17 +66,19 @@ export interface JalaliFields {
 export type JalaliDateInput = Temporal.PlainDate | string
 
 const withJalaliCalendar = (date: Temporal.PlainDate): Temporal.PlainDate =>
-  date.calendarId === JALALI_CALENDAR ? date : date.withCalendar(JALALI_CALENDAR)
+  date.calendarId === JALALI_CALENDAR
+    ? date
+    : date.withCalendar(JALALI_CALENDAR)
 
 /** The ISO weekday (Monday = 1 … Sunday = 7) of a calendar date. */
 const isoDayOfWeek = (date: Temporal.PlainDate): number =>
-  date.withCalendar("iso8601").dayOfWeek
+  date.withCalendar('iso8601').dayOfWeek
 
 /** Build a Jalali date from calendar fields (overflow defaults to `constrain`). */
 export const jalaliDate = (
   year: number,
   month: number,
-  day: number
+  day: number,
 ): Temporal.PlainDate =>
   Temporal.PlainDate.from({ year, month, day, calendar: JALALI_CALENDAR })
 
@@ -86,12 +88,12 @@ export const jalaliDate = (
  */
 export const toJalaliDate = (input: JalaliDateInput): Temporal.PlainDate =>
   withJalaliCalendar(
-    typeof input === "string" ? Temporal.PlainDate.from(input) : input
+    typeof input === 'string' ? Temporal.PlainDate.from(input) : input,
   )
 
 /** Convert a Jalali date (or any calendar date) to its ISO `YYYY-MM-DD` wall date. */
 export const toIsoDate = (date: Temporal.PlainDate): string =>
-  date.withCalendar("iso8601").toString()
+  date.withCalendar('iso8601').toString()
 
 /**
  * Convert an instant (`Date`) to the Jalali wall date in an IANA timezone.
@@ -99,7 +101,7 @@ export const toIsoDate = (date: Temporal.PlainDate): string =>
  */
 export const toJalaliDateInZone = (
   instant: Date | Temporal.Instant,
-  timeZone: string = DEFAULT_TIME_ZONE
+  timeZone: string = DEFAULT_TIME_ZONE,
 ): Temporal.PlainDate => {
   const temporalInstant =
     instant instanceof Date
@@ -114,7 +116,7 @@ export const toJalaliDateInZone = (
 /** Today's Jalali date in an IANA timezone (inject the instant for tests). */
 export const todayInTimeZone = (
   timeZone: string = DEFAULT_TIME_ZONE,
-  now: Temporal.Instant = Temporal.Now.instant()
+  now: Temporal.Instant = Temporal.Now.instant(),
 ): Temporal.PlainDate => toJalaliDateInZone(now, timeZone)
 
 /** The Jalali year/month/day fields of a date. */
@@ -132,60 +134,66 @@ export const daysInJalaliMonth = (year: number, month: number): number =>
 export const daysInJalaliYear = (year: number): number =>
   jalaliDate(year, 1, 1).daysInYear
 
-export const startOfJalaliMonth = (date: Temporal.PlainDate): Temporal.PlainDate =>
-  withJalaliCalendar(date).with({ day: 1 })
+export const startOfJalaliMonth = (
+  date: Temporal.PlainDate,
+): Temporal.PlainDate => withJalaliCalendar(date).with({ day: 1 })
 
-export const endOfJalaliMonth = (date: Temporal.PlainDate): Temporal.PlainDate => {
+export const endOfJalaliMonth = (
+  date: Temporal.PlainDate,
+): Temporal.PlainDate => {
   const start = startOfJalaliMonth(date)
   return start.with({ day: start.daysInMonth })
 }
 
-export const startOfJalaliYear = (date: Temporal.PlainDate): Temporal.PlainDate =>
-  withJalaliCalendar(date).with({ month: 1, day: 1 })
+export const startOfJalaliYear = (
+  date: Temporal.PlainDate,
+): Temporal.PlainDate => withJalaliCalendar(date).with({ month: 1, day: 1 })
 
-export const endOfJalaliYear = (date: Temporal.PlainDate): Temporal.PlainDate => {
+export const endOfJalaliYear = (
+  date: Temporal.PlainDate,
+): Temporal.PlainDate => {
   const start = startOfJalaliYear(date)
   return start.with({ month: 12, day: start.with({ month: 12 }).daysInMonth })
 }
 
 export interface AddJalaliOptions {
   /** `constrain` (default) clamps Esfand 30 → Esfand 29 in a common year. */
-  readonly overflow?: "constrain" | "reject"
+  readonly overflow?: 'constrain' | 'reject'
 }
 
 export const addJalaliDays = (
   date: Temporal.PlainDate,
-  days: number
+  days: number,
 ): Temporal.PlainDate => withJalaliCalendar(date).add({ days })
 
 export const addJalaliMonths = (
   date: Temporal.PlainDate,
   months: number,
-  options: AddJalaliOptions = {}
+  options: AddJalaliOptions = {},
 ): Temporal.PlainDate =>
   withJalaliCalendar(date).add(
     { months },
-    { overflow: options.overflow ?? "constrain" }
+    { overflow: options.overflow ?? 'constrain' },
   )
 
 export const addJalaliYears = (
   date: Temporal.PlainDate,
   years: number,
-  options: AddJalaliOptions = {}
+  options: AddJalaliOptions = {},
 ): Temporal.PlainDate =>
   withJalaliCalendar(date).add(
     { years },
-    { overflow: options.overflow ?? "constrain" }
+    { overflow: options.overflow ?? 'constrain' },
   )
 
 export const compareJalali = (
   one: Temporal.PlainDate,
-  two: Temporal.PlainDate
+  two: Temporal.PlainDate,
 ): number => Temporal.PlainDate.compare(one, two)
 
 export const isSameJalaliMonth = (
   one: Temporal.PlainDate,
-  two: Temporal.PlainDate
+  two: Temporal.PlainDate,
 ): boolean => {
   const a = withJalaliCalendar(one)
   const b = withJalaliCalendar(two)
@@ -193,21 +201,23 @@ export const isSameJalaliMonth = (
 }
 
 /** Offset from `date` back to the start of its configured week. */
-const weekStartOffset = (date: Temporal.PlainDate, weekStart: WeekStart): number =>
-  (isoDayOfWeek(date) - 1 - WEEK_START_INDEX[weekStart] + 7) % 7
+const weekStartOffset = (
+  date: Temporal.PlainDate,
+  weekStart: WeekStart,
+): number => (isoDayOfWeek(date) - 1 - WEEK_START_INDEX[weekStart] + 7) % 7
 
 export const startOfJalaliWeek = (
   date: Temporal.PlainDate,
-  weekStart: WeekStart = "saturday"
+  weekStart: WeekStart = 'saturday',
 ): Temporal.PlainDate =>
   withJalaliCalendar(date).subtract({
-    days: weekStartOffset(date, weekStart)
+    days: weekStartOffset(date, weekStart),
   })
 
 /** The seven days of the week containing `date`, starting on `weekStart`. */
 export const jalaliWeek = (
   date: Temporal.PlainDate,
-  weekStart: WeekStart = "saturday"
+  weekStart: WeekStart = 'saturday',
 ): ReadonlyArray<Temporal.PlainDate> => {
   const start = startOfJalaliWeek(date, weekStart)
   return Array.from({ length: 7 }, (_, index) => start.add({ days: index }))
@@ -247,9 +257,9 @@ export interface JalaliMonthGridOptions {
 export const jalaliMonthGrid = (
   year: number,
   month: number,
-  options: JalaliMonthGridOptions = {}
+  options: JalaliMonthGridOptions = {},
 ): JalaliMonthGrid => {
-  const weekStart = options.weekStart ?? "saturday"
+  const weekStart = options.weekStart ?? 'saturday'
   const first = jalaliDate(year, month, 1)
   const leading = weekStartOffset(first, weekStart)
   const cellCount = Math.ceil((leading + first.daysInMonth) / 7) * 7
@@ -262,7 +272,7 @@ export const jalaliMonthGrid = (
       const date = start.add({ days: row + column })
       days.push({
         date,
-        inMonth: date.year === year && date.month === month
+        inMonth: date.year === year && date.month === month,
       })
     }
     weeks.push({ days })
@@ -273,11 +283,11 @@ export const jalaliMonthGrid = (
     month,
     start,
     end: start.add({ days: cellCount - 1 }),
-    weeks
+    weeks,
   }
 }
 
-export type JalaliDateFormat = "long" | "medium" | "short" | "numeric"
+export type JalaliDateFormat = 'long' | 'medium' | 'short' | 'numeric'
 
 export interface FormatJalaliDateOptions {
   /** Persian digits by default; `latin` is the opt-out. */
@@ -286,28 +296,28 @@ export interface FormatJalaliDateOptions {
   readonly style?: JalaliDateFormat
 }
 
-const pad2 = (value: number): string => String(value).padStart(2, "0")
+const pad2 = (value: number): string => String(value).padStart(2, '0')
 
 /** Format a Jalali date for display, localized to Persian copy and digits. */
 export const formatJalaliDate = (
   date: Temporal.PlainDate,
-  options: FormatJalaliDateOptions = {}
+  options: FormatJalaliDateOptions = {},
 ): string => {
   const digits = options.digits ?? DEFAULT_DIGITS
-  const style = options.style ?? "long"
+  const style = options.style ?? 'long'
   const jalali = withJalaliCalendar(date)
   const year = localizeDigits(jalali.year, digits)
   const day = localizeDigits(jalali.day, digits)
-  const monthName = JALALI_MONTHS[jalali.month - 1] ?? ""
+  const monthName = JALALI_MONTHS[jalali.month - 1] ?? ''
 
   switch (style) {
-    case "numeric":
+    case 'numeric':
       return `${year}/${localizeDigits(pad2(jalali.month), digits)}/${localizeDigits(pad2(jalali.day), digits)}`
-    case "short":
+    case 'short':
       return `${day} ${monthName}`
-    case "medium":
+    case 'medium':
       return `${day} ${monthName} ${year}`
-    case "long":
+    case 'long':
     default:
       return `${JALALI_WEEKDAYS[isoDayOfWeek(jalali) - 1]} ${day} ${monthName} ${year}`
   }
@@ -316,6 +326,6 @@ export const formatJalaliDate = (
 export const formatJalaliMonth = (
   year: number,
   month: number,
-  digits: Digits = DEFAULT_DIGITS
+  digits: Digits = DEFAULT_DIGITS,
 ): string =>
   `${JALALI_MONTHS[month - 1] ?? localizeDigits(month, digits)} ${localizeDigits(year, digits)}`

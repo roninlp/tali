@@ -1,9 +1,10 @@
 import { Effect, Option, Schema } from 'effect'
-import { Menu } from '@foldkit/ui'
 import { Command, Submodel, Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
 import { defineTaggedUnion } from 'foldkit/schema'
 import { modifyFields } from 'foldkit/struct'
+
+import { Menu } from '@foldkit/ui'
 
 import { AuthFailure, authApi } from './lib/auth-api'
 import { authErrorMessage } from './lib/auth-copy'
@@ -15,8 +16,8 @@ import {
   AccountMenu,
   accountMenuView,
 } from './ui/account-menu'
-import { Toast, toastStackView } from './ui/toast'
 import { bootView as bootSplashView } from './ui/boot'
+import { Toast, toastStackView } from './ui/toast'
 
 // MODEL
 
@@ -29,6 +30,7 @@ export const SessionStatus = defineTaggedUnion({
   },
   Failed: { failure: AuthFailure },
 })
+
 export type SessionStatus = typeof SessionStatus.Type
 
 export const Model = Schema.Struct({
@@ -40,6 +42,7 @@ export const Model = Schema.Struct({
   menu: Menu.Model,
   toast: Toast.Model,
 })
+
 export type Model = typeof Model.Type
 
 // MESSAGE
@@ -49,6 +52,7 @@ export const OutMessage = defineMessageUnion({
   SignedOut: {},
   SelectedSettings: {},
 })
+
 export type OutMessage = typeof OutMessage.Type
 
 export const Message = defineMessageUnion({
@@ -63,6 +67,7 @@ export const Message = defineMessageUnion({
   CompletedCacheSession: {},
   CompletedClearCachedSession: {},
 })
+
 export type Message = typeof Message.Type
 
 // COMMAND
@@ -102,6 +107,7 @@ export const CacheSession = Command.define('CacheSession', {
   execute: ({ session }) =>
     Effect.sync(() => {
       cacheSession(session)
+
       return Message.CompletedCacheSession()
     }),
 })
@@ -110,6 +116,7 @@ export const ClearCachedSession = Command.define('ClearCachedSession', {
   messages: [Message.CompletedClearCachedSession],
   execute: Effect.sync(() => {
     clearCachedSession()
+
     return Message.CompletedClearCachedSession()
   }),
 })
@@ -127,6 +134,7 @@ export const init = (
         maybeBootFailure: Option.none(),
       }),
   })
+
   const model = Model.make({
     status,
     restoreAttempt: 1,
@@ -231,15 +239,16 @@ const foldAccountMenu = Update.foldChild({
   foldOutMessage: foldAccountMenuOutMessage,
 })
 
-const foldToastOutMessage = Toast.OutMessage.match<Update.Step<Model, Message>>({
-  DismissedToast: () => model => ({ model }),
-})
+const foldToastOutMessage = Toast.OutMessage.match<Update.Step<Model, Message>>(
+  {
+    DismissedToast: () => model => ({ model }),
+  },
+)
 
 const foldToast = Update.foldChild({
   update: Toast.update,
   read: (model: Model) => Option.some(model.toast),
-  write: (model, nextToast) =>
-    modifyFields(model, { toast: () => nextToast }),
+  write: (model, nextToast) => modifyFields(model, { toast: () => nextToast }),
   toParentMessage: message => Message.GotToastMessage({ message }),
   foldOutMessage: foldToastOutMessage,
 })
@@ -337,11 +346,13 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         }),
       })
 
-      return Update.combine(model, [shownToastStep(authErrorMessage(failure.code)), failingSignOut])
+      return Update.combine(model, [
+        shownToastStep(authErrorMessage(failure.code)),
+        failingSignOut,
+      ])
     },
 
-    GotAccountMenuMessage: ({ message }) =>
-      foldAccountMenu(model, message),
+    GotAccountMenuMessage: ({ message }) => foldAccountMenu(model, message),
 
     GotToastMessage: ({ message }) => foldToast(model, message),
 
@@ -371,8 +382,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
           toastStackView(
             {
               model: model.toast,
-              toParentMessage: message =>
-                Message.GotToastMessage({ message }),
+              toParentMessage: message => Message.GotToastMessage({ message }),
             },
             h,
           ),

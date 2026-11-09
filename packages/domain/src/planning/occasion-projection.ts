@@ -1,14 +1,14 @@
-import { Schema } from "effect"
-import { Temporal } from "temporal-polyfill/full"
+import { Schema } from 'effect'
+import { Temporal } from 'temporal-polyfill/full'
 import {
   daysInJalaliMonth,
   jalaliDate,
   toIsoDate,
   toJalaliDate,
-  toJalaliFields
-} from "../jalali.js"
-import { LocalDate, OccasionId, TimeZone, TimestampUtc } from "./common.js"
-import { ReminderLink } from "./reminder-link.js"
+  toJalaliFields,
+} from '../jalali.js'
+import { LocalDate, OccasionId, TimeZone, TimestampUtc } from './common.js'
+import { ReminderLink } from './reminder-link.js'
 
 /**
  * Annual projection and advance-reminder calculation for occasions
@@ -51,9 +51,11 @@ import { ReminderLink } from "./reminder-link.js"
 export const OccasionCalendarDate = Schema.Struct({
   year: Schema.Int,
   month: Schema.Int,
-  day: Schema.Int
+  day: Schema.Int,
 })
-export type OccasionCalendarDate = Schema.Schema.Type<typeof OccasionCalendarDate>
+export type OccasionCalendarDate = Schema.Schema.Type<
+  typeof OccasionCalendarDate
+>
 
 /**
  * One projected occurrence of an occasion.
@@ -83,7 +85,7 @@ export const OccasionOccurrence = Schema.Struct({
   /** `occurrenceDate − advanceReminderDays`; `null` when no reminder is set. */
   advanceReminderDate: Schema.NullOr(LocalDate),
   /** The default fire instant on the advance-reminder date. */
-  advanceReminderAt: Schema.NullOr(TimestampUtc)
+  advanceReminderAt: Schema.NullOr(TimestampUtc),
 })
 export type OccasionOccurrence = Schema.Schema.Type<typeof OccasionOccurrence>
 
@@ -105,9 +107,11 @@ export const OccasionAdvanceReminder = Schema.Struct({
   /** The occasion's own IANA zone, so the materialised reminder reads its wall time there. */
   timeZone: TimeZone,
   advanceDays: Schema.Int,
-  link: ReminderLink
+  link: ReminderLink,
 })
-export type OccasionAdvanceReminder = Schema.Schema.Type<typeof OccasionAdvanceReminder>
+export type OccasionAdvanceReminder = Schema.Schema.Type<
+  typeof OccasionAdvanceReminder
+>
 
 /** A date window: `from` and `to` are both inclusive local dates. */
 export interface OccasionRange {
@@ -139,7 +143,8 @@ export const OCCASION_REMINDER_HOUR = 9
 export const occasionPreparationTaskTitle = (occasionTitle: string): string =>
   `آماده‌سازی برای ${occasionTitle}`
 
-const plainDate = (date: string): Temporal.PlainDate => Temporal.PlainDate.from(date)
+const plainDate = (date: string): Temporal.PlainDate =>
+  Temporal.PlainDate.from(date)
 
 /** A local date the calendar can actually read (`2026-02-30` cannot). */
 const isReadableDate = (date: string): boolean => {
@@ -155,7 +160,7 @@ const jalaliYearOf = (date: string): number => toJalaliDate(date).year
 
 /** The Jalali month/day an occasion repeats on. */
 export const occasionMonthDay = (
-  occasion: Pick<OccasionSource, "originDate">
+  occasion: Pick<OccasionSource, 'originDate'>,
 ): { readonly month: number; readonly day: number } => {
   const jalali = toJalaliFields(toJalaliDate(occasion.originDate))
   return { month: jalali.month, day: jalali.day }
@@ -169,7 +174,7 @@ export const occasionMonthDay = (
  */
 export const occasionDateInJalaliYear = (
   occasion: OccasionSource,
-  year: number
+  year: number,
 ): LocalDate | null => {
   if (!isReadableDate(occasion.originDate)) return null
   const originJalali = toJalaliDate(occasion.originDate)
@@ -183,7 +188,10 @@ export const occasionDateInJalaliYear = (
 }
 
 /** The default fire instant for a reminder due on `dueDate`. */
-export const occasionReminderInstant = (dueDate: string, timeZone: string): TimestampUtc => {
+export const occasionReminderInstant = (
+  dueDate: string,
+  timeZone: string,
+): TimestampUtc => {
   const date = plainDate(dueDate)
   return Temporal.ZonedDateTime.from({
     timeZone,
@@ -195,7 +203,7 @@ export const occasionReminderInstant = (dueDate: string, timeZone: string): Time
     second: 0,
     millisecond: 0,
     microsecond: 0,
-    nanosecond: 0
+    nanosecond: 0,
   })
     .toInstant()
     .toString() as TimestampUtc
@@ -203,14 +211,16 @@ export const occasionReminderInstant = (dueDate: string, timeZone: string): Time
 
 /** The offset-based advance-reminder date of one occurrence. */
 export const occasionAdvanceReminderDate = (
-  occasion: Pick<OccasionSource, "advanceReminderDays">,
-  occurrenceDate: string
+  occasion: Pick<OccasionSource, 'advanceReminderDays'>,
+  occurrenceDate: string,
 ): LocalDate | null =>
   occasion.advanceReminderDays === null
     ? null
-    : (plainDate(occurrenceDate).subtract({
-      days: occasion.advanceReminderDays
-    }).toString() as LocalDate)
+    : (plainDate(occurrenceDate)
+        .subtract({
+          days: occasion.advanceReminderDays,
+        })
+        .toString() as LocalDate)
 
 /**
  * The reminder draft for one occurrence, or `null` when the occasion has no
@@ -218,7 +228,7 @@ export const occasionAdvanceReminderDate = (
  */
 export const occasionAdvanceReminder = (
   occasion: OccasionSource,
-  occurrenceDate: string
+  occurrenceDate: string,
 ): OccasionAdvanceReminder | null => {
   const dueDate = occasionAdvanceReminderDate(occasion, occurrenceDate)
   if (dueDate === null) return null
@@ -231,7 +241,7 @@ export const occasionAdvanceReminder = (
     fireAt: occasionReminderInstant(dueDate, occasion.timeZone),
     timeZone: occasion.timeZone as TimeZone,
     advanceDays: occasion.advanceReminderDays ?? 0,
-    link: { _tag: "occasion", occasionId: occasion.id as OccasionId }
+    link: { _tag: 'occasion', occasionId: occasion.id as OccasionId },
   } as OccasionAdvanceReminder
 }
 
@@ -239,10 +249,10 @@ export const occasionAdvanceReminder = (
 
 const occurrenceOf = (
   occasion: OccasionSource,
-  date: LocalDate
+  date: LocalDate,
 ): OccasionOccurrence => {
   const jalali = toJalaliFields(toJalaliDate(date))
-  const gregorian = plainDate(date).withCalendar("iso8601")
+  const gregorian = plainDate(date).withCalendar('iso8601')
   const reminderDate = occasionAdvanceReminderDate(occasion, date)
   return {
     key: `${occasion.id}@${date}`,
@@ -254,7 +264,7 @@ const occurrenceOf = (
     gregorian: {
       year: gregorian.year,
       month: gregorian.month,
-      day: gregorian.day
+      day: gregorian.day,
     },
     originDate: occasion.originDate as LocalDate,
     yearly: occasion.yearly,
@@ -263,7 +273,7 @@ const occurrenceOf = (
     advanceReminderAt:
       reminderDate === null
         ? null
-        : occasionReminderInstant(reminderDate, occasion.timeZone)
+        : occasionReminderInstant(reminderDate, occasion.timeZone),
   } as OccasionOccurrence
 }
 
@@ -303,8 +313,8 @@ export const occasionOccurrences = (input: {
   return occurrences.sort(
     (a, b) =>
       a.date.localeCompare(b.date) ||
-      a.title.localeCompare(b.title, "fa") ||
-      a.key.localeCompare(b.key)
+      a.title.localeCompare(b.title, 'fa') ||
+      a.key.localeCompare(b.key),
   )
 }
 
@@ -315,23 +325,26 @@ export const occasionOccurrences = (input: {
  */
 export const nextOccasionOccurrence = (
   occasion: OccasionSource,
-  from: string
+  from: string,
 ): OccasionOccurrence | null => {
   if (!isReadableDate(from)) return null
   const to = plainDate(from).add({ days: 400 }).toString() as LocalDate
   const window = occasionOccurrences({
     occasions: [occasion],
-    range: { from: from as LocalDate, to }
+    range: { from: from as LocalDate, to },
   })
   return window[0] ?? null
 }
 
 /** True when `date` is an occurrence of this occasion. */
-export const isOccasionOccurrence = (occasion: OccasionSource, date: string): boolean =>
+export const isOccasionOccurrence = (
+  occasion: OccasionSource,
+  date: string,
+): boolean =>
   isReadableDate(date) &&
   occasionOccurrences({
     occasions: [occasion],
-    range: { from: date as LocalDate, to: date as LocalDate }
+    range: { from: date as LocalDate, to: date as LocalDate },
   }).length > 0
 
 /**
@@ -356,10 +369,12 @@ export const occasionAdvanceReminders = (input: {
   for (const occasion of byId.values()) {
     const advance = occasion.advanceReminderDays
     if (advance === null || !isReadableDate(occasion.originDate)) continue
-    const occurrenceTo = plainDate(to).add({ days: advance }).toString() as LocalDate
+    const occurrenceTo = plainDate(to)
+      .add({ days: advance })
+      .toString() as LocalDate
     const occurrences = occasionOccurrences({
       occasions: [occasion],
-      range: { from: from as LocalDate, to: occurrenceTo }
+      range: { from: from as LocalDate, to: occurrenceTo },
     })
     for (const occurrence of occurrences) {
       const reminder = occasionAdvanceReminder(occasion, occurrence.date)
@@ -372,6 +387,8 @@ export const occasionAdvanceReminders = (input: {
   }
 
   return reminders.sort(
-    (a, b) => a.fireAt.localeCompare(b.fireAt) || a.reminderKey.localeCompare(b.reminderKey)
+    (a, b) =>
+      a.fireAt.localeCompare(b.fireAt) ||
+      a.reminderKey.localeCompare(b.reminderKey),
   )
 }

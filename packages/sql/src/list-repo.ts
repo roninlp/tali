@@ -1,6 +1,6 @@
-import { Context, Effect, Layer, Option } from "effect"
-import { SqlClient } from "effect/sql"
-import { List, type ListId, type UserId } from "@tali/domain"
+import { Context, Effect, Layer, Option } from 'effect'
+import { SqlClient } from 'effect/sql'
+import { List, type ListId, type UserId } from '@tali/domain'
 
 /**
  * D1-backed repository for `List` (ticket #33; FR-LIST-01/02).
@@ -14,14 +14,14 @@ const LIST_COLUMNS =
   `visibility, color, icon, sort, checked_placement AS checkedPlacement, ` +
   `created_at AS createdAt, updated_at AS updatedAt, version, deleted_at AS deletedAt`
 
-export class ListRepo extends Context.Service<ListRepo>()("ListRepo", {
-  make: Effect.gen(function*() {
+export class ListRepo extends Context.Service<ListRepo>()('ListRepo', {
+  make: Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
 
     const findById = (id: ListId) =>
       Effect.map(
         sql<List>`SELECT ${sql.literal(LIST_COLUMNS)} FROM lists WHERE id = ${id}`,
-        (rows) => Option.fromUndefinedOr(rows[0])
+        rows => Option.fromUndefinedOr(rows[0]),
       )
 
     const listVisible = (input: {
@@ -36,7 +36,7 @@ export class ListRepo extends Context.Service<ListRepo>()("ListRepo", {
             AND (owner_id = ${input.userId} OR visibility = 'shared')
           ORDER BY updated_at DESC, id ASC
         `,
-        (rows) => rows
+        rows => rows,
       )
 
     const insert = (list: List) =>
@@ -52,7 +52,7 @@ export class ListRepo extends Context.Service<ListRepo>()("ListRepo", {
              ${list.updatedAt}, ${list.version}, ${list.deletedAt})
           RETURNING ${sql.literal(LIST_COLUMNS)}
         `,
-        (rows) => rows[0]!
+        rows => rows[0]!,
       )
 
     const update = (list: List) =>
@@ -72,11 +72,11 @@ export class ListRepo extends Context.Service<ListRepo>()("ListRepo", {
           WHERE id = ${list.id}
           RETURNING ${sql.literal(LIST_COLUMNS)}
         `,
-        (rows) => Option.fromUndefinedOr(rows[0])
+        rows => Option.fromUndefinedOr(rows[0]),
       )
 
     return { findById, listVisible, insert, update } as const
-  })
+  }),
 }) {}
 
 export const ListRepoLive = Layer.effect(ListRepo, ListRepo.make)

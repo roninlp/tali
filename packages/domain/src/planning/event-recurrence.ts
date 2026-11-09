@@ -1,13 +1,13 @@
-import { Schema } from "effect"
-import { Temporal } from "temporal-polyfill/full"
-import { occurrenceDates, type RecurrenceRule } from "../recurrence.js"
-import { EventExceptionId, EventId, LocalDate, TimeZone } from "./common.js"
+import { Schema } from 'effect'
+import { Temporal } from 'temporal-polyfill/full'
+import { occurrenceDates, type RecurrenceRule } from '../recurrence.js'
+import { EventExceptionId, EventId, LocalDate, TimeZone } from './common.js'
 import {
   Event,
   type EventException,
   type EventExceptionOverrides,
-  EventTiming
-} from "./event.js"
+  EventTiming,
+} from './event.js'
 
 /**
  * Event recurrence: expansion, per-occurrence exceptions and edit scope
@@ -82,7 +82,7 @@ export const EventOccurrence = Schema.Struct({
   recurring: Schema.Boolean,
   /** True when an `override` exception changed this occurrence. */
   overridden: Schema.Boolean,
-  exceptionId: Schema.NullOr(EventExceptionId)
+  exceptionId: Schema.NullOr(EventExceptionId),
 })
 export type EventOccurrence = Schema.Schema.Type<typeof EventOccurrence>
 
@@ -92,9 +92,11 @@ export type EventOccurrence = Schema.Schema.Type<typeof EventOccurrence>
  */
 export const EventOccurrenceQuery = Schema.Struct({
   from: LocalDate,
-  before: LocalDate
+  before: LocalDate,
 })
-export type EventOccurrenceQuery = Schema.Schema.Type<typeof EventOccurrenceQuery>
+export type EventOccurrenceQuery = Schema.Schema.Type<
+  typeof EventOccurrenceQuery
+>
 
 /**
  * The fields both a server `Event` and a mirrored row can provide. Keeping the
@@ -117,7 +119,8 @@ export interface EventOccurrenceSource {
 
 // ── Local-date helpers ───────────────────────────────────────────────────
 
-const plainDate = (date: string): Temporal.PlainDate => Temporal.PlainDate.from(date)
+const plainDate = (date: string): Temporal.PlainDate =>
+  Temporal.PlainDate.from(date)
 
 /** A local date the calendar can actually read (`2026-02-30` cannot). */
 const isReadableDate = (date: string): boolean => {
@@ -147,9 +150,9 @@ const canonicalInstant = (instant: Temporal.Instant): string =>
 
 /** The series' anchor: its first occurrence date in its own zone. */
 export const eventAnchorDate = (
-  event: Pick<EventOccurrenceSource, "timing" | "timeZone">
+  event: Pick<EventOccurrenceSource, 'timing' | 'timeZone'>,
 ): LocalDate =>
-  event.timing._tag === "allDay"
+  event.timing._tag === 'allDay'
     ? event.timing.date
     : localDateOfInstant(event.timing.start, event.timeZone)
 
@@ -165,11 +168,11 @@ export const eventAnchorDate = (
  *   duration instead of collapsing to zero.
  */
 export const eventTimingOn = (
-  event: Pick<EventOccurrenceSource, "timing" | "timeZone">,
-  instanceId: string
+  event: Pick<EventOccurrenceSource, 'timing' | 'timeZone'>,
+  instanceId: string,
 ): EventTiming => {
-  if (event.timing._tag === "allDay") {
-    return { _tag: "allDay", date: instanceId as LocalDate }
+  if (event.timing._tag === 'allDay') {
+    return { _tag: 'allDay', date: instanceId as LocalDate }
   }
 
   const anchorStart = Temporal.Instant.from(event.timing.start)
@@ -179,13 +182,13 @@ export const eventTimingOn = (
 
   const startInstant = plainDate(instanceId)
     .toPlainDateTime(startTime)
-    .toZonedDateTime(event.timeZone, { disambiguation: "compatible" })
+    .toZonedDateTime(event.timeZone, { disambiguation: 'compatible' })
     .toInstant()
 
   return {
-    _tag: "timed",
+    _tag: 'timed',
     start: canonicalInstant(startInstant),
-    end: canonicalInstant(startInstant.add(duration))
+    end: canonicalInstant(startInstant.add(duration)),
   }
 }
 
@@ -193,9 +196,9 @@ export const eventTimingOn = (
 export const occurrenceDisplayDate = (
   timing: EventTiming,
   timeZone: string,
-  viewerTimeZone: string
+  viewerTimeZone: string,
 ): LocalDate =>
-  timing._tag === "allDay"
+  timing._tag === 'allDay'
     ? timing.date
     : localDateOfInstant(timing.start, viewerTimeZone)
 
@@ -209,25 +212,27 @@ export const occurrenceDisplayDate = (
  * answers, so `count`/`until` bounds are respected.
  */
 export const isEventOccurrence = (
-  event: Pick<EventOccurrenceSource, "recurrence" | "timing" | "timeZone">,
-  instanceId: string
+  event: Pick<EventOccurrenceSource, 'recurrence' | 'timing' | 'timeZone'>,
+  instanceId: string,
 ): boolean => {
   const anchor = eventAnchorDate(event)
   if (instanceId === anchor) return true
   if (event.recurrence === null) return false
   return occurrenceDates(event.recurrence, anchor, {
     from: instanceId,
-    to: instanceId
+    to: instanceId,
   }).includes(instanceId as LocalDate)
 }
 
 /** The occurrence overrides already stored for `instanceId`, if any. */
 export const storedOccurrenceOverrides = (
-  event: Pick<EventOccurrenceSource, "exceptions">,
-  instanceId: string
+  event: Pick<EventOccurrenceSource, 'exceptions'>,
+  instanceId: string,
 ): EventExceptionOverrides | null => {
-  const exception = event.exceptions.find((entry) => entry.instanceId === instanceId)
-  return exception?.action === "override" ? exception.overrides ?? {} : null
+  const exception = event.exceptions.find(
+    entry => entry.instanceId === instanceId,
+  )
+  return exception?.action === 'override' ? (exception.overrides ?? {}) : null
 }
 
 // ── Expansion ────────────────────────────────────────────────────────────
@@ -240,7 +245,8 @@ const occurrenceOf = (input: {
   readonly exception: EventException | undefined
 }): EventOccurrence => {
   const { event, exception } = input
-  const overrides = exception?.action === "override" ? exception.overrides ?? {} : {}
+  const overrides =
+    exception?.action === 'override' ? (exception.overrides ?? {}) : {}
   const timing = overrides.timing ?? eventTimingOn(event, input.instanceId)
   const timeZone = overrides.timeZone ?? event.timeZone
   return {
@@ -249,10 +255,12 @@ const occurrenceOf = (input: {
     instanceId: input.instanceId,
     date: occurrenceDisplayDate(timing, timeZone, input.viewerTimeZone),
     title: overrides.title ?? event.title,
-    description: overrides.description !== undefined
-      ? overrides.description
-      : event.description,
-    location: overrides.location !== undefined ? overrides.location : event.location,
+    description:
+      overrides.description !== undefined
+        ? overrides.description
+        : event.description,
+    location:
+      overrides.location !== undefined ? overrides.location : event.location,
     category: event.category,
     color: overrides.color !== undefined ? overrides.color : event.color,
     people: event.people,
@@ -260,15 +268,15 @@ const occurrenceOf = (input: {
     timeZone: timeZone as TimeZone,
     projected: input.projected,
     recurring: event.recurrence !== null,
-    overridden: exception?.action === "override",
-    exceptionId: exception?.id ?? null
+    overridden: exception?.action === 'override',
+    exceptionId: exception?.id ?? null,
   }
 }
 
 const compareOccurrences = (a: EventOccurrence, b: EventOccurrence): number =>
   a.date.localeCompare(b.date) ||
-  (a.timing._tag === b.timing._tag ? 0 : a.timing._tag === "allDay" ? -1 : 1) ||
-  (a.timing._tag === "timed" && b.timing._tag === "timed"
+  (a.timing._tag === b.timing._tag ? 0 : a.timing._tag === 'allDay' ? -1 : 1) ||
+  (a.timing._tag === 'timed' && b.timing._tag === 'timed'
     ? a.timing.start.localeCompare(b.timing.start)
     : 0) ||
   a.key.localeCompare(b.key)
@@ -285,13 +293,15 @@ const seriesOccurrences = (input: {
 }): ReadonlyArray<EventOccurrence> => {
   const { event } = input
   const anchor = eventAnchorDate(event)
-  const exceptions = new Map(event.exceptions.map((entry) => [entry.instanceId, entry]))
+  const exceptions = new Map(
+    event.exceptions.map(entry => [entry.instanceId, entry]),
+  )
   const instanceIds = new Set<string>([anchor])
 
   if (event.recurrence !== null) {
     for (const date of occurrenceDates(event.recurrence, anchor, {
       from: input.windowStart,
-      to: input.windowEnd
+      to: input.windowEnd,
     })) {
       instanceIds.add(date)
     }
@@ -308,13 +318,13 @@ const seriesOccurrences = (input: {
   const occurrences: Array<EventOccurrence> = []
   for (const instanceId of instanceIds) {
     const exception = exceptions.get(instanceId)
-    if (exception?.action === "delete") continue
+    if (exception?.action === 'delete') continue
     const occurrence = occurrenceOf({
       event,
       instanceId: instanceId as LocalDate,
       projected: instanceId !== anchor,
       viewerTimeZone: input.viewerTimeZone,
-      exception
+      exception,
     })
     if (occurrence.date < input.from || occurrence.date > input.to) continue
     occurrences.push(occurrence)
@@ -342,7 +352,7 @@ export interface BuildOccurrencesInput {
  * show it, not hide the whole exception.
  */
 export const eventOccurrences = (
-  input: BuildOccurrencesInput
+  input: BuildOccurrencesInput,
 ): ReadonlyArray<EventOccurrence> => {
   const occurrences: Array<EventOccurrence> = []
   const windowStart = localDayBefore(input.from)
@@ -364,8 +374,8 @@ export const eventOccurrences = (
           to: input.to,
           windowStart,
           windowEnd,
-          viewerTimeZone: input.timeZone
-        })
+          viewerTimeZone: input.timeZone,
+        }),
       )
     } catch {
       // A stored row can carry a value the wire shapes only pattern-check
@@ -382,7 +392,7 @@ export const eventOccurrences = (
 /** Deduped occurrences of one event (used by the service's window read). */
 export const eventOccurrencesOf = (
   event: EventOccurrenceSource,
-  input: Omit<BuildOccurrencesInput, "events">
+  input: Omit<BuildOccurrencesInput, 'events'>,
 ): ReadonlyArray<EventOccurrence> =>
   eventOccurrences({ ...input, events: [event] })
 
@@ -403,42 +413,45 @@ export const eventOccurrencesOf = (
 export const patchEventSeries = (
   event: Event,
   overrides: EventExceptionOverrides,
-  now: string
+  now: string,
 ): Event => {
   const anchor = eventAnchorDate(event)
   const merged: EventExceptionOverrides = {
-    ...(storedOccurrenceOverrides(event, anchor) ?? {}),
-    ...overrides
+    ...storedOccurrenceOverrides(event, anchor),
+    ...overrides,
   }
   return new Event({
     ...event,
     title: merged.title ?? event.title,
-    description: merged.description !== undefined
-      ? merged.description
-      : event.description,
+    description:
+      merged.description !== undefined ? merged.description : event.description,
     location: merged.location !== undefined ? merged.location : event.location,
     color: merged.color !== undefined ? merged.color : event.color,
     timing: merged.timing ?? event.timing,
     timeZone: merged.timeZone ?? event.timeZone,
-    exceptions: event.exceptions.filter((exception) => exception.instanceId !== anchor),
+    exceptions: event.exceptions.filter(
+      exception => exception.instanceId !== anchor,
+    ),
     version: event.version + 1,
-    updatedAt: now
+    updatedAt: now,
   })
 }
 
 const withException = (
   event: Event,
   exception: EventException,
-  now: string
+  now: string,
 ): Event =>
   new Event({
     ...event,
     exceptions: [
-      ...event.exceptions.filter((entry) => entry.instanceId !== exception.instanceId),
-      exception
+      ...event.exceptions.filter(
+        entry => entry.instanceId !== exception.instanceId,
+      ),
+      exception,
     ],
     version: event.version + 1,
-    updatedAt: now
+    updatedAt: now,
   })
 
 /**
@@ -455,13 +468,13 @@ export const overrideEventOccurrence = (input: {
   withException(
     input.event,
     {
-      id: input.exceptionId as EventException["id"],
+      id: input.exceptionId as EventException['id'],
       instanceId: input.instanceId,
-      action: "override",
+      action: 'override',
       overrides: input.overrides,
-      createdAt: input.now
+      createdAt: input.now,
     },
-    input.now
+    input.now,
   )
 
 /** "This occurrence only" delete: the occurrence vanishes, the schedule stays. */
@@ -474,13 +487,13 @@ export const deleteEventOccurrence = (input: {
   withException(
     input.event,
     {
-      id: input.exceptionId as EventException["id"],
+      id: input.exceptionId as EventException['id'],
       instanceId: input.instanceId,
-      action: "delete",
+      action: 'delete',
       overrides: null,
-      createdAt: input.now
+      createdAt: input.now,
     },
-    input.now
+    input.now,
   )
 
 /**
@@ -488,17 +501,23 @@ export const deleteEventOccurrence = (input: {
  * covers the whole series.
  */
 export const trashEvent = (event: Event, now: string): Event =>
-  new Event({ ...event, deletedAt: now, version: event.version + 1, updatedAt: now })
+  new Event({
+    ...event,
+    deletedAt: now,
+    version: event.version + 1,
+    updatedAt: now,
+  })
 
 /** Number of rule-generated occurrences strictly before `date`. */
 const occurrencesBefore = (
   rule: RecurrenceRule,
   anchor: LocalDate,
-  date: LocalDate
+  date: LocalDate,
 ): number =>
   date <= anchor
     ? 0
-    : occurrenceDates(rule, anchor, { from: anchor, to: localDayBefore(date) }).length
+    : occurrenceDates(rule, anchor, { from: anchor, to: localDayBefore(date) })
+        .length
 
 /**
  * "This and following" delete: truncate the series before the occurrence.
@@ -514,17 +533,18 @@ export const truncateEventSeries = (input: {
   if (input.instanceId <= anchor) return trashEvent(input.event, input.now)
   return new Event({
     ...input.event,
-    recurrence: input.event.recurrence === null
-      ? null
-      : {
-        ...input.event.recurrence,
-        end: { _tag: "until", date: localDayBefore(input.instanceId) }
-      },
+    recurrence:
+      input.event.recurrence === null
+        ? null
+        : {
+            ...input.event.recurrence,
+            end: { _tag: 'until', date: localDayBefore(input.instanceId) },
+          },
     exceptions: input.event.exceptions.filter(
-      (exception) => exception.instanceId < input.instanceId
+      exception => exception.instanceId < input.instanceId,
     ),
     version: input.event.version + 1,
-    updatedAt: input.now
+    updatedAt: input.now,
   })
 }
 
@@ -563,7 +583,7 @@ export interface SplitEventSeries {
  * the first occurrence — the caller applies it as a whole-series edit).
  */
 export const splitEventSeries = (
-  input: SplitEventSeriesInput
+  input: SplitEventSeriesInput,
 ): SplitEventSeries | null => {
   const { event, instanceId, overrides } = input
   const rule = event.recurrence
@@ -579,39 +599,41 @@ export const splitEventSeries = (
 
   const previous = new Event({
     ...event,
-    recurrence: { ...rule, end: { _tag: "until", date: localDayBefore(instanceId) } },
+    recurrence: {
+      ...rule,
+      end: { _tag: 'until', date: localDayBefore(instanceId) },
+    },
     exceptions: event.exceptions.filter(
-      (exception) => exception.instanceId < instanceId
+      exception => exception.instanceId < instanceId,
     ),
     version: event.version + 1,
-    updatedAt: input.now
+    updatedAt: input.now,
   })
 
   const consumed = occurrencesBefore(rule, anchor, instanceId)
   const remainingEnd =
-    rule.end._tag === "count"
-      ? { _tag: "count" as const, count: rule.end.count - consumed }
+    rule.end._tag === 'count'
+      ? { _tag: 'count' as const, count: rule.end.count - consumed }
       : rule.end
 
   const following = new Event({
     ...event,
-    id: input.followingId as Event["id"],
+    id: input.followingId as Event['id'],
     title: merged.title ?? event.title,
-    description: merged.description !== undefined
-      ? merged.description
-      : event.description,
+    description:
+      merged.description !== undefined ? merged.description : event.description,
     location: merged.location !== undefined ? merged.location : event.location,
     color: merged.color !== undefined ? merged.color : event.color,
     timing,
     timeZone,
     recurrence: { ...rule, end: remainingEnd },
     exceptions: event.exceptions.filter(
-      (exception) => exception.instanceId > instanceId
+      exception => exception.instanceId > instanceId,
     ),
     createdAt: input.now,
     updatedAt: input.now,
     version: 1,
-    deletedAt: null
+    deletedAt: null,
   })
 
   return { previous, following }

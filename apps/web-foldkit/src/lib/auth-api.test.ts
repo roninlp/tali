@@ -22,6 +22,7 @@ const stubFetch = (response: Response | Error) => {
       return response
     },
   )
+
   vi.stubGlobal('fetch', fetchMock)
 
   return fetchMock

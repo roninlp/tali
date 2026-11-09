@@ -1,5 +1,5 @@
-import { Schema } from "effect"
-import { EventId, HabitId, OccasionId, TaskId } from "./common.js"
+import { Schema } from 'effect'
+import { EventId, HabitId, OccasionId, TaskId } from './common.js'
 
 /**
  * The discriminated link a reminder hangs off (docs/domain-model-draft.md
@@ -30,10 +30,10 @@ import { EventId, HabitId, OccasionId, TaskId } from "./common.js"
  * materialises the reminder row; it never needs a second link type.
  */
 export const ReminderLink = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal("none") }),
-  Schema.Struct({ _tag: Schema.Literal("habit"), habitId: HabitId }),
-  Schema.Struct({ _tag: Schema.Literal("task"), taskId: TaskId }),
-  Schema.Struct({ _tag: Schema.Literal("event"), eventId: EventId }),
-  Schema.Struct({ _tag: Schema.Literal("occasion"), occasionId: OccasionId })
+  Schema.Struct({ _tag: Schema.Literal('none') }),
+  Schema.Struct({ _tag: Schema.Literal('habit'), habitId: HabitId }),
+  Schema.Struct({ _tag: Schema.Literal('task'), taskId: TaskId }),
+  Schema.Struct({ _tag: Schema.Literal('event'), eventId: EventId }),
+  Schema.Struct({ _tag: Schema.Literal('occasion'), occasionId: OccasionId }),
 ])
 export type ReminderLink = Schema.Schema.Type<typeof ReminderLink>

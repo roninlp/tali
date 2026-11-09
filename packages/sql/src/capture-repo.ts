@@ -1,13 +1,13 @@
-import { Context, Effect, Layer, Option, Schema } from "effect"
-import { SqlClient } from "effect/sql"
+import { Context, Effect, Layer, Option, Schema } from 'effect'
+import { SqlClient } from 'effect/sql'
 import {
   Capture,
   type CaptureId,
   type CaptureStatus,
   type CaptureCreatedRow,
   type CaptureDraft,
-  type UserId
-} from "@tali/domain"
+  type UserId,
+} from '@tali/domain'
 
 /**
  * D1-backed repository for the `capture` log (ticket #101; ADR-0012 §6).
@@ -41,23 +41,26 @@ const toCapture = (row: CaptureRow): Capture =>
   Schema.decodeUnknownSync(Capture)({
     ...row,
     drafts: JSON.parse(row.drafts) as ReadonlyArray<CaptureDraft>,
-    createdIds: JSON.parse(row.createdIds) as ReadonlyArray<CaptureCreatedRow>
+    createdIds: JSON.parse(row.createdIds) as ReadonlyArray<CaptureCreatedRow>,
   })
 
 const encodeJson = (value: unknown): string => JSON.stringify(value)
 
-export class CaptureRepo extends Context.Service<CaptureRepo>()("CaptureRepo", {
-  make: Effect.gen(function*() {
+export class CaptureRepo extends Context.Service<CaptureRepo>()('CaptureRepo', {
+  make: Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
 
     const findById = (id: CaptureId) =>
       Effect.map(
         sql<CaptureRow>`SELECT ${sql.literal(CAPTURE_COLUMNS)} FROM capture WHERE id = ${id}`,
-        (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toCapture)
+        rows => Option.map(Option.fromUndefinedOr(rows[0]), toCapture),
       )
 
     /** History: one owner's captures, newest first. */
-    const listByOwner = (input: { readonly ownerId: UserId; readonly limit: number }) =>
+    const listByOwner = (input: {
+      readonly ownerId: UserId
+      readonly limit: number
+    }) =>
       Effect.map(
         sql<CaptureRow>`
           SELECT ${sql.literal(CAPTURE_COLUMNS)} FROM capture
@@ -65,7 +68,7 @@ export class CaptureRepo extends Context.Service<CaptureRepo>()("CaptureRepo", {
           ORDER BY created_at DESC, id DESC
           LIMIT ${input.limit}
         `,
-        (rows) => rows.map(toCapture)
+        rows => rows.map(toCapture),
       )
 
     /**
@@ -90,7 +93,7 @@ export class CaptureRepo extends Context.Service<CaptureRepo>()("CaptureRepo", {
           ORDER BY created_at DESC, id DESC
           LIMIT 1
         `,
-        (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toCapture)
+        rows => Option.map(Option.fromUndefinedOr(rows[0]), toCapture),
       )
 
     const insert = (capture: Capture, dedupeKey: string) =>
@@ -105,21 +108,24 @@ export class CaptureRepo extends Context.Service<CaptureRepo>()("CaptureRepo", {
              ${capture.error}, ${dedupeKey}, ${capture.createdAt}, ${capture.committedAt})
           RETURNING ${sql.literal(CAPTURE_COLUMNS)}
         `,
-        (rows) => toCapture(rows[0]!)
+        rows => toCapture(rows[0]!),
       )
 
     /**
      * Drop one owner's history row. Capture sits outside sync, so there is no
      * tombstone or feed entry — the row is simply gone.
      */
-    const remove = (input: { readonly id: CaptureId; readonly ownerId: UserId }) =>
+    const remove = (input: {
+      readonly id: CaptureId
+      readonly ownerId: UserId
+    }) =>
       Effect.map(
         sql<{ readonly id: string }>`
           DELETE FROM capture
           WHERE id = ${input.id} AND owner_id = ${input.ownerId}
           RETURNING id
         `,
-        (rows) => rows.length > 0
+        rows => rows.length > 0,
       )
 
     const update = (capture: Capture) =>
@@ -135,7 +141,7 @@ export class CaptureRepo extends Context.Service<CaptureRepo>()("CaptureRepo", {
           WHERE id = ${capture.id}
           RETURNING ${sql.literal(CAPTURE_COLUMNS)}
         `,
-        (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toCapture)
+        rows => Option.map(Option.fromUndefinedOr(rows[0]), toCapture),
       )
 
     /** Set just the lifecycle status/error/drafts/created rows. */
@@ -158,7 +164,7 @@ export class CaptureRepo extends Context.Service<CaptureRepo>()("CaptureRepo", {
           WHERE id = ${input.id}
           RETURNING ${sql.literal(CAPTURE_COLUMNS)}
         `,
-        (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toCapture)
+        rows => Option.map(Option.fromUndefinedOr(rows[0]), toCapture),
       )
 
     /**
@@ -172,7 +178,7 @@ export class CaptureRepo extends Context.Service<CaptureRepo>()("CaptureRepo", {
           WHERE created_at < ${cutoff}
           RETURNING id
         `,
-        (rows) => rows.map((row) => row.id)
+        rows => rows.map(row => row.id),
       )
 
     /** Drop rate-limit windows that are long past; keeps the table bounded. */
@@ -183,7 +189,7 @@ export class CaptureRepo extends Context.Service<CaptureRepo>()("CaptureRepo", {
           WHERE window_start < ${windowStart}
           RETURNING key
         `,
-        (rows) => rows.length
+        rows => rows.length,
       )
 
     return {
@@ -195,9 +201,9 @@ export class CaptureRepo extends Context.Service<CaptureRepo>()("CaptureRepo", {
       update,
       setStatus,
       purge,
-      purgeAttemptsBefore
+      purgeAttemptsBefore,
     } as const
-  })
+  }),
 }) {}
 
 export const CaptureRepoLive = Layer.effect(CaptureRepo, CaptureRepo.make)

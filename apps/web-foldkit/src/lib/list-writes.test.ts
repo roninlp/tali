@@ -104,6 +104,7 @@ describe('list mirror writes', () => {
     const items = (await store.list('listItem'))
       .map(toListItemRow)
       .sort((a, b) => a.order - b.order)
+
     expect(items.map(item => item.name)).toEqual(names)
     expect(items.map(item => item.order)).toEqual([1, 2, 3, 4, 5])
     expect(nextItemOrder(items)).toBe(6)
@@ -124,12 +125,14 @@ describe('list mirror writes', () => {
 
   test('checks with an audit timestamp, tolerates a repeat, and undoes', async () => {
     const store = await open()
+
     const listId = await createListInMirror(
       store,
       { title: 'کارها' },
       uuidV7(1_700_000_000_300),
       '2026-10-20T09:00:00.000Z',
     )
+
     const id = await createListItemInMirror(
       store,
       listId,
@@ -137,6 +140,7 @@ describe('list mirror writes', () => {
       uuidV7(1_700_000_000_301),
       '2026-10-20T09:00:00.000Z',
     )
+
     const before = (await store.list('listItem')).map(toListItemRow)[0]
 
     if (before === undefined) {
@@ -168,12 +172,14 @@ describe('list mirror writes', () => {
 
   test('forces an undo even when the local row already looks unchecked', async () => {
     const store = await open()
+
     const listId = await createListInMirror(
       store,
       { title: 'بازگردانی' },
       uuidV7(1_700_000_000_310),
       '2026-10-20T09:00:00.000Z',
     )
+
     const id = await createListItemInMirror(
       store,
       listId,
@@ -181,6 +187,7 @@ describe('list mirror writes', () => {
       uuidV7(1_700_000_000_311),
       '2026-10-20T09:00:00.000Z',
     )
+
     const pendingBefore = (await store.pending()).length
 
     await uncheckListItemInMirror(store, id, '2026-10-20T09:31:00.000Z')
@@ -203,12 +210,14 @@ describe('list mirror writes', () => {
 
   test('persists a manual reorder and only queues changed positions', async () => {
     const store = await open()
+
     const listId = await createListInMirror(
       store,
       { title: 'ترتیب' },
       uuidV7(1_700_000_000_320),
       '2026-10-20T09:00:00.000Z',
     )
+
     const names = ['یک', 'دو', 'سه']
     const ids = names.map((_, index) => uuidV7(1_700_000_000_321 + index))
     await Promise.all(
@@ -231,9 +240,11 @@ describe('list mirror writes', () => {
       ordered,
       '2026-10-20T09:10:00.000Z',
     )
+
     const reordered = (await store.list('listItem'))
       .map(toListItemRow)
       .sort((a, b) => a.order - b.order)
+
     expect(reordered.map(item => item.name)).toEqual(['سه', 'یک', 'دو'])
     expect(reordered.map(item => item.order)).toEqual([1, 2, 3])
 
@@ -251,12 +262,14 @@ describe('list mirror writes', () => {
 
   test('deletes the list and its locally known items', async () => {
     const store = await open()
+
     const listId = await createListInMirror(
       store,
       { title: 'حذف' },
       uuidV7(1_700_000_000_340),
       '2026-10-20T09:00:00.000Z',
     )
+
     const itemId = await createListItemInMirror(
       store,
       listId,
@@ -283,6 +296,7 @@ describe('list mirror writes', () => {
 
   test('updates a list title and preference fields from the store user', async () => {
     const store = await open()
+
     const listId = await createListInMirror(
       store,
       { title: 'قبلی' },
@@ -348,12 +362,14 @@ describe('list mirror writes', () => {
 
   test('drains an offline list+items queue on reconnect', async () => {
     const store = await open()
+
     const listId = await createListInMirror(
       store,
       { title: 'آفلاین' },
       uuidV7(1_700_000_000_360),
       '2026-10-20T09:00:00.000Z',
     )
+
     await Promise.all(
       ['الف', 'ب', 'پ'].map((name, index) =>
         createListItemInMirror(
@@ -368,10 +384,12 @@ describe('list mirror writes', () => {
     expect((await store.pending()).length).toBe(4)
 
     const pushed: Array<ReadonlyArray<SyncPushEntry>> = []
+
     const engine = createSyncEngine(
       transport({
         push: async entries => {
           pushed.push(entries)
+
           return {
             results: entries.map(entry => ({
               _tag: 'applied' as const,
@@ -426,12 +444,14 @@ describe('list mirror writes', () => {
 
   test('deletes one item without touching the list', async () => {
     const store = await open()
+
     const listId = await createListInMirror(
       store,
       { title: 'تک‌مورد' },
       uuidV7(1_700_000_000_380),
       '2026-10-20T09:00:00.000Z',
     )
+
     const itemId = await createListItemInMirror(
       store,
       listId,

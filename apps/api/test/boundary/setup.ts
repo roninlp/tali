@@ -1,5 +1,5 @@
-import { applyD1Migrations } from "cloudflare:test"
-import { env } from "cloudflare:workers"
+import { applyD1Migrations } from 'cloudflare:test'
+import { env } from 'cloudflare:workers'
 
 /**
  * Apply the real `packages/sql` migrations to the local D1 binding before each

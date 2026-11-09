@@ -40,6 +40,7 @@ export const ServerTask = Schema.Struct({
   ownerId: Schema.optional(Schema.String),
   visibility: Schema.optional(Schema.Literals(['private', 'shared'])),
 })
+
 export type ServerTask = typeof ServerTask.Type
 
 export const ServerNote = Schema.Struct({
@@ -54,6 +55,7 @@ export const ServerNote = Schema.Struct({
   deletedAt: Schema.optional(Schema.NullOr(Schema.String)),
   version: Schema.optional(Schema.Int),
 })
+
 export type ServerNote = typeof ServerNote.Type
 
 export const TodayCounts = Schema.Struct({
@@ -64,6 +66,7 @@ export const TodayCounts = Schema.Struct({
   habits: Schema.Int,
   notes: Schema.Int,
 })
+
 export type TodayCounts = typeof TodayCounts.Type
 
 export const TodayEmpty = Schema.Struct({
@@ -73,6 +76,7 @@ export const TodayEmpty = Schema.Struct({
   habits: Schema.Boolean,
   notes: Schema.Boolean,
 })
+
 export type TodayEmpty = typeof TodayEmpty.Type
 
 export const TodayReadModel = Schema.Struct({
@@ -85,6 +89,7 @@ export const TodayReadModel = Schema.Struct({
   counts: TodayCounts,
   empty: TodayEmpty,
 })
+
 export type TodayReadModel = typeof TodayReadModel.Type
 
 export type TodayFetchResult =
@@ -145,6 +150,7 @@ export const fetchToday = (
         catch: () => undefined,
       }),
     )
+
     const json: unknown = Option.getOrUndefined(maybeJson)
 
     if (!response.ok) {

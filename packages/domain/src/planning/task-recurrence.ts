@@ -1,12 +1,12 @@
-import { Temporal } from "temporal-polyfill/full"
-import { uuidV7 } from "../ids.js"
+import { Temporal } from 'temporal-polyfill/full'
+import { uuidV7 } from '../ids.js'
 import {
   nextOccurrence,
   type RecurrenceRule,
-  type TaskRecurrenceMode
-} from "../recurrence.js"
-import type { LocalDate } from "./common.js"
-import { Task } from "./task.js"
+  type TaskRecurrenceMode,
+} from '../recurrence.js'
+import type { LocalDate } from './common.js'
+import { Task } from './task.js'
 
 /**
  * Task recurrence computation (FR-TASK-04, ticket #38).
@@ -69,7 +69,7 @@ const localDateOf = (instant: string, timeZone: string): Temporal.PlainDate =>
 
 const later = (
   one: Temporal.PlainDate,
-  two: Temporal.PlainDate
+  two: Temporal.PlainDate,
 ): Temporal.PlainDate => (Temporal.PlainDate.compare(one, two) >= 0 ? one : two)
 
 /**
@@ -77,22 +77,22 @@ const later = (
  * has no further occurrence (a `count`/`until` bound was reached).
  */
 export const nextRecurrenceDue = (
-  input: NextRecurrenceDueInput
+  input: NextRecurrenceDueInput,
 ): NextRecurrenceDue | null => {
   const completedLocal = localDateOf(input.completedAt, input.timeZone)
   const dueLocal =
     input.dueDate !== null
       ? Temporal.PlainDate.from(input.dueDate)
       : input.dueAt !== null
-      ? localDateOf(input.dueAt, input.timeZone)
-      : null
+        ? localDateOf(input.dueAt, input.timeZone)
+        : null
   // `onCompletion` restarts the rule grid on the completion day (never earlier
   // than the current due day, so completing early cannot move work backwards).
   // `onDueDate` keeps the original grid and simply advances one step.
   const anchor =
-    input.mode === "onCompletion"
+    input.mode === 'onCompletion'
       ? later(completedLocal, dueLocal ?? completedLocal)
-      : dueLocal ?? completedLocal
+      : (dueLocal ?? completedLocal)
 
   const next = nextOccurrence(input.rule, anchor, anchor)
   if (next === null) return null
@@ -105,12 +105,12 @@ export const nextRecurrenceDue = (
       .toPlainTime()
     const instant = next
       .toPlainDateTime(localTime)
-      .toZonedDateTime(input.timeZone, { disambiguation: "compatible" })
+      .toZonedDateTime(input.timeZone, { disambiguation: 'compatible' })
       .toInstant()
     return {
       dueDate: null,
       // Canonical `.000Z` shape, so `due_at` TEXT range queries stay ordered.
-      dueAt: new Date(instant.epochMilliseconds).toISOString()
+      dueAt: new Date(instant.epochMilliseconds).toISOString(),
     }
   }
 
@@ -135,27 +135,28 @@ export const successorTask = (completed: Task, now: string): Task | null => {
   if (completed.recurrence === null) return null
   const nextDue = nextRecurrenceDue({
     rule: completed.recurrence,
-    mode: completed.recurrenceMode ?? "onDueDate",
+    mode: completed.recurrenceMode ?? 'onDueDate',
     dueDate: completed.dueDate,
     dueAt: completed.dueAt,
     timeZone: completed.timeZone,
-    completedAt: now
+    completedAt: now,
   })
   if (nextDue === null) return null
   // `count` counts occurrences of the series, and completion consumes one.
   // The child therefore carries the *remaining* budget: a rule with count N
   // produces N instances in total (parent + N-1 successors) instead of
   // re-anchoring a fresh N-count budget on every generated row.
-  const recurrence: RecurrenceRule = completed.recurrence.end._tag === "count"
-    ? {
-      ...completed.recurrence,
-      end: { _tag: "count", count: completed.recurrence.end.count - 1 }
-    }
-    : completed.recurrence
+  const recurrence: RecurrenceRule =
+    completed.recurrence.end._tag === 'count'
+      ? {
+          ...completed.recurrence,
+          end: { _tag: 'count', count: completed.recurrence.end.count - 1 },
+        }
+      : completed.recurrence
   return new Task({
     ...completed,
-    id: uuidV7() as Task["id"],
-    status: "todo",
+    id: uuidV7() as Task['id'],
+    status: 'todo',
     startedAt: null,
     completedAt: null,
     dueAt: nextDue.dueAt,
@@ -164,6 +165,6 @@ export const successorTask = (completed: Task, now: string): Task | null => {
     createdAt: now,
     updatedAt: now,
     version: 1,
-    deletedAt: null
+    deletedAt: null,
   })
 }

@@ -1,4 +1,4 @@
-import { Predicate } from "effect"
+import { Predicate } from 'effect'
 
 /**
  * Span attribute redaction shared by the api Worker and the Foldkit app.
@@ -19,87 +19,88 @@ import { Predicate } from "effect"
 export type SpanAttributeValue = string | number | boolean
 
 const SENSITIVE_TOKENS: ReadonlySet<string> = new Set([
-  "arg",
-  "args",
-  "argument",
-  "arguments",
-  "authorization",
-  "body",
-  "content",
-  "contents",
-  "cookie",
-  "cookies",
-  "description",
-  "descriptions",
-  "draft",
-  "drafts",
-  "email",
-  "input",
-  "inputs",
-  "message",
-  "messages",
-  "note",
-  "notes",
-  "output",
-  "outputs",
-  "parameter",
-  "parameters",
-  "params",
-  "password",
-  "payload",
-  "payloads",
-  "phone",
-  "prompt",
-  "prompts",
-  "query",
-  "question",
-  "questions",
-  "quote",
-  "quotes",
-  "raw",
-  "search",
-  "secret",
-  "sql",
-  "statement",
-  "summary",
-  "text",
-  "texts",
-  "title",
-  "titles",
-  "token",
-  "tokens",
-  "transcript"
+  'arg',
+  'args',
+  'argument',
+  'arguments',
+  'authorization',
+  'body',
+  'content',
+  'contents',
+  'cookie',
+  'cookies',
+  'description',
+  'descriptions',
+  'draft',
+  'drafts',
+  'email',
+  'input',
+  'inputs',
+  'message',
+  'messages',
+  'note',
+  'notes',
+  'output',
+  'outputs',
+  'parameter',
+  'parameters',
+  'params',
+  'password',
+  'payload',
+  'payloads',
+  'phone',
+  'prompt',
+  'prompts',
+  'query',
+  'question',
+  'questions',
+  'quote',
+  'quotes',
+  'raw',
+  'search',
+  'secret',
+  'sql',
+  'statement',
+  'summary',
+  'text',
+  'texts',
+  'title',
+  'titles',
+  'token',
+  'tokens',
+  'transcript',
 ])
 
 const EXPORTABLE_KEY_PREFIXES: ReadonlyArray<string> = [
-  "capture.",
-  "client.",
-  "db.",
-  "http.",
-  "network.",
-  "server.",
-  "url."
+  'capture.',
+  'client.',
+  'db.',
+  'http.',
+  'network.',
+  'server.',
+  'url.',
 ]
 
 const EXPORTABLE_KEYS: ReadonlySet<string> = new Set([
-  "effect.exit",
-  "error.type",
-  "exception.type"
+  'effect.exit',
+  'error.type',
+  'exception.type',
 ])
 
-const URL_KEYS: ReadonlySet<string> = new Set(["http.url", "url.full"])
+const URL_KEYS: ReadonlySet<string> = new Set(['http.url', 'url.full'])
 
 const tokensOf = (key: string): ReadonlyArray<string> =>
   key
     .toLowerCase()
     .split(/[^a-z0-9]+/)
-    .filter((token) => token !== "")
+    .filter(token => token !== '')
 
 /** Whether an attribute key is in an exported namespace and names nothing sensitive. */
 export const isExportableSpanAttributeKey = (key: string): boolean => {
   if (EXPORTABLE_KEYS.has(key)) return true
-  if (!EXPORTABLE_KEY_PREFIXES.some((prefix) => key.startsWith(prefix))) return false
-  return tokensOf(key).every((token) => !SENSITIVE_TOKENS.has(token))
+  if (!EXPORTABLE_KEY_PREFIXES.some(prefix => key.startsWith(prefix)))
+    return false
+  return tokensOf(key).every(token => !SENSITIVE_TOKENS.has(token))
 }
 
 const exportableUrl = (value: string): string | undefined => {
@@ -117,7 +118,7 @@ const exportableUrl = (value: string): string | undefined => {
  */
 export const exportableSpanAttribute = (
   key: string,
-  value: unknown
+  value: unknown,
 ): SpanAttributeValue | undefined => {
   if (!isExportableSpanAttributeKey(key)) return undefined
   if (Predicate.isBoolean(value) || Predicate.isNumber(value)) return value
@@ -127,7 +128,7 @@ export const exportableSpanAttribute = (
 
 /** Filter an attribute record, dropping every unsafe entry. */
 export const exportableSpanAttributes = (
-  attributes: Record<string, unknown> | undefined
+  attributes: Record<string, unknown> | undefined,
 ): Record<string, SpanAttributeValue> | undefined => {
   if (attributes === undefined) return undefined
   const exported: Record<string, SpanAttributeValue> = {}

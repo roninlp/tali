@@ -33,7 +33,7 @@ export const decodeWriteToken = (token: number): WriteToken => {
   return {
     device,
     slot: local % SLOT_COUNT,
-    kind: Math.floor(local / SLOT_COUNT) as WriteKind
+    kind: Math.floor(local / SLOT_COUNT) as WriteKind,
   }
 }
 
@@ -45,7 +45,7 @@ export const TOKEN = {
   duplicatePushA: WRITE_TOKEN_COUNT + 3,
   duplicatePushB: WRITE_TOKEN_COUNT + 4,
   disjointProbe: WRITE_TOKEN_COUNT + 5,
-  lwwProbe: WRITE_TOKEN_COUNT + 6
+  lwwProbe: WRITE_TOKEN_COUNT + 6,
 } as const
 
 export const TOKEN_COUNT = WRITE_TOKEN_COUNT + 7

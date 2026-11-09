@@ -182,10 +182,12 @@ describe('event row projection', () => {
 describe('event overlay', () => {
   it('merges only the pending ids over the server rows', () => {
     const server = source({ id: 'one', title: 'از سرور' })
+
     const pending = eventRow({
       id: 'one',
       title: 'ویرایش محلی',
     })
+
     const other = eventRow({ id: 'two', title: 'نوشتهٔ دیگر' })
 
     const merged = overlayEventSources({
@@ -326,6 +328,7 @@ describe('event local writes', () => {
 describe('edit scope — this occurrence', () => {
   it('adds one override exception and leaves the rule alone', () => {
     const row = weeklyRow()
+
     const change = editEventWithinScope({
       event: eventOf(row),
       instanceId: '2026-10-30',
@@ -389,6 +392,7 @@ describe('edit scope — this occurrence', () => {
 describe('edit scope — this and following', () => {
   it('splits the series and keeps the rule in phase', () => {
     const followingId = uuidV7()
+
     const change = editEventWithinScope({
       event: eventOf(weeklyRow()),
       instanceId: '2026-10-30',
@@ -438,6 +442,7 @@ describe('edit scope — this and following', () => {
       followingId: uuidV7(),
       now: NOW,
     })
+
     expect(atStart.series.deletedAt).not.toBeNull()
 
     const later = deleteEventWithinScope({
@@ -448,6 +453,7 @@ describe('edit scope — this and following', () => {
       followingId: uuidV7(),
       now: NOW,
     })
+
     expect(later.series.deletedAt).toBeNull()
     expect(later.series.recurrence!.end).toEqual({
       _tag: 'until',
@@ -457,6 +463,7 @@ describe('edit scope — this and following', () => {
 
   it('edits a one-off event as a plain series edit', () => {
     const row = eventRow({ timing: { _tag: 'allDay', date: '2026-10-30' } })
+
     const change = editEventWithinScope({
       event: eventOf(row),
       instanceId: '2026-10-30',
@@ -541,6 +548,7 @@ describe('mirror scope commits', () => {
   it('writes one local row and queues it', async () => {
     await withStore(async store => {
       const row = weeklyRow()
+
       const change = editEventWithinScope({
         event: eventOf(row),
         instanceId: '2026-10-30',
@@ -562,6 +570,7 @@ describe('mirror scope commits', () => {
   it("refuses to queue a split, which needs the service's gated batch", async () => {
     await withStore(async store => {
       const row = weeklyRow()
+
       const change = editEventWithinScope({
         event: eventOf(row),
         instanceId: '2026-10-30',

@@ -111,12 +111,15 @@ const createdSummary = (
 ): string => {
   const counts = rows.reduce<Record<string, number>>((acc, row) => {
     acc[row.type] = (acc[row.type] ?? 0) + 1
+
     return acc
   }, {})
+
   const parts = Object.entries(counts).map(
     ([type, count]) =>
       `${countText(count, display)} ${TYPE_LABELS[type] ?? type}`,
   )
+
   return parts.length === 0
     ? 'چیزی ساخته نشد.'
     : `${parts.join('، ')} ساخته شد.`
@@ -299,6 +302,7 @@ const habitStructural = (
   const draft = card.draft
   const frequency = draft.frequency
   const kind = frequency?._tag ?? 'daily'
+
   return h.div(
     [h.Class('grid gap-2')],
     [
@@ -357,15 +361,18 @@ const reminderStructural = (
   const draft = card.draft
   const repeat = draft.repeat
   const kind = repeat?._tag ?? 'daily'
+
   const time =
     repeat !== undefined &&
     (repeat._tag === 'daily' || repeat._tag === 'weekly')
       ? repeat.time
       : ''
+
   const maybeFireParts =
     draft.fireAt === undefined || draft.fireAt === null
       ? undefined
       : instantPartsOf(draft.fireAt, inputs.display.timeZone)
+
   return h.div(
     [h.Class('grid gap-2')],
     [
@@ -455,11 +462,14 @@ const taskStructural = (
 ): Html => {
   if (card.draft._tag !== 'task') return h.empty
   const draft = card.draft
+
   const maybeParts =
     draft.dueAt === undefined || draft.dueAt === null
       ? undefined
       : instantPartsOf(draft.dueAt, inputs.display.timeZone)
+
   const date = draft.dueDate ?? maybeParts?.date ?? ''
+
   return h.div(
     [h.Class('grid gap-2 sm:grid-cols-2')],
     [
@@ -498,22 +508,27 @@ const eventStructural = (
 ): Html => {
   if (card.draft._tag !== 'event') return h.empty
   const timing = card.draft.timing
+
   const maybeStartParts =
     timing?._tag === 'timed'
       ? instantPartsOf(timing.start, inputs.display.timeZone)
       : undefined
+
   const maybeEndParts =
     timing?._tag === 'timed'
       ? instantPartsOf(timing.end, inputs.display.timeZone)
       : undefined
+
   const date =
     timing?._tag === 'allDay'
       ? timing.date
       : timing?._tag === 'timed'
         ? (maybeStartParts?.date ?? '')
         : ''
+
   const start = maybeStartParts?.time ?? ''
   const end = maybeEndParts?.time ?? ''
+
   return h.div(
     [h.Class('grid gap-2')],
     [
@@ -573,13 +588,17 @@ const structuralView = (
   h: HtmlBuilder<Message>,
 ): Html => {
   if (card.draft._tag === 'task') return taskStructural(card, index, inputs, h)
+
   if (card.draft._tag === 'event')
     return eventStructural(card, index, inputs, h)
+
   if (card.draft._tag === 'habit')
     return habitStructural(card, index, inputs, h)
+
   if (card.draft._tag === 'reminder') {
     return reminderStructural(card, index, inputs, h)
   }
+
   return h.empty
 }
 
@@ -591,11 +610,14 @@ const instantPicker = (
   h: HtmlBuilder<Message>,
 ): Html => {
   const current = currentInstantOf(card, entry.field)
+
   const parts =
     current === undefined
       ? undefined
       : instantPartsOf(current, inputs.display.timeZone)
+
   const value = parts === undefined ? '' : `${parts.date}T${parts.time}`
+
   return pickerField(
     {
       id: `needs-datetime-${index}-${entry.field}`,
@@ -628,18 +650,23 @@ const currentInstantOf = (
   field: string,
 ): string | undefined => {
   const draft = card.draft
+
   if (draft._tag === 'task' && field === 'dueAt') {
     return draft.dueAt ?? undefined
   }
+
   if (draft._tag === 'reminder' && field === 'fireAt') {
     return draft.fireAt ?? undefined
   }
+
   if (draft._tag === 'event' && draft.timing?._tag === 'timed') {
     if (field === 'timing.start' || field === 'start') {
       return draft.timing.start
     }
+
     if (field === 'timing.end' || field === 'end') return draft.timing.end
   }
+
   return undefined
 }
 
@@ -651,17 +678,23 @@ const draftDateOf = (
 ): string | undefined => {
   const draft = card.draft
   const instant = currentInstantOf(card, field)
+
   if (instant !== undefined) {
     const date = instantPartsOf(instant, timeZone)?.date
+
     if (date !== undefined) return date
   }
+
   if (draft._tag === 'task' && field === 'dueAt') {
     return draft.dueDate ?? undefined
   }
+
   if (draft._tag === 'event') {
     const timing = draft.timing
+
     if (timing?._tag === 'allDay') return timing.date
   }
+
   return undefined
 }
 
@@ -672,6 +705,7 @@ const draftClockTimeOf = (
   timeZone: string,
 ): string => {
   const instant = currentInstantOf(card, field)
+
   return instant === undefined
     ? ''
     : (instantPartsOf(instant, timeZone)?.time ?? '')
@@ -684,6 +718,7 @@ const needsInputView = (
   h: HtmlBuilder<Message>,
 ): Html => {
   if (card.draft.missing.length === 0) return h.empty
+
   return h.div(
     [
       h.Class(
@@ -700,28 +735,33 @@ const needsInputView = (
           [h.Class('m-0 text-[0.76rem] leading-6 text-base-content/70')],
           [entry.question],
         )
+
         if (entry.shape === 'frequency' && card.draft._tag === 'habit') {
           return h.div(
             [h.Class('grid gap-1')],
             [question, habitStructural(card, index, inputs, h)],
           )
         }
+
         if (entry.shape === 'repeat' && card.draft._tag === 'reminder') {
           return h.div(
             [h.Class('grid gap-1')],
             [question, reminderStructural(card, index, inputs, h)],
           )
         }
+
         if (entry.shape === 'instant') {
           return h.div(
             [h.Class('grid gap-1')],
             [question, instantPicker(entry, card, index, inputs, h)],
           )
         }
+
         if (entry.shape === 'clockTime') {
           const date = isInstantField(entry.field)
             ? draftDateOf(card, entry.field, inputs.display.timeZone)
             : ''
+
           // A clock time only answers an instant field when the draft already
           // knows the day; otherwise the picker has to collect both.
           if (isInstantField(entry.field) && date === undefined) {
@@ -730,6 +770,7 @@ const needsInputView = (
               [question, instantPicker(entry, card, index, inputs, h)],
             )
           }
+
           return h.div(
             [h.Class('grid gap-1')],
             [
@@ -752,6 +793,7 @@ const needsInputView = (
             ],
           )
         }
+
         return h.div(
           [h.Class('grid gap-1')],
           [
@@ -876,6 +918,7 @@ const composerView = (
 ): Html => {
   const isBusy = model.phase === 'dissecting' || model.phase === 'committing'
   const characterCount = countText(model.text.length, inputs.display)
+
   return h.section(
     [h.Class('panel grid gap-3 p-4')],
     [
@@ -969,6 +1012,7 @@ const reviewView = (
   const blocked = cards.filter(card => card.draft.missing.length > 0)
   const isCommitting = model.phase === 'committing'
   const canCommit = cards.length > 0 && blocked.length === 0 && !isCommitting
+
   return h.section(
     [h.Class('grid gap-3')],
     [
@@ -1090,6 +1134,7 @@ const historyRow = (
   h: HtmlBuilder<Message>,
 ): Html => {
   const isExpanded = Option.contains(model.expandedHistoryId, capture.id)
+
   return h.keyed('li')(
     capture.id,
     [h.Class('grid min-w-0 gap-2 border-b border-base-200 py-3 last:border-0')],

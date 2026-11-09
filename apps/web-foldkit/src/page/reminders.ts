@@ -46,6 +46,7 @@ export const SnoozeListboxEntry = Schema.Struct({
   dispatchId: Schema.String,
   listbox: Listbox.Model,
 })
+
 export type SnoozeListboxEntry = typeof SnoozeListboxEntry.Type
 
 export const SnoozeListbox = Listbox.create<SnoozeOption, string>()
@@ -60,6 +61,7 @@ export const Model = Schema.Struct({
   snoozeListboxes: Schema.Array(SnoozeListboxEntry),
   fetchGeneration: Schema.Int,
 })
+
 export type Model = typeof Model.Type
 
 export const initialModel = (): Model =>
@@ -120,6 +122,7 @@ export const Message = defineMessageUnion({
     failure: ReminderFailure,
   },
 })
+
 export type Message = typeof Message.Type
 
 // COMMAND
@@ -168,53 +171,52 @@ export const DrainQueueAndFetchInbox = Command.define(
   },
 )
 
-export const SetReminderVisibility = Command.define(
-  'SetReminderVisibility',
-  {
-    args: {
-      reminderId: Schema.String,
-      visibility: Schema.Literals(['private', 'shared']),
-    },
-    messages: [
-      Message.CompletedSetReminderVisibility,
-      Message.FailedSetReminderVisibility,
-    ],
-    execute: ({ reminderId, visibility }) =>
-      Effect.gen(function* () {
-        const store = yield* LocalStoreResource.get
-        const now = yield* Clock.currentTimeMillis
+export const SetReminderVisibility = Command.define('SetReminderVisibility', {
+  args: {
+    reminderId: Schema.String,
+    visibility: Schema.Literals(['private', 'shared']),
+  },
+  messages: [
+    Message.CompletedSetReminderVisibility,
+    Message.FailedSetReminderVisibility,
+  ],
+  execute: ({ reminderId, visibility }) =>
+    Effect.gen(function* () {
+      const store = yield* LocalStoreResource.get
+      const now = yield* Clock.currentTimeMillis
 
-        yield* Effect.tryPromise({
-          try: () =>
-            setVisibilityInMirror(
-              store,
-              'reminder',
-              reminderId,
-              visibility,
-              new Date(now).toISOString(),
-            ),
-          catch: (cause) =>
-            cause instanceof Error ? cause.message : 'ذخیره در حافظه‌ی محلی ناموفق بود',
-        })
-
-        return Message.CompletedSetReminderVisibility({
-          reminderId,
-          visibility,
-        })
-      }).pipe(
-        Effect.catch(error =>
-          Effect.succeed(
-            Message.FailedSetReminderVisibility({
-              message:
-                typeof error === 'string'
-                  ? error
-                  : 'ذخیره در حافظه‌ی محلی ناموفق بود',
-            }),
+      yield* Effect.tryPromise({
+        try: () =>
+          setVisibilityInMirror(
+            store,
+            'reminder',
+            reminderId,
+            visibility,
+            new Date(now).toISOString(),
           ),
+        catch: cause =>
+          cause instanceof Error
+            ? cause.message
+            : 'ذخیره در حافظه‌ی محلی ناموفق بود',
+      })
+
+      return Message.CompletedSetReminderVisibility({
+        reminderId,
+        visibility,
+      })
+    }).pipe(
+      Effect.catch(error =>
+        Effect.succeed(
+          Message.FailedSetReminderVisibility({
+            message:
+              typeof error === 'string'
+                ? error
+                : 'ذخیره در حافظه‌ی محلی ناموفق بود',
+          }),
         ),
       ),
-  },
-)
+    ),
+})
 
 export const RespondToReminder = Command.define('RespondToReminder', {
   args: {
@@ -255,6 +257,7 @@ export const init = (): Update.Return<Model, Message> => ({
 export const OutMessage = defineMessageUnion({
   WroteLocalData: {},
 })
+
 export type OutMessage = typeof OutMessage.Type
 
 type UpdateReturn = Update.ReturnWithOutMessage<
@@ -327,6 +330,7 @@ const snoozeListboxOutMessage = (
 const startRead = (model: Model, shouldDrain: boolean): UpdateReturn => {
   const generation = model.fetchGeneration + 1
   const history = model.isHistory
+
   const next = modifyFields(model, {
     fetchGeneration: () => generation,
     isLoading: () => true,
@@ -423,9 +427,7 @@ export const update = (model: Model, message: Message): UpdateReturn => {
       model: modifyFields(model, {
         items: () =>
           Array.map(model.items, item =>
-            item.reminderId === reminderId
-              ? { ...item, visibility }
-              : item,
+            item.reminderId === reminderId ? { ...item, visibility } : item,
           ),
       }),
       outMessage: OutMessage.WroteLocalData(),

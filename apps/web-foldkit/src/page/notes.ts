@@ -31,8 +31,8 @@ import {
   setNoteTagsInMirror,
   trashNoteInMirror,
 } from '../lib/note-writes'
-import { setVisibilityInMirror } from '../lib/visibility-writes'
 import { withRpcClient } from '../lib/rpc'
+import { setVisibilityInMirror } from '../lib/visibility-writes'
 import type { MirrorSnapshot } from '../mirror'
 import type { DisplayFields } from '../preferences-model'
 import { LocalStoreResource } from '../sync/local-store'
@@ -62,15 +62,18 @@ import { notesIndexView } from './notes-view'
 // MODEL
 
 export const LoadState = Schema.Literals(['loading', 'ready', 'missing'])
+
 export type LoadState = typeof LoadState.Type
 
 export const SaveState = Schema.Literals(['idle', 'saving', 'saved', 'error'])
+
 export type SaveState = typeof SaveState.Type
 
 export const SearchSegment = Schema.Struct({
   text: Schema.String,
   match: Schema.Boolean,
 })
+
 export type SearchSegment = typeof SearchSegment.Type
 
 export const SearchHit = Schema.Struct({
@@ -79,9 +82,11 @@ export const SearchHit = Schema.Struct({
   segments: Schema.Array(SearchSegment),
   updatedAt: Schema.String,
 })
+
 export type SearchHit = typeof SearchHit.Type
 
 export const RestoreSource = Schema.Literals(['editor', 'trash'])
+
 export type RestoreSource = typeof RestoreSource.Type
 
 export const NoteLoad = Schema.Struct({
@@ -99,6 +104,7 @@ export const NoteLoad = Schema.Struct({
   isDraftApplied: Schema.Boolean,
   shouldClearDraft: Schema.Boolean,
 })
+
 export type NoteLoad = typeof NoteLoad.Type
 
 export const Model = Schema.Struct({
@@ -141,6 +147,7 @@ export const Model = Schema.Struct({
   maybeRestoringId: Schema.Option(Schema.String),
   announcement: Schema.String,
 })
+
 export type Model = typeof Model.Type
 
 export const initialModel = (): Model =>
@@ -280,6 +287,7 @@ export const Message = defineMessageUnion({
   FailedRetryNote: { message: Schema.String },
   FlushedNoteOnHide: {},
 })
+
 export type Message = typeof Message.Type
 
 export const OutMessage = defineMessageUnion({
@@ -288,6 +296,7 @@ export const OutMessage = defineMessageUnion({
   ArchivedNote: { noteId: Schema.String },
   TrashedNote: { noteId: Schema.String },
 })
+
 export type OutMessage = typeof OutMessage.Type
 
 // COMMAND
@@ -323,6 +332,7 @@ export const LoadNoteEditor = Command.define('LoadNoteEditor', {
   execute: ({ noteId, generation }) =>
     Effect.gen(function* () {
       const store = yield* LocalStoreResource.get
+
       const record = yield* Effect.tryPromise({
         try: () => store.get('note', noteId),
         catch: storeFailureMessage,
@@ -339,11 +349,14 @@ export const LoadNoteEditor = Command.define('LoadNoteEditor', {
         try: () => readNoteDraft(store, noteId),
         catch: storeFailureMessage,
       })
+
       const hasPending = yield* Effect.tryPromise({
         try: () => store.hasPending('note', noteId),
         catch: storeFailureMessage,
       })
+
       const serverText = noteTextFromData(record.data)
+
       const decision = reconcileDraft({
         draft,
         serverVersion: record.version,
@@ -361,7 +374,8 @@ export const LoadNoteEditor = Command.define('LoadNoteEditor', {
             isPinned: record.data.isPinned === true,
             isArchived: record.data.isArchived === true,
             isTrashed: record.deletedAt !== null,
-            visibility: record.data.visibility === 'shared' ? 'shared' : 'private',
+            visibility:
+              record.data.visibility === 'shared' ? 'shared' : 'private',
             isOwner:
               record.data.ownerId === undefined ||
               record.data.ownerId === store.userId,
@@ -871,6 +885,7 @@ const flushEditor = (model: Model): CommandReturn => {
       }
 
       const generation = model.saveGeneration + 1
+
       const next = modifyFields(model, {
         saveGeneration: () => generation,
         saveState: () => 'saving' as const,
@@ -1662,15 +1677,18 @@ export const enteredNote = (
   options: Readonly<{ noteId: string; isStoreReady: boolean }>,
 ): CommandReturn => {
   const previousId = Option.getOrNull(model.maybeNoteId)
+
   const isPreviousNote =
     model.isEditorActive &&
     previousId !== null &&
     previousId !== options.noteId &&
     model.loadState === 'ready' &&
     !model.isTrashed
+
   const flushed = isPreviousNote ? flushEditor(model) : { model }
   const generation = model.loadGeneration + 1
   const isLoadPending = options.isStoreReady
+
   const next = modifyFields(flushed.model, {
     maybeNoteId: () => Option.some(options.noteId),
     isEditorActive: () => true,
@@ -1753,6 +1771,7 @@ export const mirrorSettled = (model: Model, inputs: Inputs): CommandReturn => {
   }
 
   const noteId = maybeNoteId.value
+
   const maybeRow = Array.findFirst(
     Array.appendAll(inputs.mirror.notes, inputs.mirror.trashedNotes),
     row => row.id === noteId,
@@ -1799,6 +1818,7 @@ const eventStream = <A>(
 
 const pageHideEvents: Stream.Stream<Message> = eventStream(emit => {
   const onPageHide = () => emit(Message.FlushedNoteOnHide())
+
   const onVisibilityChange = () => {
     if (document.visibilityState === 'hidden') {
       emit(Message.FlushedNoteOnHide())
@@ -1849,6 +1869,7 @@ export const subscriptions = Subscription.make<Model, Message>()(entry => ({
           Stream.fromEffect(
             Effect.gen(function* () {
               yield* Effect.sleep(Duration.millis(120))
+
               return Message.TickedNoteDraft({
                 revision: dependencies.draftRevision,
               })
@@ -1883,6 +1904,7 @@ export const subscriptions = Subscription.make<Model, Message>()(entry => ({
           Stream.fromEffect(
             Effect.gen(function* () {
               yield* Effect.sleep(Duration.millis(700))
+
               return Message.TickedNoteSave({
                 revision: dependencies.saveRevision,
               })

@@ -1,6 +1,6 @@
-import { exports } from "cloudflare:workers"
-import { Effect, Schema } from "effect"
-import { IDBFactory } from "fake-indexeddb"
+import { exports } from 'cloudflare:workers'
+import { Effect, Schema } from 'effect'
+import { IDBFactory } from 'fake-indexeddb'
 import {
   SyncBootstrapResponse,
   SyncPullResponse,
@@ -9,13 +9,18 @@ import {
   type SyncEntityType,
   type SyncPushEntry,
   type SyncPushResult,
-  uuidV7
-} from "@tali/domain"
-import { openLocalStore } from "@tali/sync-client"
-import type { LocalStore, MirrorRecord } from "@tali/sync-client"
-import { createSyncEngine, SyncRejected, type SyncEngine, type SyncTransport } from "@tali/sync-client"
-import { withRpcClient } from "@tali/web-foldkit/src/lib/rpc"
-import type { LabMode } from "./mode"
+  uuidV7,
+} from '@tali/domain'
+import { openLocalStore } from '@tali/sync-client'
+import type { LocalStore, MirrorRecord } from '@tali/sync-client'
+import {
+  createSyncEngine,
+  SyncRejected,
+  type SyncEngine,
+  type SyncTransport,
+} from '@tali/sync-client'
+import { withRpcClient } from '@tali/web-foldkit/src/lib/rpc'
+import type { LabMode } from './mode'
 
 /**
  * Shared plumbing for the conflict lab (#83).
@@ -28,20 +33,24 @@ import type { LabMode } from "./mode"
 
 // ── Worker HTTP ───────────────────────────────────────────────────────────
 
-const LOGIN_KEY = "a".repeat(43)
+const LOGIN_KEY = 'a'.repeat(43)
 
 export const workerFetch = (
   path: string,
-  init?: RequestInit
+  init?: RequestInit,
 ): Promise<Response> => exports.default.fetch(`http://localhost${path}`, init)
 
-const jsonRequest = (method: string, cookie?: string, body?: unknown): RequestInit => ({
+const jsonRequest = (
+  method: string,
+  cookie?: string,
+  body?: unknown,
+): RequestInit => ({
   method,
   headers: {
-    "content-type": "application/json",
-    ...(cookie === undefined ? {} : { cookie })
+    'content-type': 'application/json',
+    ...(cookie === undefined ? {} : { cookie }),
   },
-  ...(body === undefined ? {} : { body: JSON.stringify(body) })
+  ...(body === undefined ? {} : { body: JSON.stringify(body) }),
 })
 
 export interface Account {
@@ -50,26 +59,30 @@ export interface Account {
   readonly cookie: string
 }
 
-export const registerAccount = async (label = "lab"): Promise<Account> => {
+export const registerAccount = async (label = 'lab'): Promise<Account> => {
   const email = `${label}-${crypto.randomUUID()}@example.com`
   const response = await workerFetch(
-    "/auth/register",
-    jsonRequest("POST", undefined, {
+    '/auth/register',
+    jsonRequest('POST', undefined, {
       email,
       loginKey: LOGIN_KEY,
-      displayName: "آزمایش",
-      timeZone: "Asia/Tehran"
-    })
+      displayName: 'آزمایش',
+      timeZone: 'Asia/Tehran',
+    }),
   )
   if (response.status !== 201) {
-    throw new Error(`register failed: ${response.status} ${await response.text()}`)
+    throw new Error(
+      `register failed: ${response.status} ${await response.text()}`,
+    )
   }
   const cookie = response.headers
     .getSetCookie()
-    .find((value) => value.startsWith("tali_session="))
-    ?.split(";")[0]
-  if (cookie === undefined) throw new Error("register minted no session cookie")
-  const body = await response.json() as { readonly user: { readonly id: string } }
+    .find(value => value.startsWith('tali_session='))
+    ?.split(';')[0]
+  if (cookie === undefined) throw new Error('register minted no session cookie')
+  const body = (await response.json()) as {
+    readonly user: { readonly id: string }
+  }
   return { userId: body.user.id, email, cookie }
 }
 
@@ -80,24 +93,26 @@ export interface Household {
 
 export const createHousehold = async (account: Account): Promise<Household> => {
   const response = await workerFetch(
-    "/household",
-    jsonRequest("POST", account.cookie, { name: "خانهٔ آزمایش" })
+    '/household',
+    jsonRequest('POST', account.cookie, { name: 'خانهٔ آزمایش' }),
   )
   if (response.status !== 201) {
-    throw new Error(`household failed: ${response.status} ${await response.text()}`)
+    throw new Error(
+      `household failed: ${response.status} ${await response.text()}`,
+    )
   }
-  const body = await response.json() as { readonly household: Household }
+  const body = (await response.json()) as { readonly household: Household }
   return body.household
 }
 
 /** A second user in the same household (the partner), with a live cookie. */
 export const joinHousehold = async (
   partner: Account,
-  inviteCode: string
+  inviteCode: string,
 ): Promise<void> => {
   const join = await workerFetch(
-    "/household/join",
-    jsonRequest("POST", partner.cookie, { inviteCode })
+    '/household/join',
+    jsonRequest('POST', partner.cookie, { inviteCode }),
   )
   if (join.status !== 200) {
     throw new Error(`join failed: ${join.status} ${await join.text()}`)
@@ -110,9 +125,9 @@ export const freshHousehold = async (): Promise<{
   readonly partner: Account
   readonly householdId: string
 }> => {
-  const owner = await registerAccount("owner")
+  const owner = await registerAccount('owner')
   const household = await createHousehold(owner)
-  const partner = await registerAccount("partner")
+  const partner = await registerAccount('partner')
   await joinHousehold(partner, household.inviteCode)
   return { owner, partner, householdId: household.id }
 }
@@ -134,7 +149,7 @@ export const newTelemetry = (): Telemetry => ({
   results: [],
   pullCursors: [],
   pullRequests: [],
-  pushes: 0
+  pushes: 0,
 })
 
 /** Length settings injected by `vitest.config.ts` (see `mode.ts`). */
@@ -152,7 +167,7 @@ export interface TransportOptions {
 const decodeBody = async <A>(
   response: Response,
   schema: Schema.ConstraintDecoder<A>,
-  path: string
+  path: string,
 ): Promise<A> => {
   const body: unknown = await response.json().catch(() => undefined)
   if (!response.ok) {
@@ -160,12 +175,17 @@ const decodeBody = async <A>(
       Schema.Struct({
         error: Schema.Struct({
           code: Schema.String,
-          details: Schema.optional(Schema.Record(Schema.String, Schema.Unknown))
-        })
-      })
+          details: Schema.optional(
+            Schema.Record(Schema.String, Schema.Unknown),
+          ),
+        }),
+      }),
     )(body)
-    throw envelope._tag === "Some"
-      ? new SyncRejected(envelope.value.error.code, envelope.value.error.details ?? {})
+    throw envelope._tag === 'Some'
+      ? new SyncRejected(
+          envelope.value.error.code,
+          envelope.value.error.details ?? {},
+        )
       : new SyncRejected(`sync-failed-${response.status}`)
   }
   if (body === undefined) throw new SyncRejected(`${path}-empty-body`)
@@ -174,32 +194,34 @@ const decodeBody = async <A>(
 
 export const makeTransport = (
   account: Account,
-  options: TransportOptions
+  options: TransportOptions,
 ): SyncTransport => {
   const call = async <A>(
     path: string,
     schema: Schema.ConstraintDecoder<A>,
-    init: RequestInit = {}
+    init: RequestInit = {},
   ): Promise<A> => {
     const response = await workerFetch(path, {
       ...init,
       headers: {
         cookie: account.cookie,
-        ...(init.body === undefined ? {} : { "content-type": "application/json" }),
-        ...init.headers
-      }
+        ...(init.body === undefined
+          ? {}
+          : { 'content-type': 'application/json' }),
+        ...init.headers,
+      },
     })
     return decodeBody(response, schema, path)
   }
 
   const pushOnce = async (
-    entries: ReadonlyArray<SyncPushEntry>
+    entries: ReadonlyArray<SyncPushEntry>,
   ): Promise<SyncPushResponse> => {
     options.telemetry.pushes += 1
     const body = JSON.stringify({ entries })
-    const response = await call("/sync/push", SyncPushResponse, {
-      method: "POST",
-      body
+    const response = await call('/sync/push', SyncPushResponse, {
+      method: 'POST',
+      body,
     })
     options.telemetry.results.push(...response.results)
     return response
@@ -210,7 +232,7 @@ export const makeTransport = (
       options.telemetry.pullRequests.push(cursor)
       const page = await call(
         `/sync/pull?cursor=${cursor}&limit=${limit}`,
-        SyncPullResponse
+        SyncPullResponse,
       )
       options.telemetry.pullCursors.push(page.nextCursor)
       return page
@@ -218,12 +240,12 @@ export const makeTransport = (
     bootstrap: async (offset, limit) => {
       const page = await call(
         `/sync/bootstrap?offset=${offset}&limit=${limit}`,
-        SyncBootstrapResponse
+        SyncBootstrapResponse,
       )
       options.telemetry.pullCursors.push(page.cursor)
       return page
     },
-    push: async (entries) => {
+    push: async entries => {
       if (options.duplicatePush === true) {
         await pushOnce(entries)
         return pushOnce(entries)
@@ -234,18 +256,14 @@ export const makeTransport = (
      * The two explicit repair paths the real engine uses. They are the web
      * client's Effect RPC procedures, pointed at the test Worker by `withRpc`.
      */
-    logHabitEntry: (input) =>
+    logHabitEntry: input =>
       withRpc(account, () =>
-        Effect.runPromise(
-          withRpcClient((client) => client.LogHabitEntry(input))
-        )
+        Effect.runPromise(withRpcClient(client => client.LogHabitEntry(input))),
       ),
-    restoreHabit: (input) =>
+    restoreHabit: input =>
       withRpc(account, () =>
-        Effect.runPromise(
-          withRpcClient((client) => client.RestoreHabit(input))
-        )
-      )
+        Effect.runPromise(withRpcClient(client => client.RestoreHabit(input))),
+      ),
   }
 }
 
@@ -267,23 +285,26 @@ let rpcTail: Promise<unknown> = Promise.resolve()
  */
 export const withRpc = <A>(
   account: Account,
-  run: () => Promise<A>
+  run: () => Promise<A>,
 ): Promise<A> => {
   const call = async (): Promise<A> => {
     const original = globalThis.fetch
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
       const base = input instanceof Request ? input : new Request(input, init)
       const source = new URL(base.url)
       const headers = new Headers(base.headers)
-      headers.set("cookie", account.cookie)
+      headers.set('cookie', account.cookie)
       const rewritten = new Request(
         `http://localhost${source.pathname}${source.search}`,
         {
           method: base.method,
           headers,
           body: base.body,
-          duplex: "half"
-        } as RequestInit
+          duplex: 'half',
+        } as RequestInit,
       )
       return exports.default.fetch(rewritten)
     }) as typeof fetch
@@ -294,7 +315,10 @@ export const withRpc = <A>(
     }
   }
   const queued = rpcTail.then(call)
-  rpcTail = queued.then(() => undefined, () => undefined)
+  rpcTail = queued.then(
+    () => undefined,
+    () => undefined,
+  )
   return queued
 }
 
@@ -325,12 +349,12 @@ export const tick = (): string => {
 
 export const openDevice = async (
   account: Account,
-  label: string
+  label: string,
 ): Promise<Device> => {
   const telemetry = newTelemetry()
   const options: TransportOptions = { telemetry }
   const store = await openLocalStore(account.userId, {
-    factory: new IDBFactory()
+    factory: new IDBFactory(),
   })
   const device: Device = {
     label,
@@ -341,7 +365,7 @@ export const openDevice = async (
     options,
     versions: new Map(),
     cursor: { value: 0 },
-    mutationIds: new Set()
+    mutationIds: new Set(),
   }
   return device
 }
@@ -350,13 +374,13 @@ export const openDevice = async (
 
 /** Every visible live row for this account, paged to the end. */
 export const serverSnapshot = async (
-  account: Account
+  account: Account,
 ): Promise<ReadonlyArray<SyncEntityRow>> => {
   const rows: Array<SyncEntityRow> = []
   let offset = 0
   for (;;) {
     const page = await makeTransport(account, {
-      telemetry: newTelemetry()
+      telemetry: newTelemetry(),
     }).bootstrap(offset, 500)
     rows.push(...page.items)
     if (!page.hasMore) return rows
@@ -375,7 +399,7 @@ export const serverSnapshot = async (
  * highest version.
  */
 const pullAllRows = async (
-  account: Account
+  account: Account,
 ): Promise<{
   readonly rows: ReadonlyArray<SyncEntityRow>
   /** Last visible feed seq for this account, or null when the feed was reset. */
@@ -389,7 +413,8 @@ const pullAllRows = async (
     if (page.resetRequired) {
       // A pruned feed cannot be replayed; fall back to the live set and skip
       // the cursor-progress check.
-      for (const row of await serverSnapshot(account)) rows.set(rowKey(row), row)
+      for (const row of await serverSnapshot(account))
+        rows.set(rowKey(row), row)
       return { rows: [...rows.values()], highWater: null }
     }
     for (const row of page.items) {
@@ -397,7 +422,8 @@ const pullAllRows = async (
       const seen = rows.get(key)
       if (seen === undefined || row.version >= seen.version) rows.set(key, row)
     }
-    if (!page.hasMore) return { rows: [...rows.values()], highWater: page.nextCursor }
+    if (!page.hasMore)
+      return { rows: [...rows.values()], highWater: page.nextCursor }
     if (page.nextCursor <= cursor) {
       return { rows: [...rows.values()], highWater: cursor }
     }
@@ -406,43 +432,43 @@ const pullAllRows = async (
 }
 
 export const serverSnapshotAll = async (
-  account: Account
+  account: Account,
 ): Promise<ReadonlyArray<SyncEntityRow>> => (await pullAllRows(account)).rows
 
 export const mirrorSnapshot = async (
-  store: LocalStore
+  store: LocalStore,
 ): Promise<ReadonlyArray<MirrorRecord>> => {
   const rows: Array<MirrorRecord> = []
   for (const entityType of [
-    "habit",
-    "habitEntry",
-    "event",
-    "occasion",
-    "task",
-    "reminder",
-    "note",
-    "tag",
-    "list",
-    "listItem",
-    "project"
+    'habit',
+    'habitEntry',
+    'event',
+    'occasion',
+    'task',
+    'reminder',
+    'note',
+    'tag',
+    'list',
+    'listItem',
+    'project',
   ] as const) {
-    rows.push(...await store.list(entityType))
-    rows.push(...await store.listTrashed(entityType))
+    rows.push(...(await store.list(entityType)))
+    rows.push(...(await store.listTrashed(entityType)))
   }
   return rows.sort((a, b) =>
     `${a.entityType}\u0000${a.entityId}`.localeCompare(
-      `${b.entityType}\u0000${b.entityId}`
-    )
+      `${b.entityType}\u0000${b.entityId}`,
+    ),
   )
 }
 
 const canonical = (value: unknown): string => {
-  if (value === null || typeof value !== "object") return JSON.stringify(value)
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`
+  if (value === null || typeof value !== 'object') return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
   const entries = Object.entries(value as Record<string, unknown>)
     .filter(([, entry]) => entry !== undefined)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-  return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonical(entry)}`).join(",")}}`
+  return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonical(entry)}`).join(',')}}`
 }
 
 const rowKey = (row: { entityType: string; entityId: string }): string =>
@@ -462,7 +488,7 @@ const comparable = (row: {
     version: row.version,
     updatedAt: row.updatedAt,
     deletedAt: row.deletedAt,
-    data: row.data
+    data: row.data,
   })
 
 /**
@@ -472,14 +498,14 @@ const comparable = (row: {
  */
 export const assertConverged = async (
   devices: ReadonlyArray<Device>,
-  account: Account
+  account: Account,
 ): Promise<void> => {
   // The full visible feed doubles as the household's high-water seq: the
   // device must have pulled up to the last row this account can see. (Bootstrapping
   // would return the *global* max, which includes other households' runs.)
   const snapshot = await pullAllRows(account)
   const server = snapshot.rows
-  const serverByKey = new Map(server.map((row) => [rowKey(row), row]))
+  const serverByKey = new Map(server.map(row => [rowKey(row), row]))
   const snapshots = new Map<string, Map<string, string>>()
   const tombstones = new Map<string, Map<string, string>>()
 
@@ -487,7 +513,7 @@ export const assertConverged = async (
     const pending = await device.store.pendingCount()
     if (pending !== 0) {
       throw new Error(
-        `${device.label} still has ${pending} queued mutation(s) after quiescence`
+        `${device.label} still has ${pending} queued mutation(s) after quiescence`,
       )
     }
     // A cursor that never advances (or stops short) is as wrong as one that
@@ -495,7 +521,7 @@ export const assertConverged = async (
     const cursor = await device.store.cursor()
     if (snapshot.highWater !== null && cursor !== snapshot.highWater) {
       throw new Error(
-        `${device.label} cursor ${cursor} has not reached the household high-water ${snapshot.highWater}`
+        `${device.label} cursor ${cursor} has not reached the household high-water ${snapshot.highWater}`,
       )
     }
     const mirror = await mirrorSnapshot(device.store)
@@ -504,17 +530,20 @@ export const assertConverged = async (
     const seen = new Set<string>()
     for (const row of mirror) {
       const key = rowKey(row)
-      if (seen.has(key)) throw new Error(`${device.label} mirror has two rows for ${key}`)
+      if (seen.has(key))
+        throw new Error(`${device.label} mirror has two rows for ${key}`)
       seen.add(key)
       const authoritative = serverByKey.get(key)
       if (authoritative === undefined) {
-        throw new Error(`${device.label} holds ${key}, which the server does not expose`)
+        throw new Error(
+          `${device.label} holds ${key}, which the server does not expose`,
+        )
       }
       if (comparable(row) !== comparable(authoritative)) {
         throw new Error(
-          `${device.label} diverged on ${key}${row.deletedAt === null ? "" : " (tombstone)"}\n` +
+          `${device.label} diverged on ${key}${row.deletedAt === null ? '' : ' (tombstone)'}\n` +
             `  mirror: ${comparable(row)}\n` +
-            `  server: ${comparable(authoritative)}`
+            `  server: ${comparable(authoritative)}`,
         )
       }
       if (row.deletedAt !== null) {
@@ -543,7 +572,7 @@ export const assertConverged = async (
         throw new Error(
           `${first.label} and ${device.label} disagree on ${key}\n` +
             `  ${first.label}: ${value}\n` +
-            `  ${device.label}: ${rows.get(key) ?? "<missing>"}`
+            `  ${device.label}: ${rows.get(key) ?? '<missing>'}`,
         )
       }
     }
@@ -553,14 +582,14 @@ export const assertConverged = async (
         throw new Error(
           `${first.label} and ${device.label} disagree on tombstone ${key}\n` +
             `  ${first.label}: ${value}\n` +
-            `  ${device.label}: ${trash.get(key) ?? "<missing>"}`
+            `  ${device.label}: ${trash.get(key) ?? '<missing>'}`,
         )
       }
     }
     for (const key of trash.keys()) {
       if (!referenceTrash.has(key)) {
         throw new Error(
-          `${device.label} holds tombstone ${key}, which ${first.label} does not`
+          `${device.label} holds tombstone ${key}, which ${first.label} does not`,
         )
       }
     }
@@ -591,7 +620,7 @@ export interface AckSource {
  * produces for a replayed create) hides exactly the bug this asserts against.
  */
 export const assertAcknowledgements = (
-  devices: ReadonlyArray<AckSource>
+  devices: ReadonlyArray<AckSource>,
 ): void => {
   for (const device of devices) {
     const resultsById = new Map<string, Array<{ tag: string; code?: string }>>()
@@ -599,7 +628,7 @@ export const assertAcknowledgements = (
       const tags = resultsById.get(result.clientMutationId) ?? []
       tags.push({
         tag: result._tag,
-        ...(result._tag === "rejected" ? { code: result.code } : {})
+        ...(result._tag === 'rejected' ? { code: result.code } : {}),
       })
       resultsById.set(result.clientMutationId, tags)
     }
@@ -608,28 +637,33 @@ export const assertAcknowledgements = (
       if (results === undefined) {
         throw new Error(`${device.label} lost the ack for ${id}`)
       }
-      const firstApplied = results.findIndex((result) => result.tag === "applied")
+      const firstApplied = results.findIndex(result => result.tag === 'applied')
       if (
         firstApplied !== -1 &&
-        results.slice(firstApplied + 1).some((result) => result.tag !== "alreadyApplied")
+        results
+          .slice(firstApplied + 1)
+          .some(result => result.tag !== 'alreadyApplied')
       ) {
         throw new Error(
-          `${device.label} re-executed ${id} after acknowledging it: ${describeTags(results)}`
+          `${device.label} re-executed ${id} after acknowledging it: ${describeTags(results)}`,
         )
       }
       const resolved = results.some(
-        (result) =>
-          result.tag === "applied" ||
-          result.tag === "alreadyApplied" ||
-          result.tag === "conflict" ||
-          result.tag === "tombstone"
+        result =>
+          result.tag === 'applied' ||
+          result.tag === 'alreadyApplied' ||
+          result.tag === 'conflict' ||
+          result.tag === 'tombstone',
       )
       const createCreateRace =
         results.length > 0 &&
-        results.every((result) => result.tag === "rejected" && result.code === "UniqueViolation")
+        results.every(
+          result =>
+            result.tag === 'rejected' && result.code === 'UniqueViolation',
+        )
       if (!resolved && !createCreateRace) {
         throw new Error(
-          `${device.label} did not resolve ${id}: ${describeTags(results)}`
+          `${device.label} did not resolve ${id}: ${describeTags(results)}`,
         )
       }
     }
@@ -641,10 +675,15 @@ export const assertAcknowledgements = (
   }
 }
 
-const describeTags = (results: ReadonlyArray<{ tag: string; code?: string }>): string =>
-  results.map((result) =>
-    `${result.tag}${result.code === undefined ? "" : `/${result.code}`}`
-  ).join(",")
+const describeTags = (
+  results: ReadonlyArray<{ tag: string; code?: string }>,
+): string =>
+  results
+    .map(
+      result =>
+        `${result.tag}${result.code === undefined ? '' : `/${result.code}`}`,
+    )
+    .join(',')
 
 /**
  * Assert a cursor sequence never threatens to re-read from behind.
@@ -657,7 +696,7 @@ const describeTags = (results: ReadonlyArray<{ tag: string; code?: string }>): s
  */
 export const assertCursorsNonDecreasing = (
   label: string,
-  cursors: ReadonlyArray<number>
+  cursors: ReadonlyArray<number>,
 ): void => {
   for (let index = 1; index < cursors.length; index += 1) {
     const previous = cursors[index - 1]!
@@ -677,19 +716,25 @@ export const observeMonotonicity = async (device: Device): Promise<void> => {
   const cursor = await device.store.cursor()
   if (cursor < device.cursor.value) {
     throw new Error(
-      `${device.label} cursor rewound: ${device.cursor.value} -> ${cursor}`
+      `${device.label} cursor rewound: ${device.cursor.value} -> ${cursor}`,
     )
   }
   device.cursor.value = cursor
-  assertCursorsNonDecreasing(`${device.label} pull request`, device.telemetry.pullRequests)
-  assertCursorsNonDecreasing(`${device.label} pull response`, device.telemetry.pullCursors)
+  assertCursorsNonDecreasing(
+    `${device.label} pull request`,
+    device.telemetry.pullRequests,
+  )
+  assertCursorsNonDecreasing(
+    `${device.label} pull response`,
+    device.telemetry.pullCursors,
+  )
   const rows = await mirrorSnapshot(device.store)
   for (const row of rows) {
     const key = rowKey(row)
     const previous = device.versions.get(key)
     if (previous !== undefined && row.version < previous) {
       throw new Error(
-        `${device.label} version rewound on ${key}: ${previous} -> ${row.version}`
+        `${device.label} version rewound on ${key}: ${previous} -> ${row.version}`,
       )
     }
     device.versions.set(key, row.version)
@@ -706,7 +751,7 @@ export const syncDevice = async (device: Device): Promise<boolean> => {
     await observeMonotonicity(device)
     return true
   } catch (cause) {
-    if (cause instanceof SyncRejected && cause.code === "Conflict") {
+    if (cause instanceof SyncRejected && cause.code === 'Conflict') {
       await observeMonotonicity(device)
       return false
     }
@@ -716,13 +761,15 @@ export const syncDevice = async (device: Device): Promise<boolean> => {
 
 /** Both devices sync at once, forcing real interleaving inside the Worker. */
 export const syncConcurrently = async (
-  devices: ReadonlyArray<Device>
+  devices: ReadonlyArray<Device>,
 ): Promise<boolean> => {
-  const outcomes = await Promise.all(devices.map((device) =>
-    syncDevice(device).catch((cause: unknown) => {
-      throw cause
-    })
-  ))
+  const outcomes = await Promise.all(
+    devices.map(device =>
+      syncDevice(device).catch((cause: unknown) => {
+        throw cause
+      }),
+    ),
+  )
   return outcomes.every(Boolean)
 }
 
@@ -733,7 +780,7 @@ export const syncConcurrently = async (
  */
 export const settle = async (
   devices: ReadonlyArray<Device>,
-  rounds = 12
+  rounds = 12,
 ): Promise<void> => {
   for (let round = 0; round < rounds; round += 1) {
     let activity = false
@@ -752,16 +799,23 @@ export const settle = async (
     }
     if (!activity) {
       const pending = await Promise.all(
-        devices.map(async (device) => `${device.label}:${await device.store.pendingCount()}`)
+        devices.map(
+          async device =>
+            `${device.label}:${await device.store.pendingCount()}`,
+        ),
       )
-      if (pending.every((value) => value.endsWith(":0"))) return
-      throw new Error(`quiescent but not drained (${pending.join(", ")})`)
+      if (pending.every(value => value.endsWith(':0'))) return
+      throw new Error(`quiescent but not drained (${pending.join(', ')})`)
     }
   }
   const pending = await Promise.all(
-    devices.map(async (device) => `${device.label}:${await device.store.pendingCount()}`)
+    devices.map(
+      async device => `${device.label}:${await device.store.pendingCount()}`,
+    ),
   )
-  throw new Error(`did not settle after ${rounds} rounds (${pending.join(", ")})`)
+  throw new Error(
+    `did not settle after ${rounds} rounds (${pending.join(', ')})`,
+  )
 }
 
 // ── Local writes ──────────────────────────────────────────────────────────
@@ -769,7 +823,7 @@ export const settle = async (
 export interface QueuedWrite {
   readonly entityType: SyncEntityType
   readonly entityId: string
-  readonly op: "upsert" | "delete"
+  readonly op: 'upsert' | 'delete'
   readonly patch: Readonly<Record<string, unknown>>
   /** Explicit LWW/edit instant, so a race test never depends on the clock. */
   readonly now?: string
@@ -791,24 +845,26 @@ const queuedMutationIds = new Set<string>()
 export const queueWrite = async (
   device: Device,
   write: QueuedWrite,
-  clientMutationId = uuidV7()
+  clientMutationId = uuidV7(),
 ): Promise<string> => {
   if (queuedMutationIds.has(clientMutationId)) {
-    throw new Error(`clientMutationId reused within a test file: ${clientMutationId}`)
+    throw new Error(
+      `clientMutationId reused within a test file: ${clientMutationId}`,
+    )
   }
   queuedMutationIds.add(clientMutationId)
   const { now, ...rest } = write
   await device.store.writeLocal({
     ...rest,
     clientMutationId,
-    ...(now === undefined ? {} : { now })
+    ...(now === undefined ? {} : { now }),
   })
   // An unsent upsert folds into the newest unsent upsert for the same entity
   // and keeps *that* entry's `clientMutationId`, so only ids that reached the
   // queue can be acknowledged; the folded write's intent travels under the
   // surviving id.
   const queued = await device.store.pending()
-  if (queued.some((entry) => entry.clientMutationId === clientMutationId)) {
+  if (queued.some(entry => entry.clientMutationId === clientMutationId)) {
     device.mutationIds.add(clientMutationId)
   }
   return clientMutationId

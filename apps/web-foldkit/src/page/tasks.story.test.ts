@@ -365,6 +365,7 @@ describe('Tasks filter view', () => {
       baseModel(),
       Option.some('0192f0a0-0000-7000-8000-000000000099'),
     )
+
     const command = next.commands?.[0]
 
     expect(command?.name).toBe('ReadCachedTaskView')
@@ -511,6 +512,7 @@ describe('Tasks inline editing', () => {
 
   test('clearing the description writes null', () => {
     const described = { ...todayTask, description: 'سنگک' }
+
     const describedInputs = inputWith({
       mirror: { ...defaultInputs().mirror, tasks: [described] },
     })
@@ -948,9 +950,11 @@ describe('task visibility', () => {
     ownerId: USER_ID,
     visibility: 'private' as const,
   }
+
   const ownerInputs = inputWith({
     mirror: { ...defaultInputs().mirror, tasks: [ownerTask] },
   })
+
   const ownerUpdate = (tasks: Tasks.Model, message: Tasks.Message) =>
     Tasks.update(tasks, message, ownerInputs)
 

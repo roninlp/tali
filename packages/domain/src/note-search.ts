@@ -1,5 +1,5 @@
-import { Schema } from "effect"
-import { NoteId } from "./planning/common.js"
+import { Schema } from 'effect'
+import { NoteId } from './planning/common.js'
 
 /**
  * The note-search wire shape (ticket #41; FR-NOTE-04).
@@ -14,7 +14,7 @@ import { NoteId } from "./planning/common.js"
 /** One run of the snippet: `match` marks the runs that matched the query. */
 export const NoteSearchSegment = Schema.Struct({
   text: Schema.String,
-  match: Schema.Boolean
+  match: Schema.Boolean,
 })
 export type NoteSearchSegment = Schema.Schema.Type<typeof NoteSearchSegment>
 
@@ -26,7 +26,7 @@ export const NoteSearchHit = Schema.Struct({
   title: Schema.String,
   /** The snippet around the match, split into plain/matched runs. */
   segments: Schema.Array(NoteSearchSegment),
-  updatedAt: Schema.String
+  updatedAt: Schema.String,
 })
 export type NoteSearchHit = Schema.Schema.Type<typeof NoteSearchHit>
 
@@ -34,6 +34,6 @@ export type NoteSearchHit = Schema.Schema.Type<typeof NoteSearchHit>
 export const NoteSearchResponse = Schema.Struct({
   /** The (normalized) query the hits answer. */
   query: Schema.String,
-  hits: Schema.Array(NoteSearchHit)
+  hits: Schema.Array(NoteSearchHit),
 })
 export type NoteSearchResponse = Schema.Schema.Type<typeof NoteSearchResponse>

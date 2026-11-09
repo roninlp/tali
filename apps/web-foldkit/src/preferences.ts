@@ -62,6 +62,7 @@ export const WeekStartListbox = Listbox.create<
   SelectOption<WeekStart>,
   string
 >()
+
 export const DigitsListbox = Listbox.create<SelectOption<Digits>, string>()
 
 /** Only used while signed out, where route guards never read preferences. */
@@ -81,12 +82,14 @@ export const Model = Schema.Struct({
   weekStartListbox: Listbox.Model,
   digitsListbox: Listbox.Model,
 })
+
 export type Model = typeof Model.Type
 
 export const SessionProfile = Schema.Struct({
   userId: Schema.String,
   defaults: DisplayFields,
 })
+
 export type SessionProfile = typeof SessionProfile.Type
 
 const decodeWeekStart = Schema.decodeUnknownOption(WeekStart)
@@ -216,6 +219,7 @@ export const Message = defineMessageUnion({
   ClickedRefreshPreferences: {},
   CompletedCachePreferences: {},
 })
+
 export type Message = typeof Message.Type
 
 // COMMAND
@@ -273,6 +277,7 @@ export const CachePreferences = Command.define('CachePreferences', {
   execute: ({ preferences }) =>
     Effect.sync(() => {
       cachePreferences(preferences)
+
       return Message.CompletedCachePreferences()
     }),
 })
@@ -290,6 +295,7 @@ export const init = (options: InitOptions): Update.Return<Model, Message> => {
     onNone: () => signedOutDefaults(),
     onSome: profileDefaults => profileDefaults,
   })
+
   const model = initialModel(
     options.maybeUserId,
     defaults,
@@ -354,6 +360,7 @@ export const applySession = (
 const isIanaTimeZone = (value: string): boolean => {
   try {
     new Intl.DateTimeFormat('en-US', { timeZone: value })
+
     return true
   } catch {
     return false

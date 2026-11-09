@@ -1,13 +1,13 @@
-import { Schema } from "effect"
-import { Model } from "effect/schema"
-import { Visibility } from "../common.js"
+import { Schema } from 'effect'
+import { Model } from 'effect/schema'
+import { Visibility } from '../common.js'
 import {
   commonItemFields,
   ListId,
   ListItemId,
   TagIds,
-  TimestampUtc
-} from "./common.js"
+  TimestampUtc,
+} from './common.js'
 
 /**
  * `ListItem` aggregate (FR-LIST-01/02, docs/domain-model-draft.md §3.8).
@@ -26,8 +26,8 @@ import {
  * this aggregate through the registry's `name`/`done`/`ordering` aliases; the
  * stub remains only for the scaffold repo and the `/today` quick list.
  */
-export class ListItem extends Model.Class<ListItem>("ListItem")({
-  ...commonItemFields("listItem", ListItemId),
+export class ListItem extends Model.Class<ListItem>('ListItem')({
+  ...commonItemFields('listItem', ListItemId),
   /** Inherited from the parent list, at most narrower (ADR-0011). */
   visibility: Visibility,
   listId: ListId,
@@ -38,7 +38,7 @@ export class ListItem extends Model.Class<ListItem>("ListItem")({
   /** Completion audit; `null` while unchecked. */
   checkedAt: Schema.NullOr(TimestampUtc),
   /** Denormalized tag ids; `item_tags` remains the source of truth. */
-  tagIds: TagIds
+  tagIds: TagIds,
 }) {}
 
 export const ListItemCreate = Schema.Struct({
@@ -46,6 +46,6 @@ export const ListItemCreate = Schema.Struct({
   name: Schema.String.check(Schema.isMinLength(1)),
   order: Schema.optional(Schema.Int),
   color: Schema.optional(Schema.NullOr(Schema.String)),
-  tagIds: Schema.optional(TagIds)
+  tagIds: Schema.optional(TagIds),
 })
 export type ListItemCreate = Schema.Schema.Type<typeof ListItemCreate>

@@ -1,15 +1,20 @@
-import { Effect, Schema } from "effect"
-import { HttpRouter, HttpServerError, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { Effect, Schema } from 'effect'
+import {
+  HttpRouter,
+  HttpServerError,
+  HttpServerRequest,
+  HttpServerResponse,
+} from 'effect/http'
 import {
   isSafePushEndpoint,
   PushSubscription,
   PushSubscriptionInput,
-  Unauthorized
-} from "@tali/domain"
-import { PushSubscriptionRepo } from "@tali/sql"
-import { AuthService } from "./auth-service.js"
-import { SESSION_COOKIE } from "./auth-routes.js"
-import { PushConfig } from "./push-gateway.js"
+  Unauthorized,
+} from '@tali/domain'
+import { PushSubscriptionRepo } from '@tali/sql'
+import { AuthService } from './auth-service.js'
+import { SESSION_COOKIE } from './auth-routes.js'
+import { PushConfig } from './push-gateway.js'
 
 /**
  * Web Push registration and identity (tickets #20, #61).
@@ -25,32 +30,34 @@ import { PushConfig } from "./push-gateway.js"
 
 const json = (
   status: number,
-  body: unknown
+  body: unknown,
 ): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
   HttpServerResponse.json(body, { status }).pipe(
-    Effect.map(HttpServerResponse.setHeader("cache-control", "no-store")),
-    Effect.orDie
+    Effect.map(HttpServerResponse.setHeader('cache-control', 'no-store')),
+    Effect.orDie,
   )
 
 const fail = (
   status: number,
-  code: "Unauthorized" | "BadRequest" | "InternalError",
+  code: 'Unauthorized' | 'BadRequest' | 'InternalError',
   message: string,
-  retryable = false
+  retryable = false,
 ): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
   json(status, { error: { code, message, retryable, details: {} } })
 
 /** Maps malformed bodies to 400 and anything else to a retryable 500. */
-const unexpectedFailure = (error: unknown): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
+const unexpectedFailure = (
+  error: unknown,
+): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
   Schema.isSchemaError(error) || HttpServerError.isHttpServerError(error)
-    ? fail(400, "BadRequest", "Malformed push subscription")
-    : fail(500, "InternalError", "Unexpected server error", true)
+    ? fail(400, 'BadRequest', 'Malformed push subscription')
+    : fail(500, 'InternalError', 'Unexpected server error', true)
 
 const optionalIso = (epochMs: number | null): string | null =>
   epochMs === null ? null : new Date(epochMs).toISOString()
 
-export const PushRoutes = HttpRouter.use((router) =>
-  Effect.gen(function*() {
+export const PushRoutes = HttpRouter.use(router =>
+  Effect.gen(function* () {
     const auth = yield* AuthService
     const subscriptions = yield* PushSubscriptionRepo
     const vapid = yield* PushConfig
@@ -66,30 +73,36 @@ export const PushRoutes = HttpRouter.use((router) =>
      * (RFC 8292 §3.2).
      */
     yield* router.add(
-      "GET",
-      "/push/vapid",
+      'GET',
+      '/push/vapid',
       json(200, {
         publicKey: vapid?.publicKey ?? null,
-        subject: vapid?.subject ?? null
-      })
+        subject: vapid?.subject ?? null,
+      }),
     )
 
     yield* router.add(
-      "POST",
-      "/push/register",
-      Effect.gen(function*() {
+      'POST',
+      '/push/register',
+      Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
         const token = request.cookies[SESSION_COOKIE]
         if (token === undefined) {
           return yield* Effect.fail(new Unauthorized())
         }
         const context = yield* auth.me(token)
-        const input = yield* HttpServerRequest.schemaBodyJson(PushSubscriptionInput)
+        const input = yield* HttpServerRequest.schemaBodyJson(
+          PushSubscriptionInput,
+        )
         // The endpoint is a capability URL this Worker will POST to. Reject
         // anything that is not a public HTTPS origin here, so a bad row never
         // reaches the sweep (the gateway re-checks stored rows).
         if (!isSafePushEndpoint(input.endpoint)) {
-          return yield* fail(400, "BadRequest", "the push endpoint must be a public HTTPS URL")
+          return yield* fail(
+            400,
+            'BadRequest',
+            'the push endpoint must be a public HTTPS URL',
+          )
         }
         const now = new Date().toISOString()
 
@@ -101,10 +114,10 @@ export const PushRoutes = HttpRouter.use((router) =>
               p256dh: input.keys.p256dh,
               auth: input.keys.auth,
               expirationTime: optionalIso(input.expirationTime),
-              userAgent: request.headers["user-agent"] ?? null,
+              userAgent: request.headers['user-agent'] ?? null,
               createdAt: now,
-              updatedAt: now
-            })
+              updatedAt: now,
+            }),
           )
           .pipe(Effect.orDie)
 
@@ -112,11 +125,11 @@ export const PushRoutes = HttpRouter.use((router) =>
       }).pipe(
         Effect.catchTags(
           {
-            Unauthorized: () => fail(401, "Unauthorized", "No active session")
+            Unauthorized: () => fail(401, 'Unauthorized', 'No active session'),
           },
-          unexpectedFailure
-        )
-      )
+          unexpectedFailure,
+        ),
+      ),
     )
-  })
+  }),
 )

@@ -33,12 +33,15 @@ export const HOUSE_LIGHT = 'tali'
 export const HOUSE_DARK = 'talidark'
 
 export const ThemeId = Schema.Literals([HOUSE_LIGHT, HOUSE_DARK])
+
 export type ThemeId = typeof ThemeId.Type
 
 export const ThemeMode = Schema.Literals(['light', 'dark', 'system'])
+
 export type ThemeMode = typeof ThemeMode.Type
 
 export const ThemeChoice = Schema.Literals(['auto', HOUSE_LIGHT, HOUSE_DARK])
+
 export type ThemeChoice = typeof ThemeChoice.Type
 
 export const ModePicker = RadioGroup.create<ThemeMode>()
@@ -49,6 +52,7 @@ export const Model = Schema.Struct({
   isSystemDark: Schema.Boolean,
   modePicker: RadioGroup.Model,
 })
+
 export type Model = typeof Model.Type
 
 export interface ThemeInfo {
@@ -156,6 +160,7 @@ export const Message = defineMessageUnion({
   CompletedApplyTheme: {},
   CompletedPersistTheme: {},
 })
+
 export type Message = typeof Message.Type
 
 // INIT
@@ -190,6 +195,7 @@ const applyDocumentTheme = (theme: ThemeId): void => {
   root.setAttribute('data-theme', theme)
 
   const themeColorMeta = document.querySelector('meta[name="theme-color"]')
+
   if (themeColorMeta === null) {
     return
   }
@@ -199,6 +205,7 @@ const applyDocumentTheme = (theme: ThemeId): void => {
   // Keep the browser / PWA chrome in step with the theme's page background.
   requestAnimationFrame(() => {
     const background = getComputedStyle(root).backgroundColor
+
     if (background !== '' && background !== 'rgba(0, 0, 0, 0)') {
       themeColorMeta.setAttribute('content', background)
     }
@@ -211,6 +218,7 @@ export const ApplyTheme = Command.define('ApplyTheme', {
   execute: ({ resolved }) =>
     Effect.sync(() => {
       applyDocumentTheme(resolved)
+
       return Message.CompletedApplyTheme()
     }),
 })
@@ -222,6 +230,7 @@ export const PersistTheme = Command.define('PersistTheme', {
     Effect.sync(() => {
       writeStorage(THEME_KEY, theme)
       writeStorage(MODE_KEY, mode)
+
       return Message.CompletedPersistTheme()
     }),
 })
@@ -303,6 +312,7 @@ export const update = (
     ClickedThemeToggle: () => {
       const current =
         model.theme === 'auto' ? resolvedTheme(model) : model.theme
+
       const id: ThemeId = isDarkTheme(current) ? HOUSE_LIGHT : HOUSE_DARK
       const mode: ThemeMode = isDarkTheme(id) ? 'dark' : 'light'
 

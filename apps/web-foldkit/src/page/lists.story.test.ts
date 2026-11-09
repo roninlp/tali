@@ -1,6 +1,4 @@
 import { Option } from 'effect'
-import { Animation, Dialog, Toast as UiToast } from '@foldkit/ui'
-import { test as toastTest } from '@foldkit/ui/toast'
 import {
   Command,
   expectNoOutMessage,
@@ -13,6 +11,8 @@ import {
 import { modifyFields } from 'foldkit/struct'
 import { describe, expect, test } from 'vitest'
 
+import { Animation, Dialog, Toast as UiToast } from '@foldkit/ui'
+import { test as toastTest } from '@foldkit/ui/toast'
 import { ListId } from '@tali/domain'
 
 import { COLOR_CHOICES, ICON_CHOICES } from '../lists-model'
@@ -179,10 +179,7 @@ describe('list deletion', () => {
         )
         expect(next.confirmDialog.isOpen).toBe(true)
       }),
-      Command.resolve(
-        Dialog.ShowDialog,
-        Dialog.Message.SucceededShowDialog(),
-      ),
+      Command.resolve(Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()),
       message(Lists.Message.ConfirmedDeleteList()),
       Command.resolve(
         Dialog.CloseDialog,
@@ -228,10 +225,7 @@ describe('list deletion', () => {
         )
         expect(next.confirmDialog.isOpen).toBe(true)
       }),
-      Command.resolve(
-        Dialog.ShowDialog,
-        Dialog.Message.SucceededShowDialog(),
-      ),
+      Command.resolve(Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()),
       message(
         Lists.Message.GotConfirmDialogMessage({
           message: Dialog.Message.RequestedClose(),
@@ -576,9 +570,7 @@ describe('list items', () => {
       model(next => {
         expect(next.toast.entries).toHaveLength(1)
         expect(next.toast.entries[0]?.payload.text).toBe('تیک خورد: نان')
-        expect(
-          next.toast.entries[0]?.payload.maybeUndo,
-        ).toStrictEqual({
+        expect(next.toast.entries[0]?.payload.maybeUndo).toStrictEqual({
           kind: 'uncheckItem',
           id: ITEM_ID,
           title: 'نان',
@@ -906,6 +898,7 @@ describe('entry capabilities', () => {
 
   test('entering a detail stores the typed id and resets transient state', () => {
     const listId = ListId.make(LIST_ID)
+
     const entered = Lists.enteredDetail(
       modifyFields(Lists.initialModel(), {
         itemDraft: () => 'نیمه‌کاره',

@@ -1,26 +1,29 @@
-import { readFileSync } from "node:fs"
-import { fileURLToPath } from "node:url"
-import { DatabaseSync } from "node:sqlite"
-import { describe, expect, it } from "vitest"
-import { Effect, Layer, String as Str } from "effect"
-import { D1Client } from "@effect/sql-d1"
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { DatabaseSync } from 'node:sqlite'
+import { describe, expect, it } from 'vitest'
+import { Effect, Layer, String as Str } from 'effect'
+import { D1Client } from '@effect/sql-d1'
 import {
   uuidV7,
   type SyncEntityRow,
   type SyncEntityType,
   type SyncBootstrapResponse,
   type SyncPullResponse,
-  type SyncPushEntry
-} from "@tali/domain"
-import { SyncRepo, SyncRepoLive } from "@tali/sql"
-import { NoteSearchService, NoteSearchServiceLive } from "../src/note-search-service.js"
+  type SyncPushEntry,
+} from '@tali/domain'
+import { SyncRepo, SyncRepoLive } from '@tali/sql'
+import {
+  NoteSearchService,
+  NoteSearchServiceLive,
+} from '../src/note-search-service.js'
 import {
   FEED_RETENTION_MS,
   MAX_ISOLATION_BATCHES,
   SyncService,
-  SyncServiceLive
-} from "../src/sync-service.js"
-import { FakeD1 } from "./fake-d1.js"
+  SyncServiceLive,
+} from '../src/sync-service.js'
+import { FakeD1 } from './fake-d1.js'
 
 /**
  * The sync-engine suite: #18's two-device convergence for the dummy aggregate,
@@ -34,49 +37,53 @@ import { FakeD1 } from "./fake-d1.js"
  */
 
 const MIGRATIONS = [
-  "0001_list_items.sql",
-  "0002_auth.sql",
-  "0003_sync_engine.sql",
-  "0005_core_planning.sql",
-  "0007_task_recurrence.sql",
-  "0008_list_last_writer.sql",
-  "0009_note_search.sql",
-  "0010_events.sql",
-  "0011_habits.sql",
-  "0012_reminders.sql",
-  "0013_occasions.sql"
+  '0001_list_items.sql',
+  '0002_auth.sql',
+  '0003_sync_engine.sql',
+  '0005_core_planning.sql',
+  '0007_task_recurrence.sql',
+  '0008_list_last_writer.sql',
+  '0009_note_search.sql',
+  '0010_events.sql',
+  '0011_habits.sql',
+  '0012_reminders.sql',
+  '0013_occasions.sql',
 ]
 const NOW = (): string => new Date().toISOString()
-const PAST = "2020-01-01T00:00:00.000Z"
+const PAST = '2020-01-01T00:00:00.000Z'
 const FUTURE = (): string => new Date(Date.now() + 60_000).toISOString()
 
-const HOUSEHOLD = "household-a"
-const USER_A = "user-a"
-const USER_B = "user-b"
-const HOUSEHOLD_B = "household-b"
-const USER_C = "user-c"
+const HOUSEHOLD = 'household-a'
+const USER_A = 'user-a'
+const USER_B = 'user-b'
+const HOUSEHOLD_B = 'household-b'
+const USER_C = 'user-c'
 
 const makeHarness = () => {
-  const db = new DatabaseSync(":memory:")
-  const dir = new URL("../../../packages/sql/migrations/", import.meta.url)
+  const db = new DatabaseSync(':memory:')
+  const dir = new URL('../../../packages/sql/migrations/', import.meta.url)
   for (const file of MIGRATIONS) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, dir)), "utf8"))
+    db.exec(readFileSync(fileURLToPath(new URL(file, dir)), 'utf8'))
   }
 
   const fake = new FakeD1(db)
   const d1 = D1Client.layer({
     db: fake.asD1Database(),
     transformQueryNames: Str.camelToSnake,
-    transformResultNames: Str.snakeToCamel
+    transformResultNames: Str.snakeToCamel,
   })
   const layer = Layer.mergeAll(
     NoteSearchServiceLive,
     SyncServiceLive,
-    SyncRepoLive
+    SyncRepoLive,
   ).pipe(Layer.provide(d1))
 
   const run = <A>(
-    effect: Effect.Effect<A, unknown, SyncService | NoteSearchService | SyncRepo>
+    effect: Effect.Effect<
+      A,
+      unknown,
+      SyncService | NoteSearchService | SyncRepo
+    >,
   ): Promise<A> => Effect.runPromise(Effect.provide(effect, layer))
 
   return { db, fake, run }
@@ -86,24 +93,33 @@ type Harness = ReturnType<typeof makeHarness>
 
 const pull = (
   harness: Harness,
-  input: { readonly userId: string; readonly householdId: string; readonly cursor: number; readonly limit?: number }
+  input: {
+    readonly userId: string
+    readonly householdId: string
+    readonly cursor: number
+    readonly limit?: number
+  },
 ): Promise<SyncPullResponse> =>
   harness.run(
-    Effect.gen(function*() {
+    Effect.gen(function* () {
       const sync = yield* SyncService
       return yield* sync.pull(input)
-    })
+    }),
   )
 
 const push = (
   harness: Harness,
-  input: { readonly userId: string; readonly householdId: string; readonly entries: ReadonlyArray<SyncPushEntry> }
+  input: {
+    readonly userId: string
+    readonly householdId: string
+    readonly entries: ReadonlyArray<SyncPushEntry>
+  },
 ) =>
   harness.run(
-    Effect.gen(function*() {
+    Effect.gen(function* () {
       const sync = yield* SyncService
       return yield* sync.push(input)
-    })
+    }),
   )
 
 const bootstrap = (
@@ -113,13 +129,13 @@ const bootstrap = (
     readonly householdId: string
     readonly offset?: number
     readonly limit?: number
-  }
+  },
 ): Promise<SyncBootstrapResponse> =>
   harness.run(
-    Effect.gen(function*() {
+    Effect.gen(function* () {
       const sync = yield* SyncService
       return yield* sync.bootstrap(input)
-    })
+    }),
   )
 
 const entry = (input: {
@@ -127,17 +143,17 @@ const entry = (input: {
   readonly entityId: string
   readonly baseVersion: number
   readonly patch?: Record<string, unknown>
-  readonly op?: "upsert" | "delete"
+  readonly op?: 'upsert' | 'delete'
   readonly at?: string
   readonly clientMutationId?: string
 }): SyncPushEntry => ({
   clientMutationId: input.clientMutationId ?? uuidV7(),
-  entityType: input.entityType ?? "listItem",
+  entityType: input.entityType ?? 'listItem',
   entityId: input.entityId,
   baseVersion: input.baseVersion,
-  op: input.op ?? "upsert",
+  op: input.op ?? 'upsert',
   patch: input.patch ?? {},
-  clientUpdatedAt: input.at ?? NOW()
+  clientUpdatedAt: input.at ?? NOW(),
 })
 
 /**
@@ -147,12 +163,12 @@ const entry = (input: {
  */
 const pruneFeed = (harness: Harness, now = new Date()): Promise<void> =>
   harness.run(
-    Effect.gen(function*() {
+    Effect.gen(function* () {
       const sync = yield* SyncRepo
       yield* sync.prune(
-        new Date(now.getTime() - FEED_RETENTION_MS).toISOString()
+        new Date(now.getTime() - FEED_RETENTION_MS).toISOString(),
       )
-    })
+    }),
   )
 
 /**
@@ -167,33 +183,41 @@ const isolationChunk = (count: number, poisonAt: ReadonlyArray<number>) => {
   const entries = ids.map((entityId, index) =>
     poisoned.has(index)
       ? entry({
-        entityType: "task",
-        entityId,
-        baseVersion: 0,
-        patch: { title: `poison-${index}`, projectId: uuidV7() }
-      })
-      : entry({ entityId, baseVersion: 0, patch: { title: `ok-${index}` } })
+          entityType: 'task',
+          entityId,
+          baseVersion: 0,
+          patch: { title: `poison-${index}`, projectId: uuidV7() },
+        })
+      : entry({ entityId, baseVersion: 0, patch: { title: `ok-${index}` } }),
   )
   return { ids, entries }
 }
 
 const itemOf = (page: SyncPullResponse, entityId: string) =>
-  page.items.find((item) => item.entityId === entityId)
+  page.items.find(item => item.entityId === entityId)
 
 const feedCount = (db: DatabaseSync): number =>
-  (db.prepare("SELECT COUNT(*) AS n FROM change_feed").get() as { readonly n: number }).n
+  (
+    db.prepare('SELECT COUNT(*) AS n FROM change_feed').get() as {
+      readonly n: number
+    }
+  ).n
 
 const appliedCount = (db: DatabaseSync): number =>
-  (db.prepare("SELECT COUNT(*) AS n FROM applied_mutations").get() as { readonly n: number }).n
+  (
+    db.prepare('SELECT COUNT(*) AS n FROM applied_mutations').get() as {
+      readonly n: number
+    }
+  ).n
 
 /** The stored search row, exactly as FTS5 holds it (folded values). */
 const noteIndex = (
   db: DatabaseSync,
-  noteId: string
+  noteId: string,
 ): { readonly searchTitle: string; readonly searchBody: string } | undefined =>
   db
     .prepare(
-      "SELECT search_title AS searchTitle, search_body AS searchBody FROM notes_fts WHERE note_id = ?"
+      'SELECT search_title AS searchTitle, search_body AS searchBody FROM notes_fts WHERE note_id = ?',
     )
     .get(noteId) as
     | { readonly searchTitle: string; readonly searchBody: string }
@@ -202,40 +226,40 @@ const noteIndex = (
 /** Note ids the search service returns, scoped like the UI's viewer. */
 const searchNotes = (
   harness: Harness,
-  query: string
+  query: string,
 ): Promise<ReadonlyArray<string>> =>
   harness.run(
-    Effect.gen(function*() {
+    Effect.gen(function* () {
       const search = yield* NoteSearchService
       const result = yield* search.search(
         { userId: USER_A, householdId: HOUSEHOLD },
-        query
+        query,
       )
-      return result.hits.map((hit) => hit.id)
-    })
+      return result.hits.map(hit => hit.id)
+    }),
   )
 
 /** Insert a note through the push path (the way the web app writes). */
 const insertNote = (
   harness: Harness,
   id: string,
-  input?: { readonly title?: string; readonly plainText?: string }
+  input?: { readonly title?: string; readonly plainText?: string },
 ) =>
   push(harness, {
     userId: USER_A,
     householdId: HOUSEHOLD,
     entries: [
       entry({
-        entityType: "note",
+        entityType: 'note',
         entityId: id,
         baseVersion: 0,
         patch: {
-          title: input?.title ?? "خرید",
-          plainText: input?.plainText ?? "نان و پنیر",
-          body: { type: "doc" }
-        }
-      })
-    ]
+          title: input?.title ?? 'خرید',
+          plainText: input?.plainText ?? 'نان و پنیر',
+          body: { type: 'doc' },
+        },
+      }),
+    ],
   })
 
 /** A device as the client engine models it: a cursor plus a mirror. */
@@ -245,7 +269,11 @@ interface Device {
   readonly mirror: Map<string, SyncEntityRow>
 }
 
-const device = (userId: string): Device => ({ userId, cursor: 0, mirror: new Map() })
+const device = (userId: string): Device => ({
+  userId,
+  cursor: 0,
+  mirror: new Map(),
+})
 
 /** One client reconcile pass: pull every page, merge it, advance the cursor. */
 const syncDevice = async (harness: Harness, current: Device): Promise<void> => {
@@ -253,7 +281,7 @@ const syncDevice = async (harness: Harness, current: Device): Promise<void> => {
     const page = await pull(harness, {
       userId: current.userId,
       householdId: HOUSEHOLD,
-      cursor: current.cursor
+      cursor: current.cursor,
     })
     for (const item of page.items) current.mirror.set(item.entityId, item)
     for (const removed of page.removed) current.mirror.delete(removed.entityId)
@@ -262,8 +290,8 @@ const syncDevice = async (harness: Harness, current: Device): Promise<void> => {
   }
 }
 
-describe("sync engine", () => {
-  it("converges two devices after offline edits on both sides", async () => {
+describe('sync engine', () => {
+  it('converges two devices after offline edits on both sides', async () => {
     const h = makeHarness()
     const a = device(USER_A)
     const b = device(USER_B)
@@ -277,27 +305,31 @@ describe("sync engine", () => {
         entry({
           entityId: id,
           baseVersion: 0,
-          patch: { title: "خرید نان", checked: false, sortOrder: 0 }
-        })
-      ]
+          patch: { title: 'خرید نان', checked: false, sortOrder: 0 },
+        }),
+      ],
     })
     await syncDevice(h, a)
     await syncDevice(h, b)
-    expect(a.mirror.get(id)?.data.title).toBe("خرید نان")
-    expect(b.mirror.get(id)?.data.title).toBe("خرید نان")
+    expect(a.mirror.get(id)?.data.title).toBe('خرید نان')
+    expect(b.mirror.get(id)?.data.title).toBe('خرید نان')
 
     // A renames offline; B checks it off offline. Neither has seen the other.
     await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      entries: [entry({ entityId: id, baseVersion: 1, patch: { title: "نان تازه" } })]
+      entries: [
+        entry({ entityId: id, baseVersion: 1, patch: { title: 'نان تازه' } }),
+      ],
     })
     const bResult = await push(h, {
       userId: USER_B,
       householdId: HOUSEHOLD,
-      entries: [entry({ entityId: id, baseVersion: 1, patch: { checked: true } })]
+      entries: [
+        entry({ entityId: id, baseVersion: 1, patch: { checked: true } }),
+      ],
     })
-    expect(bResult.results[0]?._tag).toBe("conflict")
+    expect(bResult.results[0]?._tag).toBe('conflict')
     expect(bResult.results[0]?.seq).toBeGreaterThan(0)
 
     // Each device pulls the delta from its own cursor (a push never advances
@@ -308,18 +340,20 @@ describe("sync engine", () => {
     const fromA = a.mirror.get(id)
     const fromB = b.mirror.get(id)
     expect(fromA).toEqual(fromB)
-    expect(fromA?.data).toMatchObject({ title: "نان تازه", checked: true })
+    expect(fromA?.data).toMatchObject({ title: 'نان تازه', checked: true })
     expect(fromA?.version).toBe(3)
     expect(a.cursor).toBe(b.cursor)
   })
 
-  it("never reports applied when a concurrent writer wins the compare-and-set", async () => {
+  it('never reports applied when a concurrent writer wins the compare-and-set', async () => {
     const h = makeHarness()
     const id = uuidV7()
     await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      entries: [entry({ entityId: id, baseVersion: 0, patch: { title: "اول" } })]
+      entries: [
+        entry({ entityId: id, baseVersion: 0, patch: { title: 'اول' } }),
+      ],
     })
     const before = feedCount(h.db)
 
@@ -327,135 +361,188 @@ describe("sync engine", () => {
     // our pre-read (baseVersion 1) but before our batch.
     h.fake.beforeBatch = () => {
       h.fake.beforeBatch = undefined
-      h.db.prepare(
-        "UPDATE list_items SET version = version + 1, title = ?, updated_at = ? WHERE id = ?"
-      ).run("نوشته‌ی همسر", NOW(), id)
+      h.db
+        .prepare(
+          'UPDATE list_items SET version = version + 1, title = ?, updated_at = ? WHERE id = ?',
+        )
+        .run('نوشته‌ی همسر', NOW(), id)
     }
 
     const mutation = entry({
       entityId: id,
       baseVersion: 1,
-      patch: { title: "نوشته‌ی من" },
-      at: FUTURE()
+      patch: { title: 'نوشته‌ی من' },
+      at: FUTURE(),
     })
     await expect(
-      push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] })
-    ).rejects.toMatchObject({ _tag: "SyncContended" })
+      push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] }),
+    ).rejects.toMatchObject({ _tag: 'SyncContended' })
 
     // The losing push wrote no feed entry and no ledger row, so it is safe to retry.
     expect(feedCount(h.db)).toBe(before)
     expect(appliedCount(h.db)).toBe(1)
 
     // The retry resolves against fresh state instead of silently dropping the edit.
-    const retry = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] })
-    expect(retry.results[0]?._tag).toBe("conflict")
-    expect(retry.results[0]?.item?.data.title).toBe("نوشته‌ی من")
+    const retry = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [mutation],
+    })
+    expect(retry.results[0]?._tag).toBe('conflict')
+    expect(retry.results[0]?.item?.data.title).toBe('نوشته‌ی من')
     expect(feedCount(h.db)).toBe(before + 1)
   })
 
-  it("resolves same-field races by field-level LWW against the row updatedAt", async () => {
+  it('resolves same-field races by field-level LWW against the row updatedAt', async () => {
     const h = makeHarness()
     const id = uuidV7()
 
     await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      entries: [entry({ entityId: id, baseVersion: 0, patch: { title: "اول" } })]
+      entries: [
+        entry({ entityId: id, baseVersion: 0, patch: { title: 'اول' } }),
+      ],
     })
 
     // A's stale edit is older than the row's server updatedAt: it loses.
     await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      entries: [entry({ entityId: id, baseVersion: 1, patch: { title: "قدیمی" }, at: PAST })]
+      entries: [
+        entry({
+          entityId: id,
+          baseVersion: 1,
+          patch: { title: 'قدیمی' },
+          at: PAST,
+        }),
+      ],
     })
 
     // B's stale edit is newer: it wins the same field.
     const winner = await push(h, {
       userId: USER_B,
       householdId: HOUSEHOLD,
-      entries: [entry({ entityId: id, baseVersion: 1, patch: { title: "تازه" }, at: FUTURE() })]
+      entries: [
+        entry({
+          entityId: id,
+          baseVersion: 1,
+          patch: { title: 'تازه' },
+          at: FUTURE(),
+        }),
+      ],
     })
-    expect(winner.results[0]?._tag).toBe("conflict")
+    expect(winner.results[0]?._tag).toBe('conflict')
 
     // A third stale, older edit loses and writes no feed entry.
     const before = feedCount(h.db)
     const loser = await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      entries: [entry({ entityId: id, baseVersion: 1, patch: { title: "خیلی قدیمی" }, at: PAST })]
+      entries: [
+        entry({
+          entityId: id,
+          baseVersion: 1,
+          patch: { title: 'خیلی قدیمی' },
+          at: PAST,
+        }),
+      ],
     })
-    expect(loser.results[0]?._tag).toBe("conflict")
+    expect(loser.results[0]?._tag).toBe('conflict')
     expect(loser.results[0]?.seq).toBe(0)
     expect(feedCount(h.db)).toBe(before)
 
-    const page = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
-    expect(itemOf(page, id)?.data.title).toBe("تازه")
+    const page = await pull(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
+    expect(itemOf(page, id)?.data.title).toBe('تازه')
   })
 
-  it("makes delete win over a concurrent edit (tombstone + recoverable trash)", async () => {
+  it('makes delete win over a concurrent edit (tombstone + recoverable trash)', async () => {
     const h = makeHarness()
     const id = uuidV7()
 
     await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      entries: [entry({ entityId: id, baseVersion: 0, patch: { title: "حذف‌شدنی" } })]
+      entries: [
+        entry({ entityId: id, baseVersion: 0, patch: { title: 'حذف‌شدنی' } }),
+      ],
     })
 
     // B edits while A deletes; the edit is applied first.
     await push(h, {
       userId: USER_B,
       householdId: HOUSEHOLD,
-      entries: [entry({ entityId: id, baseVersion: 1, patch: { title: "ویرایش" }, at: FUTURE() })]
+      entries: [
+        entry({
+          entityId: id,
+          baseVersion: 1,
+          patch: { title: 'ویرایش' },
+          at: FUTURE(),
+        }),
+      ],
     })
     const deleted = await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      entries: [entry({ entityId: id, baseVersion: 2, op: "delete" })]
+      entries: [entry({ entityId: id, baseVersion: 2, op: 'delete' })],
     })
-    expect(deleted.results[0]?._tag).toBe("applied")
+    expect(deleted.results[0]?._tag).toBe('applied')
 
     // An offline edit arriving after the tombstone never resurrects the row.
     const resurrect = await push(h, {
       userId: USER_B,
       householdId: HOUSEHOLD,
-      entries: [entry({ entityId: id, baseVersion: 2, patch: { title: "بازگشت" }, at: FUTURE() })]
+      entries: [
+        entry({
+          entityId: id,
+          baseVersion: 2,
+          patch: { title: 'بازگشت' },
+          at: FUTURE(),
+        }),
+      ],
     })
-    expect(resurrect.results[0]?._tag).toBe("tombstone")
+    expect(resurrect.results[0]?._tag).toBe('tombstone')
 
-    const page = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    const page = await pull(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
     expect(itemOf(page, id)?.deletedAt).not.toBeNull()
   })
 
-  it("dedupes a replayed push: same mutation id, one feed entry", async () => {
+  it('dedupes a replayed push: same mutation id, one feed entry', async () => {
     const h = makeHarness()
     const id = uuidV7()
     const mutation = entry({
       entityId: id,
       baseVersion: 0,
-      patch: { title: "یک‌بار" }
+      patch: { title: 'یک‌بار' },
     })
 
     const first = await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      entries: [mutation]
+      entries: [mutation],
     })
     const before = feedCount(h.db)
     const replay = await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      entries: [mutation]
+      entries: [mutation],
     })
 
-    expect(first.results[0]?._tag).toBe("applied")
-    expect(replay.results[0]?._tag).toBe("alreadyApplied")
+    expect(first.results[0]?._tag).toBe('applied')
+    expect(replay.results[0]?._tag).toBe('alreadyApplied')
     expect(replay.results[0]?.seq).toBe(first.results[0]?.seq)
     expect(feedCount(h.db)).toBe(before)
   })
 
-  it("scopes the feed to the household and turns a private flip into a removal", async () => {
+  it('scopes the feed to the household and turns a private flip into a removal', async () => {
     const h = makeHarness()
     const shared = uuidV7()
     const priv = uuidV7()
@@ -464,23 +551,34 @@ describe("sync engine", () => {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
-        entry({ entityId: shared, baseVersion: 0, patch: { title: "مشترک" } }),
+        entry({ entityId: shared, baseVersion: 0, patch: { title: 'مشترک' } }),
         entry({
           entityId: priv,
           baseVersion: 0,
-          patch: { title: "خصوصی", visibility: "private" }
-        })
-      ]
+          patch: { title: 'خصوصی', visibility: 'private' },
+        }),
+      ],
     })
 
-    const forB = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
-    expect(forB.entries.map((item) => item.entityId)).toEqual([shared])
-    expect(forB.items.map((item) => item.entityId)).toEqual([shared])
+    const forB = await pull(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
+    expect(forB.entries.map(item => item.entityId)).toEqual([shared])
+    expect(forB.items.map(item => item.entityId)).toEqual([shared])
     // DP-9: the spouse's private row is "remove from mirror", not invisible.
-    expect(forB.removed).toContainEqual({ entityType: "listItem", entityId: priv })
+    expect(forB.removed).toContainEqual({
+      entityType: 'listItem',
+      entityId: priv,
+    })
 
-    const forA = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
-    expect(forA.entries.map((item) => item.entityId)).toEqual([shared, priv])
+    const forA = await pull(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
+    expect(forA.entries.map(item => item.entityId)).toEqual([shared, priv])
     expect(forA.removed).toHaveLength(0)
 
     // A different household never sees this feed at all.
@@ -488,10 +586,20 @@ describe("sync engine", () => {
     await push(h, {
       userId: USER_C,
       householdId: HOUSEHOLD_B,
-      entries: [entry({ entityId: other, baseVersion: 0, patch: { title: "خانه‌ی دیگر" } })]
+      entries: [
+        entry({
+          entityId: other,
+          baseVersion: 0,
+          patch: { title: 'خانه‌ی دیگر' },
+        }),
+      ],
     })
-    const scoped = await pull(h, { userId: USER_C, householdId: HOUSEHOLD_B, cursor: 0 })
-    expect(scoped.entries.map((item) => item.entityId)).toEqual([other])
+    const scoped = await pull(h, {
+      userId: USER_C,
+      householdId: HOUSEHOLD_B,
+      cursor: 0,
+    })
+    expect(scoped.entries.map(item => item.entityId)).toEqual([other])
   })
 
   it("refuses to write rows outside the pusher's household (including unclaimed rows)", async () => {
@@ -513,30 +621,39 @@ describe("sync engine", () => {
     const before = feedCount(h.db)
 
     for (const entityId of [foreign, legacy]) {
-      for (const op of ["upsert", "delete"] as const) {
+      for (const op of ['upsert', 'delete'] as const) {
         await expect(
           push(h, {
             userId: USER_A,
             householdId: HOUSEHOLD,
-            entries: [entry({ entityId, baseVersion: 1, op, patch: { title: "نفوذ" } })]
-          })
-        ).rejects.toMatchObject({ _tag: "SyncEntityForbidden" })
+            entries: [
+              entry({ entityId, baseVersion: 1, op, patch: { title: 'نفوذ' } }),
+            ],
+          }),
+        ).rejects.toMatchObject({ _tag: 'SyncEntityForbidden' })
       }
     }
 
     expect(feedCount(h.db)).toBe(before)
   })
 
-  it("paginates pull and resumes exactly at the last returned seq", async () => {
+  it('paginates pull and resumes exactly at the last returned seq', async () => {
     const h = makeHarness()
     const ids = [uuidV7(), uuidV7(), uuidV7()]
     await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      entries: ids.map((entityId) => entry({ entityId, baseVersion: 0, patch: { title: entityId } }))
+      entries: ids.map(entityId =>
+        entry({ entityId, baseVersion: 0, patch: { title: entityId } }),
+      ),
     })
 
-    const first = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0, limit: 2 })
+    const first = await pull(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+      limit: 2,
+    })
     expect(first.entries).toHaveLength(2)
     expect(first.hasMore).toBe(true)
 
@@ -544,21 +661,23 @@ describe("sync engine", () => {
       userId: USER_A,
       householdId: HOUSEHOLD,
       cursor: first.nextCursor,
-      limit: 2
+      limit: 2,
     })
     expect(second.entries).toHaveLength(1)
     expect(second.hasMore).toBe(false)
     expect([
-      ...first.entries.map((item) => item.entityId),
-      ...second.entries.map((item) => item.entityId)
+      ...first.entries.map(item => item.entityId),
+      ...second.entries.map(item => item.entityId),
     ]).toEqual(ids)
   })
 
-  it("flags a cursor older than the 90-day feed window and bootstraps live rows", async () => {
+  it('flags a cursor older than the 90-day feed window and bootstraps live rows', async () => {
     const h = makeHarness()
     const old = uuidV7()
     const recent = uuidV7()
-    const longAgo = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000).toISOString()
+    const longAgo = new Date(
+      Date.now() - 100 * 24 * 60 * 60 * 1000,
+    ).toISOString()
 
     // A row whose feed entry is already outside the retained window (seq 1).
     h.db.exec(`
@@ -581,41 +700,49 @@ describe("sync engine", () => {
     await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      entries: [entry({ entityId: recent, baseVersion: 0, patch: { title: "تازه" } })]
+      entries: [
+        entry({ entityId: recent, baseVersion: 0, patch: { title: 'تازه' } }),
+      ],
     })
     await pruneFeed(h)
 
-    const stale = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    const stale = await pull(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
     expect(stale.resetRequired).toBe(true)
     expect(stale.entries).toHaveLength(0)
     expect(stale.nextCursor).toBe(0)
 
     const boot = await h.run(
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const sync = yield* SyncService
         return yield* sync.bootstrap({
           userId: USER_B,
           householdId: HOUSEHOLD,
           offset: 0,
-          limit: 500
+          limit: 500,
         })
-      })
+      }),
     )
     // Bootstrap recovers the aged-out live row as well as the recent one.
-    expect(boot.items.map((item) => item.entityId).sort()).toEqual([old, recent].sort())
+    expect(boot.items.map(item => item.entityId).sort()).toEqual(
+      [old, recent].sort(),
+    )
     expect(boot.cursor).toBe(2)
 
     // The client can then continue incrementally from the bootstrap cursor.
     const next = await pull(h, {
       userId: USER_B,
       householdId: HOUSEHOLD,
-      cursor: boot.cursor
+      cursor: boot.cursor,
     })
     expect(next.resetRequired).toBe(false)
     expect(next.entries).toHaveLength(0)
   })
 
-  it("pages bootstrap by the global order across registry chunks", async () => {
+  it('pages bootstrap by the global order across registry chunks', async () => {
     const h = makeHarness()
     const taskEarly = uuidV7()
     const noteMiddle = uuidV7()
@@ -649,35 +776,44 @@ describe("sync engine", () => {
       userId: USER_A,
       householdId: HOUSEHOLD,
       offset: 1,
-      limit: 1
+      limit: 1,
     })
-    expect(second.items.map((item) => item.entityId)).toEqual([noteMiddle])
+    expect(second.items.map(item => item.entityId)).toEqual([noteMiddle])
     expect(second.nextOffset).toBe(2)
     expect(second.hasMore).toBe(true)
 
     // Walk every offset: proves the per-chunk prefix is deep enough for a
     // page that starts past each chunk's first few rows.
-    const expected = [taskEarly, noteMiddle, taskThird, occasionFourth, noteFifth, taskLast]
+    const expected = [
+      taskEarly,
+      noteMiddle,
+      taskThird,
+      occasionFourth,
+      noteFifth,
+      taskLast,
+    ]
     const seen: Array<string> = []
     for (let offset = 0; offset < expected.length; offset += 1) {
       const page = await bootstrap(h, {
         userId: USER_A,
         householdId: HOUSEHOLD,
         offset,
-        limit: 1
+        limit: 1,
       })
-      seen.push(...page.items.map((item) => item.entityId))
+      seen.push(...page.items.map(item => item.entityId))
       expect(page.nextOffset).toBe(offset + 1)
       expect(page.hasMore).toBe(offset < expected.length - 1)
     }
     expect(seen).toEqual(expected)
   })
 
-  it("still requires a reset when every feed entry is outside the window", async () => {
+  it('still requires a reset when every feed entry is outside the window', async () => {
     const h = makeHarness()
     const first = uuidV7()
     const second = uuidV7()
-    const longAgo = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000).toISOString()
+    const longAgo = new Date(
+      Date.now() - 100 * 24 * 60 * 60 * 1000,
+    ).toISOString()
 
     // The entire feed has aged out: without a retained high-water marker the
     // cursor's staleness would be undetectable and those rows silently missing.
@@ -700,38 +836,46 @@ describe("sync engine", () => {
     `)
 
     await pruneFeed(h)
-    const stale = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    const stale = await pull(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
     expect(stale.resetRequired).toBe(true)
 
     const boot = await h.run(
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const sync = yield* SyncService
         return yield* sync.bootstrap({
           userId: USER_B,
           householdId: HOUSEHOLD,
           offset: 0,
-          limit: 500
+          limit: 500,
         })
-      })
+      }),
     )
-    expect(boot.items.map((item) => item.entityId).sort()).toEqual([first, second].sort())
+    expect(boot.items.map(item => item.entityId).sort()).toEqual(
+      [first, second].sort(),
+    )
     expect(boot.cursor).toBe(2)
 
     // Bootstrapping once is enough: the retained marker keeps it from looping.
     const next = await pull(h, {
       userId: USER_B,
       householdId: HOUSEHOLD,
-      cursor: boot.cursor
+      cursor: boot.cursor,
     })
     expect(next.resetRequired).toBe(false)
     expect(next.entries).toHaveLength(0)
   })
 
-  it("does not prune the feed on a pull: an aged row survives the poll", async () => {
+  it('does not prune the feed on a pull: an aged row survives the poll', async () => {
     const h = makeHarness()
     const old = uuidV7()
     const recent = uuidV7()
-    const longAgo = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000).toISOString()
+    const longAgo = new Date(
+      Date.now() - 100 * 24 * 60 * 60 * 1000,
+    ).toISOString()
 
     // A feed row outside the 90-day window, exactly the shape the poll used to
     // delete on every request (two DELETEs per poll).
@@ -761,40 +905,46 @@ describe("sync engine", () => {
     await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      entries: [entry({ entityId: recent, baseVersion: 0, patch: { title: "تازه" } })]
+      entries: [
+        entry({ entityId: recent, baseVersion: 0, patch: { title: 'تازه' } }),
+      ],
     })
 
     const feedRowsBefore = feedCount(h.db)
     expect(feedRowsBefore).toBe(2)
 
-    const page = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
+    const page = await pull(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
     expect(page.resetRequired).toBe(false)
-    expect(page.entries.map((item) => item.entityId)).toEqual([old, recent])
+    expect(page.entries.map(item => item.entityId)).toEqual([old, recent])
 
     // The 100-day-old row is still there after the pull: a poll only reads.
     expect(
       (
         h.db
-          .prepare("SELECT COUNT(*) AS n FROM change_feed WHERE entity_id = ?")
+          .prepare('SELECT COUNT(*) AS n FROM change_feed WHERE entity_id = ?')
           .get(old) as { readonly n: number }
-      ).n
+      ).n,
     ).toBe(1)
     expect(feedCount(h.db)).toBe(feedRowsBefore)
     expect(
       (
         h.db
           .prepare(
-            "SELECT COUNT(*) AS n FROM applied_mutations WHERE client_mutation_id = 'aged-mutation'"
+            "SELECT COUNT(*) AS n FROM applied_mutations WHERE client_mutation_id = 'aged-mutation'",
           )
           .get() as { readonly n: number }
-      ).n
+      ).n,
     ).toBe(1)
     expect(appliedCount(h.db)).toBe(2)
   })
 
   // ── #34: the registry, exercised through Task alongside the legacy listItem ──
 
-  it("converges a Task edited offline on both devices", async () => {
+  it('converges a Task edited offline on both devices', async () => {
     const h = makeHarness()
     const a = device(USER_A)
     const b = device(USER_B)
@@ -806,43 +956,50 @@ describe("sync engine", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "task",
+          entityType: 'task',
           entityId: id,
           baseVersion: 0,
-          patch: { title: "خرید هدیه", dueDate: "2026-10-22" }
-        })
-      ]
+          patch: { title: 'خرید هدیه', dueDate: '2026-10-22' },
+        }),
+      ],
     })
     await syncDevice(h, a)
     await syncDevice(h, b)
-    expect(a.mirror.get(id)?.data.status).toBe("todo")
-    expect(b.mirror.get(id)?.data.title).toBe("خرید هدیه")
+    expect(a.mirror.get(id)?.data.status).toBe('todo')
+    expect(b.mirror.get(id)?.data.title).toBe('خرید هدیه')
 
     // A renames offline; B completes it offline. Neither has seen the other.
     await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
-        entry({ entityType: "task", entityId: id, baseVersion: 1, patch: { title: "خرید کادو" } })
-      ]
+        entry({
+          entityType: 'task',
+          entityId: id,
+          baseVersion: 1,
+          patch: { title: 'خرید کادو' },
+        }),
+      ],
     })
     const bResult = await push(h, {
       userId: USER_B,
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "task",
+          entityType: 'task',
           entityId: id,
           baseVersion: 1,
-          patch: { status: "done" },
-          at: FUTURE()
-        })
-      ]
+          patch: { status: 'done' },
+          at: FUTURE(),
+        }),
+      ],
     })
-    expect(bResult.results[0]?._tag).toBe("conflict")
-    expect(bResult.results[0]?.item?.data.status).toBe("done")
+    expect(bResult.results[0]?._tag).toBe('conflict')
+    expect(bResult.results[0]?.item?.data.status).toBe('done')
     // The completion stamp is server-side and part of the synced row.
-    expect(bResult.results[0]?.item?.data.completedAt).toEqual(expect.any(String))
+    expect(bResult.results[0]?.item?.data.completedAt).toEqual(
+      expect.any(String),
+    )
 
     await syncDevice(h, a)
     await syncDevice(h, b)
@@ -851,32 +1008,39 @@ describe("sync engine", () => {
     const fromB = b.mirror.get(id)
     expect(fromA).toEqual(fromB)
     // Field-level LWW: A's rename and B's completion both survive.
-    expect(fromA?.data).toMatchObject({ title: "خرید کادو", status: "done" })
+    expect(fromA?.data).toMatchObject({ title: 'خرید کادو', status: 'done' })
     expect(fromA?.version).toBe(3)
     expect(a.cursor).toBe(b.cursor)
   })
 
-  it("lets a task completion beat a concurrent rename (done-wins)", async () => {
+  it('lets a task completion beat a concurrent rename (done-wins)', async () => {
     const h = makeHarness()
     const id = uuidV7()
 
     await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      entries: [entry({ entityType: "task", entityId: id, baseVersion: 0, patch: { title: "اول" } })]
+      entries: [
+        entry({
+          entityType: 'task',
+          entityId: id,
+          baseVersion: 0,
+          patch: { title: 'اول' },
+        }),
+      ],
     })
     await push(h, {
       userId: USER_B,
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "task",
+          entityType: 'task',
           entityId: id,
           baseVersion: 1,
-          patch: { status: "done" },
-          at: FUTURE()
-        })
-      ]
+          patch: { status: 'done' },
+          at: FUTURE(),
+        }),
+      ],
     })
     // A's rename is *newer* than the completion but must not reopen the task.
     const rename = await push(h, {
@@ -884,31 +1048,39 @@ describe("sync engine", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "task",
+          entityType: 'task',
           entityId: id,
           baseVersion: 1,
-          patch: { title: "دوم" },
-          at: new Date(Date.now() + 120_000).toISOString()
-        })
-      ]
+          patch: { title: 'دوم' },
+          at: new Date(Date.now() + 120_000).toISOString(),
+        }),
+      ],
     })
-    expect(rename.results[0]?._tag).toBe("conflict")
-    expect(rename.results[0]?.item?.data).toMatchObject({ title: "دوم", status: "done" })
+    expect(rename.results[0]?._tag).toBe('conflict')
+    expect(rename.results[0]?.item?.data).toMatchObject({
+      title: 'دوم',
+      status: 'done',
+    })
 
     // Replying against the current version can still reopen it (not a conflict).
     const reopen = await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
-        entry({ entityType: "task", entityId: id, baseVersion: 3, patch: { status: "todo" } })
-      ]
+        entry({
+          entityType: 'task',
+          entityId: id,
+          baseVersion: 3,
+          patch: { status: 'todo' },
+        }),
+      ],
     })
-    expect(reopen.results[0]?._tag).toBe("applied")
-    expect(reopen.results[0]?.item?.data.status).toBe("todo")
+    expect(reopen.results[0]?._tag).toBe('applied')
+    expect(reopen.results[0]?.item?.data.status).toBe('todo')
     expect(reopen.results[0]?.item?.data.completedAt).toBeNull()
   })
 
-  it("authorizes Task rows: private owner-only, shared household-wide, foreign unwritable", async () => {
+  it('authorizes Task rows: private owner-only, shared household-wide, foreign unwritable', async () => {
     const h = makeHarness()
     const shared = uuidV7()
     const priv = uuidV7()
@@ -919,50 +1091,71 @@ describe("sync engine", () => {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
-        entry({ entityType: "task", entityId: shared, baseVersion: 0, patch: { title: "مشترک" } }),
         entry({
-          entityType: "task",
+          entityType: 'task',
+          entityId: shared,
+          baseVersion: 0,
+          patch: { title: 'مشترک' },
+        }),
+        entry({
+          entityType: 'task',
           entityId: priv,
           baseVersion: 0,
-          patch: { title: "خصوصی", visibility: "private" }
-        })
-      ]
+          patch: { title: 'خصوصی', visibility: 'private' },
+        }),
+      ],
     })
     h.db.exec(`
       INSERT INTO tasks (id, title, owner_id, household_id, created_at, updated_at, version)
       VALUES ('${foreign}', 'خانه‌ی دیگر', '${USER_C}', '${HOUSEHOLD_B}', '${now}', '${now}', 1)
     `)
 
-    const forB = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
-    expect(forB.items.filter((item) => item.entityType === "task").map((item) => item.entityId))
-      .toEqual([shared])
-    expect(forB.removed).toContainEqual({ entityType: "task", entityId: priv })
+    const forB = await pull(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
+    expect(
+      forB.items
+        .filter(item => item.entityType === 'task')
+        .map(item => item.entityId),
+    ).toEqual([shared])
+    expect(forB.removed).toContainEqual({ entityType: 'task', entityId: priv })
 
     const boot = await h.run(
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const sync = yield* SyncService
         return yield* sync.bootstrap({
           userId: USER_B,
           householdId: HOUSEHOLD,
           offset: 0,
-          limit: 500
+          limit: 500,
         })
-      })
+      }),
     )
-    expect(boot.items.filter((item) => item.entityType === "task").map((item) => item.entityId))
-      .toEqual([shared])
+    expect(
+      boot.items
+        .filter(item => item.entityType === 'task')
+        .map(item => item.entityId),
+    ).toEqual([shared])
 
     // A spouse's private task is not writable.
-    for (const op of ["upsert", "delete"] as const) {
+    for (const op of ['upsert', 'delete'] as const) {
       await expect(
         push(h, {
           userId: USER_B,
           householdId: HOUSEHOLD,
           entries: [
-            entry({ entityType: "task", entityId: priv, baseVersion: 1, op, patch: { title: "نفوذ" } })
-          ]
-        })
-      ).rejects.toMatchObject({ _tag: "SyncEntityForbidden" })
+            entry({
+              entityType: 'task',
+              entityId: priv,
+              baseVersion: 1,
+              op,
+              patch: { title: 'نفوذ' },
+            }),
+          ],
+        }),
+      ).rejects.toMatchObject({ _tag: 'SyncEntityForbidden' })
     }
 
     // A shared task is.
@@ -970,11 +1163,16 @@ describe("sync engine", () => {
       userId: USER_B,
       householdId: HOUSEHOLD,
       entries: [
-        entry({ entityType: "task", entityId: shared, baseVersion: 1, patch: { title: "از سوی همسر" } })
-      ]
+        entry({
+          entityType: 'task',
+          entityId: shared,
+          baseVersion: 1,
+          patch: { title: 'از سوی همسر' },
+        }),
+      ],
     })
-    expect(edit.results[0]?._tag).toBe("applied")
-    expect(edit.results[0]?.item?.data.title).toBe("از سوی همسر")
+    expect(edit.results[0]?._tag).toBe('applied')
+    expect(edit.results[0]?.item?.data.title).toBe('از سوی همسر')
 
     // A row in another household is never writable, even when shared.
     await expect(
@@ -982,10 +1180,15 @@ describe("sync engine", () => {
         userId: USER_A,
         householdId: HOUSEHOLD,
         entries: [
-          entry({ entityType: "task", entityId: foreign, baseVersion: 1, patch: { title: "نفوذ" } })
-        ]
-      })
-    ).rejects.toMatchObject({ _tag: "SyncEntityForbidden" })
+          entry({
+            entityType: 'task',
+            entityId: foreign,
+            baseVersion: 1,
+            patch: { title: 'نفوذ' },
+          }),
+        ],
+      }),
+    ).rejects.toMatchObject({ _tag: 'SyncEntityForbidden' })
 
     // B's own private task exists for B only.
     const own = uuidV7()
@@ -994,54 +1197,71 @@ describe("sync engine", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "task",
+          entityType: 'task',
           entityId: own,
           baseVersion: 0,
-          patch: { title: "مال من", visibility: "private" }
-        })
-      ]
+          patch: { title: 'مال من', visibility: 'private' },
+        }),
+      ],
     })
-    const forA = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
-    expect(forA.items.map((item) => item.entityId)).not.toContain(own)
+    const forA = await pull(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
+    expect(forA.items.map(item => item.entityId)).not.toContain(own)
   })
 
-  it("returns a retryable conflict when a Task loses the compare-and-set", async () => {
+  it('returns a retryable conflict when a Task loses the compare-and-set', async () => {
     const h = makeHarness()
     const id = uuidV7()
     await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      entries: [entry({ entityType: "task", entityId: id, baseVersion: 0, patch: { title: "اول" } })]
+      entries: [
+        entry({
+          entityType: 'task',
+          entityId: id,
+          baseVersion: 0,
+          patch: { title: 'اول' },
+        }),
+      ],
     })
     const before = feedCount(h.db)
 
     // Another writer commits after our pre-read (baseVersion 1) but before our batch.
     h.fake.beforeBatch = () => {
       h.fake.beforeBatch = undefined
-      h.db.prepare(
-        "UPDATE tasks SET version = version + 1, title = ?, updated_at = ? WHERE id = ?"
-      ).run("نوشته‌ی همسر", NOW(), id)
+      h.db
+        .prepare(
+          'UPDATE tasks SET version = version + 1, title = ?, updated_at = ? WHERE id = ?',
+        )
+        .run('نوشته‌ی همسر', NOW(), id)
     }
 
     const mutation = entry({
-      entityType: "task",
+      entityType: 'task',
       entityId: id,
       baseVersion: 1,
-      patch: { title: "نوشته‌ی من" },
-      at: FUTURE()
+      patch: { title: 'نوشته‌ی من' },
+      at: FUTURE(),
     })
     await expect(
-      push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] })
-    ).rejects.toMatchObject({ _tag: "SyncContended" })
+      push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] }),
+    ).rejects.toMatchObject({ _tag: 'SyncContended' })
     expect(feedCount(h.db)).toBe(before)
 
-    const retry = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] })
-    expect(retry.results[0]?._tag).toBe("conflict")
-    expect(retry.results[0]?.item?.data.title).toBe("نوشته‌ی من")
+    const retry = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [mutation],
+    })
+    expect(retry.results[0]?._tag).toBe('conflict')
+    expect(retry.results[0]?.item?.data.title).toBe('نوشته‌ی من')
     expect(feedCount(h.db)).toBe(before + 1)
   })
 
-  it("hydrates every registered aggregate on pull and bootstrap", async () => {
+  it('hydrates every registered aggregate on pull and bootstrap', async () => {
     const h = makeHarness()
     const ids: Record<string, string> = {
       task: uuidV7(),
@@ -1050,61 +1270,81 @@ describe("sync engine", () => {
       list: uuidV7(),
       listItem: uuidV7(),
       note: uuidV7(),
-      event: uuidV7()
+      event: uuidV7(),
     }
     const patches: Record<string, Record<string, unknown>> = {
-      task: { title: "کار", dueDate: "2026-10-22" },
-      project: { title: "خانه" },
-      tag: { name: "فوری" },
-      list: { title: "هفتگی" },
-      listItem: { title: "شیر", checked: false, sortOrder: 0 },
-      note: { title: "ایده", body: { type: "doc" }, plainText: "ایده" },
+      task: { title: 'کار', dueDate: '2026-10-22' },
+      project: { title: 'خانه' },
+      tag: { name: 'فوری' },
+      list: { title: 'هفتگی' },
+      listItem: { title: 'شیر', checked: false, sortOrder: 0 },
+      note: { title: 'ایده', body: { type: 'doc' }, plainText: 'ایده' },
       event: {
-        title: "قرار",
-        timing: { _tag: "allDay", date: "2026-10-22" },
-        timeZone: "Asia/Tehran"
-      }
+        title: 'قرار',
+        timing: { _tag: 'allDay', date: '2026-10-22' },
+        timeZone: 'Asia/Tehran',
+      },
     }
     const types = Object.keys(ids) as ReadonlyArray<SyncEntityType>
 
     const result = await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      entries: types.map((entityType) =>
-        entry({ entityType, entityId: ids[entityType]!, baseVersion: 0, patch: patches[entityType]! })
-      )
+      entries: types.map(entityType =>
+        entry({
+          entityType,
+          entityId: ids[entityType]!,
+          baseVersion: 0,
+          patch: patches[entityType]!,
+        }),
+      ),
     })
-    expect(result.results.every((entry) => entry._tag === "applied")).toBe(true)
+    expect(result.results.every(entry => entry._tag === 'applied')).toBe(true)
     // Every entry of the push lands in ONE D1 batch (§4.2).
     expect(h.fake.batchCalls).toBe(1)
 
-    const page = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
+    const page = await pull(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
     for (const entityType of types) {
-      const item = page.items.find((row) => row.entityType === entityType)
+      const item = page.items.find(row => row.entityType === entityType)
       expect(item?.entityId).toBe(ids[entityType])
     }
-    const task = page.items.find((row) => row.entityType === "task")
-    expect(task?.data).toMatchObject({ title: "کار", status: "todo", priority: "medium", timeZone: "UTC" })
-    const note = page.items.find((row) => row.entityType === "note")
-    expect(note?.data.body).toEqual({ type: "doc" })
-    const list = page.items.find((row) => row.entityType === "list")
-    expect(list?.data).toMatchObject({ title: "هفتگی", sort: "manual", checkedPlacement: "bottom" })
+    const task = page.items.find(row => row.entityType === 'task')
+    expect(task?.data).toMatchObject({
+      title: 'کار',
+      status: 'todo',
+      priority: 'medium',
+      timeZone: 'UTC',
+    })
+    const note = page.items.find(row => row.entityType === 'note')
+    expect(note?.data.body).toEqual({ type: 'doc' })
+    const list = page.items.find(row => row.entityType === 'list')
+    expect(list?.data).toMatchObject({
+      title: 'هفتگی',
+      sort: 'manual',
+      checkedPlacement: 'bottom',
+    })
 
     const boot = await h.run(
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const sync = yield* SyncService
         return yield* sync.bootstrap({
           userId: USER_A,
           householdId: HOUSEHOLD,
           offset: 0,
-          limit: 500
+          limit: 500,
         })
-      })
+      }),
     )
-    expect(boot.items.map((item) => item.entityType).sort()).toEqual([...types].sort())
+    expect(boot.items.map(item => item.entityType).sort()).toEqual(
+      [...types].sort(),
+    )
   })
 
-  it("keeps the legacy listItem wire shape and dual-writes the real columns", async () => {
+  it('keeps the legacy listItem wire shape and dual-writes the real columns', async () => {
     const h = makeHarness()
     const id = uuidV7()
     const listId = uuidV7()
@@ -1112,42 +1352,71 @@ describe("sync engine", () => {
     await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      entries: [entry({ entityId: id, baseVersion: 0, patch: { title: "نان", checked: true, sortOrder: 3 } })]
+      entries: [
+        entry({
+          entityId: id,
+          baseVersion: 0,
+          patch: { title: 'نان', checked: true, sortOrder: 3 },
+        }),
+      ],
     })
     await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "list",
+          entityType: 'list',
           entityId: listId,
           baseVersion: 0,
-          patch: { title: "فهرست" }
-        })
-      ]
+          patch: { title: 'فهرست' },
+        }),
+      ],
     })
     await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      entries: [entry({ entityId: id, baseVersion: 1, patch: { checked: false, listId } })]
+      entries: [
+        entry({
+          entityId: id,
+          baseVersion: 1,
+          patch: { checked: false, listId },
+        }),
+      ],
     })
 
-    const page = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
-    const item = page.items.find((row) => row.entityId === id)
+    const page = await pull(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
+    const item = page.items.find(row => row.entityId === id)
     // No web change: the wire payload stays title/checked/sortOrder.
-    expect(item?.data).toMatchObject({ title: "نان", checked: false, sortOrder: 3, listId })
+    expect(item?.data).toMatchObject({
+      title: 'نان',
+      checked: false,
+      sortOrder: 3,
+      listId,
+    })
 
     const row = h.db
-      .prepare("SELECT name, done, ordering, checked_at, list_id FROM list_items WHERE id = ?")
+      .prepare(
+        'SELECT name, done, ordering, checked_at, list_id FROM list_items WHERE id = ?',
+      )
       .get(id) as {
-        readonly name: string
-        readonly done: number
-        readonly ordering: number
-        readonly checked_at: string | null
-        readonly list_id: string | null
-      }
+      readonly name: string
+      readonly done: number
+      readonly ordering: number
+      readonly checked_at: string | null
+      readonly list_id: string | null
+    }
     // …and the real #33 columns move with it (retires the one-way dual-write).
-    expect(row).toMatchObject({ name: "نان", done: 0, ordering: 3, checked_at: null, list_id: listId })
+    expect(row).toMatchObject({
+      name: 'نان',
+      done: 0,
+      ordering: 3,
+      checked_at: null,
+      list_id: listId,
+    })
   })
 
   it("chunks IN lookups below D1's bound-parameter ceiling", async () => {
@@ -1159,35 +1428,37 @@ describe("sync engine", () => {
     const pushed = await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      entries: ids.map((entityId) => entry({ entityId, baseVersion: 0, patch: { title: entityId } }))
+      entries: ids.map(entityId =>
+        entry({ entityId, baseVersion: 0, patch: { title: entityId } }),
+      ),
     })
     expect(pushed.results).toHaveLength(ids.length)
-    expect(pushed.results.every((result) => result._tag === "applied")).toBe(true)
+    expect(pushed.results.every(result => result._tag === 'applied')).toBe(true)
 
     const page = await pull(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
       cursor: 0,
-      limit: 500
+      limit: 500,
     })
     expect(page.items).toHaveLength(ids.length)
 
     const boot = await h.run(
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const sync = yield* SyncService
         return yield* sync.bootstrap({
           userId: USER_A,
           householdId: HOUSEHOLD,
           offset: 0,
-          limit: 500
+          limit: 500,
         })
-      })
+      }),
     )
     expect(boot.items).toHaveLength(ids.length)
-    expect(new Set(boot.items.map((item) => item.entityId)).size).toBe(ids.length)
+    expect(new Set(boot.items.map(item => item.entityId)).size).toBe(ids.length)
   })
 
-  it("rejects an entity type with no registry definition", async () => {
+  it('rejects an entity type with no registry definition', async () => {
     // Every current `ItemType` now has a registry entry (occasion was the last
     // one), so this guards the seam a future aggregate crosses: its enum value
     // can exist on the wire before its definition lands. The cast models that
@@ -1200,17 +1471,20 @@ describe("sync engine", () => {
         householdId: HOUSEHOLD,
         entries: [
           entry({
-            entityType: "attachment" as SyncEntityType,
+            entityType: 'attachment' as SyncEntityType,
             entityId: uuidV7(),
             baseVersion: 0,
-            patch: { title: "پیوست" }
-          })
-        ]
-      })
-    ).rejects.toMatchObject({ _tag: "UnsupportedSyncEntity", entityType: "attachment" })
+            patch: { title: 'پیوست' },
+          }),
+        ],
+      }),
+    ).rejects.toMatchObject({
+      _tag: 'UnsupportedSyncEntity',
+      entityType: 'attachment',
+    })
   })
 
-  it("guards patch values and rejects an insert the aggregate cannot accept", async () => {
+  it('guards patch values and rejects an insert the aggregate cannot accept', async () => {
     const h = makeHarness()
 
     // A value that fails its field guard is dropped, not written: the default applies.
@@ -1219,15 +1493,18 @@ describe("sync engine", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "task",
+          entityType: 'task',
           entityId: uuidV7(),
           baseVersion: 0,
-          patch: { title: "کار", status: "archived", ownerId: "someone-else" }
-        })
-      ]
+          patch: { title: 'کار', status: 'archived', ownerId: 'someone-else' },
+        }),
+      ],
     })
-    expect(guarded.results[0]?._tag).toBe("applied")
-    expect(guarded.results[0]?.item?.data).toMatchObject({ status: "todo", ownerId: USER_A })
+    expect(guarded.results[0]?._tag).toBe('applied')
+    expect(guarded.results[0]?.item?.data).toMatchObject({
+      status: 'todo',
+      ownerId: USER_A,
+    })
 
     // A task cannot exist without a title (FR-TASK-01); the schema rejects it
     // as a *per-entry* rejection, so the valid entry in the same push applies.
@@ -1237,19 +1514,32 @@ describe("sync engine", () => {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
-        entry({ entityType: "task", entityId: uuidV7(), baseVersion: 0, patch: { title: "" } }),
-        entry({ entityType: "listItem", entityId: valid, baseVersion: 0, patch: { title: "سالم" } })
-      ]
+        entry({
+          entityType: 'task',
+          entityId: uuidV7(),
+          baseVersion: 0,
+          patch: { title: '' },
+        }),
+        entry({
+          entityType: 'listItem',
+          entityId: valid,
+          baseVersion: 0,
+          patch: { title: 'سالم' },
+        }),
+      ],
     })
-    expect(rejected.results[0]).toMatchObject({ _tag: "rejected", code: "InvalidPatch" })
-    expect(rejected.results[1]?._tag).toBe("applied")
-    expect(rejected.results[1]?.item?.data.title).toBe("سالم")
+    expect(rejected.results[0]).toMatchObject({
+      _tag: 'rejected',
+      code: 'InvalidPatch',
+    })
+    expect(rejected.results[1]?._tag).toBe('applied')
+    expect(rejected.results[1]?.item?.data.title).toBe('سالم')
     expect(feedCount(h.db)).toBe(before + 1)
   })
 
   // ── M4: one unappliable entry must not wedge the outbox chunk ──────────────
 
-  it("rejects a duplicate live tag name without wedging the rest of the push", async () => {
+  it('rejects a duplicate live tag name without wedging the rest of the push', async () => {
     const h = makeHarness()
     const existing = uuidV7()
     const duplicate = uuidV7()
@@ -1259,17 +1549,22 @@ describe("sync engine", () => {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
-        entry({ entityType: "tag", entityId: existing, baseVersion: 0, patch: { name: "فوری" } })
-      ]
+        entry({
+          entityType: 'tag',
+          entityId: existing,
+          baseVersion: 0,
+          patch: { name: 'فوری' },
+        }),
+      ],
     })
     const beforeFeed = feedCount(h.db)
     const beforeApplied = appliedCount(h.db)
 
     const mutation = entry({
-      entityType: "tag",
+      entityType: 'tag',
       entityId: duplicate,
       baseVersion: 0,
-      patch: { name: "فوری" }
+      patch: { name: 'فوری' },
     })
     const healthy = uuidV7()
     const result = await push(h, {
@@ -1278,36 +1573,45 @@ describe("sync engine", () => {
       entries: [
         mutation,
         entry({
-          entityType: "listItem",
+          entityType: 'listItem',
           entityId: healthy,
           baseVersion: 0,
-          patch: { title: "سالم" }
-        })
-      ]
+          patch: { title: 'سالم' },
+        }),
+      ],
     })
 
     // The duplicate tag is rejected on its own; the healthy entry still applies.
     expect(result.results).toHaveLength(2)
     expect(result.results[0]).toMatchObject({
-      _tag: "rejected",
-      code: "UniqueViolation",
-      entityId: duplicate
+      _tag: 'rejected',
+      code: 'UniqueViolation',
+      entityId: duplicate,
     })
-    expect(result.results[1]?._tag).toBe("applied")
+    expect(result.results[1]?._tag).toBe('applied')
     expect(result.results[1]?.entityId).toBe(healthy)
     // Exactly one feed row and one ledger row came from the healthy entry.
     expect(feedCount(h.db)).toBe(beforeFeed + 1)
     expect(appliedCount(h.db)).toBe(beforeApplied + 1)
     // The duplicate id never landed; the spouse's row is still the only tag.
-    expect((h.db.prepare("SELECT COUNT(*) AS n FROM tags").get() as { readonly n: number }).n).toBe(1)
+    expect(
+      (
+        h.db.prepare('SELECT COUNT(*) AS n FROM tags').get() as {
+          readonly n: number
+        }
+      ).n,
+    ).toBe(1)
 
     // Replaying the rejected entry is a no-op, and the next pass is not wedged.
     const replay = await push(h, {
       userId: USER_B,
       householdId: HOUSEHOLD,
-      entries: [mutation]
+      entries: [mutation],
     })
-    expect(replay.results[0]).toMatchObject({ _tag: "rejected", code: "UniqueViolation" })
+    expect(replay.results[0]).toMatchObject({
+      _tag: 'rejected',
+      code: 'UniqueViolation',
+    })
     expect(feedCount(h.db)).toBe(beforeFeed + 1)
     expect(appliedCount(h.db)).toBe(beforeApplied + 1)
 
@@ -1316,13 +1620,18 @@ describe("sync engine", () => {
       userId: USER_B,
       householdId: HOUSEHOLD,
       entries: [
-        entry({ entityType: "listItem", entityId: after, baseVersion: 0, patch: { title: "بعدی" } })
-      ]
+        entry({
+          entityType: 'listItem',
+          entityId: after,
+          baseVersion: 0,
+          patch: { title: 'بعدی' },
+        }),
+      ],
     })
-    expect(next.results[0]?._tag).toBe("applied")
+    expect(next.results[0]?._tag).toBe('applied')
   })
 
-  it("orders parents before children so a project+task push succeeds in one batch", async () => {
+  it('orders parents before children so a project+task push succeeds in one batch', async () => {
     const h = makeHarness()
     const projectId = uuidV7()
     const taskId = uuidV7()
@@ -1333,30 +1642,30 @@ describe("sync engine", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "task",
+          entityType: 'task',
           entityId: taskId,
           baseVersion: 0,
-          patch: { title: "کار", projectId }
+          patch: { title: 'کار', projectId },
         }),
         entry({
-          entityType: "project",
+          entityType: 'project',
           entityId: projectId,
           baseVersion: 0,
-          patch: { title: "خانه" }
-        })
-      ]
+          patch: { title: 'خانه' },
+        }),
+      ],
     })
 
-    expect(result.results.map((row) => row._tag)).toEqual(["applied", "applied"])
+    expect(result.results.map(row => row._tag)).toEqual(['applied', 'applied'])
     // Ordering inside the one batch is what makes the FK satisfiable.
     expect(h.fake.batchCalls).toBe(1)
     const task = h.db
-      .prepare("SELECT project_id FROM tasks WHERE id = ?")
+      .prepare('SELECT project_id FROM tasks WHERE id = ?')
       .get(taskId) as { readonly project_id: string }
     expect(task.project_id).toBe(projectId)
   })
 
-  it("rejects a task whose project parent is missing instead of failing the request", async () => {
+  it('rejects a task whose project parent is missing instead of failing the request', async () => {
     const h = makeHarness()
     const taskId = uuidV7()
     const healthy = uuidV7()
@@ -1367,35 +1676,39 @@ describe("sync engine", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "task",
+          entityType: 'task',
           entityId: taskId,
           baseVersion: 0,
-          patch: { title: "یتیم", projectId: uuidV7() }
+          patch: { title: 'یتیم', projectId: uuidV7() },
         }),
         entry({
-          entityType: "listItem",
+          entityType: 'listItem',
           entityId: healthy,
           baseVersion: 0,
-          patch: { title: "سالم" }
-        })
-      ]
+          patch: { title: 'سالم' },
+        }),
+      ],
     })
 
     expect(result.results[0]).toMatchObject({
-      _tag: "rejected",
-      code: "ForeignKeyViolation",
-      entityId: taskId
+      _tag: 'rejected',
+      code: 'ForeignKeyViolation',
+      entityId: taskId,
     })
-    expect(result.results[1]?._tag).toBe("applied")
+    expect(result.results[1]?._tag).toBe('applied')
     expect(feedCount(h.db)).toBe(before + 1)
     expect(
-      (h.db.prepare("SELECT COUNT(*) AS n FROM tasks WHERE id = ?").get(taskId) as { readonly n: number }).n
+      (
+        h.db
+          .prepare('SELECT COUNT(*) AS n FROM tasks WHERE id = ?')
+          .get(taskId) as { readonly n: number }
+      ).n,
     ).toBe(0)
   })
 
   // ── M4 follow-up: bounded bisection, not an O(entries) isolation sweep ─────
 
-  it("isolates one poison entry among 200 within MAX_ISOLATION_BATCHES", async () => {
+  it('isolates one poison entry among 200 within MAX_ISOLATION_BATCHES', async () => {
     const h = makeHarness()
 
     // The happy path is unchanged: a full chunk still commits in one batch.
@@ -1403,11 +1716,11 @@ describe("sync engine", () => {
     const happy = await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      entries: healthy.map((entityId) =>
-        entry({ entityId, baseVersion: 0, patch: { title: entityId } })
-      )
+      entries: healthy.map(entityId =>
+        entry({ entityId, baseVersion: 0, patch: { title: entityId } }),
+      ),
     })
-    expect(happy.results.every((result) => result._tag === "applied")).toBe(true)
+    expect(happy.results.every(result => result._tag === 'applied')).toBe(true)
     expect(h.fake.batchCalls).toBe(1)
 
     h.fake.batchCalls = 0
@@ -1415,15 +1728,21 @@ describe("sync engine", () => {
     const beforeApplied = appliedCount(h.db)
     const { ids, entries } = isolationChunk(200, [100])
 
-    const result = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
+    const result = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries,
+    })
 
     expect(result.results).toHaveLength(200)
     expect(result.results[100]).toMatchObject({
-      _tag: "rejected",
-      code: "ForeignKeyViolation",
-      entityId: ids[100]
+      _tag: 'rejected',
+      code: 'ForeignKeyViolation',
+      entityId: ids[100],
     })
-    expect(result.results.filter((row) => row._tag === "applied")).toHaveLength(199)
+    expect(result.results.filter(row => row._tag === 'applied')).toHaveLength(
+      199,
+    )
     // Bisection needs 16 batches for one bad entry in 200 — not 201.
     expect(h.fake.batchCalls).toBe(16)
     expect(h.fake.batchCalls).toBeLessThanOrEqual(MAX_ISOLATION_BATCHES)
@@ -1431,43 +1750,55 @@ describe("sync engine", () => {
     expect(appliedCount(h.db)).toBe(beforeApplied + 199)
   })
 
-  it("isolates a poison entry in first, middle and last position", async () => {
+  it('isolates a poison entry in first, middle and last position', async () => {
     const h = makeHarness()
 
     for (const position of [0, 100, 199]) {
       h.fake.batchCalls = 0
       const { ids, entries } = isolationChunk(200, [position])
-      const result = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
+      const result = await push(h, {
+        userId: USER_A,
+        householdId: HOUSEHOLD,
+        entries,
+      })
 
       expect(result.results[position]).toMatchObject({
-        _tag: "rejected",
-        code: "ForeignKeyViolation",
-        entityId: ids[position]
+        _tag: 'rejected',
+        code: 'ForeignKeyViolation',
+        entityId: ids[position],
       })
-      expect(result.results.filter((row) => row._tag === "applied")).toHaveLength(199)
+      expect(result.results.filter(row => row._tag === 'applied')).toHaveLength(
+        199,
+      )
       expect(h.fake.batchCalls).toBeLessThanOrEqual(MAX_ISOLATION_BATCHES)
     }
   })
 
-  it("isolates two poison entries without a per-entry sweep", async () => {
+  it('isolates two poison entries without a per-entry sweep', async () => {
     const h = makeHarness()
     const beforeFeed = feedCount(h.db)
     const beforeApplied = appliedCount(h.db)
     const { ids, entries } = isolationChunk(200, [0, 199])
 
-    const result = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
+    const result = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries,
+    })
 
     expect(result.results[0]).toMatchObject({
-      _tag: "rejected",
-      code: "ForeignKeyViolation",
-      entityId: ids[0]
+      _tag: 'rejected',
+      code: 'ForeignKeyViolation',
+      entityId: ids[0],
     })
     expect(result.results[199]).toMatchObject({
-      _tag: "rejected",
-      code: "ForeignKeyViolation",
-      entityId: ids[199]
+      _tag: 'rejected',
+      code: 'ForeignKeyViolation',
+      entityId: ids[199],
     })
-    expect(result.results.filter((row) => row._tag === "applied")).toHaveLength(198)
+    expect(result.results.filter(row => row._tag === 'applied')).toHaveLength(
+      198,
+    )
     // Two bad entries at opposite ends of the chunk: 31 batches, still bounded.
     expect(h.fake.batchCalls).toBe(31)
     expect(h.fake.batchCalls).toBeLessThanOrEqual(MAX_ISOLATION_BATCHES)
@@ -1475,27 +1806,35 @@ describe("sync engine", () => {
     expect(appliedCount(h.db)).toBe(beforeApplied + 198)
   })
 
-  it("returns AttributionLimit instead of wedging when the batch budget is exhausted", async () => {
+  it('returns AttributionLimit instead of wedging when the batch budget is exhausted', async () => {
     const h = makeHarness()
     const { entries } = isolationChunk(200, [0, 100, 199])
 
-    const result = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
+    const result = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries,
+    })
 
     // The push still completes: no retryable failure, no unbounded fan-out.
     expect(result.results).toHaveLength(200)
     expect(h.fake.batchCalls).toBe(MAX_ISOLATION_BATCHES)
-    expect(result.results.every((row) => row._tag === "applied" || row._tag === "rejected")).toBe(true)
+    expect(
+      result.results.every(
+        row => row._tag === 'applied' || row._tag === 'rejected',
+      ),
+    ).toBe(true)
     const limited = result.results.filter(
-      (row) => row._tag === "rejected" && row.code === "AttributionLimit"
+      row => row._tag === 'rejected' && row.code === 'AttributionLimit',
     )
     expect(limited.length).toBeGreaterThan(0)
     // Every entry the server said it applied is in the feed and ledger exactly once.
-    const applied = result.results.filter((row) => row._tag === "applied").length
+    const applied = result.results.filter(row => row._tag === 'applied').length
     expect(feedCount(h.db)).toBe(applied)
     expect(appliedCount(h.db)).toBe(applied)
   })
 
-  it("propagates a non-constraint failure from the attribution path as retryable", async () => {
+  it('propagates a non-constraint failure from the attribution path as retryable', async () => {
     const h = makeHarness()
     const { entries } = isolationChunk(200, [100])
 
@@ -1505,38 +1844,57 @@ describe("sync engine", () => {
     let seen = 0
     h.fake.beforeBatch = () => {
       seen += 1
-      if (seen === 2) throw new Error("D1_ERROR: network connection lost: NETWORK")
+      if (seen === 2)
+        throw new Error('D1_ERROR: network connection lost: NETWORK')
     }
 
     await expect(
-      push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
-    ).rejects.toMatchObject({ _tag: "SqlError" })
+      push(h, { userId: USER_A, householdId: HOUSEHOLD, entries }),
+    ).rejects.toMatchObject({ _tag: 'SqlError' })
     expect(feedCount(h.db)).toBe(0)
     expect(appliedCount(h.db)).toBe(0)
 
     h.fake.beforeBatch = undefined
     h.fake.batchCalls = 0
-    const retry = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
-    expect(retry.results.filter((row) => row._tag === "applied")).toHaveLength(199)
-    expect(retry.results[100]?._tag).toBe("rejected")
+    const retry = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries,
+    })
+    expect(retry.results.filter(row => row._tag === 'applied')).toHaveLength(
+      199,
+    )
+    expect(retry.results[100]?._tag).toBe('rejected')
     expect(h.fake.batchCalls).toBeLessThanOrEqual(MAX_ISOLATION_BATCHES)
   })
 
-  it("replays a partially isolated push exactly once", async () => {
+  it('replays a partially isolated push exactly once', async () => {
     const h = makeHarness()
     const { entries } = isolationChunk(200, [100])
 
-    const first = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
-    expect(first.results.filter((row) => row._tag === "applied")).toHaveLength(199)
+    const first = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries,
+    })
+    expect(first.results.filter(row => row._tag === 'applied')).toHaveLength(
+      199,
+    )
     const feedAfterFirst = feedCount(h.db)
     const appliedAfterFirst = appliedCount(h.db)
 
     h.fake.batchCalls = 0
-    const replay = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries })
-    expect(replay.results.filter((row) => row._tag === "alreadyApplied")).toHaveLength(199)
+    const replay = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries,
+    })
+    expect(
+      replay.results.filter(row => row._tag === 'alreadyApplied'),
+    ).toHaveLength(199)
     expect(replay.results[100]).toMatchObject({
-      _tag: "rejected",
-      code: "ForeignKeyViolation"
+      _tag: 'rejected',
+      code: 'ForeignKeyViolation',
     })
     expect(feedCount(h.db)).toBe(feedAfterFirst)
     expect(appliedCount(h.db)).toBe(appliedAfterFirst)
@@ -1544,7 +1902,7 @@ describe("sync engine", () => {
     expect(h.fake.batchCalls).toBe(2)
   })
 
-  it("keeps a delete tombstone retryable when the row appears after the pre-read", async () => {
+  it('keeps a delete tombstone retryable when the row appears after the pre-read', async () => {
     const h = makeHarness()
     const id = uuidV7()
 
@@ -1559,25 +1917,34 @@ describe("sync engine", () => {
           `INSERT INTO list_items
              (id, title, checked, sort_order, version, created_at, updated_at, deleted_at,
               household_id, owner_id, visibility, type, done, ordering, tag_ids)
-           VALUES (?, ?, 0, 0, 1, ?, ?, NULL, ?, ?, 'shared', 'listItem', 0, 0, '[]')`
+           VALUES (?, ?, 0, 0, 1, ?, ?, NULL, ?, ?, 'shared', 'listItem', 0, 0, '[]')`,
         )
-        .run(id, "همسر", NOW(), NOW(), HOUSEHOLD, USER_B)
+        .run(id, 'همسر', NOW(), NOW(), HOUSEHOLD, USER_B)
     }
 
-    const mutation = entry({ entityId: id, baseVersion: 0, op: "delete", patch: {} })
+    const mutation = entry({
+      entityId: id,
+      baseVersion: 0,
+      op: 'delete',
+      patch: {},
+    })
     await expect(
-      push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] })
-    ).rejects.toMatchObject({ _tag: "SyncContended" })
+      push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] }),
+    ).rejects.toMatchObject({ _tag: 'SyncContended' })
     expect(feedCount(h.db)).toBe(0)
 
     // The retry resolves against the row that now exists and tombstones it,
     // instead of silently dropping the user's delete.
-    const retry = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] })
-    expect(retry.results[0]?._tag).toBe("applied")
+    const retry = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [mutation],
+    })
+    expect(retry.results[0]?._tag).toBe('applied')
     expect(retry.results[0]?.item?.deletedAt).not.toBeNull()
   })
 
-  it("keeps non-constraint failures retryable instead of rejecting the entry", async () => {
+  it('keeps non-constraint failures retryable instead of rejecting the entry', async () => {
     const h = makeHarness()
     const id = uuidV7()
 
@@ -1585,18 +1952,26 @@ describe("sync engine", () => {
     // that would tell the client to drop a mutation that is perfectly valid.
     h.fake.beforeBatch = () => {
       h.fake.beforeBatch = undefined
-      throw new Error("D1_ERROR: network connection lost: NETWORK")
+      throw new Error('D1_ERROR: network connection lost: NETWORK')
     }
 
-    const mutation = entry({ entityId: id, baseVersion: 0, patch: { title: "سالم" } })
+    const mutation = entry({
+      entityId: id,
+      baseVersion: 0,
+      patch: { title: 'سالم' },
+    })
     await expect(
-      push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] })
-    ).rejects.toMatchObject({ _tag: "SqlError" })
+      push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] }),
+    ).rejects.toMatchObject({ _tag: 'SqlError' })
     expect(feedCount(h.db)).toBe(0)
     expect(appliedCount(h.db)).toBe(0)
 
-    const retry = await push(h, { userId: USER_A, householdId: HOUSEHOLD, entries: [mutation] })
-    expect(retry.results[0]?._tag).toBe("applied")
+    const retry = await push(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      entries: [mutation],
+    })
+    expect(retry.results[0]?._tag).toBe('applied')
   })
 
   // ── Note search index: no rewrite when the text cannot change ────────────
@@ -1608,13 +1983,13 @@ describe("sync engine", () => {
 
     expect(h.fake.batchStatementCounts).toEqual([5])
     expect(noteIndex(h.db, id)).toEqual({
-      searchTitle: "خرید",
-      searchBody: "نان و پنیر"
+      searchTitle: 'خرید',
+      searchBody: 'نان و پنیر',
     })
-    expect(await searchNotes(h, "پنیر")).toEqual([id])
+    expect(await searchNotes(h, 'پنیر')).toEqual([id])
   })
 
-  it("keeps the search row untouched for pin, tag and archive changes", async () => {
+  it('keeps the search row untouched for pin, tag and archive changes', async () => {
     const h = makeHarness()
     const id = uuidV7()
     await insertNote(h, id)
@@ -1623,13 +1998,13 @@ describe("sync engine", () => {
 
     const tagIds = [uuidV7(), uuidV7()]
     const metadataChanges = [
-      { patch: { isPinned: true }, column: "is_pinned", expected: 1 },
+      { patch: { isPinned: true }, column: 'is_pinned', expected: 1 },
       {
         patch: { tagIds },
-        column: "tag_ids",
-        expected: JSON.stringify(tagIds)
+        column: 'tag_ids',
+        expected: JSON.stringify(tagIds),
       },
-      { patch: { isArchived: true }, column: "is_archived", expected: 1 }
+      { patch: { isArchived: true }, column: 'is_archived', expected: 1 },
     ] as const
 
     let baseVersion = 1
@@ -1642,15 +2017,15 @@ describe("sync engine", () => {
         householdId: HOUSEHOLD,
         entries: [
           entry({
-            entityType: "note",
+            entityType: 'note',
             entityId: id,
             baseVersion,
-            patch: change.patch
-          })
-        ]
+            patch: change.patch,
+          }),
+        ],
       })
 
-      expect(result.results[0]?._tag).toBe("applied")
+      expect(result.results[0]?._tag).toBe('applied')
       // Row + feed + ledger. The FTS delete/insert pair is skipped because
       // title and plainText are unchanged (5 statements → 3).
       expect(h.fake.batchStatementCounts).toEqual([3])
@@ -1666,7 +2041,7 @@ describe("sync engine", () => {
     }
   })
 
-  it("re-indexes a title-only change and finds the note by the new title", async () => {
+  it('re-indexes a title-only change and finds the note by the new title', async () => {
     const h = makeHarness()
     const id = uuidV7()
     await insertNote(h, id)
@@ -1677,24 +2052,24 @@ describe("sync engine", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "note",
+          entityType: 'note',
           entityId: id,
           baseVersion: 1,
-          patch: { title: "سفر" }
-        })
-      ]
+          patch: { title: 'سفر' },
+        }),
+      ],
     })
 
-    expect(result.results[0]?._tag).toBe("applied")
+    expect(result.results[0]?._tag).toBe('applied')
     expect(h.fake.batchStatementCounts).toEqual([5])
-    expect((await searchNotes(h, "سفر"))).toEqual([id])
-    expect((await searchNotes(h, "خرید"))).toEqual([])
-    expect(noteIndex(h.db, id)?.searchTitle).toBe("سفر")
+    expect(await searchNotes(h, 'سفر')).toEqual([id])
+    expect(await searchNotes(h, 'خرید')).toEqual([])
+    expect(noteIndex(h.db, id)?.searchTitle).toBe('سفر')
     // The body was merged, not dropped, so its text is still searchable.
-    expect((await searchNotes(h, "پنیر"))).toEqual([id])
+    expect(await searchNotes(h, 'پنیر')).toEqual([id])
   })
 
-  it("re-indexes a body-only change and finds the note by the new text", async () => {
+  it('re-indexes a body-only change and finds the note by the new text', async () => {
     const h = makeHarness()
     const id = uuidV7()
     await insertNote(h, id)
@@ -1705,40 +2080,40 @@ describe("sync engine", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "note",
+          entityType: 'note',
           entityId: id,
           baseVersion: 1,
-          patch: { plainText: "بلیط هواپیما", body: { type: "doc" } }
-        })
-      ]
+          patch: { plainText: 'بلیط هواپیما', body: { type: 'doc' } },
+        }),
+      ],
     })
 
-    expect(result.results[0]?._tag).toBe("applied")
+    expect(result.results[0]?._tag).toBe('applied')
     expect(h.fake.batchStatementCounts).toEqual([5])
-    expect((await searchNotes(h, "بلیط"))).toEqual([id])
-    expect((await searchNotes(h, "پنیر"))).toEqual([])
-    expect(noteIndex(h.db, id)?.searchBody).toBe("بلیط هواپیما")
+    expect(await searchNotes(h, 'بلیط')).toEqual([id])
+    expect(await searchNotes(h, 'پنیر')).toEqual([])
+    expect(noteIndex(h.db, id)?.searchBody).toBe('بلیط هواپیما')
     // The title was merged, not dropped, so its text is still searchable.
-    expect((await searchNotes(h, "خرید"))).toEqual([id])
+    expect(await searchNotes(h, 'خرید')).toEqual([id])
   })
 
-  it("requires a reset for a non-zero cursor against an empty feed", async () => {
+  it('requires a reset for a non-zero cursor against an empty feed', async () => {
     const h = makeHarness()
     // The trash purge can remove the last feed row at ~30 days; a mirror that
     // still holds the purged row must be told to re-bootstrap.
-    h.db.exec("DELETE FROM change_feed")
+    h.db.exec('DELETE FROM change_feed')
 
     const fresh = await pull(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      cursor: 0
+      cursor: 0,
     })
     expect(fresh.resetRequired).toBe(false)
 
     const stale = await pull(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      cursor: 7
+      cursor: 7,
     })
     expect(stale.resetRequired).toBe(true)
     expect(stale.entries).toEqual([])
@@ -1746,7 +2121,7 @@ describe("sync engine", () => {
   })
 })
 
-describe("visibility policy (ADR-0011)", () => {
+describe('visibility policy (ADR-0011)', () => {
   it("rejects a patch that sets a household aggregate's fixed visibility", async () => {
     const h = makeHarness()
     const projectId = uuidV7()
@@ -1757,22 +2132,22 @@ describe("visibility policy (ADR-0011)", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "project",
+          entityType: 'project',
           entityId: projectId,
           baseVersion: 0,
-          patch: { title: "خانه", visibility: "private" }
+          patch: { title: 'خانه', visibility: 'private' },
         }),
         entry({
-          entityType: "tag",
+          entityType: 'tag',
           entityId: tagId,
           baseVersion: 0,
-          patch: { name: "کار", visibility: "private" }
-        })
-      ]
+          patch: { name: 'کار', visibility: 'private' },
+        }),
+      ],
     })
     expect(fixed.results).toMatchObject([
-      { _tag: "rejected", code: "VisibilityFixed" },
-      { _tag: "rejected", code: "VisibilityFixed" }
+      { _tag: 'rejected', code: 'VisibilityFixed' },
+      { _tag: 'rejected', code: 'VisibilityFixed' },
     ])
 
     // The same creates without a visibility apply and resolve to shared.
@@ -1781,36 +2156,52 @@ describe("visibility policy (ADR-0011)", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "project",
+          entityType: 'project',
           entityId: projectId,
           baseVersion: 0,
-          patch: { title: "خانه" }
+          patch: { title: 'خانه' },
         }),
         entry({
-          entityType: "tag",
+          entityType: 'tag',
           entityId: tagId,
           baseVersion: 0,
-          patch: { name: "کار" }
-        })
-      ]
+          patch: { name: 'کار' },
+        }),
+      ],
     })
-    expect(created.results.map((result) => result._tag)).toEqual(["applied", "applied"])
+    expect(created.results.map(result => result._tag)).toEqual([
+      'applied',
+      'applied',
+    ])
 
-    const page = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    const page = await pull(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
     expect(
-      page.items.find((item) => item.entityId === projectId)?.data.visibility
-    ).toBe("shared")
-    expect(page.items.find((item) => item.entityId === tagId)?.data.visibility).toBe("shared")
+      page.items.find(item => item.entityId === projectId)?.data.visibility,
+    ).toBe('shared')
+    expect(
+      page.items.find(item => item.entityId === tagId)?.data.visibility,
+    ).toBe('shared')
   })
 
-  it("lets only the owner un-share a shared row", async () => {
+  it('lets only the owner un-share a shared row', async () => {
     const h = makeHarness()
     const taskId = uuidV7()
 
     await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
-      entries: [entry({ entityType: "task", entityId: taskId, baseVersion: 0, patch: { title: "مشترک" } })]
+      entries: [
+        entry({
+          entityType: 'task',
+          entityId: taskId,
+          baseVersion: 0,
+          patch: { title: 'مشترک' },
+        }),
+      ],
     })
 
     const flip = await push(h, {
@@ -1818,17 +2209,26 @@ describe("visibility policy (ADR-0011)", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "task",
+          entityType: 'task',
           entityId: taskId,
           baseVersion: 1,
-          patch: { visibility: "private" }
-        })
-      ]
+          patch: { visibility: 'private' },
+        }),
+      ],
     })
-    expect(flip.results[0]).toMatchObject({ _tag: "rejected", code: "VisibilityForbidden" })
+    expect(flip.results[0]).toMatchObject({
+      _tag: 'rejected',
+      code: 'VisibilityForbidden',
+    })
 
-    const owner = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
-    expect(owner.items.find((item) => item.entityId === taskId)?.data.visibility).toBe("shared")
+    const owner = await pull(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
+    expect(
+      owner.items.find(item => item.entityId === taskId)?.data.visibility,
+    ).toBe('shared')
 
     // The owner can un-share it; the partner's next pull removes it.
     const unshared = await push(h, {
@@ -1836,17 +2236,24 @@ describe("visibility policy (ADR-0011)", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "task",
+          entityType: 'task',
           entityId: taskId,
           baseVersion: 1,
-          patch: { visibility: "private" }
-        })
-      ]
+          patch: { visibility: 'private' },
+        }),
+      ],
     })
-    expect(unshared.results[0]?._tag).toBe("applied")
-    const partner = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
-    expect(partner.items.find((item) => item.entityId === taskId)).toBeUndefined()
-    expect(partner.removed).toContainEqual({ entityType: "task", entityId: taskId })
+    expect(unshared.results[0]?._tag).toBe('applied')
+    const partner = await pull(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
+    expect(partner.items.find(item => item.entityId === taskId)).toBeUndefined()
+    expect(partner.removed).toContainEqual({
+      entityType: 'task',
+      entityId: taskId,
+    })
   })
 
   it("inherits a list item's visibility from its list and refuses to widen it", async () => {
@@ -1860,12 +2267,12 @@ describe("visibility policy (ADR-0011)", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "list",
+          entityType: 'list',
           entityId: listId,
           baseVersion: 0,
-          patch: { title: "خصوصی", visibility: "private" }
-        })
-      ]
+          patch: { title: 'خصوصی', visibility: 'private' },
+        }),
+      ],
     })
 
     const widened = await push(h, {
@@ -1873,33 +2280,40 @@ describe("visibility policy (ADR-0011)", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "listItem",
+          entityType: 'listItem',
           entityId: sharedItem,
           baseVersion: 0,
-          patch: { title: "نمی‌شود", listId, visibility: "shared" }
-        })
-      ]
+          patch: { title: 'نمی‌شود', listId, visibility: 'shared' },
+        }),
+      ],
     })
-    expect(widened.results[0]).toMatchObject({ _tag: "rejected", code: "VisibilityInherited" })
+    expect(widened.results[0]).toMatchObject({
+      _tag: 'rejected',
+      code: 'VisibilityInherited',
+    })
 
     const inherited = await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "listItem",
+          entityType: 'listItem',
           entityId: privateItem,
           baseVersion: 0,
-          patch: { title: "نان", listId }
-        })
-      ]
+          patch: { title: 'نان', listId },
+        }),
+      ],
     })
-    expect(inherited.results[0]?._tag).toBe("applied")
+    expect(inherited.results[0]?._tag).toBe('applied')
 
-    const page = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
+    const page = await pull(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
     expect(
-      page.items.find((item) => item.entityId === privateItem)?.data.visibility
-    ).toBe("private")
+      page.items.find(item => item.entityId === privateItem)?.data.visibility,
+    ).toBe('private')
 
     // A shared list may still carry a narrower private item.
     const sharedList = uuidV7()
@@ -1909,29 +2323,37 @@ describe("visibility policy (ADR-0011)", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "list",
+          entityType: 'list',
           entityId: sharedList,
           baseVersion: 0,
-          patch: { title: "مشترک" }
-        })
-      ]
+          patch: { title: 'مشترک' },
+        }),
+      ],
     })
     const narrowed = await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "listItem",
+          entityType: 'listItem',
           entityId: narrowItem,
           baseVersion: 0,
-          patch: { title: "خصوصی من", listId: sharedList, visibility: "private" }
-        })
-      ]
+          patch: {
+            title: 'خصوصی من',
+            listId: sharedList,
+            visibility: 'private',
+          },
+        }),
+      ],
     })
-    expect(narrowed.results[0]?._tag).toBe("applied")
-    const sharedPage = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    expect(narrowed.results[0]?._tag).toBe('applied')
+    const sharedPage = await pull(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
     expect(
-      sharedPage.items.find((item) => item.entityId === narrowItem)
+      sharedPage.items.find(item => item.entityId === narrowItem),
     ).toBeUndefined()
   })
 
@@ -1944,56 +2366,83 @@ describe("visibility policy (ADR-0011)", () => {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
-        entry({ entityType: "note", entityId: noteId, baseVersion: 0, op: "delete" }),
-        entry({ entityType: "reminder", entityId: reminderId, baseVersion: 0, op: "delete" })
-      ]
+        entry({
+          entityType: 'note',
+          entityId: noteId,
+          baseVersion: 0,
+          op: 'delete',
+        }),
+        entry({
+          entityType: 'reminder',
+          entityId: reminderId,
+          baseVersion: 0,
+          op: 'delete',
+        }),
+      ],
     })
-    expect(deleted.results.map((result) => result._tag)).toEqual(["applied", "applied"])
+    expect(deleted.results.map(result => result._tag)).toEqual([
+      'applied',
+      'applied',
+    ])
 
-    const page = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
-    expect(page.items.find((item) => item.entityId === noteId)?.data.visibility).toBe("private")
-    expect(page.items.find((item) => item.entityId === reminderId)?.data.visibility).toBe(
-      "private"
-    )
+    const page = await pull(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
+    expect(
+      page.items.find(item => item.entityId === noteId)?.data.visibility,
+    ).toBe('private')
+    expect(
+      page.items.find(item => item.entityId === reminderId)?.data.visibility,
+    ).toBe('private')
   })
 })
 
-describe("legacy visibility converges on the next write (ADR-0011)", () => {
-  it("rewrites a legacy private household row to shared", async () => {
+describe('legacy visibility converges on the next write (ADR-0011)', () => {
+  it('rewrites a legacy private household row to shared', async () => {
     const h = makeHarness()
     const projectId = uuidV7()
     const now = NOW()
 
-    h.db.prepare(
-      `INSERT INTO projects
+    h.db
+      .prepare(
+        `INSERT INTO projects
         (id, type, title, owner_id, household_id, visibility, color, created_at, updated_at, version, deleted_at)
-       VALUES (?, 'project', 'قدیمی', ?, ?, 'private', NULL, ?, ?, 1, NULL)`
-    ).run(projectId, USER_A, HOUSEHOLD, now, now)
+       VALUES (?, 'project', 'قدیمی', ?, ?, 'private', NULL, ?, ?, 1, NULL)`,
+      )
+      .run(projectId, USER_A, HOUSEHOLD, now, now)
 
     const pushed = await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "project",
+          entityType: 'project',
           entityId: projectId,
           baseVersion: 1,
-          patch: { title: "تازه" }
-        })
-      ]
+          patch: { title: 'تازه' },
+        }),
+      ],
     })
-    expect(pushed.results[0]?._tag).toBe("applied")
+    expect(pushed.results[0]?._tag).toBe('applied')
     expect(
-      h.db.prepare("SELECT visibility FROM projects WHERE id = ?").get(projectId)
-    ).toMatchObject({ visibility: "shared" })
+      h.db
+        .prepare('SELECT visibility FROM projects WHERE id = ?')
+        .get(projectId),
+    ).toMatchObject({ visibility: 'shared' })
 
-    const partner = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    const partner = await pull(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
     expect(
-      partner.items.find((item) => item.entityId === projectId)?.data.visibility
-    ).toBe("shared")
+      partner.items.find(item => item.entityId === projectId)?.data.visibility,
+    ).toBe('shared')
   })
 
-  it("rewrites a legacy private habit entry to its shared habit", async () => {
+  it('rewrites a legacy private habit entry to its shared habit', async () => {
     const h = makeHarness()
     const habitId = uuidV7()
     const entryId = uuidV7()
@@ -2004,55 +2453,68 @@ describe("legacy visibility converges on the next write (ADR-0011)", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "habit",
+          entityType: 'habit',
           entityId: habitId,
           baseVersion: 0,
           patch: {
-            title: "عادت مشترک",
-            frequency: { _tag: "daily" },
-            timeZone: "UTC",
-            visibility: "shared"
-          }
-        })
-      ]
+            title: 'عادت مشترک',
+            frequency: { _tag: 'daily' },
+            timeZone: 'UTC',
+            visibility: 'shared',
+          },
+        }),
+      ],
     })
-    h.db.prepare(
-      `INSERT INTO habit_entries
+    h.db
+      .prepare(
+        `INSERT INTO habit_entries
         (id, habit_id, owner_id, household_id, visibility, local_date, time_zone, status, created_at, updated_at, version, deleted_at)
-       VALUES (?, ?, ?, ?, 'private', '2026-10-20', 'UTC', 'done', ?, ?, 1, NULL)`
-    ).run(entryId, habitId, USER_A, HOUSEHOLD, now, now)
+       VALUES (?, ?, ?, ?, 'private', '2026-10-20', 'UTC', 'done', ?, ?, 1, NULL)`,
+      )
+      .run(entryId, habitId, USER_A, HOUSEHOLD, now, now)
 
     const pushed = await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "habitEntry",
+          entityType: 'habitEntry',
           entityId: entryId,
           baseVersion: 1,
-          patch: { status: "partial" }
-        })
-      ]
+          patch: { status: 'partial' },
+        }),
+      ],
     })
-    expect(pushed.results[0]?._tag).toBe("applied")
+    expect(pushed.results[0]?._tag).toBe('applied')
     expect(
-      h.db.prepare("SELECT visibility FROM habit_entries WHERE id = ?").get(entryId)
-    ).toMatchObject({ visibility: "shared" })
+      h.db
+        .prepare('SELECT visibility FROM habit_entries WHERE id = ?')
+        .get(entryId),
+    ).toMatchObject({ visibility: 'shared' })
 
-    const partner = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
+    const partner = await pull(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
     expect(
-      partner.items.find((item) => item.entityId === entryId)?.data.visibility
-    ).toBe("shared")
+      partner.items.find(item => item.entityId === entryId)?.data.visibility,
+    ).toBe('shared')
   })
 })
 
-describe("inherited visibility is parent-gated (ADR-0011)", () => {
+describe('inherited visibility is parent-gated (ADR-0011)', () => {
   const bootstrapAs = (h: ReturnType<typeof makeHarness>, userId: string) =>
     h.run(
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const sync = yield* SyncService
-        return yield* sync.bootstrap({ userId, householdId: HOUSEHOLD, offset: 0, limit: 500 })
-      })
+        return yield* sync.bootstrap({
+          userId,
+          householdId: HOUSEHOLD,
+          offset: 0,
+          limit: 500,
+        })
+      }),
     )
 
   it("removes a habit's entries from the partner's pull and bootstrap on un-share", async () => {
@@ -2065,54 +2527,74 @@ describe("inherited visibility is parent-gated (ADR-0011)", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "habit",
+          entityType: 'habit',
           entityId: habitId,
           baseVersion: 0,
           patch: {
-            title: "عادت مشترک",
-            frequency: { _tag: "daily" },
-            timeZone: "UTC",
-            visibility: "shared"
-          }
-        })
-      ]
+            title: 'عادت مشترک',
+            frequency: { _tag: 'daily' },
+            timeZone: 'UTC',
+            visibility: 'shared',
+          },
+        }),
+      ],
     })
     await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "habitEntry",
+          entityType: 'habitEntry',
           entityId: entryId,
           baseVersion: 0,
-          patch: { habitId, localDate: "2026-10-20", timeZone: "UTC", status: "done" }
-        })
-      ]
+          patch: {
+            habitId,
+            localDate: '2026-10-20',
+            timeZone: 'UTC',
+            status: 'done',
+          },
+        }),
+      ],
     })
 
-    const before = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
-    expect(before.items.find((item) => item.entityId === entryId)?.data.visibility).toBe("shared")
+    const before = await pull(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
+    expect(
+      before.items.find(item => item.entityId === entryId)?.data.visibility,
+    ).toBe('shared')
 
     const unshared = await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "habit",
+          entityType: 'habit',
           entityId: habitId,
           baseVersion: 1,
-          patch: { visibility: "private" }
-        })
-      ]
+          patch: { visibility: 'private' },
+        }),
+      ],
     })
-    expect(unshared.results[0]?._tag).toBe("applied")
+    expect(unshared.results[0]?._tag).toBe('applied')
 
-    const partner = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
-    expect(partner.items.find((item) => item.entityId === entryId)).toBeUndefined()
-    expect(partner.removed).toContainEqual({ entityType: "habitEntry", entityId: entryId })
+    const partner = await pull(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
+    expect(
+      partner.items.find(item => item.entityId === entryId),
+    ).toBeUndefined()
+    expect(partner.removed).toContainEqual({
+      entityType: 'habitEntry',
+      entityId: entryId,
+    })
 
     const boot = await bootstrapAs(h, USER_B)
-    expect(boot.items.find((item) => item.entityId === entryId)).toBeUndefined()
+    expect(boot.items.find(item => item.entityId === entryId)).toBeUndefined()
   })
 
   it("removes a list's items from the partner's pull and bootstrap on un-share", async () => {
@@ -2124,42 +2606,60 @@ describe("inherited visibility is parent-gated (ADR-0011)", () => {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
-        entry({ entityType: "list", entityId: listId, baseVersion: 0, patch: { title: "مشترک" } }),
         entry({
-          entityType: "listItem",
+          entityType: 'list',
+          entityId: listId,
+          baseVersion: 0,
+          patch: { title: 'مشترک' },
+        }),
+        entry({
+          entityType: 'listItem',
           entityId: itemId,
           baseVersion: 0,
-          patch: { title: "نان", listId }
-        })
-      ]
+          patch: { title: 'نان', listId },
+        }),
+      ],
     })
 
-    const before = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
-    expect(before.items.find((item) => item.entityId === itemId)?.data.visibility).toBe("shared")
+    const before = await pull(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
+    expect(
+      before.items.find(item => item.entityId === itemId)?.data.visibility,
+    ).toBe('shared')
 
     const unshared = await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "list",
+          entityType: 'list',
           entityId: listId,
           baseVersion: 1,
-          patch: { visibility: "private" }
-        })
-      ]
+          patch: { visibility: 'private' },
+        }),
+      ],
     })
-    expect(unshared.results[0]?._tag).toBe("applied")
+    expect(unshared.results[0]?._tag).toBe('applied')
 
-    const partner = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
-    expect(partner.items.find((item) => item.entityId === itemId)).toBeUndefined()
-    expect(partner.removed).toContainEqual({ entityType: "listItem", entityId: itemId })
+    const partner = await pull(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
+    expect(partner.items.find(item => item.entityId === itemId)).toBeUndefined()
+    expect(partner.removed).toContainEqual({
+      entityType: 'listItem',
+      entityId: itemId,
+    })
 
     const boot = await bootstrapAs(h, USER_B)
-    expect(boot.items.find((item) => item.entityId === itemId)).toBeUndefined()
+    expect(boot.items.find(item => item.entityId === itemId)).toBeUndefined()
   })
 
-  it("resolves a same-push habit un-share against the new parent", async () => {
+  it('resolves a same-push habit un-share against the new parent', async () => {
     const h = makeHarness()
     const habitId = uuidV7()
     const entryId = uuidV7()
@@ -2169,17 +2669,17 @@ describe("inherited visibility is parent-gated (ADR-0011)", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "habit",
+          entityType: 'habit',
           entityId: habitId,
           baseVersion: 0,
           patch: {
-            title: "عادت",
-            frequency: { _tag: "daily" },
-            timeZone: "UTC",
-            visibility: "shared"
-          }
-        })
-      ]
+            title: 'عادت',
+            frequency: { _tag: 'daily' },
+            timeZone: 'UTC',
+            visibility: 'shared',
+          },
+        }),
+      ],
     })
 
     const both = await push(h, {
@@ -2187,30 +2687,49 @@ describe("inherited visibility is parent-gated (ADR-0011)", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "habit",
+          entityType: 'habit',
           entityId: habitId,
           baseVersion: 1,
-          patch: { visibility: "private" }
+          patch: { visibility: 'private' },
         }),
         entry({
-          entityType: "habitEntry",
+          entityType: 'habitEntry',
           entityId: entryId,
           baseVersion: 0,
-          patch: { habitId, localDate: "2026-10-20", timeZone: "UTC", status: "done" }
-        })
-      ]
+          patch: {
+            habitId,
+            localDate: '2026-10-20',
+            timeZone: 'UTC',
+            status: 'done',
+          },
+        }),
+      ],
     })
-    expect(both.results.map((result) => result._tag)).toEqual(["applied", "applied"])
+    expect(both.results.map(result => result._tag)).toEqual([
+      'applied',
+      'applied',
+    ])
     expect(
-      h.db.prepare("SELECT visibility FROM habit_entries WHERE id = ?").get(entryId)
-    ).toMatchObject({ visibility: "private" })
+      h.db
+        .prepare('SELECT visibility FROM habit_entries WHERE id = ?')
+        .get(entryId),
+    ).toMatchObject({ visibility: 'private' })
 
-    const partner = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
-    expect(partner.items.find((item) => item.entityId === entryId)).toBeUndefined()
-    expect(partner.removed).toContainEqual({ entityType: "habitEntry", entityId: entryId })
+    const partner = await pull(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
+    expect(
+      partner.items.find(item => item.entityId === entryId),
+    ).toBeUndefined()
+    expect(partner.removed).toContainEqual({
+      entityType: 'habitEntry',
+      entityId: entryId,
+    })
   })
 
-  it("resolves a same-push list un-share against the new parent", async () => {
+  it('resolves a same-push list un-share against the new parent', async () => {
     const h = makeHarness()
     const listId = uuidV7()
     const itemId = uuidV7()
@@ -2219,8 +2738,13 @@ describe("inherited visibility is parent-gated (ADR-0011)", () => {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
-        entry({ entityType: "list", entityId: listId, baseVersion: 0, patch: { title: "فهرست" } })
-      ]
+        entry({
+          entityType: 'list',
+          entityId: listId,
+          baseVersion: 0,
+          patch: { title: 'فهرست' },
+        }),
+      ],
     })
 
     const both = await push(h, {
@@ -2228,29 +2752,38 @@ describe("inherited visibility is parent-gated (ADR-0011)", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "list",
+          entityType: 'list',
           entityId: listId,
           baseVersion: 1,
-          patch: { visibility: "private" }
+          patch: { visibility: 'private' },
         }),
         entry({
-          entityType: "listItem",
+          entityType: 'listItem',
           entityId: itemId,
           baseVersion: 0,
-          patch: { title: "مورد", listId }
-        })
-      ]
+          patch: { title: 'مورد', listId },
+        }),
+      ],
     })
-    expect(both.results.map((result) => result._tag)).toEqual(["applied", "applied"])
+    expect(both.results.map(result => result._tag)).toEqual([
+      'applied',
+      'applied',
+    ])
     expect(
-      h.db.prepare("SELECT visibility FROM list_items WHERE id = ?").get(itemId)
-    ).toMatchObject({ visibility: "private" })
+      h.db
+        .prepare('SELECT visibility FROM list_items WHERE id = ?')
+        .get(itemId),
+    ).toMatchObject({ visibility: 'private' })
 
-    const partner = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
-    expect(partner.items.find((item) => item.entityId === itemId)).toBeUndefined()
+    const partner = await pull(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
+    expect(partner.items.find(item => item.entityId === itemId)).toBeUndefined()
   })
 
-  it("forces an explicitly shared orphan list item private", async () => {
+  it('forces an explicitly shared orphan list item private', async () => {
     const h = makeHarness()
     const itemId = uuidV7()
 
@@ -2259,27 +2792,42 @@ describe("inherited visibility is parent-gated (ADR-0011)", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "listItem",
+          entityType: 'listItem',
           entityId: itemId,
           baseVersion: 0,
-          patch: { title: "یتیم", visibility: "shared" }
-        })
-      ]
+          patch: { title: 'یتیم', visibility: 'shared' },
+        }),
+      ],
     })
-    expect(pushed.results[0]?._tag).toBe("applied")
+    expect(pushed.results[0]?._tag).toBe('applied')
     expect(
-      h.db.prepare("SELECT visibility FROM list_items WHERE id = ?").get(itemId)
-    ).toMatchObject({ visibility: "private" })
+      h.db
+        .prepare('SELECT visibility FROM list_items WHERE id = ?')
+        .get(itemId),
+    ).toMatchObject({ visibility: 'private' })
 
-    const own = await pull(h, { userId: USER_A, householdId: HOUSEHOLD, cursor: 0 })
-    expect(own.items.find((item) => item.entityId === itemId)?.data.visibility).toBe("private")
+    const own = await pull(h, {
+      userId: USER_A,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
+    expect(
+      own.items.find(item => item.entityId === itemId)?.data.visibility,
+    ).toBe('private')
 
-    const partner = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
-    expect(partner.items.find((item) => item.entityId === itemId)).toBeUndefined()
-    expect(partner.removed).toContainEqual({ entityType: "listItem", entityId: itemId })
+    const partner = await pull(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
+    expect(partner.items.find(item => item.entityId === itemId)).toBeUndefined()
+    expect(partner.removed).toContainEqual({
+      entityType: 'listItem',
+      entityId: itemId,
+    })
   })
 
-  it("re-resolves the new parent when an item moves lists", async () => {
+  it('re-resolves the new parent when an item moves lists', async () => {
     const h = makeHarness()
     const sharedList = uuidV7()
     const privateList = uuidV7()
@@ -2289,20 +2837,25 @@ describe("inherited visibility is parent-gated (ADR-0011)", () => {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
-        entry({ entityType: "list", entityId: sharedList, baseVersion: 0, patch: { title: "مشترک" } }),
         entry({
-          entityType: "list",
-          entityId: privateList,
+          entityType: 'list',
+          entityId: sharedList,
           baseVersion: 0,
-          patch: { title: "خصوصی", visibility: "private" }
+          patch: { title: 'مشترک' },
         }),
         entry({
-          entityType: "listItem",
+          entityType: 'list',
+          entityId: privateList,
+          baseVersion: 0,
+          patch: { title: 'خصوصی', visibility: 'private' },
+        }),
+        entry({
+          entityType: 'listItem',
           entityId: itemId,
           baseVersion: 0,
-          patch: { title: "مورد", listId: sharedList }
-        })
-      ]
+          patch: { title: 'مورد', listId: sharedList },
+        }),
+      ],
     })
 
     const moved = await push(h, {
@@ -2310,20 +2863,26 @@ describe("inherited visibility is parent-gated (ADR-0011)", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "listItem",
+          entityType: 'listItem',
           entityId: itemId,
           baseVersion: 1,
-          patch: { listId: privateList }
-        })
-      ]
+          patch: { listId: privateList },
+        }),
+      ],
     })
-    expect(moved.results[0]?._tag).toBe("applied")
+    expect(moved.results[0]?._tag).toBe('applied')
     expect(
-      h.db.prepare("SELECT visibility FROM list_items WHERE id = ?").get(itemId)
-    ).toMatchObject({ visibility: "private" })
+      h.db
+        .prepare('SELECT visibility FROM list_items WHERE id = ?')
+        .get(itemId),
+    ).toMatchObject({ visibility: 'private' })
 
-    const partner = await pull(h, { userId: USER_B, householdId: HOUSEHOLD, cursor: 0 })
-    expect(partner.items.find((item) => item.entityId === itemId)).toBeUndefined()
+    const partner = await pull(h, {
+      userId: USER_B,
+      householdId: HOUSEHOLD,
+      cursor: 0,
+    })
+    expect(partner.items.find(item => item.entityId === itemId)).toBeUndefined()
   })
 
   it("rejects clearing an item's list parent", async () => {
@@ -2335,14 +2894,19 @@ describe("inherited visibility is parent-gated (ADR-0011)", () => {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
-        entry({ entityType: "list", entityId: listId, baseVersion: 0, patch: { title: "مشترک" } }),
         entry({
-          entityType: "listItem",
+          entityType: 'list',
+          entityId: listId,
+          baseVersion: 0,
+          patch: { title: 'مشترک' },
+        }),
+        entry({
+          entityType: 'listItem',
           entityId: itemId,
           baseVersion: 0,
-          patch: { title: "مورد", listId }
-        })
-      ]
+          patch: { title: 'مورد', listId },
+        }),
+      ],
     })
 
     const cleared = await push(h, {
@@ -2350,20 +2914,25 @@ describe("inherited visibility is parent-gated (ADR-0011)", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "listItem",
+          entityType: 'listItem',
           entityId: itemId,
           baseVersion: 1,
-          patch: { listId: null }
-        })
-      ]
+          patch: { listId: null },
+        }),
+      ],
     })
-    expect(cleared.results[0]).toMatchObject({ _tag: "rejected", code: "ParentNotFound" })
+    expect(cleared.results[0]).toMatchObject({
+      _tag: 'rejected',
+      code: 'ParentNotFound',
+    })
     expect(
-      h.db.prepare("SELECT visibility, list_id FROM list_items WHERE id = ?").get(itemId)
-    ).toMatchObject({ visibility: "shared", list_id: listId })
+      h.db
+        .prepare('SELECT visibility, list_id FROM list_items WHERE id = ?')
+        .get(itemId),
+    ).toMatchObject({ visibility: 'shared', list_id: listId })
   })
 
-  it("rejects a list item that names a missing list", async () => {
+  it('rejects a list item that names a missing list', async () => {
     const h = makeHarness()
     const itemId = uuidV7()
 
@@ -2372,18 +2941,23 @@ describe("inherited visibility is parent-gated (ADR-0011)", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "listItem",
+          entityType: 'listItem',
           entityId: itemId,
           baseVersion: 0,
-          patch: { title: "یتیم", listId: uuidV7(), visibility: "shared" }
-        })
-      ]
+          patch: { title: 'یتیم', listId: uuidV7(), visibility: 'shared' },
+        }),
+      ],
     })
-    expect(pushed.results[0]).toMatchObject({ _tag: "rejected", code: "ParentNotFound" })
-    expect(h.db.prepare("SELECT id FROM list_items WHERE id = ?").get(itemId)).toBeUndefined()
+    expect(pushed.results[0]).toMatchObject({
+      _tag: 'rejected',
+      code: 'ParentNotFound',
+    })
+    expect(
+      h.db.prepare('SELECT id FROM list_items WHERE id = ?').get(itemId),
+    ).toBeUndefined()
   })
 
-  it("rejects a move that asks for shared under the new private list", async () => {
+  it('rejects a move that asks for shared under the new private list', async () => {
     const h = makeHarness()
     const sharedList = uuidV7()
     const privateList = uuidV7()
@@ -2393,20 +2967,25 @@ describe("inherited visibility is parent-gated (ADR-0011)", () => {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
-        entry({ entityType: "list", entityId: sharedList, baseVersion: 0, patch: { title: "مشترک" } }),
         entry({
-          entityType: "list",
-          entityId: privateList,
+          entityType: 'list',
+          entityId: sharedList,
           baseVersion: 0,
-          patch: { title: "خصوصی", visibility: "private" }
+          patch: { title: 'مشترک' },
         }),
         entry({
-          entityType: "listItem",
+          entityType: 'list',
+          entityId: privateList,
+          baseVersion: 0,
+          patch: { title: 'خصوصی', visibility: 'private' },
+        }),
+        entry({
+          entityType: 'listItem',
           entityId: itemId,
           baseVersion: 0,
-          patch: { title: "مورد", listId: sharedList }
-        })
-      ]
+          patch: { title: 'مورد', listId: sharedList },
+        }),
+      ],
     })
 
     const moved = await push(h, {
@@ -2414,13 +2993,16 @@ describe("inherited visibility is parent-gated (ADR-0011)", () => {
       householdId: HOUSEHOLD,
       entries: [
         entry({
-          entityType: "listItem",
+          entityType: 'listItem',
           entityId: itemId,
           baseVersion: 1,
-          patch: { listId: privateList, visibility: "shared" }
-        })
-      ]
+          patch: { listId: privateList, visibility: 'shared' },
+        }),
+      ],
     })
-    expect(moved.results[0]).toMatchObject({ _tag: "rejected", code: "VisibilityInherited" })
+    expect(moved.results[0]).toMatchObject({
+      _tag: 'rejected',
+      code: 'VisibilityInherited',
+    })
   })
 })

@@ -94,6 +94,7 @@ describe('habit local-first writes', () => {
 
   it('moves the badge on a tap with no sync, then cycles Done → Partial → Missed', async () => {
     const store = await open()
+
     const id = await createHabitInMirror(
       store,
       { title: 'آب', frequency: { _tag: 'daily' }, timeZone: TZ },
@@ -118,12 +119,14 @@ describe('habit local-first writes', () => {
       id: uuidV7(Date.parse(NOW)),
       now: NOW,
     })
+
     const afterDone = habitStatsFor(
       (await readHabits(store))[0]!,
       await readEntries(store),
       TODAY,
       7,
     )
+
     expect(afterDone.current).toEqual({
       unit: 'day',
       count: 3,
@@ -138,13 +141,16 @@ describe('habit local-first writes', () => {
       id: uuidV7(Date.parse(NOW)),
       now: NOW,
     })
+
     expect(second.data.status).toBe('partial')
+
     const afterPartial = habitStatsFor(
       (await readHabits(store))[0]!,
       await readEntries(store),
       TODAY,
       7,
     )
+
     expect(afterPartial.current.count).toBe(3)
     expect(afterPartial.rate).toBeCloseTo(2.5 / 3, 10)
 
@@ -155,13 +161,16 @@ describe('habit local-first writes', () => {
       id: uuidV7(Date.parse(NOW)),
       now: NOW,
     })
+
     expect(third.data.status).toBe('missed')
+
     const afterMissed = habitStatsFor(
       (await readHabits(store))[0]!,
       await readEntries(store),
       TODAY,
       7,
     )
+
     expect(afterMissed.current.count).toBe(2)
     expect(afterMissed.open).toMatchObject({ credit: 0, satisfied: false })
 
@@ -173,12 +182,14 @@ describe('habit local-first writes', () => {
 
   it('renders an X-per-week 7-day rate as progress, never 0%', async () => {
     const store = await open()
+
     const id = await createHabitInMirror(
       store,
       { title: 'ورزش', frequency: { _tag: 'weekly', times: 3 }, timeZone: TZ },
       uuidV7(Date.parse('2026-10-17T09:00:00.000Z')),
       '2026-10-17T09:00:00.000Z',
     )
+
     const habit = (await readHabits(store))[0]!
     expect(habit.frequencyHistory[0]?.effectiveFrom).toBe('2026-10-17')
 
@@ -205,12 +216,14 @@ describe('habit local-first writes', () => {
       id: uuidV7(Date.parse(NOW)),
       now: NOW,
     })
+
     const satisfiedWeek = habitStatsFor(
       habit,
       await readEntries(store),
       TODAY,
       7,
     )
+
     expect(satisfiedWeek.rate).toBe(1)
     expect(habitRateCopy(satisfiedWeek)).toEqual({
       kind: 'rate',
@@ -222,12 +235,14 @@ describe('habit local-first writes', () => {
 
   it('keeps one row per day and shows the answer', async () => {
     const store = await open()
+
     const id = await createHabitInMirror(
       store,
       { title: 'مدیتیشن', frequency: { _tag: 'daily' }, timeZone: TZ },
       uuidV7(Date.parse(NOW)),
       NOW,
     )
+
     await tapHabitEntry(store, {
       habitId: id,
       localDate: TODAY,
@@ -244,12 +259,14 @@ describe('habit local-first writes', () => {
 
   it('appends an era when the frequency changes, so history is not rewritten', async () => {
     const store = await open()
+
     const id = await createHabitInMirror(
       store,
       { title: 'شنا', frequency: { _tag: 'daily' }, timeZone: TZ },
       uuidV7(Date.parse('2026-10-10T09:00:00.000Z')),
       '2026-10-10T09:00:00.000Z',
     )
+
     const habit = (await readHabits(store))[0]!
     await updateHabitInMirror(
       store,
@@ -295,6 +312,7 @@ describe('habit local-first writes', () => {
 
   it('soft deletes and restores the same row, history intact', async () => {
     const store = await open()
+
     const id = await createHabitInMirror(
       store,
       { title: 'پیاده‌روی', frequency: { _tag: 'daily' }, timeZone: TZ },
@@ -357,6 +375,7 @@ describe('habit read model', () => {
 
   it('paints the raw statuses the streak consumes, including a rest-day bonus', async () => {
     const store = await open()
+
     const id = await createHabitInMirror(
       store,
       {
@@ -367,7 +386,9 @@ describe('habit read model', () => {
       uuidV7(Date.parse('2026-10-17T09:00:00.000Z')),
       '2026-10-17T09:00:00.000Z',
     )
+
     const now = '2026-10-22T09:30:00.000Z'
+
     for (const day of ['2026-10-19', '2026-10-21', '2026-10-22']) {
       await tapHabitEntry(store, {
         habitId: id,
@@ -377,13 +398,16 @@ describe('habit read model', () => {
         now,
       })
     }
+
     const entries = await readEntries(store)
+
     const streak = habitStatsFor(
       (await readHabits(store))[0]!,
       entries,
       '2026-10-22',
       30,
     )
+
     expect(streak.current).toEqual({
       unit: 'day',
       count: 2,
@@ -396,6 +420,7 @@ describe('habit read model', () => {
       year: 1405,
       month: 7,
     })
+
     const cell = (date: string) =>
       month.weeks.flat().find(entry => entry.date === date)!
 
@@ -412,12 +437,14 @@ describe('habit read model', () => {
 
   it('paints the same entries in the Jalali month each local day belongs to (E15)', async () => {
     const store = await open()
+
     const id = await createHabitInMirror(
       store,
       { title: 'کتاب', frequency: { _tag: 'weekly', times: 3 }, timeZone: TZ },
       uuidV7(Date.parse('2026-10-17T09:00:00.000Z')),
       '2026-10-17T09:00:00.000Z',
     )
+
     for (const day of [
       '2026-10-17',
       '2026-10-19',
@@ -432,19 +459,23 @@ describe('habit read model', () => {
         now: '2026-10-23T09:30:00.000Z',
       })
     }
+
     const entries = await readEntries(store)
+
     const mehr = habitHeatmapMonth({
       habitId: id,
       entries,
       year: 1405,
       month: 7,
     })
+
     const aban = habitHeatmapMonth({
       habitId: id,
       entries,
       year: 1405,
       month: 8,
     })
+
     const find = (month: typeof mehr, day: string): HabitHeatCell =>
       month.weeks.flat().find(cell => cell.date === day)!
 
@@ -466,6 +497,7 @@ describe('habit read model', () => {
       year: 1405,
       month: 8,
     })
+
     const sunday = habitHeatmapMonth({
       habitId: 'habit-1',
       entries: [],
@@ -531,6 +563,7 @@ describe('habit copy', () => {
       open: true,
       inWindow: false,
     }
+
     const result: StreakResult = {
       current: { unit: 'week', count: 1, since: '2026-10-10' },
       open: openPeriod,
@@ -539,6 +572,7 @@ describe('habit copy', () => {
       periods: [],
       unitChanges: [],
     }
+
     expect(habitBadgeLabel(result)).toBe('۱ هفته پیاپی · ۲ از ۳ این هفته')
     expect(
       habitBadgeLabel({

@@ -1,6 +1,7 @@
-import { Dialog } from '@foldkit/ui'
 import { Option } from 'effect'
 import type { Html, HtmlBuilder } from 'foldkit/html'
+
+import { Dialog } from '@foldkit/ui'
 
 import { classNames } from './class-names'
 

@@ -1,6 +1,6 @@
-import { Schema } from "effect"
-import { Temporal } from "temporal-polyfill/full"
-import { LocalDate } from "./planning/common.js"
+import { Schema } from 'effect'
+import { Temporal } from 'temporal-polyfill/full'
+import { LocalDate } from './planning/common.js'
 
 /**
  * The hand-rolled recurrence engine shared by tasks (this ticket) and, later,
@@ -50,29 +50,33 @@ import { LocalDate } from "./planning/common.js"
 // ── Rule schema (docs/domain-model-draft.md §3.3) ────────────────────────
 
 export const RecurrenceFrequency = Schema.Literals([
-  "daily",
-  "weekly",
-  "monthly",
-  "yearly"
+  'daily',
+  'weekly',
+  'monthly',
+  'yearly',
 ])
 export type RecurrenceFrequency = Schema.Schema.Type<typeof RecurrenceFrequency>
 
 /** Inclusive end bound: `never`, an occurrence `count`, or an ISO date. */
 export const RecurrenceEnd = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal("never") }),
+  Schema.Struct({ _tag: Schema.Literal('never') }),
   Schema.Struct({
-    _tag: Schema.Literal("count"),
-    count: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))
+    _tag: Schema.Literal('count'),
+    count: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
   }),
-  Schema.Struct({ _tag: Schema.Literal("until"), date: LocalDate })
+  Schema.Struct({ _tag: Schema.Literal('until'), date: LocalDate }),
 ])
 export type RecurrenceEnd = Schema.Schema.Type<typeof RecurrenceEnd>
 
-const IsoWeekday = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 7 }))
+const IsoWeekday = Schema.Int.check(
+  Schema.isBetween({ minimum: 1, maximum: 7 }),
+)
 const MonthDay = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 31 }))
 /** `nth` is 1..5 or -1 for "last". */
 const Nth = Schema.Int.check(
-  Schema.makeFilter<number>((value) => value === -1 || (value >= 1 && value <= 5))
+  Schema.makeFilter<number>(
+    value => value === -1 || (value >= 1 && value <= 5),
+  ),
 )
 
 const RecurrenceRuleFields = Schema.Struct({
@@ -85,7 +89,7 @@ const RecurrenceRuleFields = Schema.Struct({
   byMonthDay: Schema.optional(Schema.Array(MonthDay)),
   /** Monthly/yearly: "second Tuesday", "last Friday" (-1). */
   nthWeekday: Schema.optional(Schema.Struct({ nth: Nth, day: IsoWeekday })),
-  end: RecurrenceEnd
+  end: RecurrenceEnd,
 })
 
 type RecurrenceRuleFields = Schema.Schema.Type<typeof RecurrenceRuleFields>
@@ -99,16 +103,20 @@ const nonEmpty = <A>(values: ReadonlyArray<A> | undefined): boolean =>
  * this on the schema means a sync push or an RPC payload is validated by the
  * same contract as the service.
  */
-const validRuleShape = Schema.makeFilter<RecurrenceRuleFields>((rule) => {
-  if (rule.frequency === "daily") {
-    if (nonEmpty(rule.byDay) || nonEmpty(rule.byMonthDay) || rule.nthWeekday !== undefined) {
-      return "a daily rule does not take byDay, byMonthDay or nthWeekday"
+const validRuleShape = Schema.makeFilter<RecurrenceRuleFields>(rule => {
+  if (rule.frequency === 'daily') {
+    if (
+      nonEmpty(rule.byDay) ||
+      nonEmpty(rule.byMonthDay) ||
+      rule.nthWeekday !== undefined
+    ) {
+      return 'a daily rule does not take byDay, byMonthDay or nthWeekday'
     }
     return true
   }
-  if (rule.frequency === "weekly") {
+  if (rule.frequency === 'weekly') {
     if (nonEmpty(rule.byMonthDay) || rule.nthWeekday !== undefined) {
-      return "a weekly rule does not take byMonthDay or nthWeekday"
+      return 'a weekly rule does not take byMonthDay or nthWeekday'
     }
     return true
   }
@@ -116,13 +124,13 @@ const validRuleShape = Schema.makeFilter<RecurrenceRuleFields>((rule) => {
     return `${rule.frequency} rules use byMonthDay/nthWeekday, not byDay`
   }
   if (nonEmpty(rule.byMonthDay) && rule.nthWeekday !== undefined) {
-    return "a rule takes byMonthDay or nthWeekday, not both"
+    return 'a rule takes byMonthDay or nthWeekday, not both'
   }
   if (rule.byMonthDay !== undefined && rule.byMonthDay.length === 0) {
-    return "byMonthDay cannot be empty"
+    return 'byMonthDay cannot be empty'
   }
   if (rule.byDay !== undefined && rule.byDay.length === 0) {
-    return "byDay cannot be empty"
+    return 'byDay cannot be empty'
   }
   return true
 })
@@ -131,24 +139,27 @@ export const RecurrenceRule = RecurrenceRuleFields.check(validRuleShape)
 export type RecurrenceRule = Schema.Schema.Type<typeof RecurrenceRule>
 
 /** Task-specific: advance on completion, or keep the fixed schedule. */
-export const TaskRecurrenceMode = Schema.Literals(["onCompletion", "onDueDate"])
+export const TaskRecurrenceMode = Schema.Literals(['onCompletion', 'onDueDate'])
 export type TaskRecurrenceMode = Schema.Schema.Type<typeof TaskRecurrenceMode>
 
 // ── Calendar helpers ─────────────────────────────────────────────────────
 
-const JALALI = "persian"
-const ISO = "iso8601"
+const JALALI = 'persian'
+const ISO = 'iso8601'
 
 type DateInput = string | Temporal.PlainDate
 
 const asPlainDate = (input: DateInput): Temporal.PlainDate =>
-  typeof input === "string" ? Temporal.PlainDate.from(input) : input
+  typeof input === 'string' ? Temporal.PlainDate.from(input) : input
 
-const toIso = (date: Temporal.PlainDate): Temporal.PlainDate => date.withCalendar(ISO)
-const toJalali = (date: Temporal.PlainDate): Temporal.PlainDate => date.withCalendar(JALALI)
+const toIso = (date: Temporal.PlainDate): Temporal.PlainDate =>
+  date.withCalendar(ISO)
+const toJalali = (date: Temporal.PlainDate): Temporal.PlainDate =>
+  date.withCalendar(JALALI)
 
 /** ISO weekday 1..7 (Monday..Sunday), independent of the attached calendar. */
-export const isoWeekday = (date: Temporal.PlainDate): number => toIso(date).dayOfWeek
+export const isoWeekday = (date: Temporal.PlainDate): number =>
+  toIso(date).dayOfWeek
 
 const isoWeekStart = (date: Temporal.PlainDate): Temporal.PlainDate =>
   toIso(date).subtract({ days: toIso(date).dayOfWeek - 1 })
@@ -165,28 +176,30 @@ const sortedUnique = (values: ReadonlyArray<number>): ReadonlyArray<number> =>
 const dailyCandidates = (
   anchor: Temporal.PlainDate,
   rule: RecurrenceRule,
-  period: number
-): ReadonlyArray<Temporal.PlainDate> => [toIso(anchor).add({ days: period * rule.interval })]
+  period: number,
+): ReadonlyArray<Temporal.PlainDate> => [
+  toIso(anchor).add({ days: period * rule.interval }),
+]
 
 const weeklyCandidates = (
   anchor: Temporal.PlainDate,
   rule: RecurrenceRule,
-  period: number
+  period: number,
 ): ReadonlyArray<Temporal.PlainDate> => {
   const block = isoWeekStart(anchor).add({ days: period * rule.interval * 7 })
   const days = sortedUnique(rule.byDay ?? [isoWeekday(anchor)])
-  return days.map((day) => block.add({ days: day - 1 }))
+  return days.map(day => block.add({ days: day - 1 }))
 }
 
 /** Days selected inside one Jalali month (for monthly/yearly rules). */
 const monthDays = (
   rule: RecurrenceRule,
   month: Temporal.PlainDate,
-  fallbackDay: number
+  fallbackDay: number,
 ): ReadonlyArray<number> => {
   const daysInMonth = month.daysInMonth
   if (nonEmpty(rule.byMonthDay)) {
-    return sortedUnique(rule.byMonthDay!).filter((day) => day <= daysInMonth)
+    return sortedUnique(rule.byMonthDay!).filter(day => day <= daysInMonth)
   }
   if (rule.nthWeekday !== undefined) {
     const { nth, day } = rule.nthWeekday
@@ -204,41 +217,43 @@ const monthDays = (
 const monthlyCandidates = (
   anchor: Temporal.PlainDate,
   rule: RecurrenceRule,
-  period: number
+  period: number,
 ): ReadonlyArray<Temporal.PlainDate> => {
   const jalali = toJalali(anchor)
   const month = jalali.with({ day: 1 }).add({ months: period * rule.interval })
-  return monthDays(rule, month, jalali.day).map((day) =>
-    toIso(month.with({ day }))
+  return monthDays(rule, month, jalali.day).map(day =>
+    toIso(month.with({ day })),
   )
 }
 
 const yearlyCandidates = (
   anchor: Temporal.PlainDate,
   rule: RecurrenceRule,
-  period: number
+  period: number,
 ): ReadonlyArray<Temporal.PlainDate> => {
   const jalali = toJalali(anchor)
-  const year = jalali.with({ month: 1, day: 1 }).add({ years: period * rule.interval })
+  const year = jalali
+    .with({ month: 1, day: 1 })
+    .add({ years: period * rule.interval })
   const month = year.with({ month: jalali.month })
-  return monthDays(rule, month, jalali.day).map((day) =>
-    toIso(month.with({ day }))
+  return monthDays(rule, month, jalali.day).map(day =>
+    toIso(month.with({ day })),
   )
 }
 
 const periodCandidates = (
   rule: RecurrenceRule,
   anchor: Temporal.PlainDate,
-  period: number
+  period: number,
 ): ReadonlyArray<Temporal.PlainDate> => {
   switch (rule.frequency) {
-    case "daily":
+    case 'daily':
       return dailyCandidates(anchor, rule, period)
-    case "weekly":
+    case 'weekly':
       return weeklyCandidates(anchor, rule, period)
-    case "monthly":
+    case 'monthly':
       return monthlyCandidates(anchor, rule, period)
-    case "yearly":
+    case 'yearly':
       return yearlyCandidates(anchor, rule, period)
   }
 }
@@ -247,18 +262,20 @@ const periodCandidates = (
 const periodStart = (
   rule: RecurrenceRule,
   anchor: Temporal.PlainDate,
-  period: number
+  period: number,
 ): Temporal.PlainDate => {
   const jalali = toJalali(anchor)
   switch (rule.frequency) {
-    case "daily":
+    case 'daily':
       return toIso(anchor).add({ days: period * rule.interval })
-    case "weekly":
+    case 'weekly':
       return isoWeekStart(anchor).add({ days: period * rule.interval * 7 })
-    case "monthly":
+    case 'monthly':
       return jalali.with({ day: 1 }).add({ months: period * rule.interval })
-    case "yearly":
-      return jalali.with({ month: 1, day: 1 }).add({ years: period * rule.interval })
+    case 'yearly':
+      return jalali
+        .with({ month: 1, day: 1 })
+        .add({ years: period * rule.interval })
   }
 }
 
@@ -285,8 +302,10 @@ export interface ExpandOptions {
   readonly exceptions?: ReadonlyArray<LocalDate>
 }
 
-const minDate = (a: Temporal.PlainDate, b: Temporal.PlainDate): Temporal.PlainDate =>
-  Temporal.PlainDate.compare(a, b) <= 0 ? a : b
+const minDate = (
+  a: Temporal.PlainDate,
+  b: Temporal.PlainDate,
+): Temporal.PlainDate => (Temporal.PlainDate.compare(a, b) <= 0 ? a : b)
 
 /**
  * Expand a rule anchored at `start` (`dtstart`) into occurrence dates.
@@ -298,22 +317,31 @@ const minDate = (a: Temporal.PlainDate, b: Temporal.PlainDate): Temporal.PlainDa
 export const expandOccurrences = (
   rule: RecurrenceRule,
   start: DateInput,
-  options: ExpandOptions = {}
+  options: ExpandOptions = {},
 ): ReadonlyArray<Temporal.PlainDate> => {
   const anchor = toIso(asPlainDate(start))
-  const from = options.from === undefined ? undefined : toIso(asPlainDate(options.from))
-  const to = options.to === undefined ? undefined : toIso(asPlainDate(options.to))
+  const from =
+    options.from === undefined ? undefined : toIso(asPlainDate(options.from))
+  const to =
+    options.to === undefined ? undefined : toIso(asPlainDate(options.to))
   const until =
-    rule.end._tag === "until" ? toIso(asPlainDate(rule.end.date)) : undefined
-  const upper = to !== undefined && until !== undefined ? minDate(to, until) : to ?? until
-  const limit = Math.min(Math.max(options.limit ?? MAX_OCCURRENCES, 1), MAX_OCCURRENCES)
+    rule.end._tag === 'until' ? toIso(asPlainDate(rule.end.date)) : undefined
+  const upper =
+    to !== undefined && until !== undefined ? minDate(to, until) : (to ?? until)
+  const limit = Math.min(
+    Math.max(options.limit ?? MAX_OCCURRENCES, 1),
+    MAX_OCCURRENCES,
+  )
   const exceptions = new Set<string>(options.exceptions ?? [])
   const occurrences: Array<Temporal.PlainDate> = []
-  const countBound = rule.end._tag === "count" ? rule.end.count : undefined
+  const countBound = rule.end._tag === 'count' ? rule.end.count : undefined
   let counted = 0
 
   for (let period = 0; period < MAX_PERIODS; period += 1) {
-    if (upper !== undefined && Temporal.PlainDate.compare(periodStart(rule, anchor, period), upper) > 0) {
+    if (
+      upper !== undefined &&
+      Temporal.PlainDate.compare(periodStart(rule, anchor, period), upper) > 0
+    ) {
       return occurrences
     }
     const candidates = periodCandidates(rule, anchor, period)
@@ -329,13 +357,17 @@ export const expandOccurrences = (
       if (Temporal.PlainDate.compare(candidate, anchor) < 0) continue
       counted += 1
       if (countBound !== undefined && counted > countBound) return occurrences
-      if (upper !== undefined && Temporal.PlainDate.compare(candidate, upper) > 0) {
+      if (
+        upper !== undefined &&
+        Temporal.PlainDate.compare(candidate, upper) > 0
+      ) {
         // Candidates within a period are sorted and periods are increasing,
         // so nothing later can be inside the bound.
         advancedPastUpper = true
         break
       }
-      if (from !== undefined && Temporal.PlainDate.compare(candidate, from) < 0) continue
+      if (from !== undefined && Temporal.PlainDate.compare(candidate, from) < 0)
+        continue
       if (exceptions.has(candidate.toString())) continue
       occurrences.push(candidate)
       if (occurrences.length >= limit) return occurrences
@@ -350,9 +382,11 @@ export const expandOccurrences = (
 export const occurrenceDates = (
   rule: RecurrenceRule,
   start: DateInput,
-  options: ExpandOptions = {}
+  options: ExpandOptions = {},
 ): ReadonlyArray<LocalDate> =>
-  expandOccurrences(rule, start, options).map((date) => date.toString() as LocalDate)
+  expandOccurrences(rule, start, options).map(
+    date => date.toString() as LocalDate,
+  )
 
 export interface NextOccurrenceOptions {
   /** Occurrence dates to omit. */
@@ -368,7 +402,7 @@ export const nextOccurrence = (
   rule: RecurrenceRule,
   start: DateInput,
   after: DateInput,
-  options: NextOccurrenceOptions = {}
+  options: NextOccurrenceOptions = {},
 ): Temporal.PlainDate | null => {
   const from = toIso(asPlainDate(after)).add({ days: 1 })
   const next = expandOccurrences(rule, start, {
@@ -376,7 +410,7 @@ export const nextOccurrence = (
     limit: 1,
     ...(options.exceptions === undefined
       ? {}
-      : { exceptions: options.exceptions })
+      : { exceptions: options.exceptions }),
   })
   return next[0] ?? null
 }

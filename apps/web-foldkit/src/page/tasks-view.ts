@@ -203,6 +203,7 @@ const quickAddPanelView = (
 ): Html => {
   const draft = model.quickAdd
   const dueValue = Option.getOrElse(quickAddDue(model, inputs), () => '')
+
   const duePresets: ReadonlyArray<{
     readonly label: string
     readonly value: Option.Option<string>
@@ -481,6 +482,7 @@ const quickAddView = (
 ): Html => {
   const draft = model.quickAdd
   const digits = inputs.display.digits
+
   const projectTitle = Option.match(draft.maybeProjectId, {
     onNone: () => 'پروژه',
     onSome: projectId =>
@@ -1544,6 +1546,7 @@ const historyView = (
 ): Html => {
   const digits = inputs.display.digits
   const timeZone = validTimeZone(inputs.display.timeZone)
+
   const completions = recentCompletions(
     inputs.mirror.tasks,
     new Date(model.now).toISOString(),

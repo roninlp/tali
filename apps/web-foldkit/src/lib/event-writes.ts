@@ -87,6 +87,7 @@ export const EventRow = Schema.Struct({
   deletedAt: Schema.NullOr(Schema.String),
   hasSyncError: Schema.Boolean,
 })
+
 export type EventRow = typeof EventRow.Type
 
 export const EventScopeIds = Schema.Struct({
@@ -95,6 +96,7 @@ export const EventScopeIds = Schema.Struct({
   clientMutationId: Schema.String,
   followingMutationId: Schema.String,
 })
+
 export type EventScopeIds = typeof EventScopeIds.Type
 
 export const CalendarEventDraft = Schema.Struct({
@@ -104,6 +106,7 @@ export const CalendarEventDraft = Schema.Struct({
   startTime: Schema.String,
   endTime: Schema.String,
 })
+
 export type CalendarEventDraft = typeof CalendarEventDraft.Type
 
 // PROJECTION
@@ -180,7 +183,8 @@ export const toEventRow = (record: MirrorRecord): EventRow =>
     ownerId: asString(record.data.ownerId),
     householdId: asString(record.data.householdId),
     visibility:
-      record.data.visibility === 'private' || record.data.visibility === 'shared'
+      record.data.visibility === 'private' ||
+      record.data.visibility === 'shared'
         ? record.data.visibility
         : defaultVisibilityFor('event'),
     createdAt: asString(record.data.createdAt) ?? record.updatedAt,
@@ -304,6 +308,7 @@ export const timingOfDraft = (
       draft.timeZone,
     ),
   )
+
   const rawEnd = canonicalInstant(
     localDateTimeInstant(
       draft.date,
@@ -311,6 +316,7 @@ export const timingOfDraft = (
       draft.timeZone,
     ),
   )
+
   const end =
     Date.parse(rawEnd) > Date.parse(start)
       ? rawEnd
@@ -411,6 +417,7 @@ const patchSeriesLocal = (
   now: string,
 ): Event => {
   const anchor = eventAnchorDate(event)
+
   const merged: EventExceptionOverrides = {
     ...(storedOccurrenceOverrides(event, anchor) ?? {}),
     ...overrides,
@@ -812,6 +819,7 @@ export const wallTimeIn = (
       minute: '2-digit',
       hour12: false,
     })
+
     const parts = formatter.formatToParts(new Date(millis))
     const hour = Number(parts.find(part => part.type === 'hour')?.value)
     const minute = Number(parts.find(part => part.type === 'minute')?.value)
@@ -891,10 +899,12 @@ export const draftFromOccurrence = (
   occurrence: CalendarEventOccurrence,
 ): CalendarEventDraft => {
   const allDay = occurrence.timing._tag === 'allDay'
+
   const startParts =
     occurrence.timing._tag === 'timed'
       ? wallTimeIn(occurrence.timing.start, occurrence.timeZone)
       : null
+
   const endParts =
     occurrence.timing._tag === 'timed'
       ? wallTimeIn(occurrence.timing.end, occurrence.timeZone)

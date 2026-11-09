@@ -1,5 +1,5 @@
-import { Context, Effect, Layer, Option } from "effect"
-import { SqlClient, Statement } from "effect/sql"
+import { Context, Effect, Layer, Option } from 'effect'
+import { SqlClient, Statement } from 'effect/sql'
 import {
   Event,
   type EventException,
@@ -9,8 +9,8 @@ import {
   type OccasionId,
   type RecurrenceRule,
   type UserId,
-  type Visibility
-} from "@tali/domain"
+  type Visibility,
+} from '@tali/domain'
 
 /**
  * D1-backed repository for `Event` (ticket #57; FR-CAL-01).
@@ -107,22 +107,24 @@ export const eventTimingOf = (row: {
   readonly createdAt: string
 }): EventTiming =>
   row.allDayDate !== null
-    ? { _tag: "allDay", date: row.allDayDate }
+    ? { _tag: 'allDay', date: row.allDayDate }
     : {
-      _tag: "timed",
-      start: row.startAt ?? row.createdAt,
-      end: row.endAt ?? row.startAt ?? row.createdAt
-    }
+        _tag: 'timed',
+        start: row.startAt ?? row.createdAt,
+        end: row.endAt ?? row.startAt ?? row.createdAt,
+      }
 
 /** The model's plain shape, built from a D1 row. */
 export const eventPropsOf = (row: EventRow) => ({
-  id: row.id as Event["id"],
-  type: "event" as const,
+  id: row.id as Event['id'],
+  type: 'event' as const,
   title: row.title,
   description: row.description,
   location: row.location,
   category: row.category,
-  people: parseArray(row.people).filter((entry): entry is string => typeof entry === "string"),
+  people: parseArray(row.people).filter(
+    (entry): entry is string => typeof entry === 'string',
+  ),
   timing: eventTimingOf(row),
   timeZone: row.timeZone,
   recurrence: parseJson(row.recurrence) as RecurrenceRule | null,
@@ -135,12 +137,13 @@ export const eventPropsOf = (row: EventRow) => ({
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
   version: Number(row.version),
-  deletedAt: row.deletedAt
+  deletedAt: row.deletedAt,
 })
 
 export const toEvent = (row: EventRow): Event => new Event(eventPropsOf(row))
 
-const encodePeople = (people: ReadonlyArray<string>): string => JSON.stringify(people)
+const encodePeople = (people: ReadonlyArray<string>): string =>
+  JSON.stringify(people)
 
 const encodeRecurrence = (rule: RecurrenceRule | null): string | null =>
   rule === null ? null : JSON.stringify(rule)
@@ -161,8 +164,8 @@ export interface EventQuery {
   readonly instantBefore?: string
 }
 
-export class EventRepo extends Context.Service<EventRepo>()("EventRepo", {
-  make: Effect.gen(function*() {
+export class EventRepo extends Context.Service<EventRepo>()('EventRepo', {
+  make: Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
 
     /** The visibility filter every event read shares (private owner-only). */
@@ -179,7 +182,7 @@ export class EventRepo extends Context.Service<EventRepo>()("EventRepo", {
     const findById = (id: EventId) =>
       Effect.map(
         sql<EventRow>`SELECT ${sql.literal(EVENT_SELECT)} FROM events WHERE id = ${id}`,
-        (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toEvent)
+        rows => Option.map(Option.fromUndefinedOr(rows[0]), toEvent),
       )
 
     /**
@@ -196,7 +199,7 @@ export class EventRepo extends Context.Service<EventRepo>()("EventRepo", {
           WHERE ${visibleScope(input)}
           ORDER BY all_day_date IS NULL, all_day_date ASC, start_at ASC, id ASC
         `,
-        (rows) => rows.map(toEvent)
+        rows => rows.map(toEvent),
       )
 
     /**
@@ -207,20 +210,27 @@ export class EventRepo extends Context.Service<EventRepo>()("EventRepo", {
      * they are OR'ed — a row is never both.
      */
     const listInRange = (input: EventQuery) =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const ranges: Array<Statement.Fragment> = []
         if (input.dateFrom !== undefined || input.dateBefore !== undefined) {
           const parts: Array<Statement.Fragment> = [
-            sql`all_day_date IS NOT NULL`
+            sql`all_day_date IS NOT NULL`,
           ]
-          if (input.dateFrom !== undefined) parts.push(sql`all_day_date >= ${input.dateFrom}`)
-          if (input.dateBefore !== undefined) parts.push(sql`all_day_date < ${input.dateBefore}`)
+          if (input.dateFrom !== undefined)
+            parts.push(sql`all_day_date >= ${input.dateFrom}`)
+          if (input.dateBefore !== undefined)
+            parts.push(sql`all_day_date < ${input.dateBefore}`)
           ranges.push(sql`(${sql.and(parts)})`)
         }
-        if (input.instantFrom !== undefined || input.instantBefore !== undefined) {
+        if (
+          input.instantFrom !== undefined ||
+          input.instantBefore !== undefined
+        ) {
           const parts: Array<Statement.Fragment> = [sql`start_at IS NOT NULL`]
-          if (input.instantFrom !== undefined) parts.push(sql`start_at >= ${input.instantFrom}`)
-          if (input.instantBefore !== undefined) parts.push(sql`start_at < ${input.instantBefore}`)
+          if (input.instantFrom !== undefined)
+            parts.push(sql`start_at >= ${input.instantFrom}`)
+          if (input.instantBefore !== undefined)
+            parts.push(sql`start_at < ${input.instantBefore}`)
           ranges.push(sql`(${sql.and(parts)})`)
         }
         const conditions: Array<Statement.Fragment> = [visibleScope(input)]
@@ -254,7 +264,7 @@ export class EventRepo extends Context.Service<EventRepo>()("EventRepo", {
           WHERE ${visibleScope(input)} AND recurrence IS NOT NULL
           ORDER BY all_day_date IS NULL, all_day_date ASC, start_at ASC, id ASC
         `,
-        (rows) => rows.map(toEvent)
+        rows => rows.map(toEvent),
       )
 
     const insert = (event: Event) =>
@@ -270,15 +280,15 @@ export class EventRepo extends Context.Service<EventRepo>()("EventRepo", {
              ${event.location}, ${event.category}, ${encodePeople(event.people)},
              ${event.ownerId}, ${event.householdId}, ${event.visibility},
              ${event.color},
-             ${event.timing._tag === "timed" ? event.timing.start : null},
-             ${event.timing._tag === "timed" ? event.timing.end : null},
-             ${event.timing._tag === "allDay" ? event.timing.date : null},
+             ${event.timing._tag === 'timed' ? event.timing.start : null},
+             ${event.timing._tag === 'timed' ? event.timing.end : null},
+             ${event.timing._tag === 'allDay' ? event.timing.date : null},
              ${event.timeZone}, ${encodeRecurrence(event.recurrence)},
              ${encodeExceptions(event.exceptions)}, ${event.occasionId},
              ${event.createdAt}, ${event.updatedAt}, ${event.version}, ${event.deletedAt})
           RETURNING ${sql.literal(EVENT_SELECT)}
         `,
-        (rows) => toEvent(rows[0]!)
+        rows => toEvent(rows[0]!),
       )
 
     /**
@@ -297,9 +307,9 @@ export class EventRepo extends Context.Service<EventRepo>()("EventRepo", {
             people = ${encodePeople(event.people)},
             visibility = ${event.visibility},
             color = ${event.color},
-            start_at = ${event.timing._tag === "timed" ? event.timing.start : null},
-            end_at = ${event.timing._tag === "timed" ? event.timing.end : null},
-            all_day_date = ${event.timing._tag === "allDay" ? event.timing.date : null},
+            start_at = ${event.timing._tag === 'timed' ? event.timing.start : null},
+            end_at = ${event.timing._tag === 'timed' ? event.timing.end : null},
+            all_day_date = ${event.timing._tag === 'allDay' ? event.timing.date : null},
             time_zone = ${event.timeZone},
             recurrence = ${encodeRecurrence(event.recurrence)},
             exceptions = ${encodeExceptions(event.exceptions)},
@@ -310,7 +320,7 @@ export class EventRepo extends Context.Service<EventRepo>()("EventRepo", {
           WHERE id = ${event.id}
           RETURNING ${sql.literal(EVENT_SELECT)}
         `,
-        (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toEvent)
+        rows => Option.map(Option.fromUndefinedOr(rows[0]), toEvent),
       )
 
     /**
@@ -336,9 +346,9 @@ export class EventRepo extends Context.Service<EventRepo>()("EventRepo", {
         ${event.location}, ${event.category}, ${encodePeople(event.people)},
         ${event.ownerId}, ${event.householdId}, ${event.visibility},
         ${event.color},
-        ${event.timing._tag === "timed" ? event.timing.start : null},
-        ${event.timing._tag === "timed" ? event.timing.end : null},
-        ${event.timing._tag === "allDay" ? event.timing.date : null},
+        ${event.timing._tag === 'timed' ? event.timing.start : null},
+        ${event.timing._tag === 'timed' ? event.timing.end : null},
+        ${event.timing._tag === 'allDay' ? event.timing.date : null},
         ${event.timeZone}, ${encodeRecurrence(event.recurrence)},
         ${encodeExceptions(event.exceptions)}, ${event.occasionId},
         ${event.createdAt}, ${event.updatedAt}, ${event.version}, ${event.deletedAt}
@@ -350,7 +360,7 @@ export class EventRepo extends Context.Service<EventRepo>()("EventRepo", {
 
     const insertStatementGated = (
       event: Event,
-      gate: Pick<Event, "id" | "version" | "updatedAt" | "recurrence">
+      gate: Pick<Event, 'id' | 'version' | 'updatedAt' | 'recurrence'>,
     ) =>
       insertEvent(
         event,
@@ -361,7 +371,7 @@ export class EventRepo extends Context.Service<EventRepo>()("EventRepo", {
             AND updated_at = ${gate.updatedAt}
             AND recurrence IS ${encodeRecurrence(gate.recurrence)}
             AND deleted_at IS NULL
-        )`
+        )`,
       )
 
     return {
@@ -372,9 +382,9 @@ export class EventRepo extends Context.Service<EventRepo>()("EventRepo", {
       insert,
       update,
       insertStatement,
-      insertStatementGated
+      insertStatementGated,
     } as const
-  })
+  }),
 }) {}
 
 export const EventRepoLive = Layer.effect(EventRepo, EventRepo.make)

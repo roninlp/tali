@@ -161,7 +161,9 @@ try {
   await page.reload()
   await waitForHeading('امروز')
   await taskList().filter({ hasText: onlineTitle }).waitFor({ timeout: 15_000 })
-  await taskList().filter({ hasText: offlineTitle }).waitFor({ timeout: 15_000 })
+  await taskList()
+    .filter({ hasText: offlineTitle })
+    .waitFor({ timeout: 15_000 })
   await waitForStatus('آفلاین')
   log('both tasks survive a second offline reload')
 
@@ -214,7 +216,9 @@ try {
   // explicitly, exactly like the real browser's online event.
   await page.evaluate(() => window.__taliSetOnline(true))
   await taskList().filter({ hasText: onlineTitle }).waitFor({ timeout: 15_000 })
-  await taskList().filter({ hasText: offlineTitle }).waitFor({ timeout: 15_000 })
+  await taskList()
+    .filter({ hasText: offlineTitle })
+    .waitFor({ timeout: 15_000 })
   await waitForStatus('همگام')
   log('a final online reload still renders both rows and stays synced')
 

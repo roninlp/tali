@@ -2,6 +2,7 @@ import { Command, click, expect, given, role, scene } from 'foldkit/scene'
 import { describe, test } from 'vitest'
 
 import { RadioGroup } from '@foldkit/ui'
+
 import * as Theme from './theme'
 
 const model = (
@@ -21,7 +22,10 @@ describe('theme picker', () => {
       { update: Theme.update, view: Theme.pickerView },
       given(model('talidark', 'dark')),
       expect(role('heading', { name: 'ظاهر' })).toExist(),
-      expect(role('radio', { name: 'تیره' })).toHaveAttr('aria-checked', 'true'),
+      expect(role('radio', { name: 'تیره' })).toHaveAttr(
+        'aria-checked',
+        'true',
+      ),
       expect(role('radio', { name: 'روشن' })).toHaveAttr(
         'aria-checked',
         'false',
@@ -57,7 +61,10 @@ describe('theme picker', () => {
       { update: Theme.update, view: Theme.pickerView },
       given(model('tali')),
       expect(role('radiogroup', { name: 'حالت روشن یا تیره' })).toExist(),
-      expect(role('radio', { name: 'روشن' })).toHaveAttr('aria-checked', 'true'),
+      expect(role('radio', { name: 'روشن' })).toHaveAttr(
+        'aria-checked',
+        'true',
+      ),
     )
   })
 })

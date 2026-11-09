@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema } from 'effect'
 
 /**
  * The one error body every plain-HTTP endpoint returns (see
@@ -14,7 +14,7 @@ export const ErrorEnvelope = Schema.Struct({
     code: Schema.String,
     message: Schema.String,
     retryable: Schema.Boolean,
-    details: Schema.Record(Schema.String, Schema.Unknown)
-  })
+    details: Schema.Record(Schema.String, Schema.Unknown),
+  }),
 })
 export type ErrorEnvelope = Schema.Schema.Type<typeof ErrorEnvelope>

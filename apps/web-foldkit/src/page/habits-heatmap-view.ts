@@ -116,6 +116,7 @@ export const habitHeatmapView = (
   h: HtmlBuilder<Message>,
 ): Html => {
   const digits = inputs.display.digits
+
   const month = habitHeatmapMonth({
     habitId: habit.id,
     entries: inputs.mirror.habitEntries,
@@ -124,7 +125,9 @@ export const habitHeatmapView = (
     digits,
     weekStart: inputs.display.weekStart,
   })
+
   const current = habitMonthOf(today)
+
   const isCurrentMonth =
     month.year === current.year && month.month === current.month
 

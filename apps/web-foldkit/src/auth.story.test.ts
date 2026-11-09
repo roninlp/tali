@@ -1,5 +1,4 @@
 import { Option } from 'effect'
-import { test as toastTest } from '@foldkit/ui/toast'
 import {
   Command,
   expectNoOutMessage,
@@ -11,6 +10,8 @@ import {
 } from 'foldkit/story'
 import { modifyFields } from 'foldkit/struct'
 import { describe, expect, test } from 'vitest'
+
+import { test as toastTest } from '@foldkit/ui/toast'
 
 import * as Auth from './auth'
 import type { AuthFailure } from './lib/auth-api'
@@ -24,6 +25,7 @@ import {
 } from './test-fixtures'
 
 const networkFailure: AuthFailure = { code: 'Network', retryable: true }
+
 const unauthorizedFailure: AuthFailure = {
   code: 'Unauthorized',
   retryable: false,

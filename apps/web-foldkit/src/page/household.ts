@@ -33,6 +33,7 @@ export const Model = Schema.Struct({
   maybeCreated: Schema.Option(HouseholdSummary),
   isCopied: Schema.Boolean,
 })
+
 export type Model = typeof Model.Type
 
 export const initialModel = (): Model =>
@@ -59,6 +60,7 @@ export const OutMessage = defineMessageUnion({
   AlreadyInHousehold: {},
   RequestedToday: {},
 })
+
 export type OutMessage = typeof OutMessage.Type
 
 export const Message = defineMessageUnion({
@@ -74,6 +76,7 @@ export const Message = defineMessageUnion({
   CompletedCopyInviteCode: { isCopied: Schema.Boolean },
   ClickedContinue: {},
 })
+
 export type Message = typeof Message.Type
 
 // COMMAND

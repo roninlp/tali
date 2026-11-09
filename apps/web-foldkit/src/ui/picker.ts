@@ -47,6 +47,7 @@ import {
 // MODEL
 
 export const PickerMode = Schema.Literals(['date', 'time', 'datetime'])
+
 export type PickerMode = typeof PickerMode.Type
 
 export const Model = Schema.Struct({
@@ -60,6 +61,7 @@ export const Model = Schema.Struct({
   viewYear: Schema.Int,
   viewMonth: Schema.Int,
 })
+
 export type Model = typeof Model.Type
 
 export type InitConfig = Readonly<{
@@ -102,6 +104,7 @@ export const Message = defineMessageUnion({
   ClickedClear: {},
   ClickedConfirm: {},
 })
+
 export type Message = typeof Message.Type
 
 // OUT MESSAGE
@@ -110,6 +113,7 @@ export const OutMessage = defineMessageUnion({
   PickedValue: { target: Schema.String, value: Schema.String },
   ClearedValue: { target: Schema.String },
 })
+
 export type OutMessage = typeof OutMessage.Type
 
 // COMMAND
@@ -141,11 +145,14 @@ const isValidClockTime = (value: string): boolean => CLOCK_TIME.test(value)
 
 const clockParts = (value: string): { hour: number; minute: number } => {
   const match = CLOCK_TIME.exec(value)
+
   if (match === null) {
     return { hour: 9, minute: 0 }
   }
+
   const hour = Number.parseInt(match[1] ?? '0', 10)
   const minute = Number.parseInt(match[2] ?? '0', 10)
+
   return {
     hour: Number.isNaN(hour) ? 9 : Math.min(23, Math.max(0, hour)),
     minute: Number.isNaN(minute) ? 0 : Math.min(59, Math.max(0, minute)),
@@ -159,7 +166,9 @@ const jalaliFieldsOf = (isoDate: string): { year: number; month: number } => {
   const date = toJalaliDate(
     isValidIsoDate(isoDate) ? isoDate : toIsoDate(jalaliDate(1404, 1, 1)),
   )
+
   const fields = toJalaliFields(date)
+
   return { year: fields.year, month: fields.month }
 }
 
@@ -172,14 +181,17 @@ const seedValues = (
       timeValue: '09:00',
     }
   }
+
   if (config.mode === 'time') {
     return {
       dateValue: config.today,
       timeValue: isValidClockTime(config.value) ? config.value : '09:00',
     }
   }
+
   const match = LOCAL_DATETIME.exec(config.value)
   const datePart = match?.[1] ?? ''
+
   return {
     dateValue: isValidIsoDate(datePart) ? datePart : config.today,
     timeValue:
@@ -197,6 +209,7 @@ const seeded = (
   config: typeof Message.RequestedOpen.Type,
 ): Model => {
   const values = seedValues(config)
+
   const fields = jalaliFieldsOf(
     values.dateValue === '' ? config.today : values.dateValue,
   )
@@ -216,9 +229,11 @@ const valueOf = (model: Model): string => {
   if (model.mode === 'date') {
     return model.dateValue
   }
+
   if (model.mode === 'time') {
     return model.timeValue
   }
+
   return `${model.dateValue}T${model.timeValue}`
 }
 
@@ -227,7 +242,9 @@ const shiftViewMonth = (model: Model, delta: number): Model => {
     jalaliDate(model.viewYear, model.viewMonth, 1),
     delta,
   )
+
   const fields = toJalaliFields(next)
+
   return modifyFields(model, {
     viewYear: () => fields.year,
     viewMonth: () => fields.month,
@@ -247,6 +264,7 @@ const hourFromDisplay = (displayHour: number, isPm: boolean): number => {
   if (displayHour === 12) {
     return isPm ? 12 : 0
   }
+
   return isPm ? displayHour + 12 : displayHour
 }
 
@@ -260,7 +278,9 @@ const scrollCommandsFor = (
   if (model.mode === 'date') {
     return []
   }
+
   const { hour, minute } = clockParts(model.timeValue)
+
   return [
     ScrollTimeWheel({
       itemId: `${model.id}-hour-${displayHourOf(hour)}`,
@@ -358,27 +378,33 @@ export const update = (model: Model, message: Message) =>
 
     ClickedDay: ({ date }) => {
       const next = modifyFields(model, { dateValue: () => date })
+
       return model.mode === 'date' ? commit(next) : { model: next }
     },
 
     SelectedHour: ({ hour }) => {
       const parts = clockParts(model.timeValue)
+
       const next = modifyFields(model, {
         timeValue: () => timeOf(clamp(hour, 0, 23), parts.minute),
       })
+
       return { model: next, commands: scrollCommandsFor(next) }
     },
 
     SelectedMinute: ({ minute }) => {
       const parts = clockParts(model.timeValue)
+
       const next = modifyFields(model, {
         timeValue: () => timeOf(parts.hour, clamp(minute, 0, 59)),
       })
+
       return { model: next, commands: scrollCommandsFor(next) }
     },
 
     SelectedPeriod: ({ isPm }) => {
       const parts = clockParts(model.timeValue)
+
       const next = modifyFields(model, {
         timeValue: () =>
           timeOf(
@@ -386,6 +412,7 @@ export const update = (model: Model, message: Message) =>
             parts.minute,
           ),
       })
+
       return { model: next, commands: scrollCommandsFor(next) }
     },
 
@@ -393,6 +420,7 @@ export const update = (model: Model, message: Message) =>
       const parts = clockParts(model.timeValue)
       const hour = hourFromDisplay(clamp(index, 0, 11) + 1, isPmOf(parts.hour))
       const nextTime = timeOf(hour, parts.minute)
+
       return nextTime === model.timeValue
         ? { model }
         : { model: modifyFields(model, { timeValue: () => nextTime }) }
@@ -401,6 +429,7 @@ export const update = (model: Model, message: Message) =>
     ScrolledMinute: ({ index }) => {
       const parts = clockParts(model.timeValue)
       const minute = clamp(index, 0, 59)
+
       return minute === parts.minute
         ? { model }
         : {
@@ -413,9 +442,11 @@ export const update = (model: Model, message: Message) =>
     ScrolledPeriod: ({ index }) => {
       const parts = clockParts(model.timeValue)
       const isPm = clamp(index, 0, 1) === 1
+
       if (isPmOf(parts.hour) === isPm) {
         return { model }
       }
+
       return {
         model: modifyFields(model, {
           timeValue: () =>
@@ -432,10 +463,12 @@ export const update = (model: Model, message: Message) =>
     ClickedToday: () => {
       const next = modifyFields(model, { dateValue: () => model.today })
       const fields = jalaliFieldsOf(model.today)
+
       const focused = modifyFields(next, {
         viewYear: () => fields.year,
         viewMonth: () => fields.month,
       })
+
       return model.mode === 'date' ? commit(focused) : { model: focused }
     },
 
@@ -459,6 +492,7 @@ const WEEKDAY_ORDER: Readonly<Record<WeekStart, ReadonlyArray<number>>> = {
 const weekdayHeaders = (weekStart: WeekStart): ReadonlyArray<string> =>
   Array.map(WEEKDAY_ORDER[weekStart], index => {
     const label = JALALI_WEEKDAYS[index] ?? ''
+
     return label.slice(0, 1)
   })
 
@@ -510,14 +544,18 @@ const daysGridView = <ParentMessage>(
   h: HtmlBuilder<ParentMessage>,
 ): Html => {
   const grid = jalaliMonthGrid(model.viewYear, model.viewMonth, { weekStart })
+
   const maybeSelected = isValidIsoDate(model.dateValue)
     ? Option.some(model.dateValue)
     : Option.none()
+
   const allDays = Array.flatMap(grid.weeks, week => week.days)
+
   const maybeTodayDay = Array.findFirst(
     allDays,
     day => toIsoDate(day.date) === model.today,
   )
+
   const maybeFocusIso = Option.match(maybeSelected, {
     onNone: () =>
       Option.map(
@@ -675,9 +713,11 @@ const hoursView = <ParentMessage>(
   const { hour } = clockParts(model.timeValue)
   const isPm = isPmOf(hour)
   const selectedDisplay = displayHourOf(hour)
+
   const items: ReadonlyArray<WheelItem> = Array.makeBy(12, index => {
     const display = index + 1
     const label = localizeDigits(display, digits)
+
     return {
       id: `${model.id}-hour-${display}`,
       value: display,
@@ -713,15 +753,19 @@ const hoursView = <ParentMessage>(
         if (key === 'ArrowUp') {
           return selectDisplay(selectedDisplay === 1 ? 12 : selectedDisplay - 1)
         }
+
         if (key === 'ArrowDown') {
           return selectDisplay(selectedDisplay === 12 ? 1 : selectedDisplay + 1)
         }
+
         if (key === 'Home') {
           return selectDisplay(1)
         }
+
         if (key === 'End') {
           return selectDisplay(12)
         }
+
         return Option.none()
       },
     },
@@ -736,6 +780,7 @@ const minutesView = <ParentMessage>(
   h: HtmlBuilder<ParentMessage>,
 ): Html => {
   const { minute } = clockParts(model.timeValue)
+
   const items: ReadonlyArray<WheelItem> = Array.makeBy(60, index => ({
     id: `${model.id}-minute-${index}`,
     value: index,
@@ -766,15 +811,19 @@ const minutesView = <ParentMessage>(
         if (key === 'ArrowUp') {
           return selectMinute(minute - 1)
         }
+
         if (key === 'ArrowDown') {
           return selectMinute(minute + 1)
         }
+
         if (key === 'Home') {
           return selectMinute(0)
         }
+
         if (key === 'End') {
           return selectMinute(59)
         }
+
         return Option.none()
       },
     },
@@ -788,6 +837,7 @@ const periodView = <ParentMessage>(
   h: HtmlBuilder<ParentMessage>,
 ): Html => {
   const isPm = isPmOf(clockParts(model.timeValue).hour)
+
   const items: ReadonlyArray<WheelItem> = [
     {
       id: `${model.id}-period-0`,
@@ -824,16 +874,19 @@ const periodView = <ParentMessage>(
             toParentMessage(Message.SelectedPeriod({ isPm: !isPm })),
           )
         }
+
         if (key === 'Home') {
           return Option.some(
             toParentMessage(Message.SelectedPeriod({ isPm: false })),
           )
         }
+
         if (key === 'End') {
           return Option.some(
             toParentMessage(Message.SelectedPeriod({ isPm: true })),
           )
         }
+
         return Option.none()
       },
     },
@@ -1099,16 +1152,20 @@ const formatTriggerValue = (
         )
       : Option.none()
   }
+
   if (config.mode === 'time') {
     return isValidClockTime(config.value)
       ? Option.some(localizeDigits(config.value, config.digits))
       : Option.none()
   }
+
   const match = LOCAL_DATETIME.exec(config.value)
   const datePart = match?.[1] ?? ''
+
   if (!isValidIsoDate(datePart)) {
     return Option.none()
   }
+
   return Option.some(
     `${formatJalaliDate(toJalaliDate(datePart), {
       digits: config.digits,
@@ -1139,6 +1196,7 @@ export const pickerTriggerView = <ParentMessage>(
   h: HtmlBuilder<ParentMessage>,
 ): Html => {
   const maybeDisplay = formatTriggerValue(config)
+
   const icon =
     config.mode === 'time'
       ? clockIcon('size-4 shrink-0 text-base-content/45')

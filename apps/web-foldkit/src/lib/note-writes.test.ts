@@ -129,6 +129,7 @@ describe('note autosave', () => {
       { title: '', text: 'متن اول' },
       NOW,
     )
+
     await store.saveDraft(
       noteDraftKey(id),
       serializeNoteDraft({

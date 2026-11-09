@@ -1,11 +1,5 @@
 import { Option } from 'effect'
-import {
-  Command,
-  given,
-  message,
-  model,
-  story,
-} from 'foldkit/story'
+import { Command, given, message, model, story } from 'foldkit/story'
 import { describe, expect, test } from 'vitest'
 
 import {
@@ -28,7 +22,11 @@ import type { Inputs, Model } from './capture'
  */
 
 const inputs = (overrides: Partial<Inputs> = {}): Inputs => ({
-  display: { timeZone: 'Asia/Tehran', weekStart: 'saturday', digits: 'persian' },
+  display: {
+    timeZone: 'Asia/Tehran',
+    weekStart: 'saturday',
+    digits: 'persian',
+  },
   isOnline: true,
   maybeUserId: Option.some(USER_ID),
   today: '2026-11-09',
@@ -37,6 +35,7 @@ const inputs = (overrides: Partial<Inputs> = {}): Inputs => ({
 
 const update = (overrides: Partial<Inputs> = {}) => {
   const values = inputs(overrides)
+
   return (capture: Model, message: CapturePage.Message) =>
     CapturePage.update(capture, message, values)
 }
@@ -96,11 +95,14 @@ const cardOf = (draft: CaptureDraft = taskDraft): CapturePage.CaptureCard =>
     isDiscarded: false,
   })
 
-const resultOf = (overrides: Partial<CaptureCommitResult> = {}): CaptureCommitResult => ({
-  capture: captureOf({ status: 'committed', committedAt: '2026-11-08T09:00:00.000Z' }),
-  created: [
-    { type: 'task', id: 'task-1', title: 'خرید نان' },
-  ],
+const resultOf = (
+  overrides: Partial<CaptureCommitResult> = {},
+): CaptureCommitResult => ({
+  capture: captureOf({
+    status: 'committed',
+    committedAt: '2026-11-08T09:00:00.000Z',
+  }),
+  created: [{ type: 'task', id: 'task-1', title: 'خرید نان' }],
   failure: null,
   remaining: 0,
   ...overrides,
@@ -112,7 +114,7 @@ describe('capture composer', () => {
       update(),
       given(initial()),
       message(CapturePage.Message.UpdatedText({ value: 'فردا دکتر' })),
-      model((current) => {
+      model(current => {
         expect(current.text).toBe('فردا دکتر')
       }),
       Command.expectExact(
@@ -130,7 +132,7 @@ describe('capture composer', () => {
       update(),
       given({ ...initial(), text: 'فردا دکتر' }),
       message(CapturePage.Message.ClickedDissect()),
-      model((current) => {
+      model(current => {
         expect(current.phase).toBe('dissecting')
       }),
       Command.expectExact(
@@ -142,7 +144,10 @@ describe('capture composer', () => {
       ),
       Command.resolve(
         CapturePage.LoadHistory,
-        CapturePage.Message.CompletedLoadHistory({ generation: 1, captures: [] }),
+        CapturePage.Message.CompletedLoadHistory({
+          generation: 1,
+          captures: [],
+        }),
       ),
     )
   })
@@ -152,7 +157,7 @@ describe('capture composer', () => {
       update({ isOnline: false }),
       given({ ...initial(), text: 'فردا دکتر' }),
       message(CapturePage.Message.ClickedDissect()),
-      model((current) => {
+      model(current => {
         expect(current.phase).toBe('idle')
         expect(current.text).toBe('فردا دکتر')
         expect(Option.getOrThrow(current.maybeError)).toContain('اینترنت')
@@ -166,14 +171,17 @@ describe('capture composer', () => {
       update(),
       given(initial()),
       message(CapturePage.Message.CompletedDissect({ capture: captureOf() })),
-      model((current) => {
+      model(current => {
         expect(current.phase).toBe('review')
         expect(current.cards).toHaveLength(1)
         expect(current.cards[0]?.title).toBe('خرید نان')
       }),
       Command.resolve(
         CapturePage.LoadHistory,
-        CapturePage.Message.CompletedLoadHistory({ generation: 1, captures: [] }),
+        CapturePage.Message.CompletedLoadHistory({
+          generation: 1,
+          captures: [],
+        }),
       ),
     )
   })
@@ -191,14 +199,17 @@ describe('capture composer', () => {
           }),
         }),
       ),
-      model((current) => {
+      model(current => {
         expect(current.phase).toBe('idle')
         expect(Option.getOrThrow(current.maybeError)).toContain('gateway')
       }),
       Command.expectExact(CapturePage.LoadHistory({ generation: 1 })),
       Command.resolve(
         CapturePage.LoadHistory,
-        CapturePage.Message.CompletedLoadHistory({ generation: 1, captures: [] }),
+        CapturePage.Message.CompletedLoadHistory({
+          generation: 1,
+          captures: [],
+        }),
       ),
     )
   })
@@ -210,7 +221,7 @@ describe('capture review', () => {
       update(),
       given({ ...initial(), phase: 'review', cards: [cardOf()] }),
       message(CapturePage.Message.ClickedDiscardCard({ index: 0 })),
-      model((current) => {
+      model(current => {
         expect(CapturePage.visibleCards(current)).toHaveLength(0)
       }),
     )
@@ -219,10 +230,9 @@ describe('capture review', () => {
   test('an unanswered Needs Input blocks the commit with an explanation', () => {
     const blocked: CaptureDraft = {
       ...taskDraft,
-      missing: [
-        { field: 'dueDate', shape: 'localDate', question: 'چه روزی؟' },
-      ],
+      missing: [{ field: 'dueDate', shape: 'localDate', question: 'چه روزی؟' }],
     }
+
     story(
       update(),
       given({
@@ -232,7 +242,7 @@ describe('capture review', () => {
         maybeCaptureId: Option.some(captureOf().id),
       }),
       message(CapturePage.Message.ClickedCommit()),
-      model((current) => {
+      model(current => {
         expect(current.phase).toBe('review')
         expect(Option.getOrThrow(current.maybeError)).toContain('Needs Input')
       }),
@@ -243,10 +253,9 @@ describe('capture review', () => {
   test('answering a Needs Input writes the field and unblocks the card', () => {
     const blocked: CaptureDraft = {
       ...taskDraft,
-      missing: [
-        { field: 'dueDate', shape: 'localDate', question: 'چه روزی؟' },
-      ],
+      missing: [{ field: 'dueDate', shape: 'localDate', question: 'چه روزی؟' }],
     }
+
     story(
       update(),
       given({ ...initial(), phase: 'review', cards: [cardOf(blocked)] }),
@@ -257,12 +266,14 @@ describe('capture review', () => {
           value: '2026-11-09',
         }),
       ),
-      model((current) => {
+      model(current => {
         const card = current.cards[0]
         expect(card?.draft._tag).toBe('task')
+
         if (card?.draft._tag === 'task') {
           expect(card.draft.dueDate).toBe('2026-11-09')
         }
+
         expect(card?.draft.missing).toEqual([])
       }),
     )
@@ -283,9 +294,10 @@ describe('capture review', () => {
           value: '17:00',
         }),
       ),
-      model((current) => {
+      model(current => {
         const card = current.cards[0]
         expect(card?.draft._tag).toBe('event')
+
         if (card?.draft._tag === 'event') {
           expect(card.draft.timing).toEqual({
             _tag: 'timed',
@@ -293,8 +305,9 @@ describe('capture review', () => {
             end: '2026-11-10T13:30:00.000Z',
           })
         }
+
         // The end question is a separate answer; it must stay open.
-        expect(card?.draft.missing.map((entry) => entry.field)).toEqual([
+        expect(card?.draft.missing.map(entry => entry.field)).toEqual([
           'timing.end',
         ])
       }),
@@ -307,6 +320,7 @@ describe('capture review', () => {
         { field: 'timing.end', shape: 'clockTime', question: 'ساعت پایان؟' },
       ],
     })
+
     story(
       update(),
       given({ ...initial(), phase: 'review', cards: [cardOf(draft)] }),
@@ -317,9 +331,10 @@ describe('capture review', () => {
           value: '18:30',
         }),
       ),
-      model((current) => {
+      model(current => {
         const card = current.cards[0]
         expect(card?.draft._tag).toBe('event')
+
         if (card?.draft._tag === 'event') {
           expect(card.draft.timing).toEqual({
             _tag: 'timed',
@@ -327,6 +342,7 @@ describe('capture review', () => {
             end: '2026-11-10T15:00:00Z',
           })
         }
+
         expect(card?.draft.missing).toEqual([])
       }),
     )
@@ -343,9 +359,10 @@ describe('capture review', () => {
           value: '2026-11-10T14:00:00.000Z',
         }),
       ),
-      model((current) => {
+      model(current => {
         const card = current.cards[0]
         expect(card?.draft._tag).toBe('event')
+
         if (card?.draft._tag === 'event') {
           expect(card.draft.timing).toEqual({
             _tag: 'timed',
@@ -353,7 +370,8 @@ describe('capture review', () => {
             end: '2026-11-10T13:30:00.000Z',
           })
         }
-        expect(card?.draft.missing.map((entry) => entry.field)).toEqual([
+
+        expect(card?.draft.missing.map(entry => entry.field)).toEqual([
           'timing.end',
         ])
       }),
@@ -372,13 +390,15 @@ describe('capture review', () => {
           value: '17:00',
         }),
       ),
-      model((current) => {
+      model(current => {
         const card = current.cards[0]
         expect(card?.draft._tag).toBe('event')
+
         if (card?.draft._tag === 'event') {
           expect(card.draft.timing).toBeUndefined()
         }
-        expect(card?.draft.missing.map((entry) => entry.field)).toContain(
+
+        expect(card?.draft.missing.map(entry => entry.field)).toContain(
           'timing.start',
         )
       }),
@@ -391,13 +411,14 @@ describe('capture review', () => {
       error: 'مدل در ۶۰ ثانیه پاسخ نداد',
       drafts: [],
     })
+
     story(
       update(),
       given({ ...initial(), history: [failed] }),
       message(
         CapturePage.Message.ClickedRetryHistory({ captureId: failed.id }),
       ),
-      model((current) => {
+      model(current => {
         expect(current.text).toBe(failed.text)
         expect(current.phase).toBe('dissecting')
         expect(current.expandedHistoryId).toEqual(Option.none())
@@ -433,7 +454,7 @@ describe('capture review', () => {
       message(
         CapturePage.Message.ClickedRetryHistory({ captureId: failed.id }),
       ),
-      model((current) => {
+      model(current => {
         expect(current.text).toBe(failed.text)
         expect(current.phase).toBe('idle')
         expect(Option.getOrThrow(current.maybeError)).toContain('اینترنت')
@@ -450,10 +471,12 @@ describe('capture review', () => {
 
   test('deleting a failed history row drops it from the list', () => {
     const failed = captureOf({ status: 'failed', drafts: [] })
+
     const kept = captureOf({
       id: CaptureId.make('0192f0a0-0000-7000-8000-000000000011'),
       status: 'committed',
     })
+
     story(
       update(),
       given({
@@ -469,8 +492,8 @@ describe('capture review', () => {
         CapturePage.DeleteCapture,
         CapturePage.Message.CompletedDeleteHistory({ capture: failed }),
       ),
-      model((current) => {
-        expect(current.history.map((row) => row.id)).toEqual([kept.id])
+      model(current => {
+        expect(current.history.map(row => row.id)).toEqual([kept.id])
         expect(current.expandedHistoryId).toEqual(Option.none())
       }),
     )
@@ -494,11 +517,9 @@ describe('capture review', () => {
           },
         }),
       ),
-      model((current) => {
-        expect(current.history.map((row) => row.id)).toEqual([failed.id])
-        expect(Option.getOrThrow(current.maybeHistoryError)).toContain(
-          'ارتباط',
-        )
+      model(current => {
+        expect(current.history.map(row => row.id)).toEqual([failed.id])
+        expect(Option.getOrThrow(current.maybeHistoryError)).toContain('ارتباط')
       }),
     )
   })
@@ -513,7 +534,7 @@ describe('capture review', () => {
         maybeCaptureId: Option.some(captureOf().id),
       }),
       message(CapturePage.Message.ClickedCommit()),
-      model((current) => {
+      model(current => {
         expect(current.phase).toBe('committing')
       }),
       Command.expectExact(
@@ -533,7 +554,10 @@ describe('capture review', () => {
       ),
       Command.resolve(
         CapturePage.LoadHistory,
-        CapturePage.Message.CompletedLoadHistory({ generation: 1, captures: [] }),
+        CapturePage.Message.CompletedLoadHistory({
+          generation: 1,
+          captures: [],
+        }),
       ),
     )
   })
@@ -549,7 +573,7 @@ describe('capture review', () => {
         maybeCaptureId: Option.some(captureOf().id),
       }),
       message(CapturePage.Message.CompletedCommit({ result: resultOf() })),
-      model((current) => {
+      model(current => {
         expect(current.phase).toBe('result')
         expect(current.text).toBe('')
         expect(Option.isSome(current.maybeResult)).toBe(true)
@@ -564,7 +588,10 @@ describe('capture review', () => {
       ),
       Command.resolve(
         CapturePage.LoadHistory,
-        CapturePage.Message.CompletedLoadHistory({ generation: 1, captures: [] }),
+        CapturePage.Message.CompletedLoadHistory({
+          generation: 1,
+          captures: [],
+        }),
       ),
     )
   })
@@ -588,14 +615,17 @@ describe('capture review', () => {
           }),
         }),
       ),
-      model((current) => {
+      model(current => {
         expect(current.phase).toBe('result')
         expect(current.text).toBe('خرید نان')
         expect(Option.getOrThrow(current.maybeError)).toContain('بخشی')
       }),
       Command.resolve(
         CapturePage.LoadHistory,
-        CapturePage.Message.CompletedLoadHistory({ generation: 1, captures: [] }),
+        CapturePage.Message.CompletedLoadHistory({
+          generation: 1,
+          captures: [],
+        }),
       ),
     )
   })
@@ -611,7 +641,7 @@ describe('capture review', () => {
         maybeCaptureId: Option.some(captureOf().id),
       }),
       message(CapturePage.Message.ClickedNewCapture()),
-      model((current) => {
+      model(current => {
         expect(current.phase).toBe('idle')
         expect(current.cards).toEqual([])
         expect(Option.isNone(current.maybeResult)).toBe(true)

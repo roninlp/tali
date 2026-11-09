@@ -28,6 +28,7 @@ export const NoteSearchServerHit = Schema.Struct({
   segments: Schema.Array(NoteSearchSegment),
   updatedAt: Schema.String,
 })
+
 export type NoteSearchServerHit = typeof NoteSearchServerHit.Type
 
 const NoteSearchResponse = Schema.Struct({
@@ -60,12 +61,14 @@ export const searchNotes = (query: string): Effect.Effect<NoteSearchResult> =>
     }
 
     const response = maybeResponse.value
+
     const maybeJson = yield* Effect.option(
       Effect.tryPromise({
         try: () => response.json(),
         catch: () => undefined,
       }),
     )
+
     const json: unknown = Option.getOrUndefined(maybeJson)
 
     if (!response.ok) {

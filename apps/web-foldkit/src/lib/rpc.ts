@@ -30,6 +30,7 @@ export const withRpcClient = <A, E>(
 
   return Effect.gen(function* () {
     const client = yield* RpcClient.make(ApiRpcs)
+
     return yield* f(client)
   }).pipe(
     Effect.provide(TransportLive),

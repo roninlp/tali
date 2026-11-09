@@ -1,6 +1,6 @@
-import { Effect } from "effect"
-import type { Headers } from "effect/http/Headers"
-import { ApiRpcs } from "@tali/rpc"
+import { Effect } from 'effect'
+import type { Headers } from 'effect/http/Headers'
+import { ApiRpcs } from '@tali/rpc'
 import {
   CaptureForbidden,
   EventForbidden,
@@ -10,19 +10,19 @@ import {
   NoteForbidden,
   OccasionForbidden,
   TaskForbidden,
-  Unauthorized
-} from "@tali/domain"
-import { AuthService } from "./auth-service.js"
-import { CaptureService, type CaptureViewer } from "./capture-service.js"
-import { EventService, type EventViewer } from "./event-service.js"
-import { HabitService, type HabitViewer } from "./habit-service.js"
-import { ListService, type ListViewer } from "./list-service.js"
-import { NoteService } from "./note-service.js"
-import { OccasionService, type OccasionViewer } from "./occasion-service.js"
-import { PreferencesService } from "./preferences-service.js"
-import { ReminderService, type ReminderViewer } from "./reminder-service.js"
-import { TaskService, type TaskViewer } from "./task-service.js"
-import { SESSION_COOKIE } from "./auth-routes.js"
+  Unauthorized,
+} from '@tali/domain'
+import { AuthService } from './auth-service.js'
+import { CaptureService, type CaptureViewer } from './capture-service.js'
+import { EventService, type EventViewer } from './event-service.js'
+import { HabitService, type HabitViewer } from './habit-service.js'
+import { ListService, type ListViewer } from './list-service.js'
+import { NoteService } from './note-service.js'
+import { OccasionService, type OccasionViewer } from './occasion-service.js'
+import { PreferencesService } from './preferences-service.js'
+import { ReminderService, type ReminderViewer } from './reminder-service.js'
+import { TaskService, type TaskViewer } from './task-service.js'
+import { SESSION_COOKIE } from './auth-routes.js'
 
 /**
  * The RPC handler map (ticket #36).
@@ -37,46 +37,56 @@ import { SESSION_COOKIE } from "./auth-routes.js"
 
 const cookieToken = (cookie: string | undefined): string | undefined => {
   if (cookie === undefined) return undefined
-  for (const part of cookie.split(";")) {
-    const [name, ...rest] = part.trim().split("=")
-    if (name === SESSION_COOKIE) return rest.join("=")
+  for (const part of cookie.split(';')) {
+    const [name, ...rest] = part.trim().split('=')
+    if (name === SESSION_COOKIE) return rest.join('=')
   }
   return undefined
 }
 
 export const viewerFromHeaders = (
-  headers: Headers
-): Effect.Effect<TaskViewer, Unauthorized | TaskForbidden, AuthService | PreferencesService> =>
-  Effect.gen(function*() {
+  headers: Headers,
+): Effect.Effect<
+  TaskViewer,
+  Unauthorized | TaskForbidden,
+  AuthService | PreferencesService
+> =>
+  Effect.gen(function* () {
     const auth = yield* AuthService
     const preferences = yield* PreferencesService
-    const token = cookieToken(headers["cookie"])
+    const token = cookieToken(headers['cookie'])
     if (token === undefined) {
       return yield* Effect.fail(new Unauthorized())
     }
     const context = yield* auth.me(token)
     if (context.householdId === null) {
-      return yield* Effect.fail(new TaskForbidden({ id: null, reason: "noHousehold" }))
+      return yield* Effect.fail(
+        new TaskForbidden({ id: null, reason: 'noHousehold' }),
+      )
     }
     const prefs = yield* preferences.get(context.user.id, {
       timeZone: context.user.timeZone,
       weekStart: context.user.weekStart,
-      digits: context.user.digits
+      digits: context.user.digits,
     })
     return {
       userId: context.user.id,
       householdId: context.householdId,
       timeZone: prefs.timeZone,
       weekStart: prefs.weekStart,
-      defaultCheckedPlacement: prefs.checkedItemPlacement
+      defaultCheckedPlacement: prefs.checkedItemPlacement,
     } as const
   })
 
 const withViewer = <A, E, R>(
   headers: Headers,
-  run: (viewer: TaskViewer) => Effect.Effect<A, E, R>
-): Effect.Effect<A, E | Unauthorized | TaskForbidden, AuthService | PreferencesService | R> =>
-  Effect.gen(function*() {
+  run: (viewer: TaskViewer) => Effect.Effect<A, E, R>,
+): Effect.Effect<
+  A,
+  E | Unauthorized | TaskForbidden,
+  AuthService | PreferencesService | R
+> =>
+  Effect.gen(function* () {
     const viewer = yield* viewerFromHeaders(headers)
     return yield* run(viewer)
   })
@@ -89,15 +99,19 @@ const withViewer = <A, E, R>(
  */
 const withNoteViewer = <A, E, R>(
   headers: Headers,
-  run: (viewer: TaskViewer) => Effect.Effect<A, E, R>
-): Effect.Effect<A, E | Unauthorized | NoteForbidden, AuthService | PreferencesService | R> =>
+  run: (viewer: TaskViewer) => Effect.Effect<A, E, R>,
+): Effect.Effect<
+  A,
+  E | Unauthorized | NoteForbidden,
+  AuthService | PreferencesService | R
+> =>
   viewerFromHeaders(headers).pipe(
-    Effect.mapError((error) =>
-      error._tag === "TaskForbidden"
+    Effect.mapError(error =>
+      error._tag === 'TaskForbidden'
         ? new NoteForbidden({ id: error.id, reason: error.reason })
-        : error
+        : error,
     ),
-    Effect.flatMap(run)
+    Effect.flatMap(run),
   )
 
 /**
@@ -106,15 +120,19 @@ const withNoteViewer = <A, E, R>(
  */
 const withListViewer = <A, E, R>(
   headers: Headers,
-  run: (viewer: ListViewer) => Effect.Effect<A, E, R>
-): Effect.Effect<A, E | Unauthorized | ListForbidden, AuthService | PreferencesService | R> =>
+  run: (viewer: ListViewer) => Effect.Effect<A, E, R>,
+): Effect.Effect<
+  A,
+  E | Unauthorized | ListForbidden,
+  AuthService | PreferencesService | R
+> =>
   viewerFromHeaders(headers).pipe(
-    Effect.mapError((error) =>
-      error._tag === "TaskForbidden"
+    Effect.mapError(error =>
+      error._tag === 'TaskForbidden'
         ? new ListForbidden({ id: error.id, reason: error.reason })
-        : error
+        : error,
     ),
-    Effect.flatMap(run)
+    Effect.flatMap(run),
   )
 
 /**
@@ -123,15 +141,19 @@ const withListViewer = <A, E, R>(
  */
 const withEventViewer = <A, E, R>(
   headers: Headers,
-  run: (viewer: EventViewer) => Effect.Effect<A, E, R>
-): Effect.Effect<A, E | Unauthorized | EventForbidden, AuthService | PreferencesService | R> =>
+  run: (viewer: EventViewer) => Effect.Effect<A, E, R>,
+): Effect.Effect<
+  A,
+  E | Unauthorized | EventForbidden,
+  AuthService | PreferencesService | R
+> =>
   viewerFromHeaders(headers).pipe(
-    Effect.mapError((error) =>
-      error._tag === "TaskForbidden"
+    Effect.mapError(error =>
+      error._tag === 'TaskForbidden'
         ? new EventForbidden({ id: error.id, reason: error.reason })
-        : error
+        : error,
     ),
-    Effect.flatMap(run)
+    Effect.flatMap(run),
   )
 
 /**
@@ -140,15 +162,19 @@ const withEventViewer = <A, E, R>(
  */
 const withHabitViewer = <A, E, R>(
   headers: Headers,
-  run: (viewer: HabitViewer) => Effect.Effect<A, E, R>
-): Effect.Effect<A, E | Unauthorized | HabitForbidden, AuthService | PreferencesService | R> =>
+  run: (viewer: HabitViewer) => Effect.Effect<A, E, R>,
+): Effect.Effect<
+  A,
+  E | Unauthorized | HabitForbidden,
+  AuthService | PreferencesService | R
+> =>
   viewerFromHeaders(headers).pipe(
-    Effect.mapError((error) =>
-      error._tag === "TaskForbidden"
+    Effect.mapError(error =>
+      error._tag === 'TaskForbidden'
         ? new HabitForbidden({ id: error.id, reason: error.reason })
-        : error
+        : error,
     ),
-    Effect.flatMap(run)
+    Effect.flatMap(run),
   )
 
 /**
@@ -158,15 +184,19 @@ const withHabitViewer = <A, E, R>(
  */
 const withReminderViewer = <A, E, R>(
   headers: Headers,
-  run: (viewer: ReminderViewer) => Effect.Effect<A, E, R>
-): Effect.Effect<A, E | Unauthorized | ReminderForbidden, AuthService | PreferencesService | R> =>
+  run: (viewer: ReminderViewer) => Effect.Effect<A, E, R>,
+): Effect.Effect<
+  A,
+  E | Unauthorized | ReminderForbidden,
+  AuthService | PreferencesService | R
+> =>
   viewerFromHeaders(headers).pipe(
-    Effect.mapError((error) =>
-      error._tag === "TaskForbidden"
+    Effect.mapError(error =>
+      error._tag === 'TaskForbidden'
         ? new ReminderForbidden({ id: error.id, reason: error.reason })
-        : error
+        : error,
     ),
-    Effect.flatMap(run)
+    Effect.flatMap(run),
   )
 
 /**
@@ -175,15 +205,19 @@ const withReminderViewer = <A, E, R>(
  */
 const withOccasionViewer = <A, E, R>(
   headers: Headers,
-  run: (viewer: OccasionViewer) => Effect.Effect<A, E, R>
-): Effect.Effect<A, E | Unauthorized | OccasionForbidden, AuthService | PreferencesService | R> =>
+  run: (viewer: OccasionViewer) => Effect.Effect<A, E, R>,
+): Effect.Effect<
+  A,
+  E | Unauthorized | OccasionForbidden,
+  AuthService | PreferencesService | R
+> =>
   viewerFromHeaders(headers).pipe(
-    Effect.mapError((error) =>
-      error._tag === "TaskForbidden"
+    Effect.mapError(error =>
+      error._tag === 'TaskForbidden'
         ? new OccasionForbidden({ id: error.id, reason: error.reason })
-        : error
+        : error,
     ),
-    Effect.flatMap(run)
+    Effect.flatMap(run),
   )
 
 /**
@@ -192,263 +226,354 @@ const withOccasionViewer = <A, E, R>(
  */
 const withCaptureViewer = <A, E, R>(
   headers: Headers,
-  run: (viewer: CaptureViewer) => Effect.Effect<A, E, R>
-): Effect.Effect<A, E | Unauthorized | CaptureForbidden, AuthService | PreferencesService | R> =>
+  run: (viewer: CaptureViewer) => Effect.Effect<A, E, R>,
+): Effect.Effect<
+  A,
+  E | Unauthorized | CaptureForbidden,
+  AuthService | PreferencesService | R
+> =>
   viewerFromHeaders(headers).pipe(
-    Effect.mapError((error) =>
-      error._tag === "TaskForbidden"
+    Effect.mapError(error =>
+      error._tag === 'TaskForbidden'
         ? new CaptureForbidden({ reason: error.reason })
-        : error
+        : error,
     ),
-    Effect.flatMap((viewer) =>
+    Effect.flatMap(viewer =>
       run({
         userId: viewer.userId,
         householdId: viewer.householdId,
         timeZone: viewer.timeZone,
-        weekStart: viewer.weekStart ?? "saturday"
-      })
-    )
+        weekStart: viewer.weekStart ?? 'saturday',
+      }),
+    ),
   )
 
 export const RpcHandlers = ApiRpcs.toLayer({
   CreateList: (input, { headers }) =>
-    withListViewer(headers, (viewer) =>
-      ListService.pipe(Effect.flatMap((svc) => svc.create(viewer, input)))),
+    withListViewer(headers, viewer =>
+      ListService.pipe(Effect.flatMap(svc => svc.create(viewer, input))),
+    ),
   GetList: ({ id }, { headers }) =>
-    withListViewer(headers, (viewer) =>
-      ListService.pipe(Effect.flatMap((svc) => svc.get(viewer, id)))),
+    withListViewer(headers, viewer =>
+      ListService.pipe(Effect.flatMap(svc => svc.get(viewer, id))),
+    ),
   UpdateList: (input, { headers }) =>
-    withListViewer(headers, (viewer) =>
-      ListService.pipe(Effect.flatMap((svc) => svc.update(viewer, input)))),
+    withListViewer(headers, viewer =>
+      ListService.pipe(Effect.flatMap(svc => svc.update(viewer, input))),
+    ),
   DeleteList: (input, { headers }) =>
-    withListViewer(headers, (viewer) =>
-      ListService.pipe(Effect.flatMap((svc) => svc.remove(viewer, input)))),
+    withListViewer(headers, viewer =>
+      ListService.pipe(Effect.flatMap(svc => svc.remove(viewer, input))),
+    ),
   ListLists: (_input, { headers }) =>
-    withListViewer(headers, (viewer) =>
-      ListService.pipe(Effect.flatMap((svc) => svc.list(viewer)))),
+    withListViewer(headers, viewer =>
+      ListService.pipe(Effect.flatMap(svc => svc.list(viewer))),
+    ),
 
   CreateListItem: (input, { headers }) =>
-    withListViewer(headers, (viewer) =>
-      ListService.pipe(Effect.flatMap((svc) => svc.createItem(viewer, input)))),
+    withListViewer(headers, viewer =>
+      ListService.pipe(Effect.flatMap(svc => svc.createItem(viewer, input))),
+    ),
   AppendListItems: (input, { headers }) =>
-    withListViewer(headers, (viewer) =>
-      ListService.pipe(Effect.flatMap((svc) => svc.appendItems(viewer, input)))),
+    withListViewer(headers, viewer =>
+      ListService.pipe(Effect.flatMap(svc => svc.appendItems(viewer, input))),
+    ),
   ListListItems: (input, { headers }) =>
-    withListViewer(headers, (viewer) =>
-      ListService.pipe(Effect.flatMap((svc) => svc.listItems(viewer, input)))),
+    withListViewer(headers, viewer =>
+      ListService.pipe(Effect.flatMap(svc => svc.listItems(viewer, input))),
+    ),
   UpdateListItem: (input, { headers }) =>
-    withListViewer(headers, (viewer) =>
-      ListService.pipe(Effect.flatMap((svc) => svc.updateItem(viewer, input)))),
+    withListViewer(headers, viewer =>
+      ListService.pipe(Effect.flatMap(svc => svc.updateItem(viewer, input))),
+    ),
   SetListItemChecked: (input, { headers }) =>
-    withListViewer(headers, (viewer) =>
-      ListService.pipe(Effect.flatMap((svc) => svc.setItemChecked(viewer, input)))),
+    withListViewer(headers, viewer =>
+      ListService.pipe(
+        Effect.flatMap(svc => svc.setItemChecked(viewer, input)),
+      ),
+    ),
   DeleteListItem: (input, { headers }) =>
-    withListViewer(headers, (viewer) =>
-      ListService.pipe(Effect.flatMap((svc) => svc.deleteItem(viewer, input)))),
+    withListViewer(headers, viewer =>
+      ListService.pipe(Effect.flatMap(svc => svc.deleteItem(viewer, input))),
+    ),
   ReorderListItems: (input, { headers }) =>
-    withListViewer(headers, (viewer) =>
-      ListService.pipe(Effect.flatMap((svc) => svc.reorder(viewer, input)))),
+    withListViewer(headers, viewer =>
+      ListService.pipe(Effect.flatMap(svc => svc.reorder(viewer, input))),
+    ),
 
   CreateTask: (input, { headers }) =>
-    withViewer(headers, (viewer) =>
-      TaskService.pipe(Effect.flatMap((svc) => svc.create(viewer, input)))),
+    withViewer(headers, viewer =>
+      TaskService.pipe(Effect.flatMap(svc => svc.create(viewer, input))),
+    ),
   GetTask: ({ id }, { headers }) =>
-    withViewer(headers, (viewer) =>
-      TaskService.pipe(Effect.flatMap((svc) => svc.get(viewer, id)))),
+    withViewer(headers, viewer =>
+      TaskService.pipe(Effect.flatMap(svc => svc.get(viewer, id))),
+    ),
   UpdateTask: (input, { headers }) =>
-    withViewer(headers, (viewer) =>
-      TaskService.pipe(Effect.flatMap((svc) => svc.update(viewer, input)))),
+    withViewer(headers, viewer =>
+      TaskService.pipe(Effect.flatMap(svc => svc.update(viewer, input))),
+    ),
   MoveTask: (input, { headers }) =>
-    withViewer(headers, (viewer) =>
-      TaskService.pipe(Effect.flatMap((svc) => svc.move(viewer, input)))),
+    withViewer(headers, viewer =>
+      TaskService.pipe(Effect.flatMap(svc => svc.move(viewer, input))),
+    ),
   StartTask: (input, { headers }) =>
-    withViewer(headers, (viewer) =>
-      TaskService.pipe(Effect.flatMap((svc) => svc.start(viewer, input)))),
+    withViewer(headers, viewer =>
+      TaskService.pipe(Effect.flatMap(svc => svc.start(viewer, input))),
+    ),
   CompleteTask: (input, { headers }) =>
-    withViewer(headers, (viewer) =>
-      TaskService.pipe(Effect.flatMap((svc) => svc.complete(viewer, input)))),
+    withViewer(headers, viewer =>
+      TaskService.pipe(Effect.flatMap(svc => svc.complete(viewer, input))),
+    ),
   UndoTask: (input, { headers }) =>
-    withViewer(headers, (viewer) =>
-      TaskService.pipe(Effect.flatMap((svc) => svc.undo(viewer, input)))),
+    withViewer(headers, viewer =>
+      TaskService.pipe(Effect.flatMap(svc => svc.undo(viewer, input))),
+    ),
   ListTasks: (input, { headers }) =>
-    withViewer(headers, (viewer) =>
-      TaskService.pipe(Effect.flatMap((svc) => svc.list(viewer, input)))),
+    withViewer(headers, viewer =>
+      TaskService.pipe(Effect.flatMap(svc => svc.list(viewer, input))),
+    ),
   GetTaskBuckets: (_input, { headers }) =>
-    withViewer(headers, (viewer) =>
-      TaskService.pipe(Effect.flatMap((svc) => svc.buckets(viewer)))),
+    withViewer(headers, viewer =>
+      TaskService.pipe(Effect.flatMap(svc => svc.buckets(viewer))),
+    ),
 
   CreateProject: (input, { headers }) =>
-    withViewer(headers, (viewer) =>
-      TaskService.pipe(Effect.flatMap((svc) => svc.createProject(viewer, input)))),
+    withViewer(headers, viewer =>
+      TaskService.pipe(Effect.flatMap(svc => svc.createProject(viewer, input))),
+    ),
   RenameProject: (input, { headers }) =>
-    withViewer(headers, (viewer) =>
-      TaskService.pipe(Effect.flatMap((svc) => svc.renameProject(viewer, input)))),
+    withViewer(headers, viewer =>
+      TaskService.pipe(Effect.flatMap(svc => svc.renameProject(viewer, input))),
+    ),
   ListProjects: (_input, { headers }) =>
-    withViewer(headers, (viewer) =>
-      TaskService.pipe(Effect.flatMap((svc) => svc.listProjects(viewer)))),
+    withViewer(headers, viewer =>
+      TaskService.pipe(Effect.flatMap(svc => svc.listProjects(viewer))),
+    ),
 
   CreateTag: (input, { headers }) =>
-    withViewer(headers, (viewer) =>
-      TaskService.pipe(Effect.flatMap((svc) => svc.createTag(viewer, input)))),
+    withViewer(headers, viewer =>
+      TaskService.pipe(Effect.flatMap(svc => svc.createTag(viewer, input))),
+    ),
   RenameTag: (input, { headers }) =>
-    withViewer(headers, (viewer) =>
-      TaskService.pipe(Effect.flatMap((svc) => svc.renameTag(viewer, input)))),
+    withViewer(headers, viewer =>
+      TaskService.pipe(Effect.flatMap(svc => svc.renameTag(viewer, input))),
+    ),
   ListTags: (_input, { headers }) =>
-    withViewer(headers, (viewer) =>
-      TaskService.pipe(Effect.flatMap((svc) => svc.listTags(viewer)))),
+    withViewer(headers, viewer =>
+      TaskService.pipe(Effect.flatMap(svc => svc.listTags(viewer))),
+    ),
 
   // ── Notes ─────────────────────────────────────────────────────────────
 
   CreateNote: (input, { headers }) =>
-    withNoteViewer(headers, (viewer) =>
-      NoteService.pipe(Effect.flatMap((svc) => svc.create(viewer, input)))),
+    withNoteViewer(headers, viewer =>
+      NoteService.pipe(Effect.flatMap(svc => svc.create(viewer, input))),
+    ),
   GetNote: ({ id }, { headers }) =>
-    withNoteViewer(headers, (viewer) =>
-      NoteService.pipe(Effect.flatMap((svc) => svc.get(viewer, id)))),
+    withNoteViewer(headers, viewer =>
+      NoteService.pipe(Effect.flatMap(svc => svc.get(viewer, id))),
+    ),
   SaveNote: (input, { headers }) =>
-    withNoteViewer(headers, (viewer) =>
-      NoteService.pipe(Effect.flatMap((svc) => svc.save(viewer, input)))),
+    withNoteViewer(headers, viewer =>
+      NoteService.pipe(Effect.flatMap(svc => svc.save(viewer, input))),
+    ),
   UpdateNote: (input, { headers }) =>
-    withNoteViewer(headers, (viewer) =>
-      NoteService.pipe(Effect.flatMap((svc) => svc.update(viewer, input)))),
+    withNoteViewer(headers, viewer =>
+      NoteService.pipe(Effect.flatMap(svc => svc.update(viewer, input))),
+    ),
   SetNotePinned: (input, { headers }) =>
-    withNoteViewer(headers, (viewer) =>
-      NoteService.pipe(Effect.flatMap((svc) => svc.setPinned(viewer, input)))),
+    withNoteViewer(headers, viewer =>
+      NoteService.pipe(Effect.flatMap(svc => svc.setPinned(viewer, input))),
+    ),
   SetNoteArchived: (input, { headers }) =>
-    withNoteViewer(headers, (viewer) =>
-      NoteService.pipe(Effect.flatMap((svc) => svc.setArchived(viewer, input)))),
+    withNoteViewer(headers, viewer =>
+      NoteService.pipe(Effect.flatMap(svc => svc.setArchived(viewer, input))),
+    ),
   SetNoteTags: (input, { headers }) =>
-    withNoteViewer(headers, (viewer) =>
-      NoteService.pipe(Effect.flatMap((svc) => svc.setTags(viewer, input)))),
+    withNoteViewer(headers, viewer =>
+      NoteService.pipe(Effect.flatMap(svc => svc.setTags(viewer, input))),
+    ),
   TrashNote: (input, { headers }) =>
-    withNoteViewer(headers, (viewer) =>
-      NoteService.pipe(Effect.flatMap((svc) => svc.trash(viewer, input)))),
+    withNoteViewer(headers, viewer =>
+      NoteService.pipe(Effect.flatMap(svc => svc.trash(viewer, input))),
+    ),
   RestoreNote: (input, { headers }) =>
-    withNoteViewer(headers, (viewer) =>
-      NoteService.pipe(Effect.flatMap((svc) => svc.restore(viewer, input)))),
+    withNoteViewer(headers, viewer =>
+      NoteService.pipe(Effect.flatMap(svc => svc.restore(viewer, input))),
+    ),
   ListNotes: (input, { headers }) =>
-    withNoteViewer(headers, (viewer) =>
-      NoteService.pipe(Effect.flatMap((svc) => svc.list(viewer, input)))),
+    withNoteViewer(headers, viewer =>
+      NoteService.pipe(Effect.flatMap(svc => svc.list(viewer, input))),
+    ),
   ListPinnedNotes: (_input, { headers }) =>
-    withNoteViewer(headers, (viewer) =>
-      NoteService.pipe(Effect.flatMap((svc) => svc.listPinned(viewer)))),
+    withNoteViewer(headers, viewer =>
+      NoteService.pipe(Effect.flatMap(svc => svc.listPinned(viewer))),
+    ),
   ListTrashNotes: (_input, { headers }) =>
-    withNoteViewer(headers, (viewer) =>
-      NoteService.pipe(Effect.flatMap((svc) => svc.listTrash(viewer)))),
+    withNoteViewer(headers, viewer =>
+      NoteService.pipe(Effect.flatMap(svc => svc.listTrash(viewer))),
+    ),
 
   // ── Events ────────────────────────────────────────────────────────────
 
   CreateEvent: (input, { headers }) =>
-    withEventViewer(headers, (viewer) =>
-      EventService.pipe(Effect.flatMap((svc) => svc.create(viewer, input)))),
+    withEventViewer(headers, viewer =>
+      EventService.pipe(Effect.flatMap(svc => svc.create(viewer, input))),
+    ),
   GetEvent: ({ id }, { headers }) =>
-    withEventViewer(headers, (viewer) =>
-      EventService.pipe(Effect.flatMap((svc) => svc.get(viewer, id)))),
+    withEventViewer(headers, viewer =>
+      EventService.pipe(Effect.flatMap(svc => svc.get(viewer, id))),
+    ),
   UpdateEvent: (input, { headers }) =>
-    withEventViewer(headers, (viewer) =>
-      EventService.pipe(Effect.flatMap((svc) => svc.update(viewer, input)))),
+    withEventViewer(headers, viewer =>
+      EventService.pipe(Effect.flatMap(svc => svc.update(viewer, input))),
+    ),
   DeleteEvent: (input, { headers }) =>
-    withEventViewer(headers, (viewer) =>
-      EventService.pipe(Effect.flatMap((svc) => svc.delete(viewer, input)))),
+    withEventViewer(headers, viewer =>
+      EventService.pipe(Effect.flatMap(svc => svc.delete(viewer, input))),
+    ),
   ListEvents: (input, { headers }) =>
-    withEventViewer(headers, (viewer) =>
-      EventService.pipe(Effect.flatMap((svc) => svc.list(viewer, input)))),
+    withEventViewer(headers, viewer =>
+      EventService.pipe(Effect.flatMap(svc => svc.list(viewer, input))),
+    ),
   ListEventOccurrences: (input, { headers }) =>
-    withEventViewer(headers, (viewer) =>
-      EventService.pipe(Effect.flatMap((svc) => svc.occurrences(viewer, input)))),
+    withEventViewer(headers, viewer =>
+      EventService.pipe(Effect.flatMap(svc => svc.occurrences(viewer, input))),
+    ),
   EditEventOccurrence: (input, { headers }) =>
-    withEventViewer(headers, (viewer) =>
-      EventService.pipe(Effect.flatMap((svc) => svc.editOccurrence(viewer, input)))),
+    withEventViewer(headers, viewer =>
+      EventService.pipe(
+        Effect.flatMap(svc => svc.editOccurrence(viewer, input)),
+      ),
+    ),
   DeleteEventOccurrence: (input, { headers }) =>
-    withEventViewer(headers, (viewer) =>
-      EventService.pipe(Effect.flatMap((svc) => svc.deleteOccurrence(viewer, input)))),
+    withEventViewer(headers, viewer =>
+      EventService.pipe(
+        Effect.flatMap(svc => svc.deleteOccurrence(viewer, input)),
+      ),
+    ),
 
   // ── Habits ────────────────────────────────────────────────────────────
 
   CreateHabit: (input, { headers }) =>
-    withHabitViewer(headers, (viewer) =>
-      HabitService.pipe(Effect.flatMap((svc) => svc.create(viewer, input)))),
+    withHabitViewer(headers, viewer =>
+      HabitService.pipe(Effect.flatMap(svc => svc.create(viewer, input))),
+    ),
   GetHabit: ({ id }, { headers }) =>
-    withHabitViewer(headers, (viewer) =>
-      HabitService.pipe(Effect.flatMap((svc) => svc.get(viewer, id)))),
+    withHabitViewer(headers, viewer =>
+      HabitService.pipe(Effect.flatMap(svc => svc.get(viewer, id))),
+    ),
   UpdateHabit: (input, { headers }) =>
-    withHabitViewer(headers, (viewer) =>
-      HabitService.pipe(Effect.flatMap((svc) => svc.update(viewer, input)))),
+    withHabitViewer(headers, viewer =>
+      HabitService.pipe(Effect.flatMap(svc => svc.update(viewer, input))),
+    ),
   DeleteHabit: (input, { headers }) =>
-    withHabitViewer(headers, (viewer) =>
-      HabitService.pipe(Effect.flatMap((svc) => svc.delete(viewer, input)))),
+    withHabitViewer(headers, viewer =>
+      HabitService.pipe(Effect.flatMap(svc => svc.delete(viewer, input))),
+    ),
   RestoreHabit: (input, { headers }) =>
-    withHabitViewer(headers, (viewer) =>
-      HabitService.pipe(Effect.flatMap((svc) => svc.restore(viewer, input)))),
+    withHabitViewer(headers, viewer =>
+      HabitService.pipe(Effect.flatMap(svc => svc.restore(viewer, input))),
+    ),
   ListHabits: (_input, { headers }) =>
-    withHabitViewer(headers, (viewer) =>
-      HabitService.pipe(Effect.flatMap((svc) => svc.list(viewer)))),
+    withHabitViewer(headers, viewer =>
+      HabitService.pipe(Effect.flatMap(svc => svc.list(viewer))),
+    ),
   LogHabitEntry: (input, { headers }) =>
-    withHabitViewer(headers, (viewer) =>
-      HabitService.pipe(Effect.flatMap((svc) => svc.logEntry(viewer, input)))),
+    withHabitViewer(headers, viewer =>
+      HabitService.pipe(Effect.flatMap(svc => svc.logEntry(viewer, input))),
+    ),
   ListHabitEntries: (input, { headers }) =>
-    withHabitViewer(headers, (viewer) =>
-      HabitService.pipe(Effect.flatMap((svc) => svc.entries(viewer, input)))),
+    withHabitViewer(headers, viewer =>
+      HabitService.pipe(Effect.flatMap(svc => svc.entries(viewer, input))),
+    ),
 
   // ── Reminders ──────────────────────────────────────────────────────────
   CreateReminder: (input, { headers }) =>
-    withReminderViewer(headers, (viewer) =>
-      ReminderService.pipe(Effect.flatMap((svc) => svc.create(viewer, input)))),
+    withReminderViewer(headers, viewer =>
+      ReminderService.pipe(Effect.flatMap(svc => svc.create(viewer, input))),
+    ),
   GetReminder: ({ id }, { headers }) =>
-    withReminderViewer(headers, (viewer) =>
-      ReminderService.pipe(Effect.flatMap((svc) => svc.get(viewer, id)))),
+    withReminderViewer(headers, viewer =>
+      ReminderService.pipe(Effect.flatMap(svc => svc.get(viewer, id))),
+    ),
   UpdateReminder: (input, { headers }) =>
-    withReminderViewer(headers, (viewer) =>
-      ReminderService.pipe(Effect.flatMap((svc) => svc.update(viewer, input)))),
+    withReminderViewer(headers, viewer =>
+      ReminderService.pipe(Effect.flatMap(svc => svc.update(viewer, input))),
+    ),
   DeleteReminder: (input, { headers }) =>
-    withReminderViewer(headers, (viewer) =>
-      ReminderService.pipe(Effect.flatMap((svc) => svc.delete(viewer, input)))),
+    withReminderViewer(headers, viewer =>
+      ReminderService.pipe(Effect.flatMap(svc => svc.delete(viewer, input))),
+    ),
   ListReminders: (input, { headers }) =>
-    withReminderViewer(headers, (viewer) =>
-      ReminderService.pipe(Effect.flatMap((svc) => svc.list(viewer, input)))),
+    withReminderViewer(headers, viewer =>
+      ReminderService.pipe(Effect.flatMap(svc => svc.list(viewer, input))),
+    ),
 
   // ── Occasions ─────────────────────────────────────────────────────────
 
   CreateOccasion: (input, { headers }) =>
-    withOccasionViewer(headers, (viewer) =>
-      OccasionService.pipe(Effect.flatMap((svc) => svc.create(viewer, input)))),
+    withOccasionViewer(headers, viewer =>
+      OccasionService.pipe(Effect.flatMap(svc => svc.create(viewer, input))),
+    ),
   GetOccasion: ({ id }, { headers }) =>
-    withOccasionViewer(headers, (viewer) =>
-      OccasionService.pipe(Effect.flatMap((svc) => svc.get(viewer, id)))),
+    withOccasionViewer(headers, viewer =>
+      OccasionService.pipe(Effect.flatMap(svc => svc.get(viewer, id))),
+    ),
   UpdateOccasion: (input, { headers }) =>
-    withOccasionViewer(headers, (viewer) =>
-      OccasionService.pipe(Effect.flatMap((svc) => svc.update(viewer, input)))),
+    withOccasionViewer(headers, viewer =>
+      OccasionService.pipe(Effect.flatMap(svc => svc.update(viewer, input))),
+    ),
   DeleteOccasion: (input, { headers }) =>
-    withOccasionViewer(headers, (viewer) =>
-      OccasionService.pipe(Effect.flatMap((svc) => svc.delete(viewer, input)))),
+    withOccasionViewer(headers, viewer =>
+      OccasionService.pipe(Effect.flatMap(svc => svc.delete(viewer, input))),
+    ),
   ListOccasions: (_input, { headers }) =>
-    withOccasionViewer(headers, (viewer) =>
-      OccasionService.pipe(Effect.flatMap((svc) => svc.list(viewer)))),
+    withOccasionViewer(headers, viewer =>
+      OccasionService.pipe(Effect.flatMap(svc => svc.list(viewer))),
+    ),
   ListOccasionOccurrences: (input, { headers }) =>
-    withOccasionViewer(headers, (viewer) =>
-      OccasionService.pipe(Effect.flatMap((svc) => svc.occurrences(viewer, input)))),
+    withOccasionViewer(headers, viewer =>
+      OccasionService.pipe(
+        Effect.flatMap(svc => svc.occurrences(viewer, input)),
+      ),
+    ),
   ListOccasionReminders: (input, { headers }) =>
-    withOccasionViewer(headers, (viewer) =>
-      OccasionService.pipe(Effect.flatMap((svc) => svc.advanceReminders(viewer, input)))),
+    withOccasionViewer(headers, viewer =>
+      OccasionService.pipe(
+        Effect.flatMap(svc => svc.advanceReminders(viewer, input)),
+      ),
+    ),
   MaterialiseOccasionReminders: (input, { headers }) =>
-    withOccasionViewer(headers, (viewer) =>
-      OccasionService.pipe(Effect.flatMap((svc) => svc.materialiseReminders(viewer, input)))),
+    withOccasionViewer(headers, viewer =>
+      OccasionService.pipe(
+        Effect.flatMap(svc => svc.materialiseReminders(viewer, input)),
+      ),
+    ),
   PrepareOccasionTask: (input, { headers }) =>
-    withOccasionViewer(headers, (viewer) =>
-      OccasionService.pipe(Effect.flatMap((svc) => svc.prepareTask(viewer, input)))),
+    withOccasionViewer(headers, viewer =>
+      OccasionService.pipe(
+        Effect.flatMap(svc => svc.prepareTask(viewer, input)),
+      ),
+    ),
 
   // ── Capture ───────────────────────────────────────────────────────────
 
   DissectCapture: (input, { headers }) =>
-    withCaptureViewer(headers, (viewer) =>
-      CaptureService.pipe(Effect.flatMap((svc) => svc.dissect(viewer, input)))),
+    withCaptureViewer(headers, viewer =>
+      CaptureService.pipe(Effect.flatMap(svc => svc.dissect(viewer, input))),
+    ),
   CommitCapture: (input, { headers }) =>
-    withCaptureViewer(headers, (viewer) =>
-      CaptureService.pipe(Effect.flatMap((svc) => svc.commit(viewer, input)))),
+    withCaptureViewer(headers, viewer =>
+      CaptureService.pipe(Effect.flatMap(svc => svc.commit(viewer, input))),
+    ),
   ListCaptures: (input, { headers }) =>
-    withCaptureViewer(headers, (viewer) =>
-      CaptureService.pipe(Effect.flatMap((svc) => svc.list(viewer, input)))),
+    withCaptureViewer(headers, viewer =>
+      CaptureService.pipe(Effect.flatMap(svc => svc.list(viewer, input))),
+    ),
   DeleteCapture: (input, { headers }) =>
-    withCaptureViewer(headers, (viewer) =>
-      CaptureService.pipe(Effect.flatMap((svc) => svc.remove(viewer, input))))
+    withCaptureViewer(headers, viewer =>
+      CaptureService.pipe(Effect.flatMap(svc => svc.remove(viewer, input))),
+    ),
 })

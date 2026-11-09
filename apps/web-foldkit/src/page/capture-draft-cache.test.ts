@@ -1,10 +1,7 @@
 import { Option } from 'effect'
 import { beforeEach, describe, expect, test } from 'vitest'
 
-import {
-  loadCaptureText,
-  saveCaptureText,
-} from '../lib/capture-draft-cache'
+import { loadCaptureText, saveCaptureText } from '../lib/capture-draft-cache'
 import { initialModel } from './capture'
 
 /**

@@ -20,6 +20,7 @@ import { API_URL } from '../config'
 const REQUEST_TIMEOUT_MS = 15_000
 
 export const DispatchResponse = Schema.Literals(['done', 'snooze', 'dismiss'])
+
 export type DispatchResponse = typeof DispatchResponse.Type
 
 export const ReminderKind = Schema.Literals([
@@ -28,9 +29,11 @@ export const ReminderKind = Schema.Literals([
   'chore',
   'general',
 ])
+
 export type ReminderKind = typeof ReminderKind.Type
 
 export const ReminderTier = Schema.Literals(['normal', 'critical'])
+
 export type ReminderTier = typeof ReminderTier.Type
 
 export const ReminderDispatch = Schema.Struct({
@@ -50,6 +53,7 @@ export const ReminderDispatch = Schema.Struct({
   snoozedUntil: Schema.NullOr(Schema.String),
   createdAt: Schema.String,
 })
+
 export type ReminderDispatch = typeof ReminderDispatch.Type
 
 export const ReminderInboxItem = Schema.Struct({
@@ -64,6 +68,7 @@ export const ReminderInboxItem = Schema.Struct({
   visibility: Schema.Literals(['private', 'shared']),
   state: Schema.Literals(['inbox', 'history']),
 })
+
 export type ReminderInboxItem = typeof ReminderInboxItem.Type
 
 const ReminderInboxResponse = Schema.Struct({
@@ -75,6 +80,7 @@ const ReminderResponseResult = Schema.Struct({
   child: Schema.NullOr(ReminderDispatch),
   onTime: Schema.Boolean,
 })
+
 export type ReminderResponseResult = typeof ReminderResponseResult.Type
 
 export const ReminderFailureCode = Schema.Literals([
@@ -86,12 +92,14 @@ export const ReminderFailureCode = Schema.Literals([
   'Network',
   'InternalError',
 ])
+
 export type ReminderFailureCode = typeof ReminderFailureCode.Type
 
 export const ReminderFailure = Schema.Struct({
   code: ReminderFailureCode,
   retryable: Schema.Boolean,
 })
+
 export type ReminderFailure = typeof ReminderFailure.Type
 
 export type ReminderApiResult<A> =
@@ -151,12 +159,14 @@ const send = <A>(
     }
 
     const response = maybeResponse.value
+
     const maybeJson = yield* Effect.option(
       Effect.tryPromise({
         try: () => response.json(),
         catch: () => undefined,
       }),
     )
+
     const json: unknown = Option.getOrUndefined(maybeJson)
 
     if (!response.ok) {

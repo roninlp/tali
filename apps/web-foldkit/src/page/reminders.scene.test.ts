@@ -133,6 +133,7 @@ describe('reminders inbox', () => {
       fetchGeneration: 1,
       items: [medicationItem()],
     })
+
     const snoozeButton = role('button', { name: 'مدت به تعویق انداختن' })
 
     scene(
@@ -223,6 +224,7 @@ describe('reminders history', () => {
   test('Snooze and Dismiss answers keep their own words', () => {
     const snoozed = answeredSnoozeItem()
     const dismissed = dismissedItem()
+
     const model = remindersModel({
       isHistory: true,
       items: [snoozed, dismissed],

@@ -1,5 +1,5 @@
-import { Context, Effect, Layer, Option } from "effect"
-import { SqlClient, Statement } from "effect/sql"
+import { Context, Effect, Layer, Option } from 'effect'
+import { SqlClient, Statement } from 'effect/sql'
 import {
   Habit,
   type HabitFrequency,
@@ -8,8 +8,8 @@ import {
   type HabitReminderTime,
   type HouseholdId,
   type UserId,
-  type Visibility
-} from "@tali/domain"
+  type Visibility,
+} from '@tali/domain'
 
 /**
  * D1-backed repository for `Habit` (ticket #63; FR-HAB-01).
@@ -86,45 +86,52 @@ const parseArray = (value: string | null): ReadonlyArray<unknown> => {
 export const habitFrequencyOf = (value: string | null): HabitFrequency => {
   const parsed = parseJson(value)
   if (
-    typeof parsed === "object" &&
+    typeof parsed === 'object' &&
     parsed !== null &&
-    (parsed as { _tag?: unknown })._tag === "daily"
+    (parsed as { _tag?: unknown })._tag === 'daily'
   ) {
-    return { _tag: "daily" }
+    return { _tag: 'daily' }
   }
-  if (typeof parsed === "object" && parsed !== null) {
+  if (typeof parsed === 'object' && parsed !== null) {
     const record = parsed as { _tag?: unknown; days?: unknown; times?: unknown }
-    if (record._tag === "weekdays" && Array.isArray(record.days)) {
+    if (record._tag === 'weekdays' && Array.isArray(record.days)) {
       const days = record.days.filter(
-        (day): day is number => typeof day === "number" && Number.isInteger(day) && day >= 1 && day <= 7
+        (day): day is number =>
+          typeof day === 'number' &&
+          Number.isInteger(day) &&
+          day >= 1 &&
+          day <= 7,
       )
       // A cell with no usable weekday is not a valid union member; fall back
       // rather than construct an aggregate that cannot decode.
-      if (days.length > 0) return { _tag: "weekdays", days: [...new Set(days)].sort() }
+      if (days.length > 0)
+        return { _tag: 'weekdays', days: [...new Set(days)].sort() }
     }
     if (
-      record._tag === "weekly" &&
-      typeof record.times === "number" &&
+      record._tag === 'weekly' &&
+      typeof record.times === 'number' &&
       Number.isInteger(record.times) &&
       record.times >= 1 &&
       record.times <= 7
     ) {
-      return { _tag: "weekly", times: record.times }
+      return { _tag: 'weekly', times: record.times }
     }
   }
-  return { _tag: "daily" }
+  return { _tag: 'daily' }
 }
 
 /** The model's plain shape, built from a D1 row. */
 export const habitPropsOf = (row: HabitRow) => ({
-  id: row.id as Habit["id"],
-  type: "habit" as const,
+  id: row.id as Habit['id'],
+  type: 'habit' as const,
   title: row.title,
   description: row.description,
   icon: row.icon,
-  startedOn: row.startedOn as Habit["startedOn"],
+  startedOn: row.startedOn as Habit['startedOn'],
   frequency: habitFrequencyOf(row.frequency),
-  frequencyHistory: parseArray(row.frequencyHistory) as ReadonlyArray<HabitFrequencyChange>,
+  frequencyHistory: parseArray(
+    row.frequencyHistory,
+  ) as ReadonlyArray<HabitFrequencyChange>,
   reminderTime: row.reminderTime as HabitReminderTime | null,
   timeZone: row.timeZone,
   ownerId: row.ownerId as UserId,
@@ -134,18 +141,19 @@ export const habitPropsOf = (row: HabitRow) => ({
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
   version: Number(row.version),
-  deletedAt: row.deletedAt
+  deletedAt: row.deletedAt,
 })
 
 export const toHabit = (row: HabitRow): Habit => new Habit(habitPropsOf(row))
 
-const encodeFrequency = (frequency: HabitFrequency): string => JSON.stringify(frequency)
+const encodeFrequency = (frequency: HabitFrequency): string =>
+  JSON.stringify(frequency)
 
 const encodeHistory = (history: ReadonlyArray<HabitFrequencyChange>): string =>
   JSON.stringify(history)
 
-export class HabitRepo extends Context.Service<HabitRepo>()("HabitRepo", {
-  make: Effect.gen(function*() {
+export class HabitRepo extends Context.Service<HabitRepo>()('HabitRepo', {
+  make: Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
 
     /** The visibility filter every habit read shares (private owner-only). */
@@ -162,7 +170,7 @@ export class HabitRepo extends Context.Service<HabitRepo>()("HabitRepo", {
     const findById = (id: HabitId) =>
       Effect.map(
         sql<HabitRow>`SELECT ${sql.literal(HABIT_SELECT)} FROM habits WHERE id = ${id}`,
-        (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toHabit)
+        rows => Option.map(Option.fromUndefinedOr(rows[0]), toHabit),
       )
 
     /**
@@ -180,7 +188,7 @@ export class HabitRepo extends Context.Service<HabitRepo>()("HabitRepo", {
           WHERE ${visibleScope(input)}
           ORDER BY created_at ASC, id ASC
         `,
-        (rows) => rows.map(toHabit)
+        rows => rows.map(toHabit),
       )
 
     const insert = (habit: Habit) =>
@@ -199,7 +207,7 @@ export class HabitRepo extends Context.Service<HabitRepo>()("HabitRepo", {
              ${habit.version}, ${habit.deletedAt})
           RETURNING ${sql.literal(HABIT_SELECT)}
         `,
-        (rows) => toHabit(rows[0]!)
+        rows => toHabit(rows[0]!),
       )
 
     /**
@@ -226,7 +234,7 @@ export class HabitRepo extends Context.Service<HabitRepo>()("HabitRepo", {
           WHERE id = ${habit.id}
           RETURNING ${sql.literal(HABIT_SELECT)}
         `,
-        (rows) => Option.map(Option.fromUndefinedOr(rows[0]), toHabit)
+        rows => Option.map(Option.fromUndefinedOr(rows[0]), toHabit),
       )
 
     /** Statement form so the sync engine can put the write in one batch. */
@@ -250,9 +258,9 @@ export class HabitRepo extends Context.Service<HabitRepo>()("HabitRepo", {
       listVisible,
       insert,
       update,
-      insertStatement
+      insertStatement,
     } as const
-  })
+  }),
 }) {}
 
 export const HabitRepoLive = Layer.effect(HabitRepo, HabitRepo.make)

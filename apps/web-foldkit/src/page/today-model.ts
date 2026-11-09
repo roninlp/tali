@@ -56,6 +56,7 @@ export const DashboardSection = Schema.Literals([
   'habits',
   'notes',
 ])
+
 export type DashboardSection = typeof DashboardSection.Type
 
 export const SECTION_TITLES: Readonly<Record<DashboardSection, string>> = {
@@ -67,9 +68,11 @@ export const SECTION_TITLES: Readonly<Record<DashboardSection, string>> = {
 }
 
 export const DashboardSectionMove = Schema.Literals(['up', 'down'])
+
 export type DashboardSectionMove = typeof DashboardSectionMove.Type
 
 export const HabitWindow = Schema.Literals([7, 30, 90])
+
 export type HabitWindow = typeof HabitWindow.Type
 
 export const TodayFetchState = defineTaggedUnion({
@@ -78,9 +81,11 @@ export const TodayFetchState = defineTaggedUnion({
   Offline: {},
   Error: {},
 })
+
 export type TodayFetchState = typeof TodayFetchState.Type
 
 export const TodaySource = Schema.Literals(['server', 'mirror'])
+
 export type TodaySource = typeof TodaySource.Type
 
 export interface TodayCounts {
@@ -113,6 +118,7 @@ export const moveSection = (
 export const validTimeZone = (timeZone: string): string => {
   try {
     new Intl.DateTimeFormat('en-US', { timeZone })
+
     return timeZone
   } catch {
     return DEFAULT_TIME_ZONE
@@ -133,6 +139,7 @@ export const isOverdue = (task: TaskRow, bounds: TaskBucketBounds): boolean =>
 
 const isTodayTask = (task: TaskRow, bounds: TaskBucketBounds): boolean => {
   const placement = placementOf(task, bounds)
+
   return placement === 'overdue' || placement === 'today'
 }
 
@@ -148,6 +155,7 @@ const countsOf = (
 
 export const fromServerToday = (model: TodayReadModel): TodayView => {
   const tasks = Array.map(model.tasks, taskRowFromServer)
+
   const notes = Array.filter(
     Array.map(model.notes, noteRowFromServer),
     note => note.isPinned && !note.isArchived,
@@ -174,10 +182,12 @@ export const fromMirrorToday = (
 ): TodayView => {
   const zone = validTimeZone(timeZone)
   const bounds = boundsFor(zone, now)
+
   const tasks = Array.filter(
     mirror.tasks,
     task => task.status !== 'done' && isTodayTask(task, bounds),
   )
+
   const notes = Array.filter(
     mirror.notes,
     note => note.isPinned && !note.isArchived,
@@ -333,8 +343,10 @@ export const weekDaysFor = (
 
   return Array.map(jalaliWeek(date, weekStart), day => {
     const fields = toJalaliFields(day)
+
     const weekday =
       JALALI_WEEKDAYS[day.withCalendar('iso8601').dayOfWeek - 1] ?? ''
+
     const month = JALALI_MONTHS[fields.month - 1] ?? ''
     const localizedDay = localizeDigits(fields.day, digits)
 
@@ -377,6 +389,7 @@ export const dueLabel = (
 
   if (task.dueDate !== null) {
     const label = formatLocalDate(task.dueDate, digits)
+
     return task.dueDate < bounds.today ? `عقب‌افتاده · ${label}` : label
   }
 
@@ -409,6 +422,7 @@ export const zoneTime = (iso: string, timeZone: string): ZoneTime => {
 
 export const zoneMinutes = (iso: string, timeZone: string): number => {
   const { hour, minute } = zoneTime(iso, timeZone)
+
   return hour * 60 + minute
 }
 
@@ -418,6 +432,7 @@ export const timeLabel = (
   digits: Digits,
 ): string => {
   const { hour, minute } = zoneTime(iso, timeZone)
+
   return localizeDigits(
     `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
     digits,
@@ -442,6 +457,7 @@ export const orderedTasks = (
   [...tasks].sort((left, right) => {
     const leftMinutes =
       left.dueAt === null ? null : zoneMinutes(left.dueAt, timeZone)
+
     const rightMinutes =
       right.dueAt === null ? null : zoneMinutes(right.dueAt, timeZone)
 

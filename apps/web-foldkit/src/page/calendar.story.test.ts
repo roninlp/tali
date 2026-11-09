@@ -1038,7 +1038,9 @@ describe('Calendar visibility actions', () => {
     story(
       update(
         weekInputs({
-          mirror: mirrorWith({ events: [eventRow({ ownerId: 'another-user' })] }),
+          mirror: mirrorWith({
+            events: [eventRow({ ownerId: 'another-user' })],
+          }),
         }),
       ),
       given(calendarModel()),
@@ -1066,7 +1068,9 @@ describe('Calendar visibility actions', () => {
         }),
       ),
       given(calendarModel()),
-      message(Calendar.Message.ClickedEditOccasion({ occasionId: OCCASION_ID })),
+      message(
+        Calendar.Message.ClickedEditOccasion({ occasionId: OCCASION_ID }),
+      ),
       message(Calendar.Message.ClickedToggleOccasionVisibility()),
       Command.expectExact(
         Calendar.SetCalendarOccasionVisibility({
@@ -1094,7 +1098,9 @@ describe('Calendar visibility actions', () => {
     story(
       update(weekInputs()),
       given(calendarModel()),
-      message(Calendar.Message.ClickedEditOccasion({ occasionId: OCCASION_ID })),
+      message(
+        Calendar.Message.ClickedEditOccasion({ occasionId: OCCASION_ID }),
+      ),
       message(Calendar.Message.ClickedToggleOccasionVisibility()),
       Command.expectNone(),
     )

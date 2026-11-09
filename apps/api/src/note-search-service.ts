@@ -1,10 +1,6 @@
-import { Context, Effect, Layer } from "effect"
-import {
-  type HouseholdId,
-  type NoteSearchHit,
-  type UserId
-} from "@tali/domain"
-import { NoteSearchRepo, NoteSearchRepoLive } from "@tali/sql"
+import { Context, Effect, Layer } from 'effect'
+import { type HouseholdId, type NoteSearchHit, type UserId } from '@tali/domain'
+import { NoteSearchRepo, NoteSearchRepoLive } from '@tali/sql'
 
 /**
  * `NoteSearchService` — Persian full-text note search (ticket #41;
@@ -35,7 +31,7 @@ export interface NoteSearchServiceApi {
   readonly search: (
     viewer: NoteSearchViewer,
     query: string,
-    limit?: number
+    limit?: number,
   ) => Effect.Effect<
     { readonly query: string; readonly hits: ReadonlyArray<NoteSearchHit> },
     never
@@ -43,32 +39,35 @@ export interface NoteSearchServiceApi {
 }
 
 export class NoteSearchService extends Context.Service<NoteSearchService>()(
-  "NoteSearchService",
+  'NoteSearchService',
   {
-    make: Effect.gen(function*() {
+    make: Effect.gen(function* () {
       const repo = yield* NoteSearchRepo
 
-      const search: NoteSearchServiceApi["search"] = (viewer, query, limit) =>
-        Effect.gen(function*() {
+      const search: NoteSearchServiceApi['search'] = (viewer, query, limit) =>
+        Effect.gen(function* () {
           const trimmed = query.trim().slice(0, MAX_QUERY_LENGTH)
           const capped = Math.min(
             Math.max(limit ?? DEFAULT_SEARCH_LIMIT, 1),
-            MAX_SEARCH_LIMIT
+            MAX_SEARCH_LIMIT,
           )
-          const hits = yield* repo.search({
-            householdId: viewer.householdId,
-            userId: viewer.userId,
-            query: trimmed,
-            limit: capped
-          }).pipe(Effect.orDie)
+          const hits = yield* repo
+            .search({
+              householdId: viewer.householdId,
+              userId: viewer.userId,
+              query: trimmed,
+              limit: capped,
+            })
+            .pipe(Effect.orDie)
           return { query: trimmed, hits }
         })
 
       return { search } as const
-    })
-  }
+    }),
+  },
 ) {}
 
-export const NoteSearchServiceLive = Layer.effect(NoteSearchService, NoteSearchService.make).pipe(
-  Layer.provide(NoteSearchRepoLive)
-)
+export const NoteSearchServiceLive = Layer.effect(
+  NoteSearchService,
+  NoteSearchService.make,
+).pipe(Layer.provide(NoteSearchRepoLive))

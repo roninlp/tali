@@ -13,49 +13,58 @@
 // Playwright owns this process for the length of the run and kills it at the
 // end. The preflight below turns the common local mistake — `pnpm dev` still
 // running — into one clear message instead of a hung provider update.
-import { rmSync } from "node:fs"
-import { spawn } from "node:child_process"
-import { createServer } from "node:net"
-import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { rmSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { createServer } from 'node:net'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..")
-const STAGE = process.env.E2E_STAGE ?? "e2e"
-const STATE_DIR = join(repoRoot, "infra", ".alchemy", "state", "tali", STAGE)
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+const STAGE = process.env.E2E_STAGE ?? 'e2e'
+const STATE_DIR = join(repoRoot, 'infra', '.alchemy', 'state', 'tali', STAGE)
 
-const busy = (port) =>
-  new Promise((resolve) => {
+const busy = port =>
+  new Promise(resolve => {
     const server = createServer()
-    server.once("error", () => resolve(true))
-    server.once("listening", () => server.close(() => resolve(false)))
-    server.listen(port, "::")
+    server.once('error', () => resolve(true))
+    server.once('listening', () => server.close(() => resolve(false)))
+    server.listen(port, '::')
   })
 
 for (const port of [3001, 8787]) {
   if (await busy(port)) {
     console.error(
       `[e2e] port ${port} is already in use. Stop the running stack (pnpm dev) ` +
-        `before the gate flows: they boot their own fresh ${STAGE} stage.`
+        `before the gate flows: they boot their own fresh ${STAGE} stage.`,
     )
     process.exit(1)
   }
 }
 
-if (process.env.E2E_KEEP_STATE !== "1") {
+if (process.env.E2E_KEEP_STATE !== '1') {
   rmSync(STATE_DIR, { recursive: true, force: true })
 }
 
 const child = spawn(
-  "pnpm",
-  ["--filter", "@tali/infra", "exec", "alchemy", "dev", "--stage", STAGE, "--no-input"],
+  'pnpm',
+  [
+    '--filter',
+    '@tali/infra',
+    'exec',
+    'alchemy',
+    'dev',
+    '--stage',
+    STAGE,
+    '--no-input',
+  ],
   {
     cwd: repoRoot,
-    stdio: "inherit",
+    stdio: 'inherit',
     // Own process group: alchemy spawns vite and workerd as children, and they
     // are what would otherwise keep :3001/:8787 bound after the run.
     detached: true,
-    env: { ...process.env, ALCHEMY_STAGE: STAGE }
-  }
+    env: { ...process.env, ALCHEMY_STAGE: STAGE },
+  },
 )
 
 let stopping = false
@@ -63,13 +72,13 @@ const stop = () => {
   if (stopping) return
   stopping = true
   try {
-    process.kill(-child.pid, "SIGTERM")
+    process.kill(-child.pid, 'SIGTERM')
   } catch {
-    child.kill("SIGTERM")
+    child.kill('SIGTERM')
   }
   setTimeout(() => {
     try {
-      process.kill(-child.pid, "SIGKILL")
+      process.kill(-child.pid, 'SIGKILL')
     } catch {
       // Already gone.
     }
@@ -77,8 +86,8 @@ const stop = () => {
   }, 5_000).unref()
 }
 
-process.on("SIGTERM", stop)
-process.on("SIGINT", stop)
-child.on("exit", (code, signal) => {
+process.on('SIGTERM', stop)
+process.on('SIGINT', stop)
+child.on('exit', (code, signal) => {
   if (!stopping) process.exit(code ?? (signal === null ? 1 : 0))
 })

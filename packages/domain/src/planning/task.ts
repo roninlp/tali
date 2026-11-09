@@ -1,10 +1,7 @@
-import { Schema } from "effect"
-import { Model } from "effect/schema"
-import { Visibility } from "../common.js"
-import {
-  RecurrenceRule,
-  TaskRecurrenceMode
-} from "../recurrence.js"
+import { Schema } from 'effect'
+import { Model } from 'effect/schema'
+import { Visibility } from '../common.js'
+import { RecurrenceRule, TaskRecurrenceMode } from '../recurrence.js'
 import {
   commonItemFields,
   LocalDate,
@@ -14,8 +11,8 @@ import {
   TaskId,
   TaskStatus,
   TimeZone,
-  TimestampUtc
-} from "./common.js"
+  TimestampUtc,
+} from './common.js'
 
 /**
  * `Task` aggregate (FR-TASK-01/02, docs/domain-model-draft.md §3.5).
@@ -33,8 +30,8 @@ import {
  * a client — generates the next instance on completion (#38); the completed
  * row stays as `done` history.
  */
-export class Task extends Model.Class<Task>("Task")({
-  ...commonItemFields("task", TaskId),
+export class Task extends Model.Class<Task>('Task')({
+  ...commonItemFields('task', TaskId),
   /** Resolved from the task's `shareable` policy (ADR-0011), never client-invented. */
   visibility: Visibility,
   title: Schema.String.check(Schema.isMinLength(1)),
@@ -59,7 +56,7 @@ export class Task extends Model.Class<Task>("Task")({
   /** Server timestamp for the `todo → doing` transition. */
   startedAt: Schema.NullOr(TimestampUtc),
   /** Server timestamp for the `→ done` transition. */
-  completedAt: Schema.NullOr(TimestampUtc)
+  completedAt: Schema.NullOr(TimestampUtc),
 }) {}
 
 /**
@@ -80,6 +77,6 @@ export const TaskCreate = Schema.Struct({
   recurrence: Schema.optional(Schema.NullOr(RecurrenceRule)),
   /** Defaults to `onDueDate` when a rule is supplied without a mode. */
   recurrenceMode: Schema.optional(Schema.NullOr(TaskRecurrenceMode)),
-  visibility: Schema.optional(Visibility)
+  visibility: Schema.optional(Visibility),
 })
 export type TaskCreate = Schema.Schema.Type<typeof TaskCreate>

@@ -1,0 +1,14 @@
+{
+  "name": "@tali/lint-config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./oxlint/base": "./oxlint/base.json",
+    "./oxlint/strict": "./oxlint/strict.json",
+    "./oxlint/effect": "./oxlint/effect.json"
+  },
+  "dependencies": {
+    "@oxlint/plugins": "1.85.0"
+  }
+}

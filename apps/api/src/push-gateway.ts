@@ -1,11 +1,11 @@
-import { Context, Effect, Layer } from "effect"
-import { isSafePushEndpoint, type PushSubscription } from "@tali/domain"
+import { Context, Effect, Layer } from 'effect'
+import { isSafePushEndpoint, type PushSubscription } from '@tali/domain'
 import {
   base64UrlDecode,
   createVapidJwt,
   encryptPushPayload,
-  type VapidKeyPair
-} from "./push-crypto.js"
+  type VapidKeyPair,
+} from './push-crypto.js'
 
 /**
  * The Web Push transport (ticket #61; ADR-0005 §Consequences).
@@ -30,7 +30,10 @@ export interface VapidConfig {
 }
 
 /** The VAPID configuration, or `null` when this environment has no keys. */
-export class PushConfig extends Context.Service<PushConfig, VapidConfig | null>()("PushConfig") {}
+export class PushConfig extends Context.Service<
+  PushConfig,
+  VapidConfig | null
+>()('PushConfig') {}
 
 const decode = (value: string): Uint8Array | null => {
   try {
@@ -52,10 +55,10 @@ export const vapidConfigOf = (env: {
   readonly VAPID_PUBLIC_KEY?: string
   readonly VAPID_SUBJECT?: string
 }): VapidConfig | null => {
-  const privateKey = env.VAPID_PRIVATE_KEY?.trim() ?? ""
-  const publicKey = env.VAPID_PUBLIC_KEY?.trim() ?? ""
-  const subject = env.VAPID_SUBJECT?.trim() ?? ""
-  if (privateKey === "" || publicKey === "" || subject === "") return null
+  const privateKey = env.VAPID_PRIVATE_KEY?.trim() ?? ''
+  const publicKey = env.VAPID_PUBLIC_KEY?.trim() ?? ''
+  const subject = env.VAPID_SUBJECT?.trim() ?? ''
+  if (privateKey === '' || publicKey === '' || subject === '') return null
   if (!/^(mailto:|https:)/u.test(subject)) return null
   if (decode(privateKey)?.length !== 32) return null
   if (decode(publicKey)?.length !== 65) return null
@@ -64,15 +67,15 @@ export const vapidConfigOf = (env: {
 
 export type PushSendResult =
   /** The push service accepted it — not "the device saw it" (RFC 8030 §5). */
-  | { readonly _tag: "accepted"; readonly status: number }
+  | { readonly _tag: 'accepted'; readonly status: number }
   /** 404/410: the endpoint is dead; delete this subscription row. */
-  | { readonly _tag: "gone"; readonly status: number }
+  | { readonly _tag: 'gone'; readonly status: number }
   /** 400/401/403/413: retrying cannot help; the dispatch is inbox-only. */
-  | { readonly _tag: "permanent"; readonly status: number }
+  | { readonly _tag: 'permanent'; readonly status: number }
   /** 429/5xx/network: retry within the attempt budget and the horizon. */
-  | { readonly _tag: "transient"; readonly status: number | null }
+  | { readonly _tag: 'transient'; readonly status: number | null }
   /** No VAPID keys in this environment (dev without secrets). */
-  | { readonly _tag: "unconfigured" }
+  | { readonly _tag: 'unconfigured' }
 
 export interface PushSendInput {
   readonly subscription: PushSubscription
@@ -82,7 +85,7 @@ export interface PushSendInput {
   readonly now: string
   /** Seconds the push service may keep trying (≤ the 15-minute horizon). */
   readonly ttlSeconds: number
-  readonly urgency: "high" | "normal"
+  readonly urgency: 'high' | 'normal'
   /** RFC 8030 §5.4 topic: same claim → same topic → one visible notification. */
   readonly topic: string
 }
@@ -91,31 +94,35 @@ export interface PushGatewayApi {
   readonly send: (input: PushSendInput) => Effect.Effect<PushSendResult>
 }
 
-export class PushGateway extends Context.Service<PushGateway, PushGatewayApi>()("PushGateway") {}
+export class PushGateway extends Context.Service<PushGateway, PushGatewayApi>()(
+  'PushGateway',
+) {}
 
 /** HTTP status → the sweep's next action (ADR-0005 §Consequences). */
 export const classifyPushStatus = (status: number): PushSendResult => {
-  if (status >= 200 && status < 300) return { _tag: "accepted", status }
-  if (status === 404 || status === 410) return { _tag: "gone", status }
-  if (status === 429) return { _tag: "transient", status }
-  if (status >= 500) return { _tag: "transient", status }
+  if (status >= 200 && status < 300) return { _tag: 'accepted', status }
+  if (status === 404 || status === 410) return { _tag: 'gone', status }
+  if (status === 429) return { _tag: 'transient', status }
+  if (status >= 500) return { _tag: 'transient', status }
   // 400/401/403/413 and any other 4xx: the same message will fail again.
-  return { _tag: "permanent", status }
+  return { _tag: 'permanent', status }
 }
 
 const originOf = (endpoint: string): string => new URL(endpoint).origin
 
-export const makePushGateway = (config: VapidConfig | null): PushGatewayApi => ({
-  send: (input) =>
-    Effect.gen(function*() {
-      if (config === null) return { _tag: "unconfigured" } as const
+export const makePushGateway = (
+  config: VapidConfig | null,
+): PushGatewayApi => ({
+  send: input =>
+    Effect.gen(function* () {
+      if (config === null) return { _tag: 'unconfigured' } as const
 
       // The endpoint is client-supplied and this is a server-side POST: an
       // unsafe one is permanent (a different message cannot fix it) and must
       // never reach `fetch`. Registration rejects these too; this is the
       // defence that also covers rows stored before the check existed.
       if (!isSafePushEndpoint(input.subscription.endpoint)) {
-        return { _tag: "permanent", status: 400 } as const
+        return { _tag: 'permanent', status: 400 } as const
       }
 
       const keys: VapidKeyPair = config
@@ -124,12 +131,13 @@ export const makePushGateway = (config: VapidConfig | null): PushGatewayApi => (
           encryptPushPayload({
             payload: new TextEncoder().encode(input.payload),
             p256dh: input.subscription.p256dh,
-            auth: input.subscription.auth
+            auth: input.subscription.auth,
           }),
-        catch: (error) => error
+        catch: error => error,
       }).pipe(Effect.option)
       // Bad subscription keys are permanent: a different message cannot fix them.
-      if (encrypted._tag === "None") return { _tag: "permanent", status: 400 } as const
+      if (encrypted._tag === 'None')
+        return { _tag: 'permanent', status: 400 } as const
 
       const jwt = yield* Effect.tryPromise({
         try: () =>
@@ -137,41 +145,42 @@ export const makePushGateway = (config: VapidConfig | null): PushGatewayApi => (
             audience: originOf(input.subscription.endpoint),
             subject: config.subject,
             keys,
-            now: input.now
+            now: input.now,
           }),
-        catch: (error) => error
+        catch: error => error,
       }).pipe(Effect.option)
-      if (jwt._tag === "None") return { _tag: "transient", status: null } as const
+      if (jwt._tag === 'None')
+        return { _tag: 'transient', status: null } as const
 
       const response = yield* Effect.tryPromise({
         try: () =>
           fetch(input.subscription.endpoint, {
-            method: "POST",
-            cache: "no-store",
+            method: 'POST',
+            cache: 'no-store',
             // Push services answer directly; a redirect would be an attempt to
             // bounce this server-side POST to another origin (see
             // `isSafePushEndpoint`). Any 3xx is mapped to `permanent` below.
-            redirect: "manual",
+            redirect: 'manual',
             headers: {
               authorization: `vapid t=${jwt.value}, k=${config.publicKey}`,
-              "content-encoding": "aes128gcm",
-              "content-type": "application/octet-stream",
+              'content-encoding': 'aes128gcm',
+              'content-type': 'application/octet-stream',
               ttl: String(input.ttlSeconds),
               urgency: input.urgency,
-              topic: input.topic
+              topic: input.topic,
             },
-            body: encrypted.value.body
+            body: encrypted.value.body,
           }),
-        catch: (error) => error
+        catch: error => error,
       }).pipe(Effect.option)
 
-      return response._tag === "None"
-        ? { _tag: "transient", status: null } as const
+      return response._tag === 'None'
+        ? ({ _tag: 'transient', status: null } as const)
         : classifyPushStatus(response.value.status)
-    })
+    }),
 })
 
 export const PushGatewayLive = Layer.effect(
   PushGateway,
-  Effect.map(PushConfig, (config) => makePushGateway(config))
+  Effect.map(PushConfig, config => makePushGateway(config)),
 )

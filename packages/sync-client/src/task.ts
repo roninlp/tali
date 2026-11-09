@@ -1,8 +1,8 @@
-import { Schema } from "effect"
+import { Schema } from 'effect'
 
-import { defaultVisibilityFor } from "@tali/domain"
+import { defaultVisibilityFor } from '@tali/domain'
 
-import type { LocalStore, MirrorRecord } from "./local-store/types"
+import type { LocalStore, MirrorRecord } from './local-store/types'
 
 /**
  * The Task projection the temporary P2.4 sync surface renders.
@@ -18,12 +18,12 @@ export const TaskRow = Schema.Struct({
   status: Schema.String,
   dueDate: Schema.NullOr(Schema.String),
   updatedAt: Schema.String,
-  hasSyncError: Schema.Boolean
+  hasSyncError: Schema.Boolean,
 })
 export type TaskRow = typeof TaskRow.Type
 
 const text = (value: unknown): string | undefined =>
-  typeof value === "string" ? value : undefined
+  typeof value === 'string' ? value : undefined
 
 const taskRowOf = (record: MirrorRecord): TaskRow | undefined => {
   const title = text(record.data.title)
@@ -32,16 +32,16 @@ const taskRowOf = (record: MirrorRecord): TaskRow | undefined => {
   return TaskRow.make({
     id: record.entityId,
     title,
-    status: text(record.data.status) ?? "todo",
+    status: text(record.data.status) ?? 'todo',
     dueDate: text(record.data.dueDate) ?? null,
     updatedAt: record.updatedAt,
-    hasSyncError: record.syncError !== undefined
+    hasSyncError: record.syncError !== undefined,
   })
 }
 
 /** Live task rows, newest edit last, skipping rows whose title never hydrated. */
 export const taskRowsFromMirror = (
-  records: ReadonlyArray<MirrorRecord>
+  records: ReadonlyArray<MirrorRecord>,
 ): ReadonlyArray<TaskRow> =>
   records
     .flatMap(record => {
@@ -52,13 +52,14 @@ export const taskRowsFromMirror = (
 
 /** Read the live task snapshot straight from a local mirror. */
 export const readTaskRows = async (
-  store: LocalStore
-): Promise<ReadonlyArray<TaskRow>> => taskRowsFromMirror(await store.list("task"))
+  store: LocalStore,
+): Promise<ReadonlyArray<TaskRow>> =>
+  taskRowsFromMirror(await store.list('task'))
 
 export interface TaskCreateDraft {
   readonly title: string
   readonly dueDate: string | null
-  readonly priority: "high" | "medium" | "low"
+  readonly priority: 'high' | 'medium' | 'low'
   readonly projectId: string | null
   readonly tagIds: ReadonlyArray<string>
   readonly timeZone: string
@@ -72,17 +73,17 @@ export interface TaskCreateDraft {
 export const taskCreatePatch = (
   draft: TaskCreateDraft,
   id: string,
-  now: string
+  now: string,
 ): Readonly<Record<string, unknown>> => {
   const title = draft.title.trim()
-  if (title === "") throw new Error("a task needs a title")
+  if (title === '') throw new Error('a task needs a title')
 
   return {
     id,
-    type: "task",
+    type: 'task',
     title,
     description: null,
-    status: "todo",
+    status: 'todo',
     priority: draft.priority,
     dueAt: null,
     dueDate: draft.dueDate,
@@ -90,8 +91,8 @@ export const taskCreatePatch = (
     projectId: draft.projectId,
     tagIds: [...draft.tagIds],
     color: null,
-    visibility: defaultVisibilityFor("task"),
-    createdAt: now
+    visibility: defaultVisibilityFor('task'),
+    createdAt: now,
   }
 }
 
@@ -103,16 +104,16 @@ export const createTaskInMirror = async (
   store: LocalStore,
   draft: TaskCreateDraft,
   id: string,
-  now: string
+  now: string,
 ): Promise<string> => {
   await store.writeLocal({
-    entityType: "task",
+    entityType: 'task',
     entityId: id,
-    op: "upsert",
+    op: 'upsert',
     // The owner is known offline so the editor can offer Share/Unshare before
     // the first ack; the server still stamps the authoritative owner.
     patch: { ...taskCreatePatch(draft, id, now), ownerId: store.userId },
-    now
+    now,
   })
   return id
 }
@@ -120,11 +121,11 @@ export const createTaskInMirror = async (
 /** The account's local calendar date, used for the offline quick-add. */
 export const todayInZone = (now: Date, timeZone: string): string => {
   try {
-    return new Intl.DateTimeFormat("en-CA", {
+    return new Intl.DateTimeFormat('en-CA', {
       timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit"
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
     }).format(now)
   } catch {
     return now.toISOString().slice(0, 10)

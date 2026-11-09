@@ -1,8 +1,8 @@
-import { Schema } from "effect"
-import { DashboardSectionOrder } from "./preferences.js"
-import { LocalDate, TimeZone } from "./planning/common.js"
-import { Note } from "./planning/note.js"
-import { Task } from "./planning/task.js"
+import { Schema } from 'effect'
+import { DashboardSectionOrder } from './preferences.js'
+import { LocalDate, TimeZone } from './planning/common.js'
+import { Note } from './planning/note.js'
+import { Task } from './planning/task.js'
 
 /**
  * The `GET /today` aggregated read model (ticket #42; FR-VIEW-01).
@@ -32,7 +32,7 @@ export const TodayCounts = Schema.Struct({
   events: Schema.Int,
   reminders: Schema.Int,
   habits: Schema.Int,
-  notes: Schema.Int
+  notes: Schema.Int,
 })
 export type TodayCounts = Schema.Schema.Type<typeof TodayCounts>
 
@@ -42,7 +42,7 @@ export const TodayEmpty = Schema.Struct({
   events: Schema.Boolean,
   reminders: Schema.Boolean,
   habits: Schema.Boolean,
-  notes: Schema.Boolean
+  notes: Schema.Boolean,
 })
 export type TodayEmpty = Schema.Schema.Type<typeof TodayEmpty>
 
@@ -58,6 +58,6 @@ export const TodayReadModel = Schema.Struct({
   /** Pinned, live, non-archived notes visible to the viewer. */
   notes: Schema.Array(Note),
   counts: TodayCounts,
-  empty: TodayEmpty
+  empty: TodayEmpty,
 })
 export type TodayReadModel = Schema.Schema.Type<typeof TodayReadModel>

@@ -13,4 +13,5 @@ export const HouseholdSummary = Schema.Struct({
   name: Schema.String,
   inviteCode: Schema.String,
 })
+
 export type HouseholdSummary = typeof HouseholdSummary.Type
