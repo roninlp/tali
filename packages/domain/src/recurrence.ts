@@ -68,6 +68,27 @@ export const RecurrenceEnd = Schema.Union([
 ])
 export type RecurrenceEnd = Schema.Schema.Type<typeof RecurrenceEnd>
 
+/** Whether this rule ends on an inclusive local date. */
+export const isUntilRecurrenceEnd = (
+  end: RecurrenceEnd,
+): end is Extract<RecurrenceEnd, { readonly _tag: 'until' }> =>
+  end._tag === 'until'
+
+/** A rule that never ends. */
+export const neverRecurrenceEnd = (): RecurrenceEnd => ({ _tag: 'never' })
+
+/** A rule that stops after `count` generated occurrences. */
+export const countedRecurrenceEnd = (count: number): RecurrenceEnd => ({
+  _tag: 'count',
+  count,
+})
+
+/** A rule that stops after an inclusive local date. */
+export const untilRecurrenceEnd = (date: LocalDate): RecurrenceEnd => ({
+  _tag: 'until',
+  date,
+})
+
 const IsoWeekday = Schema.Int.check(
   Schema.isBetween({ minimum: 1, maximum: 7 }),
 )

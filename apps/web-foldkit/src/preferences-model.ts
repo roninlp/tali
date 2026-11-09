@@ -102,6 +102,13 @@ export const displayFieldsOf = (preferences: Preferences): DisplayFields =>
     digits: preferences.digits,
   })
 
+/** The display fields a save may change; a type alias, not an interface. */
+type DisplayFieldsPatch = {
+  timeZone?: string
+  weekStart?: WeekStart
+  digits?: Digits
+}
+
 /**
  * The PATCH for a display-settings save: only the fields whose draft differs
  * from the last value this device has confirmed.
@@ -117,11 +124,7 @@ export const changedDisplayFields = (
   saved: DisplayFields,
   draft: DisplayFields,
 ): PreferencesPatch => {
-  const patch: {
-    timeZone?: string
-    weekStart?: WeekStart
-    digits?: Digits
-  } = {}
+  const patch: DisplayFieldsPatch = {}
 
   if (draft.timeZone !== saved.timeZone) {
     patch.timeZone = draft.timeZone

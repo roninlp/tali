@@ -338,11 +338,14 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
         version: task.version,
         updatedAt: task.updatedAt,
         deletedAt: task.deletedAt,
-        data: def.validate({ ...task } as Record<string, unknown>, {
-          version: task.version,
-          updatedAt: task.updatedAt,
-          deletedAt: task.deletedAt,
-        }),
+        data: def.validate(
+          { ...task },
+          {
+            version: task.version,
+            updatedAt: task.updatedAt,
+            deletedAt: task.deletedAt,
+          },
+        ),
       }
     }
 
@@ -357,11 +360,14 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
         version: project.version,
         updatedAt: project.updatedAt,
         deletedAt: project.deletedAt,
-        data: def.validate({ ...project } as Record<string, unknown>, {
-          version: project.version,
-          updatedAt: project.updatedAt,
-          deletedAt: project.deletedAt,
-        }),
+        data: def.validate(
+          { ...project },
+          {
+            version: project.version,
+            updatedAt: project.updatedAt,
+            deletedAt: project.deletedAt,
+          },
+        ),
       }
     }
 
@@ -376,11 +382,14 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
         version: tag.version,
         updatedAt: tag.updatedAt,
         deletedAt: tag.deletedAt,
-        data: def.validate({ ...tag } as Record<string, unknown>, {
-          version: tag.version,
-          updatedAt: tag.updatedAt,
-          deletedAt: tag.deletedAt,
-        }),
+        data: def.validate(
+          { ...tag },
+          {
+            version: tag.version,
+            updatedAt: tag.updatedAt,
+            deletedAt: tag.deletedAt,
+          },
+        ),
       }
     }
 

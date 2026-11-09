@@ -75,7 +75,7 @@ export const listboxViewInputs = <Message, Value extends string>(
 ): Listbox.ViewInputs<ListboxRow<Value>, Value> => {
   const h = config.h
 
-  return {
+  const viewInputs: Listbox.ViewInputs<ListboxRow<Value>, Value> = {
     anchor: LISTBOX_ANCHOR,
     items: config.items,
     itemToValue: item => item.value,
@@ -84,7 +84,6 @@ export const listboxViewInputs = <Message, Value extends string>(
       className: 'listbox-item',
       content: h.span([h.Class('truncate')], [item.label]),
     }),
-    ...(config.isDisabled === true ? { isButtonDisabled: true } : {}),
     buttonContent: listboxTriggerContent(
       selectedListboxLabel({
         items: config.items,
@@ -98,4 +97,8 @@ export const listboxViewInputs = <Message, Value extends string>(
     backdropAttributes: childAttributes([h.Class('float-backdrop')]),
     attributes: childAttributes([h.Class('relative')]),
   }
+
+  return config.isDisabled === true
+    ? { ...viewInputs, isButtonDisabled: true }
+    : viewInputs
 }

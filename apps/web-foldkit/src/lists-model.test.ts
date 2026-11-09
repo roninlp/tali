@@ -186,7 +186,7 @@ describe('index summaries and pending state', () => {
 })
 
 describe('mirror row decoding', () => {
-  const record = (data: Record<string, unknown>): MirrorRecord => ({
+  const record = (data: MirrorRecord['data']): MirrorRecord => ({
     entityType: 'listItem',
     entityId: 'i1',
     version: 3,

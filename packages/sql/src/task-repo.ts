@@ -1,9 +1,10 @@
-import { Context, Effect, Layer, Option } from 'effect'
+import { Context, Effect, Layer, Option, Schema } from 'effect'
 import { SqlClient, Statement } from 'effect/sql'
 import {
   type Priority,
   type ProjectId,
-  type TagId,
+  RecurrenceRule,
+  TagId,
   Task,
   type TaskId,
   type TaskStatus,
@@ -45,14 +46,20 @@ interface TaskRow extends Omit<Task, 'tagIds' | 'recurrence'> {
   readonly recurrence: string | null
 }
 
+const asTagIds = Schema.decodeOption(Schema.fromJsonString(Schema.Array(TagId)))
+
+const asRecurrence = Schema.decodeOption(
+  Schema.fromJsonString(Schema.NullOr(RecurrenceRule)),
+)
+
 const toTask = (row: TaskRow): Task =>
   new Task({
     ...row,
-    tagIds: JSON.parse(row.tagIds) as ReadonlyArray<TagId>,
+    tagIds: Option.getOrElse(asTagIds(row.tagIds), () => []),
     recurrence:
       row.recurrence === null
         ? null
-        : (JSON.parse(row.recurrence) as Task['recurrence']),
+        : Option.getOrThrow(asRecurrence(row.recurrence)),
   })
 
 const encodeTagIds = (ids: ReadonlyArray<TagId>): string => JSON.stringify(ids)

@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Option, Result } from 'effect'
+import { Context, Effect, Layer, Option, Predicate, Result } from 'effect'
 import {
   CAPTURE_DEDUPE_WINDOW_MS,
   CAPTURE_MAX_DRAFTS,
@@ -308,9 +308,8 @@ export class CaptureService extends Context.Service<CaptureService>()(
       }
 
       const errorLabel = (error: unknown): string => {
-        if (error !== null && typeof error === 'object' && '_tag' in error) {
-          return String(error._tag)
-        }
+        const tag = Predicate.isObject(error) ? error._tag : undefined
+        if (typeof tag === 'string') return tag
         return error instanceof Error ? error.message : 'unknown'
       }
 

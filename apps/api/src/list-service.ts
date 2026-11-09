@@ -191,11 +191,14 @@ export class ListService extends Context.Service<ListService>()('ListService', {
      */
     const listState = (list: List, writerId: string): SyncEntityState => {
       const def = definition('list')
-      const data = def.validate({ ...list } as Record<string, unknown>, {
-        version: list.version,
-        updatedAt: list.updatedAt,
-        deletedAt: list.deletedAt,
-      })
+      const data = def.validate(
+        { ...list },
+        {
+          version: list.version,
+          updatedAt: list.updatedAt,
+          deletedAt: list.deletedAt,
+        },
+      )
       return {
         entityType: 'list',
         entityId: list.id,

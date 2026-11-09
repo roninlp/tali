@@ -7,7 +7,12 @@ import {
   type CaptureCommitResult,
   type CaptureDraft,
   CaptureId,
+  TimestampUtc,
   UserId,
+  eventCaptureDraft,
+  needsInput,
+  taskCaptureDraft,
+  timedEventTiming,
 } from '@tali/domain'
 
 import { USER_ID } from '../test-fixtures'
@@ -44,25 +49,17 @@ const setup = (overrides: Partial<Inputs> = {}) => {
   }
 }
 
-const taskDraft: CaptureDraft = {
-  _tag: 'task',
+const taskDraft: CaptureDraft = taskCaptureDraft({
   title: 'خرید نان',
   sourceQuote: 'خرید نان',
   missing: [],
-}
+})
 
-const blockedDraft: CaptureDraft = {
-  _tag: 'event',
+const blockedDraft: CaptureDraft = eventCaptureDraft({
   title: 'دکتر',
   sourceQuote: 'فردا دکتر',
-  missing: [
-    {
-      field: 'timing',
-      shape: 'localDate',
-      question: 'این رویداد چه روزی است؟',
-    },
-  ],
-}
+  missing: [needsInput('timing', 'localDate', 'این رویداد چه روزی است؟')],
+})
 
 const cardOf = (draft: CaptureDraft): CapturePage.CaptureCard =>
   CapturePage.CaptureCard.make({
@@ -125,13 +122,15 @@ describe('capture view', () => {
   })
 
   test('a malformed instant renders instead of crashing the screen', () => {
-    const broken: CaptureDraft = {
-      _tag: 'event',
+    const broken: CaptureDraft = eventCaptureDraft({
       title: 'جلسه',
       sourceQuote: 'جلسه',
-      timing: { _tag: 'timed', start: '17:00', end: '18:00' },
+      timing: timedEventTiming(
+        TimestampUtc.make('17:00'),
+        TimestampUtc.make('18:00'),
+      ),
       missing: [],
-    }
+    })
 
     scene(
       setup(),
@@ -142,20 +141,16 @@ describe('capture view', () => {
   })
 
   test('a clock-time Needs Input renders a time picker when the day is known', () => {
-    const event: CaptureDraft = {
-      _tag: 'event',
+    const event: CaptureDraft = eventCaptureDraft({
       title: 'جلسه',
       sourceQuote: 'سه شنبه جلسه',
-      timing: {
-        _tag: 'timed',
-        start: '2026-11-10T12:30:00.000Z',
-        end: '2026-11-10T13:30:00.000Z',
-      },
+      timing: timedEventTiming(
+        TimestampUtc.make('2026-11-10T12:30:00.000Z'),
+        TimestampUtc.make('2026-11-10T13:30:00.000Z'),
+      ),
       timeZone: 'Asia/Tehran',
-      missing: [
-        { field: 'timing.start', shape: 'clockTime', question: 'ساعت شروع؟' },
-      ],
-    }
+      missing: [needsInput('timing.start', 'clockTime', 'ساعت شروع؟')],
+    })
 
     scene(
       setup(),

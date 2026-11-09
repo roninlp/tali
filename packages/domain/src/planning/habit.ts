@@ -100,6 +100,32 @@ export const HabitFrequency = Schema.Union([
 ])
 export type HabitFrequency = Schema.Schema.Type<typeof HabitFrequency>
 
+/** A habit due every calendar day. */
+export const dailyHabitFrequency = (): HabitFrequency => ({ _tag: 'daily' })
+
+/** A habit due on the selected ISO weekdays. */
+export const weekdaysHabitFrequency = (
+  days: ReadonlyArray<HabitWeekday>,
+): HabitFrequency => ({ _tag: 'weekdays', days })
+
+/** A habit due `times` times per week. */
+export const weeklyHabitFrequency = (times: number): HabitFrequency => ({
+  _tag: 'weekly',
+  times,
+})
+
+/** Whether this frequency is the weekday set. */
+export const isWeekdaysHabitFrequency = (
+  frequency: HabitFrequency,
+): frequency is Extract<HabitFrequency, { readonly _tag: 'weekdays' }> =>
+  frequency._tag === 'weekdays'
+
+/** Whether this frequency is a weekly target count. */
+export const isWeeklyHabitFrequency = (
+  frequency: HabitFrequency,
+): frequency is Extract<HabitFrequency, { readonly _tag: 'weekly' }> =>
+  frequency._tag === 'weekly'
+
 /**
  * One **era** of a habit's frequency: the first local date it applies from.
  *

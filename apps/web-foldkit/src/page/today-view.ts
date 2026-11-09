@@ -1,4 +1,4 @@
-import { Array, Option } from 'effect'
+import { Array, Match, Option } from 'effect'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
 import { Checkbox } from '@foldkit/ui'
@@ -753,26 +753,26 @@ const sectionBodyView = (
   section: DashboardSection,
   h: HtmlBuilder<Message>,
 ): Html =>
-  section === 'tasks'
-    ? tasksLaneView(model, inputs, view, h)
-    : section === 'habits'
-      ? habitsLaneView(model, inputs, view, h)
-      : section === 'notes'
-        ? notesLaneView(view, h)
-        : quietLaneView(section, h)
+  Match.value(section).pipe(
+    Match.when('tasks', () => tasksLaneView(model, inputs, view, h)),
+    Match.when('habits', () => habitsLaneView(model, inputs, view, h)),
+    Match.when('notes', () => notesLaneView(view, h)),
+    Match.when('events', () => quietLaneView('events', h)),
+    Match.when('reminders', () => quietLaneView('reminders', h)),
+    Match.exhaustive,
+  )
 
 const sectionCount = (
   inputs: ViewInputs,
   view: TodayView,
   section: DashboardSection,
 ): number =>
-  section === 'tasks'
-    ? view.counts.tasks
-    : section === 'habits'
-      ? inputs.mirror.habits.length
-      : section === 'notes'
-        ? view.counts.notes
-        : 0
+  Match.value(section).pipe(
+    Match.when('tasks', () => view.counts.tasks),
+    Match.when('habits', () => inputs.mirror.habits.length),
+    Match.when('notes', () => view.counts.notes),
+    Match.orElse(() => 0),
+  )
 
 const sectionPanelView = (
   model: Model,

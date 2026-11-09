@@ -1,5 +1,5 @@
 import { exports } from 'cloudflare:workers'
-import { Effect, Schema } from 'effect'
+import { Effect, Predicate, Schema } from 'effect'
 import { IDBFactory } from 'fake-indexeddb'
 import {
   SyncBootstrapResponse,
@@ -463,9 +463,10 @@ export const mirrorSnapshot = async (
 }
 
 const canonical = (value: unknown): string => {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value)
+  if (value === null) return JSON.stringify(value)
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
-  const entries = Object.entries(value as Record<string, unknown>)
+  if (!Predicate.isObject(value)) return JSON.stringify(value)
+  const entries = Object.entries(value)
     .filter(([, entry]) => entry !== undefined)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
   return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonical(entry)}`).join(',')}}`

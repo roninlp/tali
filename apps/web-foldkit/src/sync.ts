@@ -130,18 +130,24 @@ class SyncOperationFailure extends Data.TaggedError('SyncOperationFailure')<{
   readonly maybeCode: Option.Option<string>
 }> {}
 
+const CauseTag = Schema.Struct({ _tag: Schema.String })
+
+const asCauseTag = Schema.decodeUnknownOption(CauseTag)
+
+const asCauseString = Schema.decodeUnknownOption(Schema.String)
+
 const operationMessage = (cause: unknown): string => {
   if (cause instanceof SyncOperationFailure) return cause.message
 
   if (cause instanceof Error) return cause.message
 
-  if (typeof cause === 'string') return cause
+  const message = asCauseString(cause)
 
-  if (
-    typeof cause === 'object' &&
-    cause !== null &&
-    Reflect.get(cause, '_tag') === 'ResourceNotAvailable'
-  ) {
+  if (Option.isSome(message)) return message.value
+
+  const tag = Option.map(asCauseTag(cause), value => value._tag)
+
+  if (Option.exists(tag, value => value === 'ResourceNotAvailable')) {
     return 'حافظه‌ی محلی هنوز آماده نیست'
   }
 

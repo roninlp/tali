@@ -1,4 +1,4 @@
-import { Effect, Option } from 'effect'
+import { Effect, Option, Schema } from 'effect'
 import { Command, given, message, model, story } from 'foldkit/story'
 import { modifyFields } from 'foldkit/struct'
 import { afterEach, describe, expect, test, vi } from 'vitest'
@@ -30,7 +30,7 @@ const invalidCredentials: AuthFailure = {
   retryable: false,
 }
 
-const jsonResponse = (status: number, body: unknown): Response =>
+const jsonResponse = (status: number, body: Schema.Json): Response =>
   new Response(JSON.stringify(body), {
     status,
     headers: { 'content-type': 'application/json' },

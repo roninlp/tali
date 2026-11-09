@@ -83,13 +83,27 @@ export interface ListEditPatch {
   readonly visibility?: ListVisibility
 }
 
+/**
+ * The local mirror patch an edit accumulates. A type alias keeps the implicit
+ * index signature the store's patch parameter accepts.
+ */
+type ListEditWrite = {
+  title?: string
+  description?: string | null
+  color?: string | null
+  icon?: string | null
+  sort?: ListSort
+  checkedPlacement?: CheckedPlacement
+  visibility?: ListVisibility
+}
+
 export const updateListInMirror = async (
   store: LocalStore,
   id: string,
   patch: ListEditPatch,
   now: string,
 ): Promise<void> => {
-  const record: Record<string, unknown> = {}
+  const record: ListEditWrite = {}
 
   if (patch.title !== undefined) {
     record.title = patch.title.trim()
@@ -206,13 +220,32 @@ export interface ListItemDraft {
   readonly tagIds?: ReadonlyArray<string>
 }
 
+/** The full create patch one item row needs; a type alias, not an interface. */
+type ListItemCreatePatch = {
+  id: string
+  type: 'listItem'
+  listId: string
+  title: string
+  name: string
+  checked: boolean
+  done: boolean
+  sortOrder: number
+  ordering: number
+  order: number
+  checkedAt: null
+  color: string | null
+  tagIds: ReadonlyArray<string>
+  ownerId: string
+  createdAt: string
+}
+
 const itemPatch = (
   id: string,
   listId: string,
   draft: ListItemDraft,
   now: string,
   ownerId: string,
-): Readonly<Record<string, unknown>> => {
+): ListItemCreatePatch => {
   const name = draft.name.trim()
 
   return {
@@ -310,6 +343,15 @@ export const uncheckListItemInMirror = async (
   })
 }
 
+/** The local mirror patch an item edit accumulates; a type alias, not an interface. */
+type ListItemEditWrite = {
+  name?: string
+  title?: string
+  color?: string | null
+  tagIds?: ReadonlyArray<string>
+  visibility?: ListVisibility
+}
+
 export const updateListItemInMirror = async (
   store: LocalStore,
   id: string,
@@ -321,7 +363,7 @@ export const updateListItemInMirror = async (
   },
   now: string,
 ): Promise<void> => {
-  const record: Record<string, unknown> = {}
+  const record: ListItemEditWrite = {}
 
   if (patch.name !== undefined) {
     const name = patch.name.trim()

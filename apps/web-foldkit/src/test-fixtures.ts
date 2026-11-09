@@ -1,4 +1,4 @@
-import { Option } from 'effect'
+import { Match, Option } from 'effect'
 
 import { Listbox, Menu, Popover, RadioGroup } from '@foldkit/ui'
 
@@ -158,25 +158,34 @@ export const modelAt = (
     push: pushModel(),
     sync: syncModel(),
     today: Today.initialModel(TODAY_NOW),
-    lists:
-      route._tag === 'List'
-        ? Lists.mirrorSettled(
+    lists: Match.value(route).pipe(
+      Match.tag(
+        'List',
+        listRoute =>
+          Lists.mirrorSettled(
             Lists.enteredDetail(Lists.initialModel(), {
-              listId: route.listId,
+              listId: listRoute.listId,
             }).model,
-          ).model
-        : Lists.initialModel(),
-    notes:
-      route._tag === 'Note'
-        ? Notes.enteredNote(Notes.initialModel(), {
-            noteId: route.noteId,
+          ).model,
+      ),
+      Match.orElse(() => Lists.initialModel()),
+    ),
+    notes: Match.value(route).pipe(
+      Match.tag(
+        'Note',
+        noteRoute =>
+          Notes.enteredNote(Notes.initialModel(), {
+            noteId: noteRoute.noteId,
             isStoreReady: false,
-          }).model
-        : route._tag === 'Notes'
-          ? Notes.enteredIndex(Notes.initialModel()).model
-          : route._tag === 'NotesTrash'
-            ? Notes.enteredTrash(Notes.initialModel()).model
-            : Notes.initialModel(),
+          }).model,
+      ),
+      Match.tag('Notes', () => Notes.enteredIndex(Notes.initialModel()).model),
+      Match.tag(
+        'NotesTrash',
+        () => Notes.enteredTrash(Notes.initialModel()).model,
+      ),
+      Match.orElse(() => Notes.initialModel()),
+    ),
     tasks: Tasks.initialModel({
       now: TODAY_NOW,
       maybeUserId: Option.some(USER_ID),

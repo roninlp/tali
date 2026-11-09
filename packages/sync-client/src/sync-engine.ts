@@ -1,4 +1,4 @@
-import { Schema } from 'effect'
+import { Predicate, Schema } from 'effect'
 import {
   type Habit,
   type HabitEntry,
@@ -14,6 +14,12 @@ import {
 } from '@tali/domain'
 
 import type { EntityRef, LocalStore, SyncFailure } from './local-store/types'
+
+/** The `_tag` of a thrown tagged error, if it has one. */
+const causeTag = (cause: unknown): string | undefined =>
+  Predicate.isObject(cause) && Predicate.isString(cause._tag)
+    ? cause._tag
+    : undefined
 
 /**
  * The client half of the sync engine (ticket #18) — the implementation behind
@@ -379,7 +385,7 @@ export const createSyncEngine = (transport: SyncTransport): SyncEngine => {
               repairedRows.push(habitRow(restored))
               versionByEntity.set(`habit\u0000${restored.id}`, restored.version)
             } catch (cause) {
-              const tag = (cause as { readonly _tag?: unknown })._tag
+              const tag = causeTag(cause)
               if (
                 typeof tag !== 'string' ||
                 !PERMANENT_REVIVE_ERRORS.has(tag)
@@ -447,7 +453,7 @@ export const createSyncEngine = (transport: SyncTransport): SyncEngine => {
                 )
               }
             } catch (cause) {
-              const tag = (cause as { readonly _tag?: unknown })._tag
+              const tag = causeTag(cause)
               if (
                 typeof tag !== 'string' ||
                 !PERMANENT_REVIVE_ERRORS.has(tag)

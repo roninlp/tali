@@ -1,5 +1,6 @@
 import { Option } from 'effect'
 
+import { HabitFrequency } from '../habits-model'
 import type { HabitEntryRow, HabitRow } from '../habits-model'
 import { TodayReadModel } from '../lib/today-api'
 import type { TodayCounts } from '../lib/today-api'
@@ -77,9 +78,9 @@ export const habit: HabitRow = {
   description: null,
   icon: '💧',
   color: null,
-  frequency: { _tag: 'daily' },
+  frequency: HabitFrequency.daily(),
   frequencyHistory: [
-    { effectiveFrom: '2026-10-01', frequency: { _tag: 'daily' } },
+    { effectiveFrom: '2026-10-01', frequency: HabitFrequency.daily() },
   ],
   startedOn: '2026-10-01',
   reminderTime: null,

@@ -74,7 +74,7 @@ describe('ChangedUrl', () => {
         Sync.Message.SucceededReadMirror(emptySnapshot),
       ),
       model(model => {
-        if (model.route._tag === 'List') {
+        if (AppRoute.isAnyOf(['List'])(model.route)) {
           expect(model.route.listId).toBe(
             '018f3a4c-7b2d-7c4e-9a1b-2c3d4e5f6a7b',
           )

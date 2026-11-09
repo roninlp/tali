@@ -26,7 +26,7 @@ export class HouseholdRepo extends Context.Service<HouseholdRepo>()(
       const insertStatement = (
         household: Household,
       ): Statement.Statement<Household> =>
-        sql<Household>`INSERT INTO households ${sql.insert(household as unknown as Record<string, unknown>)} RETURNING *`
+        sql<Household>`INSERT INTO households ${sql.insert({ ...household })} RETURNING *`
 
       return {
         insert: base.insert,
@@ -64,7 +64,7 @@ export class MembershipRepo extends Context.Service<MembershipRepo>()(
       const insertStatement = (
         membership: Membership,
       ): Statement.Statement<Membership> =>
-        sql<Membership>`INSERT INTO memberships ${sql.insert(membership as unknown as Record<string, unknown>)} RETURNING *`
+        sql<Membership>`INSERT INTO memberships ${sql.insert({ ...membership })} RETURNING *`
 
       /**
        * Adds a member only while the household has fewer than two memberships.

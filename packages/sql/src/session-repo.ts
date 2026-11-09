@@ -39,7 +39,7 @@ export class SessionRepo extends Context.Service<SessionRepo>()('SessionRepo', {
 
     /** Raw statement so user + first session insert atomically. */
     const insertStatement = (session: Session): Statement.Statement<Session> =>
-      sql<Session>`INSERT INTO sessions ${sql.insert(session as unknown as Record<string, unknown>)} RETURNING *`
+      sql<Session>`INSERT INTO sessions ${sql.insert({ ...session })} RETURNING *`
 
     return {
       insert: base.insert,

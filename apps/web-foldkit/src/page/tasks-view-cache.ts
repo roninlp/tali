@@ -41,66 +41,108 @@ const storage = (): Storage | undefined => {
   }
 }
 
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
+const StoredTaskFilters = Schema.Struct({
+  projectId: Schema.optional(Schema.Unknown),
+  tagIds: Schema.optional(Schema.Unknown),
+  priority: Schema.optional(Schema.Unknown),
+  status: Schema.optional(Schema.Unknown),
+  date: Schema.optional(Schema.Unknown),
+})
+
+type StoredTaskFilters = typeof StoredTaskFilters.Type
+
+const StoredTaskSort = Schema.Struct({
+  by: Schema.optional(Schema.Unknown),
+  direction: Schema.optional(Schema.Unknown),
+})
+
+type StoredTaskSort = typeof StoredTaskSort.Type
+
+const StoredTaskView = Schema.Struct({
+  filters: Schema.optional(Schema.Unknown),
+  sort: Schema.optional(Schema.Unknown),
+})
+
+type StoredTaskView = typeof StoredTaskView.Type
+
+const asStoredView = Schema.decodeUnknownOption(
+  Schema.fromJsonString(StoredTaskView),
+)
+
+const asStoredFilters = Schema.decodeUnknownOption(StoredTaskFilters)
+
+const asStoredSort = Schema.decodeUnknownOption(StoredTaskSort)
+
+const asProjectId = Schema.decodeUnknownOption(Schema.NullOr(Schema.String))
+
+const asUnknownArray = Schema.decodeUnknownOption(Schema.Array(Schema.Unknown))
+
+const asString = Schema.decodeUnknownOption(Schema.String)
 
 const decodePriority = Schema.decodeUnknownOption(TaskPriorityFilter)
 const decodeStatus = Schema.decodeUnknownOption(TaskStatusFilter)
 const decodeDate = Schema.decodeUnknownOption(TaskDateFilter)
 const decodeSortField = Schema.decodeUnknownOption(TaskSortField)
 
-const parseProject = (value: unknown): ProjectFilter => {
-  if (value === null) {
-    return ProjectFilter.None()
-  }
+const parseProject = (value: StoredTaskFilters['projectId']): ProjectFilter =>
+  Option.match(asProjectId(value), {
+    onNone: () => ProjectFilter.All(),
+    onSome: projectId =>
+      projectId === null
+        ? ProjectFilter.None()
+        : ProjectFilter.Project({ projectId }),
+  })
 
-  if (typeof value === 'string') {
-    return ProjectFilter.Project({ projectId: value })
-  }
+const parseTagIds = (
+  value: StoredTaskFilters['tagIds'],
+): ReadonlyArray<string> =>
+  Option.getOrElse(
+    Option.map(asUnknownArray(value), entries =>
+      Array.getSomes(Array.map(entries, value => asString(value))),
+    ),
+    () => [],
+  )
 
-  return ProjectFilter.All()
-}
+const parseFilters = (filters: StoredTaskView['filters']): TaskFilters => {
+  const stored = Option.getOrNull(asStoredFilters(filters))
 
-const parseFilters = (value: unknown): TaskFilters => {
-  if (!isRecord(value)) {
+  if (stored === null) {
     return DEFAULT_TASK_FILTERS
   }
 
-  const tagIds = Array.isArray(value.tagIds)
-    ? value.tagIds.filter((entry): entry is string => typeof entry === 'string')
-    : []
-
   return TaskFilters.make({
-    project: parseProject(value.projectId),
-    tagIds,
+    project: parseProject(stored.projectId),
+    tagIds: parseTagIds(stored.tagIds),
     priority: Option.getOrElse(
-      decodePriority(value.priority),
+      decodePriority(stored.priority),
       () => DEFAULT_TASK_FILTERS.priority,
     ),
     status: Option.getOrElse(
-      decodeStatus(value.status),
+      decodeStatus(stored.status),
       () => DEFAULT_TASK_FILTERS.status,
     ),
     date: Option.getOrElse(
-      decodeDate(value.date),
+      decodeDate(stored.date),
       () => DEFAULT_TASK_FILTERS.date,
     ),
   })
 }
 
-const parseSort = (value: unknown): TaskSort => {
-  if (!isRecord(value)) {
+const parseSort = (sort: StoredTaskView['sort']): TaskSort => {
+  const stored = Option.getOrNull(asStoredSort(sort))
+
+  if (stored === null) {
     return DEFAULT_TASK_SORT
   }
 
   const by = Option.getOrElse(
-    decodeSortField(value.by),
+    decodeSortField(stored.by),
     () => DEFAULT_TASK_SORT.by,
   )
 
   return TaskSort.make({
     by,
-    direction: value.direction === 'desc' ? 'desc' : 'asc',
+    direction: stored.direction === 'desc' ? 'desc' : 'asc',
   })
 }
 
@@ -112,22 +154,12 @@ export const parseTaskViewSettings = (
     return Option.none()
   }
 
-  try {
-    const parsed: unknown = JSON.parse(raw)
-
-    if (!isRecord(parsed)) {
-      return Option.none()
-    }
-
-    return Option.some(
-      TaskViewSettings.make({
-        filters: parseFilters(parsed.filters),
-        sort: parseSort(parsed.sort),
-      }),
-    )
-  } catch {
-    return Option.none()
-  }
+  return Option.map(asStoredView(raw), view =>
+    TaskViewSettings.make({
+      filters: parseFilters(view.filters),
+      sort: parseSort(view.sort),
+    }),
+  )
 }
 
 export const readTaskViewSettings = (

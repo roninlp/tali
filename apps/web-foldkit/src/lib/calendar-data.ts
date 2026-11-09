@@ -1,13 +1,20 @@
 import { Schema } from 'effect'
+import { defineTaggedUnion } from 'foldkit/schema'
 
-import type { CalendarEventSource as DomainEventSource } from '@tali/domain'
+import type {
+  CalendarEventSource as DomainEventSource,
+  EventExceptionOverrides,
+  EventTiming,
+} from '@tali/domain'
 import {
   EventException,
   EventExceptionId,
-  EventTiming,
   LocalDate,
   RecurrenceRule,
   TimestampUtc,
+  allDayEventTiming,
+  timedEventTiming,
+  untilRecurrenceEnd,
 } from '@tali/domain'
 
 /**
@@ -22,25 +29,18 @@ import {
  * constructors.
  */
 
-export const CalendarTiming = Schema.Union([
-  Schema.Struct({
-    _tag: Schema.Literal('timed'),
-    start: Schema.String,
-    end: Schema.String,
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal('allDay'),
-    date: Schema.String,
-  }),
-])
+export const CalendarTiming = defineTaggedUnion({
+  timed: { start: Schema.String, end: Schema.String },
+  allDay: { date: Schema.String },
+})
 
 export type CalendarTiming = typeof CalendarTiming.Type
 
-export const CalendarRecurrenceEnd = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal('never') }),
-  Schema.Struct({ _tag: Schema.Literal('count'), count: Schema.Int }),
-  Schema.Struct({ _tag: Schema.Literal('until'), date: Schema.String }),
-])
+export const CalendarRecurrenceEnd = defineTaggedUnion({
+  never: {},
+  count: { count: Schema.Int },
+  until: { date: Schema.String },
+})
 
 export type CalendarRecurrenceEnd = typeof CalendarRecurrenceEnd.Type
 
@@ -262,27 +262,34 @@ export type CalendarMonthPayload = typeof CalendarMonthPayload.Type
  * Construction is pure: the values were already decoded by the locals above.
  */
 export const timingWithDomainValues = (timing: CalendarTiming): EventTiming =>
-  timing._tag === 'allDay'
-    ? EventTiming.make({
-        _tag: 'allDay',
-        date: LocalDate.make(timing.date),
-      })
-    : EventTiming.make({
-        _tag: 'timed',
-        start: TimestampUtc.make(timing.start),
-        end: TimestampUtc.make(timing.end),
-      })
+  CalendarTiming.match(timing, {
+    allDay: ({ date }) => allDayEventTiming(LocalDate.make(date)),
+    timed: ({ start, end }) =>
+      timedEventTiming(TimestampUtc.make(start), TimestampUtc.make(end)),
+  })
 
 export const recurrenceWithDomainValues = (
   rule: CalendarRecurrenceRule,
 ): RecurrenceRule =>
   RecurrenceRule.make({
     ...rule,
-    end:
-      rule.end._tag === 'until'
-        ? { _tag: 'until', date: LocalDate.make(rule.end.date) }
-        : rule.end,
+    end: CalendarRecurrenceEnd.match(rule.end, {
+      never: () => rule.end,
+      count: () => rule.end,
+      until: ({ date }) => untilRecurrenceEnd(LocalDate.make(date)),
+    }),
   })
+
+/** The exception overrides, with the timing hydrated into domain values. */
+export const exceptionOverridesWithDomainValues = (
+  overrides: CalendarExceptionOverrides,
+): EventExceptionOverrides =>
+  overrides.timing === undefined
+    ? overrides
+    : {
+        ...overrides,
+        timing: timingWithDomainValues(overrides.timing),
+      }
 
 export const eventSourceWithDomainValues = (
   source: CalendarEventSource,
@@ -308,14 +315,7 @@ export const eventSourceWithDomainValues = (
       overrides:
         exception.overrides === null
           ? null
-          : {
-              ...exception.overrides,
-              ...(exception.overrides.timing === undefined
-                ? {}
-                : {
-                    timing: timingWithDomainValues(exception.overrides.timing),
-                  }),
-            },
+          : exceptionOverridesWithDomainValues(exception.overrides),
       createdAt: TimestampUtc.make(exception.createdAt),
     }),
   ),

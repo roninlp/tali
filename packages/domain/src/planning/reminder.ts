@@ -111,6 +111,45 @@ export const ReminderRepeat = Schema.Union([
 ])
 export type ReminderRepeat = Schema.Schema.Type<typeof ReminderRepeat>
 
+/** A reminder that fires once at its scheduled instant. */
+export const onceReminderRepeat = (): ReminderRepeat => ({ _tag: 'once' })
+
+/** A reminder that fires at the same local wall time every day. */
+export const dailyReminderRepeat = (time: ClockTime): ReminderRepeat => ({
+  _tag: 'daily',
+  time,
+})
+
+/** A reminder that fires at a local wall time on selected weekdays. */
+export const weeklyReminderRepeat = (
+  days: ReadonlyArray<IsoWeekday>,
+  time: ClockTime,
+): ReminderRepeat => ({ _tag: 'weekly', days, time })
+
+/** A reminder that fires every `hours` hours. */
+export const intervalReminderRepeat = (hours: number): ReminderRepeat => ({
+  _tag: 'interval',
+  hours,
+})
+
+/** Whether this repeat pattern fires at a daily local time. */
+export const isDailyReminderRepeat = (
+  repeat: ReminderRepeat,
+): repeat is Extract<ReminderRepeat, { readonly _tag: 'daily' }> =>
+  repeat._tag === 'daily'
+
+/** Whether this repeat pattern fires on selected weekdays. */
+export const isWeeklyReminderRepeat = (
+  repeat: ReminderRepeat,
+): repeat is Extract<ReminderRepeat, { readonly _tag: 'weekly' }> =>
+  repeat._tag === 'weekly'
+
+/** Whether this repeat pattern is an hour interval. */
+export const isIntervalReminderRepeat = (
+  repeat: ReminderRepeat,
+): repeat is Extract<ReminderRepeat, { readonly _tag: 'interval' }> =>
+  repeat._tag === 'interval'
+
 export class Reminder extends Model.Class<Reminder>('Reminder')({
   ...commonItemFields('reminder', ReminderId),
   /** Resolved from the reminder's `shareable` policy (ADR-0011); default `private`. */

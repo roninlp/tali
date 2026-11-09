@@ -1,24 +1,43 @@
-import { Schema } from 'effect'
+import { Match, Option, Predicate, Schema } from 'effect'
 import { type SqlClient, Statement } from 'effect/sql'
 import {
   Event,
+  EventId,
+  EventTiming,
   Habit,
   HabitEntry,
   HabitFrequency,
+  HabitId,
   habitFrequencyHistoryAfter,
   type HabitFrequencyChange,
   List,
+  LocalDate,
   localDateIn,
   localDateInOption,
   Note,
   normalizePersian,
   Occasion,
+  OccasionId,
   Project,
-  sameHabitFrequency,
   Reminder,
+  ReminderLink,
+  ReminderRepeat,
   reminderFireAt,
   type ReminderType,
   reminderTierFor,
+  TaskId,
+  TimestampUtc,
+  allDayEventTiming,
+  dailyHabitFrequency,
+  eventReminderLink,
+  habitReminderLink,
+  isAllDayEventTiming,
+  noReminderLink,
+  occasionReminderLink,
+  onceReminderRepeat,
+  sameHabitFrequency,
+  taskReminderLink,
+  timedEventTiming,
   defaultVisibilityFor,
   resolveCreateVisibility,
   successorTask,
@@ -359,6 +378,11 @@ const parseJson = (value: unknown): unknown => {
     return null
   }
 }
+
+const asEventTiming = Schema.decodeUnknownOption(EventTiming)
+const asHabitFrequency = Schema.decodeUnknownOption(HabitFrequency)
+const asReminderRepeat = Schema.decodeUnknownOption(ReminderRepeat)
+const asReminderLink = Schema.decodeUnknownOption(ReminderLink)
 const asStringArray = (value: unknown): ReadonlyArray<string> => {
   const parsed = parseJson(value)
   return Array.isArray(parsed)
@@ -826,11 +850,14 @@ const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
       version: child.version,
       updatedAt: child.updatedAt,
       deletedAt: null,
-      data: taskCodec.validate({ ...child } as Record<string, unknown>, {
-        version: child.version,
-        updatedAt: child.updatedAt,
-        deletedAt: null,
-      }),
+      data: taskCodec.validate(
+        { ...child },
+        {
+          version: child.version,
+          updatedAt: child.updatedAt,
+          deletedAt: null,
+        },
+      ),
     }
     return {
       parentId: next.entityId,
@@ -1494,12 +1521,17 @@ const EVENT_COLUMNS =
  * An all-day row carries a local date; a timed row carries two instants. The
  * union is the event's *one* time shape, so a row can never hold both.
  */
-const eventTimingOfRow = (row: SyncRawRow): Record<string, unknown> => {
+const eventTimingOfRow = (row: SyncRawRow): EventTiming => {
   const allDayDate = asText(row.allDayDate)
-  if (allDayDate !== null) return { _tag: 'allDay', date: allDayDate }
+  if (allDayDate !== null) {
+    return allDayEventTiming(LocalDate.make(allDayDate))
+  }
   const createdAt = encodeText(row.createdAt)
   const start = asText(row.startAt) ?? createdAt
-  return { _tag: 'timed', start, end: asText(row.endAt) ?? start }
+  return timedEventTiming(
+    TimestampUtc.make(start),
+    TimestampUtc.make(asText(row.endAt) ?? start),
+  )
 }
 
 /**
@@ -1513,22 +1545,10 @@ const eventTimingOfRow = (row: SyncRawRow): Record<string, unknown> => {
 const eventTimingOfPatch = (
   value: unknown,
   fallbackDate: string,
-): Record<string, unknown> => {
-  if (typeof value === 'object' && value !== null) {
-    const record = value as Record<string, unknown>
-    if (
-      record._tag === 'timed' &&
-      typeof record.start === 'string' &&
-      typeof record.end === 'string'
-    ) {
-      return { _tag: 'timed', start: record.start, end: record.end }
-    }
-    if (record._tag === 'allDay' && typeof record.date === 'string') {
-      return { _tag: 'allDay', date: record.date }
-    }
-  }
-  return { _tag: 'allDay', date: fallbackDate.slice(0, 10) }
-}
+): EventTiming =>
+  Option.getOrElse(asEventTiming(value), () =>
+    allDayEventTiming(LocalDate.make(fallbackDate.slice(0, 10))),
+  )
 
 const eventCodec = withSchema<Event>(Event, row => ({
   id: String(row.id),
@@ -1583,23 +1603,13 @@ const eventTimingColumns = (
   readonly endAt: string | null
   readonly allDayDate: string | null
 } => {
-  const timing = data.timing
-  if (typeof timing === 'object' && timing !== null) {
-    const record = timing as Record<string, unknown>
-    if (record._tag === 'allDay') {
-      return {
-        startAt: null,
-        endAt: null,
-        allDayDate: typeof record.date === 'string' ? record.date : null,
-      }
-    }
-    return {
-      startAt: typeof record.start === 'string' ? record.start : null,
-      endAt: typeof record.end === 'string' ? record.end : null,
-      allDayDate: null,
-    }
-  }
-  return { startAt: null, endAt: null, allDayDate: null }
+  const timing = Option.getOrNull(asEventTiming(data.timing))
+
+  if (timing === null) return { startAt: null, endAt: null, allDayDate: null }
+
+  return isAllDayEventTiming(timing)
+    ? { startAt: null, endAt: null, allDayDate: timing.date }
+    : { startAt: timing.start, endAt: timing.end, allDayDate: null }
 }
 
 const eventDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
@@ -1716,7 +1726,10 @@ const habitCodec = withSchema<Habit>(Habit, row => {
     visibility: storedVisibility('habit', row.visibility),
     color: asText(row.color),
     startedOn: encodeText(row.startedOn),
-    frequency: parseJson(row.frequency) ?? { _tag: 'daily' },
+    frequency: Option.getOrElse(
+      asHabitFrequency(parseJson(row.frequency)),
+      dailyHabitFrequency,
+    ),
     frequencyHistory: Array.isArray(history) ? history : [],
     reminderTime: asText(row.reminderTime),
     timeZone: encodeText(row.timeZone) || 'UTC',
@@ -1739,11 +1752,13 @@ const HABIT_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
   ['visibility', isOneOf('private', 'shared')],
 ])
 
-/** The habit's frequency as the union the model expects; `daily` only when absent. */
-const habitFrequencyOfPatch = (value: unknown): Record<string, unknown> =>
-  value === undefined || value === null
-    ? { _tag: 'daily' }
-    : (value as Record<string, unknown>)
+/**
+ * A client patch's frequency. An absent field means `daily`; any supplied
+ * value stays unparsed so the Habit schema rejects a malformed union instead
+ * of silently repairing it.
+ */
+const habitFrequencyOfPatch = (value: unknown): unknown =>
+  value === undefined || value === null ? dailyHabitFrequency() : value
 
 const habitDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'habit',
@@ -1755,9 +1770,7 @@ const habitDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   ...habitCodec,
   defaults: (patch, context) => {
     const timeZone = encodeText(patch.timeZone) || 'UTC'
-    const frequency = habitFrequencyOfPatch(
-      patch.frequency,
-    ) as unknown as HabitFrequency
+    const frequency = habitFrequencyOfPatch(patch.frequency)
     // The habit began on the owner's local creation day. The client's creation
     // instant is the edit time (a validated ISO string); a malformed custom
     // `createdAt` falls back to it, then to the commit instant, so a bad value
@@ -1987,30 +2000,27 @@ const REMINDER_COLUMNS =
   `time_zone AS timeZone, created_at AS createdAt`
 
 /** Rebuild the link union from the flattened columns (malformed → none). */
-const reminderLinkOf = (
-  type: unknown,
-  id: unknown,
-): Record<string, unknown> => {
+const reminderLinkOf = (type: unknown, id: unknown): ReminderLink => {
   const linkId = asText(id)
   switch (type) {
     case 'task':
       return linkId === null
-        ? { _tag: 'none' }
-        : { _tag: 'task', taskId: linkId }
+        ? noReminderLink()
+        : taskReminderLink(TaskId.make(linkId))
     case 'event':
       return linkId === null
-        ? { _tag: 'none' }
-        : { _tag: 'event', eventId: linkId }
+        ? noReminderLink()
+        : eventReminderLink(EventId.make(linkId))
     case 'habit':
       return linkId === null
-        ? { _tag: 'none' }
-        : { _tag: 'habit', habitId: linkId }
+        ? noReminderLink()
+        : habitReminderLink(HabitId.make(linkId))
     case 'occasion':
       return linkId === null
-        ? { _tag: 'none' }
-        : { _tag: 'occasion', occasionId: linkId }
+        ? noReminderLink()
+        : occasionReminderLink(OccasionId.make(linkId))
     default:
-      return { _tag: 'none' }
+      return noReminderLink()
   }
 }
 
@@ -2018,33 +2028,45 @@ const reminderLinkOf = (
 const reminderLinkColumns = (
   data: Record<string, unknown>,
 ): { readonly linkType: string; readonly linkId: string | null } => {
-  const link = data.link
-  if (typeof link === 'object' && link !== null) {
-    const record = link as Record<string, unknown>
-    switch (record._tag) {
-      case 'task':
-        return { linkType: 'task', linkId: asText(record.taskId) }
-      case 'event':
-        return { linkType: 'event', linkId: asText(record.eventId) }
-      case 'habit':
-        return { linkType: 'habit', linkId: asText(record.habitId) }
-      case 'occasion':
-        return { linkType: 'occasion', linkId: asText(record.occasionId) }
-      default:
-        return { linkType: 'none', linkId: null }
-    }
-  }
-  return { linkType: 'none', linkId: null }
+  const link = Option.getOrNull(asReminderLink(data.link))
+  if (link === null) return { linkType: 'none', linkId: null }
+  return Match.value(link).pipe(
+    Match.tag('task', value => ({
+      linkType: 'task',
+      linkId: value.taskId,
+    })),
+    Match.tag('event', value => ({
+      linkType: 'event',
+      linkId: value.eventId,
+    })),
+    Match.tag('habit', value => ({
+      linkType: 'habit',
+      linkId: value.habitId,
+    })),
+    Match.tag('occasion', value => ({
+      linkType: 'occasion',
+      linkId: value.occasionId,
+    })),
+    Match.orElse(() => ({ linkType: 'none', linkId: null })),
+  )
 }
 
-const reminderRepeatOf = (value: unknown): Record<string, unknown> => {
-  const parsed = parseJson(value)
-  if (typeof parsed === 'object' && parsed !== null) {
-    return parsed as Record<string, unknown>
-  }
+/** A stored row's repeat; a malformed cell reads as a one-off. */
+const reminderRepeatOf = (value: unknown): ReminderRepeat =>
   // A delete-only tombstone may be inserted without a valid repeat; the model
   // still has to be structurally valid, so fall back to a one-off.
-  return { _tag: 'once' }
+  Option.getOrElse(asReminderRepeat(parseJson(value)), onceReminderRepeat)
+
+/**
+ * A client patch's repeat. An absent or non-tagged value reads as a one-off;
+ * a tagged value stays unparsed so the Reminder schema rejects a malformed
+ * union rather than the registry silently repairing it.
+ */
+const reminderRepeatOfPatch = (value: unknown): unknown => {
+  const parsed = parseJson(value)
+  return Predicate.isObject(parsed) && Predicate.hasProperty(parsed, '_tag')
+    ? parsed
+    : onceReminderRepeat()
 }
 
 /**
@@ -2107,7 +2129,7 @@ const reminderDefinition = (
   ...reminderCodec,
   defaults: (patch, context) => {
     const kind = encodeText(patch.kind) || 'general'
-    const repeat = reminderRepeatOf(patch.repeat)
+    const repeat = reminderRepeatOfPatch(patch.repeat)
     const timeZone = encodeText(patch.timeZone) || 'UTC'
     const explicitFireAt = asText(patch.fireAt)
     // The service derives a pattern reminder's first fire from its repeat; the
@@ -2118,7 +2140,10 @@ const reminderDefinition = (
     const fireAt = normalizeInstantText(
       explicitFireAt ??
         reminderFireAt({
-          repeat: repeat as Reminder['repeat'],
+          repeat: Option.getOrElse(
+            asReminderRepeat(repeat),
+            onceReminderRepeat,
+          ),
           timeZone,
           now: context.clientUpdatedAt,
           explicitFireAt: null,
@@ -2137,13 +2162,7 @@ const reminderDefinition = (
       repeat,
       fireAt,
       offsetMinutes: encodeInt(patch.offsetMinutes),
-      link: reminderLinkOf(
-        (patch.link as Record<string, unknown> | undefined)?._tag,
-        (patch.link as Record<string, unknown> | undefined)?.taskId ??
-          (patch.link as Record<string, unknown> | undefined)?.eventId ??
-          (patch.link as Record<string, unknown> | undefined)?.habitId ??
-          (patch.link as Record<string, unknown> | undefined)?.occasionId,
-      ),
+      link: Option.getOrElse(asReminderLink(patch.link), noReminderLink),
       silencedUntil: normalizeInstantText(asText(patch.silencedUntil)),
       timeZone,
       ownerId: context.userId,

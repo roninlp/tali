@@ -3,6 +3,7 @@ import {
   Clock,
   Duration,
   Effect,
+  Match,
   Option,
   Queue,
   Schema,
@@ -475,15 +476,13 @@ const refreshIfSettled = (model: Model, inputs: Inputs): CommandReturn =>
   inputs.isOnline && inputs.pending === 0 ? startFetch(model) : { model }
 
 const sectionTitle = (section: DashboardSection): string =>
-  section === 'tasks'
-    ? 'کارهای امروز'
-    : section === 'events'
-      ? 'رویدادها'
-      : section === 'reminders'
-        ? 'یادآورها'
-        : section === 'habits'
-          ? 'عادت‌ها'
-          : 'یادداشت‌های پین‌شده'
+  Match.value(section).pipe(
+    Match.when('tasks', () => 'کارهای امروز'),
+    Match.when('events', () => 'رویدادها'),
+    Match.when('reminders', () => 'یادآورها'),
+    Match.when('habits', () => 'عادت‌ها'),
+    Match.orElse(() => 'یادداشت‌های پین‌شده'),
+  )
 
 const completeTask = (
   model: Model,

@@ -79,6 +79,30 @@ export const EventTiming = Schema.Union([
 ])
 export type EventTiming = Schema.Schema.Type<typeof EventTiming>
 
+/** A timed occurrence from its two UTC instants. */
+export const timedEventTiming = (
+  start: TimestampUtc,
+  end: TimestampUtc,
+): EventTiming => ({ _tag: 'timed', start, end })
+
+/** An all-day occurrence on its local calendar date. */
+export const allDayEventTiming = (date: LocalDate): EventTiming => ({
+  _tag: 'allDay',
+  date,
+})
+
+/** Whether this timing is a timed occurrence. */
+export const isTimedEventTiming = (
+  timing: EventTiming,
+): timing is Extract<EventTiming, { readonly _tag: 'timed' }> =>
+  timing._tag === 'timed'
+
+/** Whether this timing is an all-day occurrence. */
+export const isAllDayEventTiming = (
+  timing: EventTiming,
+): timing is Extract<EventTiming, { readonly _tag: 'allDay' }> =>
+  timing._tag === 'allDay'
+
 /** What an exception does to its occurrence. */
 export const EventExceptionAction = Schema.Literals(['delete', 'override'])
 export type EventExceptionAction = Schema.Schema.Type<

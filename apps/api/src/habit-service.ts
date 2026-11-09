@@ -188,11 +188,14 @@ export class HabitService extends Context.Service<HabitService>()(
           version: habit.version,
           updatedAt: habit.updatedAt,
           deletedAt: habit.deletedAt,
-          data: def.validate({ ...habit } as Record<string, unknown>, {
-            version: habit.version,
-            updatedAt: habit.updatedAt,
-            deletedAt: habit.deletedAt,
-          }),
+          data: def.validate(
+            { ...habit },
+            {
+              version: habit.version,
+              updatedAt: habit.updatedAt,
+              deletedAt: habit.deletedAt,
+            },
+          ),
         }
       }
 
@@ -212,11 +215,14 @@ export class HabitService extends Context.Service<HabitService>()(
           version: entry.version,
           updatedAt: entry.updatedAt,
           deletedAt: entry.deletedAt,
-          data: def.validate({ ...entry } as Record<string, unknown>, {
-            version: entry.version,
-            updatedAt: entry.updatedAt,
-            deletedAt: entry.deletedAt,
-          }),
+          data: def.validate(
+            { ...entry },
+            {
+              version: entry.version,
+              updatedAt: entry.updatedAt,
+              deletedAt: entry.deletedAt,
+            },
+          ),
         }
       }
 

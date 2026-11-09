@@ -1,4 +1,4 @@
-import { Array, Effect, Option, Schema, Struct } from 'effect'
+import { Array, Effect, Match, Option, Schema, Struct } from 'effect'
 import { Command, Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
@@ -8,7 +8,28 @@ import {
   CaptureCommitResult,
   CaptureDraft,
   CaptureId,
+  allDayEventTiming,
+  dailyHabitFrequency,
+  dailyReminderRepeat,
+  intervalReminderRepeat,
+  isAllDayEventTiming,
+  isDailyReminderRepeat,
+  isEventCaptureDraft,
+  isHabitCaptureDraft,
+  isIntervalReminderRepeat,
+  isReminderCaptureDraft,
+  isTaskCaptureDraft,
+  isTimedEventTiming,
+  isWeekdaysHabitFrequency,
+  isWeeklyHabitFrequency,
+  isWeeklyReminderRepeat,
+  needsInput,
+  onceReminderRepeat,
+  timedEventTiming,
   uuidV7,
+  weekdaysHabitFrequency,
+  weeklyHabitFrequency,
+  weeklyReminderRepeat,
 } from '@tali/domain'
 
 import {
@@ -340,7 +361,7 @@ const setDraftField = (
   field: string,
   value: string,
 ): CaptureDraft => {
-  if (draft._tag === 'task') {
+  if (isTaskCaptureDraft(draft)) {
     if (field === 'dueDate') {
       return Struct.assign(draft, {
         dueDate: value === '' ? undefined : value,
@@ -361,7 +382,7 @@ const setDraftField = (
     return draft
   }
 
-  if (draft._tag === 'event') {
+  if (isEventCaptureDraft(draft)) {
     if (field === 'timing' || field === 'timing.date') {
       if (value === '') return Struct.assign(draft, { timing: undefined })
 
@@ -369,12 +390,12 @@ const setDraftField = (
         const end = new Date(Date.parse(value) + 60 * 60 * 1000).toISOString()
 
         return Struct.assign(draft, {
-          timing: { _tag: 'timed' as const, start: value, end },
+          timing: timedEventTiming(value, end),
         })
       }
 
       return Struct.assign(draft, {
-        timing: { _tag: 'allDay' as const, date: value },
+        timing: allDayEventTiming(value),
       })
     }
 
@@ -383,29 +404,33 @@ const setDraftField = (
       const current = draft.timing
 
       const end =
-        current?._tag === 'timed'
+        current !== undefined && isTimedEventTiming(current)
           ? current.end
           : new Date(Date.parse(value) + 60 * 60 * 1000).toISOString()
 
       return Struct.assign(draft, {
-        timing: { _tag: 'timed' as const, start: value, end },
+        timing: timedEventTiming(value, end),
       })
     }
 
     if (field === 'timing.end' || field === 'end') {
       if (value === '' || !isInstant(value)) return draft
       const current = draft.timing
-      const start = current?._tag === 'timed' ? current.start : value
+
+      const start =
+        current !== undefined && isTimedEventTiming(current)
+          ? current.start
+          : value
 
       return Struct.assign(draft, {
-        timing: { _tag: 'timed' as const, start, end: value },
+        timing: timedEventTiming(start, value),
       })
     }
 
     return draft
   }
 
-  if (draft._tag === 'habit') {
+  if (isHabitCaptureDraft(draft)) {
     if (field === 'reminderTime') {
       return Struct.assign(draft, {
         reminderTime: value === '' ? undefined : value,
@@ -415,7 +440,7 @@ const setDraftField = (
     return draft
   }
 
-  if (draft._tag === 'reminder') {
+  if (isReminderCaptureDraft(draft)) {
     if (field === 'fireAt') {
       if (value === '') return Struct.assign(draft, { fireAt: undefined })
 
@@ -429,7 +454,7 @@ const setDraftField = (
 
       if (repeat === undefined) return draft
 
-      if (repeat._tag === 'daily' || repeat._tag === 'weekly') {
+      if (isDailyReminderRepeat(repeat) || isWeeklyReminderRepeat(repeat)) {
         return Struct.assign(draft, {
           repeat: modifyFields(repeat, { time: () => value }),
         })
@@ -458,7 +483,7 @@ const resolveClockAnswer = (
 ): string | undefined => {
   if (!isClockTime(value)) return value
 
-  if (draft._tag === 'task' && field === 'dueAt') {
+  if (isTaskCaptureDraft(draft) && field === 'dueAt') {
     const date =
       draft.dueDate ??
       (draft.dueAt === undefined || draft.dueAt === null
@@ -468,7 +493,7 @@ const resolveClockAnswer = (
     return date === undefined ? undefined : instantOf(date, value, timeZone)
   }
 
-  if (draft._tag === 'reminder' && field === 'fireAt') {
+  if (isReminderCaptureDraft(draft) && field === 'fireAt') {
     const date =
       draft.fireAt === undefined || draft.fireAt === null
         ? undefined
@@ -478,7 +503,7 @@ const resolveClockAnswer = (
   }
 
   if (
-    draft._tag === 'event' &&
+    isEventCaptureDraft(draft) &&
     (field === 'timing' ||
       field === 'timing.date' ||
       field === 'timing.start' ||
@@ -493,7 +518,7 @@ const resolveClockAnswer = (
     const date =
       timing === undefined
         ? undefined
-        : timing._tag === 'allDay'
+        : isAllDayEventTiming(timing)
           ? timing.date
           : instantPartsOf(timing.start, timeZone)?.date
 
@@ -520,15 +545,19 @@ const currentInstantOf = (
   draft: CaptureDraft,
   field: string,
 ): string | undefined => {
-  if (draft._tag === 'task' && field === 'dueAt') {
+  if (isTaskCaptureDraft(draft) && field === 'dueAt') {
     return draft.dueAt ?? undefined
   }
 
-  if (draft._tag === 'reminder' && field === 'fireAt') {
+  if (isReminderCaptureDraft(draft) && field === 'fireAt') {
     return draft.fireAt ?? undefined
   }
 
-  if (draft._tag === 'event' && draft.timing?._tag === 'timed') {
+  if (
+    isEventCaptureDraft(draft) &&
+    draft.timing !== undefined &&
+    isTimedEventTiming(draft.timing)
+  ) {
     if (field === 'timing.start' || field === 'start') {
       return draft.timing.start
     }
@@ -557,11 +586,15 @@ const draftDateOf = (
     }
   }
 
-  if (draft._tag === 'task' && field === 'dueAt') {
+  if (isTaskCaptureDraft(draft) && field === 'dueAt') {
     return draft.dueDate ?? undefined
   }
 
-  if (draft._tag === 'event' && draft.timing?._tag === 'allDay') {
+  if (
+    isEventCaptureDraft(draft) &&
+    draft.timing !== undefined &&
+    isAllDayEventTiming(draft.timing)
+  ) {
     return draft.timing.date
   }
 
@@ -634,7 +667,7 @@ const applyPickerValue = (
       const date = draftDateOf(draft, field, timeZone)
 
       if (
-        draft._tag === 'event' &&
+        isEventCaptureDraft(draft) &&
         (field === 'timing.start' ||
           field === 'timing.end' ||
           field === 'start' ||
@@ -756,19 +789,19 @@ const setHabitFrequency = (
   draft: CaptureDraft,
   kind: 'daily' | 'weekdays' | 'weekly',
 ): CaptureDraft => {
-  if (draft._tag !== 'habit') return draft
+  if (!isHabitCaptureDraft(draft)) return draft
   const current = draft.frequency
 
   const frequency =
     kind === 'daily'
-      ? { _tag: 'daily' as const }
+      ? dailyHabitFrequency()
       : kind === 'weekdays'
-        ? current?._tag === 'weekdays'
+        ? current !== undefined && isWeekdaysHabitFrequency(current)
           ? current
-          : { _tag: 'weekdays' as const, days: [6] }
-        : current?._tag === 'weekly'
+          : weekdaysHabitFrequency([6])
+        : current !== undefined && isWeeklyHabitFrequency(current)
           ? current
-          : { _tag: 'weekly' as const, times: 3 }
+          : weeklyHabitFrequency(3)
 
   return withoutMissing(Struct.assign(draft, { frequency }), 'frequency')
 }
@@ -777,30 +810,34 @@ const setReminderRepeat = (
   draft: CaptureDraft,
   kind: 'once' | 'daily' | 'weekly' | 'interval',
 ): CaptureDraft => {
-  if (draft._tag !== 'reminder') return draft
+  if (!isReminderCaptureDraft(draft)) return draft
   const current = draft.repeat
 
   const time =
     current !== undefined &&
-    (current._tag === 'daily' || current._tag === 'weekly')
+    (isDailyReminderRepeat(current) || isWeeklyReminderRepeat(current))
       ? current.time
       : '08:00'
 
-  const repeat =
-    kind === 'once'
-      ? { _tag: 'once' as const }
-      : kind === 'daily'
-        ? { _tag: 'daily' as const, time }
-        : kind === 'weekly'
-          ? {
-              _tag: 'weekly' as const,
-              days: current?._tag === 'weekly' ? current.days : [5],
-              time,
-            }
-          : {
-              _tag: 'interval' as const,
-              hours: current?._tag === 'interval' ? current.hours : 8,
-            }
+  const repeat = Match.value(kind).pipe(
+    Match.when('once', () => onceReminderRepeat()),
+    Match.when('daily', () => dailyReminderRepeat(time)),
+    Match.when('weekly', () =>
+      weeklyReminderRepeat(
+        current !== undefined && isWeeklyReminderRepeat(current)
+          ? current.days
+          : [5],
+        time,
+      ),
+    ),
+    Match.orElse(() =>
+      intervalReminderRepeat(
+        current !== undefined && isIntervalReminderRepeat(current)
+          ? current.hours
+          : 8,
+      ),
+    ),
+  )
 
   const withRepeat = withoutMissing(Struct.assign(draft, { repeat }), 'repeat')
 
@@ -812,11 +849,7 @@ const setReminderRepeat = (
           ? withRepeat.missing
           : [
               ...withRepeat.missing,
-              {
-                field: 'fireAt',
-                shape: 'instant' as const,
-                question: 'این یادآور چه زمانی باشد؟',
-              },
+              needsInput('fireAt', 'instant', 'این یادآور چه زمانی باشد؟'),
             ],
     })
   }
@@ -829,23 +862,27 @@ const updateNumberField = (
   field: string,
   value: number,
 ): CaptureDraft => {
-  if (draft._tag === 'habit' && field === 'times') {
+  if (isHabitCaptureDraft(draft) && field === 'times') {
     const current = draft.frequency
 
-    if (current?._tag !== 'weekly') return draft
+    if (current === undefined || !isWeeklyHabitFrequency(current)) {
+      return draft
+    }
 
     return modifyFields(draft, {
-      frequency: () => ({ _tag: 'weekly', times: value }),
+      frequency: () => weeklyHabitFrequency(value),
     })
   }
 
-  if (draft._tag === 'reminder' && field === 'hours') {
+  if (isReminderCaptureDraft(draft) && field === 'hours') {
     const current = draft.repeat
 
-    if (current?._tag !== 'interval') return draft
+    if (current === undefined || !isIntervalReminderRepeat(current)) {
+      return draft
+    }
 
     return modifyFields(draft, {
-      repeat: () => ({ _tag: 'interval', hours: value }),
+      repeat: () => intervalReminderRepeat(value),
     })
   }
 
@@ -1021,7 +1058,7 @@ export const update = (
     CompletedCommit: ({ result }) => {
       const isComplete = result.failure === null
 
-      const next = modifyFields(model, {
+      const recorded = modifyFields(model, {
         phase: () => 'result',
         maybeResult: () => Option.some(result),
         maybeCapture: () => Option.some(result.capture),
@@ -1031,13 +1068,14 @@ export const update = (
             : Option.some(
                 'بخشی از کارت‌ها ساخته شد. دوباره تلاش کن؛ بقیه بدون تکرار ساخته می‌شوند.',
               ),
-        ...(isComplete
-          ? {
-              text: () => '',
-              maybeCaptureId: () => Option.none(),
-            }
-          : {}),
       })
+
+      const next = isComplete
+        ? modifyFields(recorded, {
+            text: () => '',
+            maybeCaptureId: () => Option.none(),
+          })
+        : recorded
 
       return {
         model: next,
@@ -1105,37 +1143,39 @@ export const update = (
 
     ToggledWeekday: ({ index, kind, day }) => ({
       model: updateCard(model, index, card => {
-        if (kind === 'habit' && card.draft._tag === 'habit') {
+        if (kind === 'habit' && isHabitCaptureDraft(card.draft)) {
           const draft = card.draft
           const current = draft.frequency
 
-          if (current?._tag !== 'weekdays') return card
+          if (current === undefined || !isWeekdaysHabitFrequency(current)) {
+            return card
+          }
 
           return modifyFields(card, {
             draft: () =>
               modifyFields(draft, {
-                frequency: () => ({
-                  _tag: 'weekdays',
-                  days: toggleWeekday(current.days, day),
-                }),
+                frequency: () =>
+                  weekdaysHabitFrequency(toggleWeekday(current.days, day)),
               }),
           })
         }
 
-        if (kind === 'reminder' && card.draft._tag === 'reminder') {
+        if (kind === 'reminder' && isReminderCaptureDraft(card.draft)) {
           const draft = card.draft
           const current = draft.repeat
 
-          if (current?._tag !== 'weekly') return card
+          if (current === undefined || !isWeeklyReminderRepeat(current)) {
+            return card
+          }
 
           return modifyFields(card, {
             draft: () =>
               modifyFields(draft, {
-                repeat: () => ({
-                  _tag: 'weekly',
-                  time: current.time,
-                  days: toggleWeekday(current.days, day),
-                }),
+                repeat: () =>
+                  weeklyReminderRepeat(
+                    toggleWeekday(current.days, day),
+                    current.time,
+                  ),
               }),
           })
         }

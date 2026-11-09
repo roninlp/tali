@@ -23,6 +23,41 @@ import { classNames } from './class-names'
 const LABEL_CLASS = 'text-sm font-medium text-base-content/70'
 const HINT_CLASS = 'text-xs text-base-content/50'
 
+type OptionalFieldConfig = {
+  placeholder?: string
+  name?: string
+  isDisabled?: boolean
+  isInvalid?: boolean
+  hasDescription?: boolean
+}
+
+const optionalFieldConfig = (config: {
+  placeholder?: string
+  name?: string
+  isDisabled?: boolean
+  isInvalid?: boolean
+}): OptionalFieldConfig => {
+  const optionalConfig: OptionalFieldConfig = {}
+
+  if (config.placeholder !== undefined) {
+    optionalConfig.placeholder = config.placeholder
+  }
+
+  if (config.name !== undefined) {
+    optionalConfig.name = config.name
+  }
+
+  if (config.isDisabled === true) {
+    optionalConfig.isDisabled = true
+  }
+
+  if (config.isInvalid === true) {
+    optionalConfig.isInvalid = true
+  }
+
+  return optionalConfig
+}
+
 export type TextInputConfig<Message> = Readonly<{
   id: string
   label: string
@@ -47,20 +82,19 @@ export const textInputView = <Message>(
   h: HtmlBuilder<Message>,
 ): Html => {
   const hasHint = config.hint !== undefined
+  const optionalConfig = optionalFieldConfig(config)
+
+  if (hasHint) {
+    optionalConfig.hasDescription = true
+  }
 
   return Input.view(
     {
+      ...optionalConfig,
       id: config.id,
       value: config.value,
-      ...(config.onInput === undefined ? {} : { onInput: config.onInput }),
+      onInput: config.onInput,
       type: config.type ?? 'text',
-      ...(config.placeholder === undefined
-        ? {}
-        : { placeholder: config.placeholder }),
-      ...(config.name === undefined ? {} : { name: config.name }),
-      ...(config.isDisabled === true ? { isDisabled: true } : {}),
-      ...(config.isInvalid === true ? { isInvalid: true } : {}),
-      ...(hasHint ? { hasDescription: true } : {}),
       toView: attributes =>
         h.div(
           [h.Class(classNames('grid gap-1.5', config.class))],
@@ -115,20 +149,19 @@ export const textAreaFieldView = <Message>(
   h: HtmlBuilder<Message>,
 ): Html => {
   const hasHint = config.hint !== undefined
+  const optionalConfig = optionalFieldConfig(config)
+
+  if (hasHint) {
+    optionalConfig.hasDescription = true
+  }
 
   return Textarea.view(
     {
+      ...optionalConfig,
       id: config.id,
       value: config.value,
-      ...(config.onInput === undefined ? {} : { onInput: config.onInput }),
+      onInput: config.onInput,
       rows: config.rows ?? 4,
-      ...(config.placeholder === undefined
-        ? {}
-        : { placeholder: config.placeholder }),
-      ...(config.name === undefined ? {} : { name: config.name }),
-      ...(config.isDisabled === true ? { isDisabled: true } : {}),
-      ...(config.isInvalid === true ? { isInvalid: true } : {}),
-      ...(hasHint ? { hasDescription: true } : {}),
       toView: attributes =>
         h.div(
           [h.Class(classNames('grid gap-1.5', config.class))],
@@ -183,19 +216,16 @@ export type InputControlConfig<Message> = Readonly<{
 export const inputControlView = <Message>(
   config: InputControlConfig<Message>,
   h: HtmlBuilder<Message>,
-): Html =>
-  Input.view(
+): Html => {
+  const optionalConfig = optionalFieldConfig(config)
+
+  return Input.view(
     {
+      ...optionalConfig,
       id: config.id,
       value: config.value,
       onInput: config.onInput,
       type: config.type ?? 'text',
-      ...(config.placeholder === undefined
-        ? {}
-        : { placeholder: config.placeholder }),
-      ...(config.name === undefined ? {} : { name: config.name }),
-      ...(config.isDisabled === true ? { isDisabled: true } : {}),
-      ...(config.isInvalid === true ? { isInvalid: true } : {}),
       toView: attributes =>
         h.input([
           ...attributes.input,
@@ -211,6 +241,7 @@ export const inputControlView = <Message>(
     },
     h,
   )
+}
 
 export type TextAreaControlConfig<Message> = Readonly<{
   id: string
@@ -232,19 +263,16 @@ export type TextAreaControlConfig<Message> = Readonly<{
 export const textAreaControlView = <Message>(
   config: TextAreaControlConfig<Message>,
   h: HtmlBuilder<Message>,
-): Html =>
-  Textarea.view(
+): Html => {
+  const optionalConfig = optionalFieldConfig(config)
+
+  return Textarea.view(
     {
+      ...optionalConfig,
       id: config.id,
       value: config.value,
       onInput: config.onInput,
       rows: config.rows ?? 4,
-      ...(config.placeholder === undefined
-        ? {}
-        : { placeholder: config.placeholder }),
-      ...(config.name === undefined ? {} : { name: config.name }),
-      ...(config.isDisabled === true ? { isDisabled: true } : {}),
-      ...(config.isInvalid === true ? { isInvalid: true } : {}),
       toView: attributes =>
         h.textarea([
           ...attributes.textarea,
@@ -258,6 +286,7 @@ export const textAreaControlView = <Message>(
     },
     h,
   )
+}
 
 export const formErrorView = <Message>(
   maybeMessage: Option.Option<string>,

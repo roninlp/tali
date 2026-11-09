@@ -908,7 +908,8 @@ const foldLists = Update.foldChild({
         const refreshed = foldSyncRefresh(stepModel)
 
         const wasCurrent =
-          stepModel.route._tag === 'List' && stepModel.route.listId === listId
+          AppRoute.isAnyOf(['List'])(stepModel.route) &&
+          stepModel.route.listId === listId
 
         return wasCurrent
           ? {
@@ -1004,7 +1005,8 @@ const foldNotesOutMessage = Notes.OutMessage.match<
       const refreshed = foldSyncRefresh(stepModel)
 
       const wasCurrent =
-        stepModel.route._tag === 'Note' && stepModel.route.noteId === noteId
+        AppRoute.isAnyOf(['Note'])(stepModel.route) &&
+        stepModel.route.noteId === noteId
 
       return wasCurrent
         ? {
@@ -1023,7 +1025,8 @@ const foldNotesOutMessage = Notes.OutMessage.match<
       const refreshed = foldSyncRefresh(stepModel)
 
       const wasCurrent =
-        stepModel.route._tag === 'Note' && stepModel.route.noteId === noteId
+        AppRoute.isAnyOf(['Note'])(stepModel.route) &&
+        stepModel.route.noteId === noteId
 
       return wasCurrent
         ? {
@@ -1377,62 +1380,63 @@ const enterRoute = (
   }
 
   if (
-    model.route._tag === 'Today' &&
+    AppRoute.isAnyOf(['Today'])(model.route) &&
     Option.isSome(Transition.entered(transition, 'Today'))
   ) {
     return foldTodayEntered(model, todayInputs(model))
   }
 
   if (
-    model.route._tag === 'Tasks' &&
+    AppRoute.isAnyOf(['Tasks'])(model.route) &&
     Option.isSome(Transition.entered(transition, 'Tasks'))
   ) {
     return foldTasksEntered(model)
   }
 
   if (
-    model.route._tag === 'Habits' &&
+    AppRoute.isAnyOf(['Habits'])(model.route) &&
     Option.isSome(Transition.entered(transition, 'Habits'))
   ) {
     return enterHabitsPage(model)
   }
 
   if (
-    model.route._tag === 'Lists' &&
+    AppRoute.isAnyOf(['Lists'])(model.route) &&
     Option.isSome(Transition.entered(transition, 'Lists'))
   ) {
     return enterListsPage(model, Option.none())
   }
 
   if (
-    model.route._tag === 'Calendar' &&
+    AppRoute.isAnyOf(['Calendar'])(model.route) &&
     Option.isSome(Transition.entered(transition, 'Calendar'))
   ) {
     return enterCalendarPage(model)
   }
 
   if (
-    model.route._tag === 'Reminders' &&
+    AppRoute.isAnyOf(['Reminders'])(model.route) &&
     Option.isSome(Transition.entered(transition, 'Reminders'))
   ) {
     return foldRemindersEntered(model)
   }
 
   if (
-    model.route._tag === 'Capture' &&
+    AppRoute.isAnyOf(['Capture'])(model.route) &&
     Option.isSome(Transition.entered(transition, 'Capture'))
   ) {
     return foldCaptureEntered(model)
   }
 
-  if (model.route._tag === 'List') {
+  if (AppRoute.isAnyOf(['List'])(model.route)) {
     const listId = model.route.listId
 
     const isNewList =
       Option.isNone(transition.maybePreviousRoute) ||
       Option.exists(
         transition.maybePreviousRoute,
-        previous => previous._tag !== 'List' || previous.listId !== listId,
+        previous =>
+          !AppRoute.isAnyOf(['List'])(previous) || previous.listId !== listId,
       )
 
     if (isNewList) {
@@ -1441,27 +1445,28 @@ const enterRoute = (
   }
 
   if (
-    model.route._tag === 'Notes' &&
+    AppRoute.isAnyOf(['Notes'])(model.route) &&
     Option.isSome(Transition.entered(transition, 'Notes'))
   ) {
     return enterNotesIndex(model)
   }
 
   if (
-    model.route._tag === 'NotesTrash' &&
+    AppRoute.isAnyOf(['NotesTrash'])(model.route) &&
     Option.isSome(Transition.entered(transition, 'NotesTrash'))
   ) {
     return enterNotesTrash(model)
   }
 
-  if (model.route._tag === 'Note') {
+  if (AppRoute.isAnyOf(['Note'])(model.route)) {
     const noteId = model.route.noteId
 
     const isNewNote =
       Option.isNone(transition.maybePreviousRoute) ||
       Option.exists(
         transition.maybePreviousRoute,
-        previous => previous._tag !== 'Note' || previous.noteId !== noteId,
+        previous =>
+          !AppRoute.isAnyOf(['Note'])(previous) || previous.noteId !== noteId,
       )
 
     if (isNewNote) {
@@ -1511,7 +1516,8 @@ const foldSyncMessage = (model: Model, message: Sync.Message): UpdateReturn => {
   const folded = foldSync(model, message)
 
   const listsStep =
-    folded.model.route._tag === 'List' && isMirrorReadResult(message)
+    AppRoute.isAnyOf(['List'])(folded.model.route) &&
+    isMirrorReadResult(message)
       ? foldListsMirrorSettled(folded.model, listsInputs(folded.model))
       : { model: folded.model }
 
@@ -1524,12 +1530,12 @@ const foldSyncMessage = (model: Model, message: Sync.Message): UpdateReturn => {
   const settled = wasPending > 0 && folded.model.sync.pending === 0
 
   const todayStep =
-    settled && notesStep.model.route._tag === 'Today'
+    settled && AppRoute.isAnyOf(['Today'])(notesStep.model.route)
       ? foldTodaySyncSettled(notesStep.model, todayInputs(notesStep.model))
       : { model: notesStep.model }
 
   const calendarStep =
-    settled && todayStep.model.route._tag === 'Calendar'
+    settled && AppRoute.isAnyOf(['Calendar'])(todayStep.model.route)
       ? foldCalendarSyncSettled(
           todayStep.model,
           calendarInputs(todayStep.model),
@@ -1555,13 +1561,13 @@ export const update = (model: Model, message: Message) =>
       const guarded = enforceGuard(model, nextRoute)
 
       const leavingNote =
-        model.route._tag === 'Note' &&
-        (guarded.model.route._tag !== 'Note' ||
+        AppRoute.isAnyOf(['Note'])(model.route) &&
+        (!AppRoute.isAnyOf(['Note'])(guarded.model.route) ||
           guarded.model.route.noteId !== model.route.noteId)
 
       const leavingSettings =
-        model.route._tag === 'Settings' &&
-        guarded.model.route._tag !== 'Settings'
+        AppRoute.isAnyOf(['Settings'])(model.route) &&
+        !AppRoute.isAnyOf(['Settings'])(guarded.model.route)
 
       const left = leavingNote
         ? foldNotesLeftNote(guarded.model)
@@ -2174,7 +2180,9 @@ const todaySubscriptions = Subscription.lift(Today.subscriptions)<
   Message
 >({
   read: model =>
-    model.route._tag === 'Today' ? Option.some(model.today) : Option.none(),
+    AppRoute.isAnyOf(['Today'])(model.route)
+      ? Option.some(model.today)
+      : Option.none(),
   toParentMessage: toTodayMessage,
 })
 
@@ -2183,7 +2191,9 @@ const tasksSubscriptions = Subscription.lift(Tasks.subscriptions)<
   Message
 >({
   read: model =>
-    model.route._tag === 'Tasks' ? Option.some(model.tasks) : Option.none(),
+    AppRoute.isAnyOf(['Tasks'])(model.route)
+      ? Option.some(model.tasks)
+      : Option.none(),
   toParentMessage: toTasksMessage,
 })
 
@@ -2200,7 +2210,9 @@ const habitsSubscriptions = Subscription.lift(Habits.subscriptions)<
   Message
 >({
   read: model =>
-    model.route._tag === 'Habits' ? Option.some(model.habits) : Option.none(),
+    AppRoute.isAnyOf(['Habits'])(model.route)
+      ? Option.some(model.habits)
+      : Option.none(),
   toParentMessage: toHabitsMessage,
 })
 
@@ -2209,7 +2221,7 @@ const calendarSubscriptions = Subscription.lift(Calendar.subscriptions)<
   Message
 >({
   read: model =>
-    model.route._tag === 'Calendar'
+    AppRoute.isAnyOf(['Calendar'])(model.route)
       ? Option.some(model.calendar)
       : Option.none(),
   toParentMessage: toCalendarMessage,
@@ -2220,7 +2232,7 @@ const remindersSubscriptions = Subscription.lift(Reminders.subscriptions)<
   Message
 >({
   read: model =>
-    model.route._tag === 'Reminders'
+    AppRoute.isAnyOf(['Reminders'])(model.route)
       ? Option.some(model.reminders)
       : Option.none(),
   toParentMessage: toRemindersMessage,

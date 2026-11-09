@@ -1,7 +1,12 @@
 import 'fake-indexeddb/auto'
 import { describe, expect, it } from 'vitest'
 
-import { uuidV7 } from '@tali/domain'
+import {
+  dailyHabitFrequency,
+  uuidV7,
+  weekdaysHabitFrequency,
+  weeklyHabitFrequency,
+} from '@tali/domain'
 import type { StreakResult } from '@tali/domain'
 import {
   type LocalStore,
@@ -11,6 +16,7 @@ import {
 
 import {
   HABIT_WINDOW_DAYS,
+  HabitFrequency,
   type HabitHeatCell,
   habitBadgeLabel,
   habitEntryOn,
@@ -58,7 +64,7 @@ describe('habit local-first writes', () => {
     const id = uuidV7(Date.parse(NOW))
     await createHabitInMirror(
       store,
-      { title: '  کتاب  ', frequency: { _tag: 'daily' }, timeZone: TZ },
+      { title: '  کتاب  ', frequency: dailyHabitFrequency(), timeZone: TZ },
       id,
       NOW,
     )
@@ -68,10 +74,10 @@ describe('habit local-first writes', () => {
     expect(habit).toMatchObject({
       title: 'کتاب',
       startedOn: TODAY,
-      frequency: { _tag: 'daily' },
+      frequency: dailyHabitFrequency(),
     })
     expect(habit?.frequencyHistory).toEqual([
-      { effectiveFrom: TODAY, frequency: { _tag: 'daily' } },
+      { effectiveFrom: TODAY, frequency: dailyHabitFrequency() },
     ])
 
     const pending = await store.pending()
@@ -85,7 +91,7 @@ describe('habit local-first writes', () => {
       title: 'کتاب',
       startedOn: TODAY,
       frequencyHistory: [
-        { effectiveFrom: TODAY, frequency: { _tag: 'daily' } },
+        { effectiveFrom: TODAY, frequency: dailyHabitFrequency() },
       ],
     })
 
@@ -97,7 +103,7 @@ describe('habit local-first writes', () => {
 
     const id = await createHabitInMirror(
       store,
-      { title: 'آب', frequency: { _tag: 'daily' }, timeZone: TZ },
+      { title: 'آب', frequency: dailyHabitFrequency(), timeZone: TZ },
       uuidV7(Date.parse('2026-10-19T09:00:00.000Z')),
       '2026-10-19T09:00:00.000Z',
     )
@@ -185,7 +191,7 @@ describe('habit local-first writes', () => {
 
     const id = await createHabitInMirror(
       store,
-      { title: 'ورزش', frequency: { _tag: 'weekly', times: 3 }, timeZone: TZ },
+      { title: 'ورزش', frequency: weeklyHabitFrequency(3), timeZone: TZ },
       uuidV7(Date.parse('2026-10-17T09:00:00.000Z')),
       '2026-10-17T09:00:00.000Z',
     )
@@ -238,7 +244,7 @@ describe('habit local-first writes', () => {
 
     const id = await createHabitInMirror(
       store,
-      { title: 'مدیتیشن', frequency: { _tag: 'daily' }, timeZone: TZ },
+      { title: 'مدیتیشن', frequency: dailyHabitFrequency(), timeZone: TZ },
       uuidV7(Date.parse(NOW)),
       NOW,
     )
@@ -262,7 +268,7 @@ describe('habit local-first writes', () => {
 
     const id = await createHabitInMirror(
       store,
-      { title: 'شنا', frequency: { _tag: 'daily' }, timeZone: TZ },
+      { title: 'شنا', frequency: dailyHabitFrequency(), timeZone: TZ },
       uuidV7(Date.parse('2026-10-10T09:00:00.000Z')),
       '2026-10-10T09:00:00.000Z',
     )
@@ -271,20 +277,20 @@ describe('habit local-first writes', () => {
     await updateHabitInMirror(
       store,
       habit,
-      { frequency: { _tag: 'weekly', times: 2 } },
+      { frequency: weeklyHabitFrequency(2) },
       NOW,
     )
     const updated = (await readHabits(store))[0]!
     expect(updated.id).toBe(id)
-    expect(updated.frequency).toEqual({ _tag: 'weekly', times: 2 })
+    expect(updated.frequency).toEqual(HabitFrequency.weekly({ times: 2 }))
     expect(updated.frequencyHistory).toHaveLength(2)
     expect(updated.frequencyHistory[1]).toEqual({
       effectiveFrom: '2026-10-24',
-      frequency: { _tag: 'weekly', times: 2 },
+      frequency: HabitFrequency.weekly({ times: 2 }),
     })
     expect(updated.frequencyHistory[0]).toEqual({
       effectiveFrom: '2026-10-10',
-      frequency: { _tag: 'daily' },
+      frequency: HabitFrequency.daily(),
     })
 
     store.close()
@@ -294,7 +300,7 @@ describe('habit local-first writes', () => {
     const store = await open()
     await createHabitInMirror(
       store,
-      { title: 'آب', frequency: { _tag: 'daily' }, timeZone: TZ },
+      { title: 'آب', frequency: dailyHabitFrequency(), timeZone: TZ },
       uuidV7(Date.parse(NOW)),
       NOW,
     )
@@ -315,7 +321,7 @@ describe('habit local-first writes', () => {
 
     const id = await createHabitInMirror(
       store,
-      { title: 'پیاده‌روی', frequency: { _tag: 'daily' }, timeZone: TZ },
+      { title: 'پیاده‌روی', frequency: dailyHabitFrequency(), timeZone: TZ },
       uuidV7(Date.parse(NOW)),
       NOW,
     )
@@ -360,7 +366,7 @@ describe('habit read model', () => {
       },
       data: {
         title: '',
-        frequency: { _tag: 'weekdays', days: [3, 1, 3] },
+        frequency: weekdaysHabitFrequency([3, 1, 3]),
         timeZone: TZ,
         createdAt: '2026-10-10T09:00:00.000Z',
       },
@@ -368,7 +374,7 @@ describe('habit read model', () => {
 
     const row = toHabitRow(record)
     expect(row.title).toBe('بدون نام')
-    expect(row.frequency).toEqual({ _tag: 'weekdays', days: [1, 3] })
+    expect(row.frequency).toEqual(HabitFrequency.weekdays({ days: [1, 3] }))
     expect(row.startedOn).toBe('2026-10-10')
     expect(row.hasSyncError).toBe(true)
   })
@@ -380,7 +386,7 @@ describe('habit read model', () => {
       store,
       {
         title: 'پیاده‌روی',
-        frequency: { _tag: 'weekdays', days: [6, 1, 3] },
+        frequency: weekdaysHabitFrequency([6, 1, 3]),
         timeZone: TZ,
       },
       uuidV7(Date.parse('2026-10-17T09:00:00.000Z')),
@@ -440,7 +446,7 @@ describe('habit read model', () => {
 
     const id = await createHabitInMirror(
       store,
-      { title: 'کتاب', frequency: { _tag: 'weekly', times: 3 }, timeZone: TZ },
+      { title: 'کتاب', frequency: weeklyHabitFrequency(3), timeZone: TZ },
       uuidV7(Date.parse('2026-10-17T09:00:00.000Z')),
       '2026-10-17T09:00:00.000Z',
     )
@@ -541,11 +547,11 @@ describe('habit read model', () => {
 
 describe('habit copy', () => {
   it('labels each frequency without a bare number', () => {
-    expect(habitFrequencyLabel({ _tag: 'daily' })).toBe('هر روز')
-    expect(habitFrequencyLabel({ _tag: 'weekdays', days: [3, 1] })).toBe(
+    expect(habitFrequencyLabel(HabitFrequency.daily())).toBe('هر روز')
+    expect(habitFrequencyLabel(HabitFrequency.weekdays({ days: [3, 1] }))).toBe(
       'دوشنبه، چهارشنبه',
     )
-    expect(habitFrequencyLabel({ _tag: 'weekly', times: 3 })).toBe(
+    expect(habitFrequencyLabel(HabitFrequency.weekly({ times: 3 }))).toBe(
       '۳ بار در هفته',
     )
   })
@@ -555,7 +561,7 @@ describe('habit copy', () => {
       unit: 'week',
       start: '2026-10-17',
       end: '2026-10-23',
-      frequency: { _tag: 'weekly', times: 3 },
+      frequency: weeklyHabitFrequency(3),
       requirement: 3,
       credit: 2,
       weighted: 2,

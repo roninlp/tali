@@ -1,4 +1,4 @@
-import { Array, Option } from 'effect'
+import { Option, Schema } from 'effect'
 
 import {
   type NoteParagraph,
@@ -29,89 +29,74 @@ export type NoteDocument = NoteTextDocument
 export const textToNoteBody = (text: string): NoteDocument =>
   plainTextToNoteBody(text)
 
-const blockText = (block: unknown): Option.Option<string> => {
-  if (block === null || typeof block !== 'object') {
-    return Option.none()
-  }
+/**
+ * The fields a note row exposes to the editor. Every field stays encoded, so
+ * a row written by an older build still decodes and a malformed field falls
+ * back to its display default instead of failing the whole row.
+ */
+export const NoteData = Schema.Struct({
+  title: Schema.optional(Schema.Unknown),
+  body: Schema.optional(Schema.Unknown),
+  plainText: Schema.optional(Schema.Unknown),
+  isPinned: Schema.optional(Schema.Unknown),
+  isArchived: Schema.optional(Schema.Unknown),
+  tagIds: Schema.optional(Schema.Unknown),
+})
 
-  const content = Reflect.get(block, 'content')
+export type NoteData = typeof NoteData.Type
 
-  if (Array.isArray(content)) {
-    return Option.some(
-      content
-        .map(node =>
-          node !== null &&
-          typeof node === 'object' &&
-          typeof Reflect.get(node, 'text') === 'string'
-            ? String(Reflect.get(node, 'text'))
-            : '',
-        )
-        .join(''),
-    )
-  }
+export const emptyNoteData = (): NoteData => NoteData.make({})
 
-  return Option.none()
-}
+const NoteTextNodeSchema = Schema.Struct({
+  type: Schema.Literal('text'),
+  text: Schema.String,
+})
+
+const NoteParagraphSchema = Schema.Struct({
+  type: Schema.Literal('paragraph'),
+  content: Schema.Array(NoteTextNodeSchema),
+})
+
+const NoteTextDocumentSchema = Schema.Struct({
+  type: Schema.Literal('doc'),
+  content: Schema.Array(NoteParagraphSchema),
+})
+
+const asNoteDocument = Schema.decodeUnknownOption(NoteTextDocumentSchema)
+
+const asString = Schema.decodeUnknownOption(Schema.String)
+
+const asStringArray = Schema.decodeUnknownOption(Schema.Array(Schema.String))
 
 /** Text for a paragraph-shaped doc; anything else falls back to extraction. */
-export const noteTextFromBody = (body: unknown): string => {
-  if (body === null || body === undefined) {
-    return ''
-  }
-
-  if (typeof body !== 'object' || Array.isArray(body)) {
-    return extractNotePlainText(body)
-  }
-
-  const content = Reflect.get(body, 'content')
-
-  if (!Array.isArray(content)) {
-    return extractNotePlainText(body)
-  }
-
-  const lines = content.map(block =>
-    Option.getOrElse(blockText(block), () => ''),
-  )
-
-  const hasUnrepresentableBlock = content.some(
-    block =>
-      block !== null &&
-      typeof block === 'object' &&
-      !Array.isArray(Reflect.get(block, 'content')) &&
-      typeof Reflect.get(block, 'text') === 'string',
-  )
-
-  const joined = lines.join('\n')
-
-  return hasUnrepresentableBlock && joined.trim() === ''
-    ? extractNotePlainText(body)
-    : joined
-}
+export const noteTextFromBody = (body: NoteData['body']): string =>
+  Option.match(asNoteDocument(body), {
+    onNone: () => extractNotePlainText(body),
+    onSome: document =>
+      document.content
+        .map(paragraph => paragraph.content.map(node => node.text).join(''))
+        .join('\n'),
+  })
 
 /** The editor's text, preferring the body and falling back to `plainText`. */
-export const noteTextFromData = (
-  data: Readonly<Record<string, unknown>>,
-): string => {
+export const noteTextFromData = (data: NoteData): string => {
   const text = noteTextFromBody(data.body)
 
   return text !== ''
     ? text
-    : typeof data.plainText === 'string'
-      ? data.plainText
-      : ''
+    : Option.getOrElse(asString(data.plainText), () => '')
 }
 
 /** The title exactly as stored, for the editor field (no display fallback). */
-export const noteTitleFromData = (
-  data: Readonly<Record<string, unknown>>,
-): string => (typeof data.title === 'string' ? data.title : '')
+export const noteTitleFromData = (data: NoteData): string =>
+  Option.getOrElse(asString(data.title), () => '')
 
 /** A display title: the explicit title, else the first non-empty line. */
 export const noteDisplayTitle = (
-  data: Readonly<Record<string, unknown>>,
+  data: NoteData,
   fallback = 'یادداشت بی‌نام',
 ): string => {
-  const title = typeof data.title === 'string' ? data.title.trim() : ''
+  const title = noteTitleFromData(data).trim()
 
   if (title !== '') {
     return title
@@ -126,10 +111,7 @@ export const noteDisplayTitle = (
 }
 
 /** A short, single-line excerpt for the list. */
-export const noteExcerpt = (
-  data: Readonly<Record<string, unknown>>,
-  maxLength = 90,
-): string => {
+export const noteExcerpt = (data: NoteData, maxLength = 90): string => {
   const text = noteTextFromData(data).replace(/\s+/g, ' ').trim()
 
   return text.length <= maxLength
@@ -138,11 +120,8 @@ export const noteExcerpt = (
 }
 
 /** The full text of a note row, as the pinned-note lane shows it. */
-export const noteRowText = (data: Readonly<Record<string, unknown>>): string =>
-  noteTextFromData(data)
+export const noteRowText = (data: NoteData): string => noteTextFromData(data)
 
 /** The tags a note carries, ignoring malformed entries. */
-export const tagIdsOf = (value: unknown): ReadonlyArray<string> =>
-  Array.isArray(value)
-    ? Array.filter(value, (entry): entry is string => typeof entry === 'string')
-    : []
+export const tagIdsOf = (value: NoteData['tagIds']): ReadonlyArray<string> =>
+  Option.getOrElse(asStringArray(value), () => [])

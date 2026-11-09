@@ -6,7 +6,11 @@ import {
 } from '@tali/domain'
 import type { LocalStore } from '@tali/sync-client'
 
-import type { HabitFrequency, HabitRow } from '../habits-model'
+import type {
+  HabitFrequency,
+  HabitFrequencyChange,
+  HabitRow,
+} from '../habits-model'
 
 /**
  * Habit mirror writes, ported from `apps/web/src/lib/habits/model.ts`
@@ -91,6 +95,21 @@ export interface HabitEditPatch {
 }
 
 /**
+ * The local mirror patch an edit accumulates. It is a type alias, not an
+ * interface, so it keeps the implicit index signature the store's patch
+ * parameter accepts.
+ */
+type HabitLocalPatch = {
+  title?: string
+  description?: string | null
+  icon?: string | null
+  color?: string | null
+  reminderTime?: string | null
+  frequency?: HabitFrequency
+  frequencyHistory?: ReadonlyArray<HabitFrequencyChange>
+}
+
+/**
  * Apply an edit locally. A frequency change appends the server's era boundary
  * (`habitFrequencyHistoryAfter`, #63) so past periods stay judged by the rule
  * that opened them.
@@ -101,7 +120,7 @@ export const updateHabitInMirror = async (
   patch: HabitEditPatch,
   now: string,
 ): Promise<void> => {
-  const local: Record<string, unknown> = {}
+  const local: HabitLocalPatch = {}
 
   if (patch.title !== undefined) {
     const title = patch.title.trim()

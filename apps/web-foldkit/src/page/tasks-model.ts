@@ -1,4 +1,4 @@
-import { Array, Option, Schema } from 'effect'
+import { Array, Match, Option, Schema } from 'effect'
 import { defineTaggedUnion } from 'foldkit/schema'
 
 import {
@@ -249,7 +249,11 @@ const statusRank: Readonly<Record<TaskRow['status'], number>> = {
 }
 
 const asPriority = (value: string): TaskPriority =>
-  value === 'high' ? 'high' : value === 'low' ? 'low' : 'medium'
+  Match.value(value).pipe(
+    Match.when('high', () => 'high' as const),
+    Match.when('low', () => 'low' as const),
+    Match.orElse(() => 'medium' as const),
+  )
 
 const placementOf = (
   task: TaskRow,

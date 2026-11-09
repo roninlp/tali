@@ -73,7 +73,7 @@ const decodeErrorCode = Schema.decodeUnknownOption(AuthErrorCode)
 /** Decode the shared envelope. Anything malformed falls back to the status. */
 export const classifyApiFailure = (
   status: number,
-  body: unknown,
+  body: Schema.Json | undefined,
 ): AuthFailure => {
   const envelope = Schema.decodeUnknownOption(ErrorEnvelope)(body)
 
@@ -101,7 +101,7 @@ const send = <A>(
   method: 'GET' | 'POST',
   path: string,
   schema: Schema.ConstraintDecoder<A>,
-  body?: unknown,
+  body?: Schema.Json,
 ): Effect.Effect<ApiResult<A>> =>
   Effect.gen(function* () {
     const init: RequestInit = {
@@ -135,13 +135,17 @@ const send = <A>(
       }),
     )
 
-    const json: unknown = Option.getOrUndefined(maybeJson)
+    const json = Option.getOrUndefined(
+      Option.flatMap(maybeJson, value =>
+        Schema.decodeUnknownOption(Schema.Json)(value),
+      ),
+    )
 
     if (!response.ok) {
       return { ok: false, error: classifyApiFailure(response.status, json) }
     }
 
-    const decoded = Schema.decodeUnknownOption(schema)(json)
+    const decoded = Schema.decodeOption(schema)(json)
 
     return Option.isSome(decoded)
       ? { ok: true, value: decoded.value }

@@ -3,6 +3,7 @@ import {
   Clock,
   Duration,
   Effect,
+  Match,
   Option,
   Queue,
   Schema,
@@ -92,6 +93,10 @@ import { calendarPageView } from './calendar-view'
  * occurrence edits are the one exception: online with a clean head they use
  * the service's gated split RPC, exactly like the legacy screen.
  */
+
+const asNonEmptyString = Schema.decodeUnknownOption(
+  Schema.String.check(Schema.isMinLength(1)),
+)
 
 // MODEL
 
@@ -918,20 +923,22 @@ export const CommitCalendarEventScope = Command.define(
           exceptionId: EventExceptionId.make(ids.exceptionId),
         } as const
 
-        const change = yield* withRpcClient(client =>
-          action === 'edit'
-            ? client.EditEventOccurrence({
-                ...base,
-                ...(scope === 'thisAndFollowing'
-                  ? {
-                      followingId: EventId.make(ids.followingId),
-                      followingMutationId: ids.followingMutationId,
-                    }
-                  : {}),
-                overrides,
-              })
-            : client.DeleteEventOccurrence(base),
-        )
+        const change = yield* withRpcClient(client => {
+          if (action !== 'edit') {
+            return client.DeleteEventOccurrence(base)
+          }
+
+          const scoped =
+            scope === 'thisAndFollowing'
+              ? {
+                  ...base,
+                  followingId: EventId.make(ids.followingId),
+                  followingMutationId: ids.followingMutationId,
+                }
+              : base
+
+          return client.EditEventOccurrence({ ...scoped, overrides })
+        })
 
         // In a production build the RPC client decodes the complete domain
         // `Event` rows, so the mirror can adopt them immediately. In the Vite
@@ -939,13 +946,13 @@ export const CommitCalendarEventScope = Command.define(
         // `vite.config.ts`), so the decoded rows can lose their Model variant
         // fields. The server write is authoritative either way: keep the ids
         // dirty and let the next sync pull bring both rows into the mirror.
-        const hasCompleteSeries =
-          typeof change.series.id === 'string' && change.series.id !== ''
+        const hasCompleteSeries = Option.isSome(
+          asNonEmptyString(change.series.id),
+        )
 
         const hasCompleteFollowing =
           change.following === null ||
-          (typeof change.following.id === 'string' &&
-            change.following.id !== '')
+          Option.isSome(asNonEmptyString(change.following.id))
 
         if (hasCompleteSeries && hasCompleteFollowing) {
           yield* Effect.tryPromise({
@@ -964,7 +971,7 @@ export const CommitCalendarEventScope = Command.define(
                 ? Option.some(ids.followingId)
                 : Option.none<string>(),
             onSome: following =>
-              typeof following.id === 'string' && following.id !== ''
+              Option.isSome(asNonEmptyString(following.id))
                 ? Option.some(following.id)
                 : Option.some(ids.followingId),
           },
@@ -1493,11 +1500,17 @@ const setEventEditorField = (
       Option.map(model.maybeEditingEvent, editor =>
         modifyFields(editor, {
           draft: () =>
-            field === 'date'
-              ? modifyFields(editor.draft, { date: () => value })
-              : field === 'startTime'
-                ? modifyFields(editor.draft, { startTime: () => value })
-                : modifyFields(editor.draft, { endTime: () => value }),
+            Match.value(field).pipe(
+              Match.when('date', () =>
+                modifyFields(editor.draft, { date: () => value }),
+              ),
+              Match.when('startTime', () =>
+                modifyFields(editor.draft, { startTime: () => value }),
+              ),
+              Match.orElse(() =>
+                modifyFields(editor.draft, { endTime: () => value }),
+              ),
+            ),
         }),
       ),
   })

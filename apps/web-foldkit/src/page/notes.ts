@@ -1061,22 +1061,32 @@ export const update = (
           }
         : { model },
 
-    CompletedSetPinned: ({ noteId, isPinned }) => ({
-      model: modifyFields(model, {
+    CompletedSetPinned: ({ noteId, isPinned }) => {
+      const cleared = modifyFields(model, {
         maybeIndexError: () => Option.none(),
-        ...(isCurrentNote(model, noteId) ? { isPinned: () => isPinned } : {}),
-      }),
-      outMessage: OutMessage.WroteLocalData(),
-    }),
+      })
 
-    FailedSetPinned: ({ noteId, message }) => ({
-      model: modifyFields(model, {
+      return {
+        model: isCurrentNote(model, noteId)
+          ? modifyFields(cleared, { isPinned: () => isPinned })
+          : cleared,
+        outMessage: OutMessage.WroteLocalData(),
+      }
+    },
+
+    FailedSetPinned: ({ noteId, message }) => {
+      const failed = modifyFields(model, {
         maybeIndexError: () => Option.some(message),
-        ...(isCurrentNote(model, noteId)
-          ? { maybeActionError: () => Option.some(message) }
-          : {}),
-      }),
-    }),
+      })
+
+      return {
+        model: isCurrentNote(model, noteId)
+          ? modifyFields(failed, {
+              maybeActionError: () => Option.some(message),
+            })
+          : failed,
+      }
+    },
 
     ClickedToggleArchived: ({ noteId, isArchived }) =>
       inputs.isStoreReady
@@ -1086,24 +1096,32 @@ export const update = (
           }
         : { model },
 
-    CompletedSetArchived: ({ noteId, isArchived }) => ({
-      model: modifyFields(model, {
+    CompletedSetArchived: ({ noteId, isArchived }) => {
+      const cleared = modifyFields(model, {
         maybeIndexError: () => Option.none(),
-        ...(isCurrentNote(model, noteId)
-          ? { isArchived: () => isArchived }
-          : {}),
-      }),
-      outMessage: OutMessage.WroteLocalData(),
-    }),
+      })
 
-    FailedSetArchived: ({ noteId, message }) => ({
-      model: modifyFields(model, {
+      return {
+        model: isCurrentNote(model, noteId)
+          ? modifyFields(cleared, { isArchived: () => isArchived })
+          : cleared,
+        outMessage: OutMessage.WroteLocalData(),
+      }
+    },
+
+    FailedSetArchived: ({ noteId, message }) => {
+      const failed = modifyFields(model, {
         maybeIndexError: () => Option.some(message),
-        ...(isCurrentNote(model, noteId)
-          ? { maybeActionError: () => Option.some(message) }
-          : {}),
-      }),
-    }),
+      })
+
+      return {
+        model: isCurrentNote(model, noteId)
+          ? modifyFields(failed, {
+              maybeActionError: () => Option.some(message),
+            })
+          : failed,
+      }
+    },
 
     ClickedTrashNote: ({ noteId }) =>
       inputs.isStoreReady
@@ -1113,27 +1131,35 @@ export const update = (
           }
         : { model },
 
-    CompletedTrashNote: ({ noteId }) => ({
-      model: modifyFields(model, {
+    CompletedTrashNote: ({ noteId }) => {
+      const cleared = modifyFields(model, {
         maybeIndexError: () => Option.none(),
         maybeActionError: () => Option.none(),
-        ...(isCurrentNote(model, noteId) ? { isTrashed: () => true } : {}),
         announcement: () => 'یادداشت به سطل زباله رفت',
-      }),
-      outMessage: OutMessage.TrashedNote({ noteId }),
-    }),
+      })
 
-    FailedTrashNote: ({ noteId, message }) => ({
-      model: modifyFields(model, {
+      return {
+        model: isCurrentNote(model, noteId)
+          ? modifyFields(cleared, { isTrashed: () => true })
+          : cleared,
+        outMessage: OutMessage.TrashedNote({ noteId }),
+      }
+    },
+
+    FailedTrashNote: ({ noteId, message }) => {
+      const failed = modifyFields(model, {
         maybeIndexError: () => Option.some(message),
-        ...(isCurrentNote(model, noteId)
-          ? {
+      })
+
+      return {
+        model: isCurrentNote(model, noteId)
+          ? modifyFields(failed, {
               maybeActionError: () => Option.some(message),
               saveState: () => 'error' as const,
-            }
-          : {}),
-      }),
-    }),
+            })
+          : failed,
+      }
+    },
 
     SucceededLoadNote: ({ generation, maybeNote }) => {
       if (
@@ -1388,15 +1414,18 @@ export const update = (
       }
     },
 
-    CompletedSetNoteVisibility: ({ noteId, visibility }) => ({
-      model: modifyFields(model, {
+    CompletedSetNoteVisibility: ({ noteId, visibility }) => {
+      const cleared = modifyFields(model, {
         maybeActionError: () => Option.none(),
-        ...(isCurrentNote(model, noteId)
-          ? { visibility: () => visibility }
-          : {}),
-      }),
-      outMessage: OutMessage.WroteLocalData(),
-    }),
+      })
+
+      return {
+        model: isCurrentNote(model, noteId)
+          ? modifyFields(cleared, { visibility: () => visibility })
+          : cleared,
+        outMessage: OutMessage.WroteLocalData(),
+      }
+    },
 
     FailedSetNoteVisibility: ({ message }) => ({
       model: modifyFields(model, {
@@ -1425,20 +1454,25 @@ export const update = (
       }
     },
 
-    CompletedSetTags: ({ noteId, tagIds }) => ({
-      model: modifyFields(model, {
+    CompletedSetTags: ({ noteId, tagIds }) => {
+      const cleared = modifyFields(model, {
         maybeActionError: () => Option.none(),
-        ...(isCurrentNote(model, noteId) ? { tagIds: () => tagIds } : {}),
-      }),
-      outMessage: OutMessage.WroteLocalData(),
-    }),
+      })
+
+      return {
+        model: isCurrentNote(model, noteId)
+          ? modifyFields(cleared, { tagIds: () => tagIds })
+          : cleared,
+        outMessage: OutMessage.WroteLocalData(),
+      }
+    },
 
     FailedSetTags: ({ noteId, message }) => ({
-      model: modifyFields(model, {
-        ...(isCurrentNote(model, noteId)
-          ? { maybeActionError: () => Option.some(message) }
-          : {}),
-      }),
+      model: isCurrentNote(model, noteId)
+        ? modifyFields(model, {
+            maybeActionError: () => Option.some(message),
+          })
+        : model,
     }),
 
     ClickedArchiveNote: () => {
@@ -1611,19 +1645,22 @@ export const update = (
       }
     },
 
-    CompletedRetryNote: ({ noteId, version }) => ({
-      model: modifyFields(model, {
+    CompletedRetryNote: ({ noteId, version }) => {
+      const settled = modifyFields(model, {
         maybeActionError: () => Option.none(),
         isRetrying: () => false,
-        ...(isCurrentNote(model, noteId)
-          ? {
+      })
+
+      return {
+        model: isCurrentNote(model, noteId)
+          ? modifyFields(settled, {
               baseVersion: () => version,
               maybeSyncError: () => Option.none(),
-            }
-          : {}),
-      }),
-      outMessage: OutMessage.WroteLocalData(),
-    }),
+            })
+          : settled,
+        outMessage: OutMessage.WroteLocalData(),
+      }
+    },
 
     FailedRetryNote: ({ message }) => ({
       model: modifyFields(model, {
@@ -1783,18 +1820,19 @@ export const mirrorSettled = (model: Model, inputs: Inputs): CommandReturn => {
       const canReanchor =
         row.version !== model.baseVersion && row.text === model.savedText
 
+      const settled = modifyFields(model, {
+        isTrashed: () => row.deletedAt !== null,
+        maybeSyncError: () => row.syncErrorCode,
+      })
+
       return {
-        model: modifyFields(model, {
-          isTrashed: () => row.deletedAt !== null,
-          maybeSyncError: () => row.syncErrorCode,
-          ...(canReanchor
-            ? {
-                baseVersion: () => row.version,
-                savedTitle: () => row.title,
-                savedText: () => row.text,
-              }
-            : {}),
-        }),
+        model: canReanchor
+          ? modifyFields(settled, {
+              baseVersion: () => row.version,
+              savedTitle: () => row.title,
+              savedText: () => row.text,
+            })
+          : settled,
       }
     },
   })

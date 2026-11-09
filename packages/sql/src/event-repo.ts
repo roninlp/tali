@@ -1,15 +1,19 @@
-import { Context, Effect, Layer, Option } from 'effect'
+import { Context, Effect, Layer, Option, Schema } from 'effect'
 import { SqlClient, Statement } from 'effect/sql'
 import {
   Event,
-  type EventException,
+  EventException,
   type EventId,
-  type EventTiming,
+  EventTiming,
   type HouseholdId,
+  LocalDate,
   type OccasionId,
-  type RecurrenceRule,
+  RecurrenceRule,
+  TimestampUtc,
   type UserId,
   type Visibility,
+  allDayEventTiming,
+  timedEventTiming,
 } from '@tali/domain'
 
 /**
@@ -73,25 +77,17 @@ export interface EventRow extends Record<string, unknown> {
   readonly deletedAt: string | null
 }
 
-/** Parse a JSON array column; a malformed cell is an empty list, not a crash. */
-const parseArray = (value: string | null): ReadonlyArray<unknown> => {
-  if (value === null) return []
-  try {
-    const parsed: unknown = JSON.parse(value)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
+const asPeople = Schema.decodeOption(
+  Schema.fromJsonString(Schema.Array(Schema.String)),
+)
 
-const parseJson = (value: string | null): unknown => {
-  if (value === null) return null
-  try {
-    return JSON.parse(value)
-  } catch {
-    return null
-  }
-}
+const asRecurrence = Schema.decodeOption(
+  Schema.fromJsonString(Schema.NullOr(RecurrenceRule)),
+)
+
+const asExceptions = Schema.decodeOption(
+  Schema.fromJsonString(Schema.Array(EventException)),
+)
 
 /**
  * The row's timing union.
@@ -105,14 +101,16 @@ export const eventTimingOf = (row: {
   readonly endAt: string | null
   readonly allDayDate: string | null
   readonly createdAt: string
-}): EventTiming =>
-  row.allDayDate !== null
-    ? { _tag: 'allDay', date: row.allDayDate }
-    : {
-        _tag: 'timed',
-        start: row.startAt ?? row.createdAt,
-        end: row.endAt ?? row.startAt ?? row.createdAt,
-      }
+}): EventTiming => {
+  if (row.allDayDate !== null) {
+    return allDayEventTiming(LocalDate.make(row.allDayDate))
+  }
+  const start = row.startAt ?? row.createdAt
+  return timedEventTiming(
+    TimestampUtc.make(start),
+    TimestampUtc.make(row.endAt ?? start),
+  )
+}
 
 /** The model's plain shape, built from a D1 row. */
 export const eventPropsOf = (row: EventRow) => ({
@@ -122,13 +120,14 @@ export const eventPropsOf = (row: EventRow) => ({
   description: row.description,
   location: row.location,
   category: row.category,
-  people: parseArray(row.people).filter(
-    (entry): entry is string => typeof entry === 'string',
-  ),
+  people: Option.getOrElse(asPeople(row.people), () => []),
   timing: eventTimingOf(row),
   timeZone: row.timeZone,
-  recurrence: parseJson(row.recurrence) as RecurrenceRule | null,
-  exceptions: parseArray(row.exceptions) as ReadonlyArray<EventException>,
+  recurrence:
+    row.recurrence === null
+      ? null
+      : Option.getOrElse(asRecurrence(row.recurrence), () => null),
+  exceptions: Option.getOrElse(asExceptions(row.exceptions), () => []),
   occasionId: row.occasionId as OccasionId | null,
   ownerId: row.ownerId as UserId,
   householdId: row.householdId as HouseholdId,

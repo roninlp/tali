@@ -14,6 +14,7 @@ import {
   LocalDate,
   OccasionId,
   UserId,
+  allDayEventTiming,
   defaultVisibilityFor,
   eventAnchorDate,
   isEventOccurrence,
@@ -22,6 +23,8 @@ import {
   localizeDigits,
   splitEventSeries,
   storedOccurrenceOverrides,
+  timedEventTiming,
+  untilRecurrenceEnd,
   uuidV7,
 } from '@tali/domain'
 import type { LocalStore, MirrorRecord, ServerRow } from '@tali/sync-client'
@@ -32,23 +35,37 @@ import {
   type CalendarEventOccurrence,
   type CalendarEventSource,
   CalendarEventSource as CalendarEventSourceSchema,
-  type CalendarRecurrenceRule,
   CalendarRecurrenceRule as CalendarRecurrenceRuleSchema,
-  type CalendarTiming,
   CalendarTiming as CalendarTimingSchema,
   eventSourceWithDomainValues,
+  exceptionOverridesWithDomainValues,
   recurrenceWithDomainValues,
   timingWithDomainValues,
 } from './calendar-data'
+import { JsonField } from './json-field'
 
 const asRecurrenceOption = Schema.decodeUnknownOption(
-  CalendarRecurrenceRuleSchema,
+  JsonField(CalendarRecurrenceRuleSchema),
 )
 
-const asTimingOption = Schema.decodeUnknownOption(CalendarTimingSchema)
+const asTimingOption = Schema.decodeUnknownOption(
+  JsonField(CalendarTimingSchema),
+)
 
 const asExceptionsOption = Schema.decodeUnknownOption(
-  Schema.Array(CalendarEventExceptionData),
+  JsonField(Schema.Array(CalendarEventExceptionData)),
+)
+
+const asPeopleItems = Schema.decodeUnknownOption(
+  JsonField(Schema.Array(Schema.Unknown)),
+)
+
+const asString = Schema.decodeUnknownOption(Schema.String)
+
+const asStringOption = Schema.decodeUnknownOption(Schema.String)
+
+const nullableString = Schema.decodeUnknownOption(
+  Schema.String.check(Schema.isMinLength(1)),
 )
 
 /**
@@ -111,83 +128,49 @@ export type CalendarEventDraft = typeof CalendarEventDraft.Type
 
 // PROJECTION
 
-const asString = (value: unknown): string | null =>
-  typeof value === 'string' && value !== '' ? value : null
-
-const asJson = (value: unknown): unknown => {
-  if (typeof value !== 'string') {
-    return value
-  }
-
-  try {
-    return JSON.parse(value)
-  } catch {
-    return undefined
-  }
-}
-
-const asPeople = (value: unknown): ReadonlyArray<string> => {
-  const parsed = asJson(value)
-
-  return Array.isArray(parsed)
-    ? parsed.filter((entry): entry is string => typeof entry === 'string')
-    : []
-}
-
-const asTiming = (value: unknown, fallbackDate: string): CalendarTiming => {
-  const parsed = asJson(value)
-  const decoded = asTimingOption(parsed)
-
-  if (Option.isSome(decoded)) {
-    return decoded.value
-  }
-
-  const day = /^\d{4}-\d{2}-\d{2}/.test(fallbackDate)
-    ? fallbackDate.slice(0, 10)
-    : '1970-01-01'
-
-  return { _tag: 'allDay', date: day }
-}
-
-const asRecurrence = (value: unknown): CalendarRecurrenceRule | null => {
-  const parsed = asJson(value)
-  const decoded = asRecurrenceOption(parsed)
-
-  return Option.getOrNull(decoded)
-}
-
-const asExceptions = (
-  value: unknown,
-): ReadonlyArray<CalendarEventException> => {
-  const parsed = asJson(value)
-  const decoded = asExceptionsOption(parsed)
-
-  return Option.getOrElse(decoded, () => [])
-}
-
 /** One mirrored event row, in the plain shape the screen's Model holds. */
 export const toEventRow = (record: MirrorRecord): EventRow =>
   EventRow.make({
     id: record.entityId,
-    title: typeof record.data.title === 'string' ? record.data.title : '',
-    description: asString(record.data.description),
-    location: asString(record.data.location),
-    category: asString(record.data.category),
-    color: asString(record.data.color),
-    people: asPeople(record.data.people),
-    timing: asTiming(record.data.timing, record.updatedAt),
-    timeZone: asString(record.data.timeZone) ?? 'UTC',
-    recurrence: asRecurrence(record.data.recurrence),
-    exceptions: asExceptions(record.data.exceptions),
-    occasionId: asString(record.data.occasionId),
-    ownerId: asString(record.data.ownerId),
-    householdId: asString(record.data.householdId),
+    title: Option.getOrElse(asStringOption(record.data.title), () => ''),
+    description: Option.getOrNull(nullableString(record.data.description)),
+    location: Option.getOrNull(nullableString(record.data.location)),
+    category: Option.getOrNull(nullableString(record.data.category)),
+    color: Option.getOrNull(nullableString(record.data.color)),
+    people: Array.getSomes(
+      Array.map(
+        Option.getOrElse(asPeopleItems(record.data.people), () => []),
+        value => asString(value),
+      ),
+    ),
+    timing: Option.getOrElse(asTimingOption(record.data.timing), () =>
+      CalendarTimingSchema.allDay({
+        date: /^\d{4}-\d{2}-\d{2}/.test(record.updatedAt)
+          ? record.updatedAt.slice(0, 10)
+          : '1970-01-01',
+      }),
+    ),
+    timeZone: Option.getOrElse(
+      asStringOption(record.data.timeZone),
+      () => 'UTC',
+    ),
+    recurrence: Option.getOrNull(asRecurrenceOption(record.data.recurrence)),
+    exceptions: Option.getOrElse(
+      asExceptionsOption(record.data.exceptions),
+      () => [],
+    ),
+    occasionId: Option.getOrNull(nullableString(record.data.occasionId)),
+    ownerId: Option.getOrNull(nullableString(record.data.ownerId)),
+    householdId: Option.getOrNull(nullableString(record.data.householdId)),
     visibility:
       record.data.visibility === 'private' ||
       record.data.visibility === 'shared'
         ? record.data.visibility
         : defaultVisibilityFor('event'),
-    createdAt: asString(record.data.createdAt) ?? record.updatedAt,
+    createdAt: Option.getOrElse(
+      asStringOption(record.data.createdAt),
+      () => record.updatedAt,
+    ),
     updatedAt: record.updatedAt,
     version: record.version,
     deletedAt: record.deletedAt,
@@ -298,7 +281,7 @@ export const timingOfDraft = (
   draft: CalendarEventDraft & Readonly<{ timeZone: string }>,
 ): EventTiming => {
   if (draft.allDay) {
-    return { _tag: 'allDay', date: LocalDate.make(draft.date) }
+    return allDayEventTiming(LocalDate.make(draft.date))
   }
 
   const start = canonicalInstant(
@@ -322,7 +305,7 @@ export const timingOfDraft = (
       ? rawEnd
       : new Date(Date.parse(start) + 60 * MINUTES).toISOString()
 
-  return { _tag: 'timed', start, end }
+  return timedEventTiming(start, end)
 }
 
 /** Create an event locally; the sync push inserts it on the server. */
@@ -488,7 +471,7 @@ const truncateLocal = (
         ? null
         : {
             ...event.recurrence,
-            end: { _tag: 'until', date: localDayBefore(instanceId) },
+            end: untilRecurrenceEnd(localDayBefore(instanceId)),
           },
     exceptions: event.exceptions.filter(
       exception => exception.instanceId < instanceId,
@@ -600,7 +583,7 @@ export const deleteEventWithinScope = (
   }
 }
 
-const eventWritePatch = (event: Event): Readonly<Record<string, unknown>> => ({
+const eventWritePatch = (event: Event) => ({
   title: event.title,
   description: event.description,
   location: event.location,
@@ -709,14 +692,7 @@ const exceptionWithDomainValues = (
     overrides:
       exception.overrides === null
         ? null
-        : {
-            ...exception.overrides,
-            ...(exception.overrides.timing === undefined
-              ? {}
-              : {
-                  timing: timingWithDomainValues(exception.overrides.timing),
-                }),
-          },
+        : exceptionOverridesWithDomainValues(exception.overrides),
     createdAt: exception.createdAt,
   })
 
@@ -775,7 +751,7 @@ export const occurrenceStartMinutes = (
   occurrence: CalendarEventOccurrence,
   viewerTimeZone: string,
 ): number | null => {
-  if (occurrence.timing._tag !== 'timed') {
+  if (!CalendarTimingSchema.isAnyOf(['timed'])(occurrence.timing)) {
     return null
   }
 
@@ -788,7 +764,7 @@ export const occurrenceStartMinutes = (
 export const occurrenceDurationMinutes = (
   occurrence: CalendarEventOccurrence,
 ): number => {
-  if (occurrence.timing._tag !== 'timed') {
+  if (!CalendarTimingSchema.isAnyOf(['timed'])(occurrence.timing)) {
     return 0
   }
 
@@ -865,7 +841,7 @@ export const occurrenceTimeLabel = (
   viewerTimeZone: string,
   digits: 'persian' | 'latin',
 ): string | null => {
-  if (occurrence.timing._tag !== 'timed') {
+  if (!CalendarTimingSchema.isAnyOf(['timed'])(occurrence.timing)) {
     return null
   }
 
@@ -883,7 +859,10 @@ export const occurrenceTimeLabel = (
 /** Whether any occurrence in a lane is timed (the time grid's on/off switch). */
 export const hasTimedEvents = (
   occurrences: ReadonlyArray<CalendarEventOccurrence>,
-): boolean => occurrences.some(occurrence => occurrence.timing._tag === 'timed')
+): boolean =>
+  occurrences.some(occurrence =>
+    CalendarTimingSchema.isAnyOf(['timed'])(occurrence.timing),
+  )
 
 /** Is this occurrence the series' own first occurrence (the mutable anchor)? */
 export const isAnchorOccurrence = (
@@ -898,26 +877,25 @@ export const eventTitleOrFallback = (
 export const draftFromOccurrence = (
   occurrence: CalendarEventOccurrence,
 ): CalendarEventDraft => {
-  const allDay = occurrence.timing._tag === 'allDay'
+  const timing = occurrence.timing
+  const allDay = CalendarTimingSchema.isAnyOf(['allDay'])(timing)
 
-  const startParts =
-    occurrence.timing._tag === 'timed'
-      ? wallTimeIn(occurrence.timing.start, occurrence.timeZone)
-      : null
+  const startParts = CalendarTimingSchema.match(timing, {
+    allDay: () => null,
+    timed: ({ start }) => wallTimeIn(start, occurrence.timeZone),
+  })
 
-  const endParts =
-    occurrence.timing._tag === 'timed'
-      ? wallTimeIn(occurrence.timing.end, occurrence.timeZone)
-      : null
+  const endParts = CalendarTimingSchema.match(timing, {
+    allDay: () => null,
+    timed: ({ end }) => wallTimeIn(end, occurrence.timeZone),
+  })
 
   return CalendarEventDraft.make({
     title: occurrence.title,
-    date: allDay
-      ? occurrence.timing.date
-      : (wallDateIn(
-          occurrence.timing._tag === 'timed' ? occurrence.timing.start : '',
-          occurrence.timeZone,
-        ) ?? ''),
+    date: CalendarTimingSchema.match(timing, {
+      allDay: ({ date }) => date,
+      timed: ({ start }) => wallDateIn(start, occurrence.timeZone) ?? '',
+    }),
     allDay,
     startTime:
       startParts === null

@@ -62,7 +62,11 @@ const send = (
       }),
     )
 
-    const json: unknown = Option.getOrUndefined(maybeJson)
+    const json = Option.getOrUndefined(
+      Option.flatMap(maybeJson, value =>
+        Schema.decodeUnknownOption(Schema.Json)(value),
+      ),
+    )
 
     if (!response.ok) {
       return { ok: false, error: classifyApiFailure(response.status, json) }

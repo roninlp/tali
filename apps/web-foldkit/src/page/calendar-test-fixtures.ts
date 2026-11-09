@@ -1,6 +1,11 @@
 import { Option } from 'effect'
 
-import { CalendarMonthPayload, CalendarWeekPayload } from '../lib/calendar-data'
+import {
+  CalendarMonthPayload,
+  CalendarRecurrenceEnd,
+  CalendarTiming,
+  CalendarWeekPayload,
+} from '../lib/calendar-data'
 import { EventRow } from '../lib/event-writes'
 import { OccasionRow } from '../lib/occasion-writes'
 import { emptyMirrorSnapshot } from '../mirror'
@@ -55,7 +60,7 @@ export const eventRow = (overrides: Partial<EventRow> = {}): EventRow =>
     category: null,
     color: null,
     people: [],
-    timing: { _tag: 'allDay', date: TODAY },
+    timing: CalendarTiming.allDay({ date: TODAY }),
     timeZone: 'Asia/Tehran',
     recurrence: null,
     exceptions: [],
@@ -75,11 +80,10 @@ export const timedEventRow = (overrides: Partial<EventRow> = {}): EventRow =>
   eventRow({
     id: SECOND_EVENT_ID,
     title: 'جلسه',
-    timing: {
-      _tag: 'timed',
+    timing: CalendarTiming.timed({
       start: '2026-10-30T05:30:00.000Z',
       end: '2026-10-30T06:30:00.000Z',
-    },
+    }),
     ...overrides,
   })
 
@@ -87,12 +91,12 @@ export const weeklyEventRow = (overrides: Partial<EventRow> = {}): EventRow =>
   eventRow({
     id: RECURRING_EVENT_ID,
     title: 'جلسهٔ هفتگی',
-    timing: { _tag: 'allDay', date: '2026-10-23' },
+    timing: CalendarTiming.allDay({ date: '2026-10-23' }),
     recurrence: {
       frequency: 'weekly',
       interval: 1,
       byDay: [5],
-      end: { _tag: 'never' },
+      end: CalendarRecurrenceEnd.never(),
     },
     ...overrides,
   })

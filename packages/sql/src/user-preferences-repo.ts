@@ -1,10 +1,6 @@
-import { Context, Effect, Layer, Option } from 'effect'
+import { Context, Effect, Layer, Option, Schema } from 'effect'
 import { SqlClient } from 'effect/sql'
-import {
-  type DashboardSection,
-  UserPreferences,
-  type UserId,
-} from '@tali/domain'
+import { DashboardSection, UserPreferences, type UserId } from '@tali/domain'
 
 /**
  * D1-backed repository for `UserPreferences` (ticket #35).
@@ -28,12 +24,17 @@ interface PreferencesRow extends Omit<
   readonly dashboardSectionOrder: string
 }
 
+const asSectionOrder = Schema.decodeOption(
+  Schema.fromJsonString(Schema.Array(DashboardSection)),
+)
+
 const toPreferences = (row: PreferencesRow): UserPreferences =>
   new UserPreferences({
     ...row,
-    dashboardSectionOrder: JSON.parse(
-      row.dashboardSectionOrder,
-    ) as ReadonlyArray<DashboardSection>,
+    dashboardSectionOrder: Option.getOrElse(
+      asSectionOrder(row.dashboardSectionOrder),
+      () => [],
+    ),
   })
 
 const encodeSectionOrder = (

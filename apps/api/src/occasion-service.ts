@@ -276,7 +276,7 @@ export class OccasionService extends Context.Service<OccasionService>()(
         updatedAt: occasion.updatedAt,
         deletedAt: occasion.deletedAt,
         data: definition('occasion').validate(
-          { ...occasion } as Record<string, unknown>,
+          { ...occasion },
           {
             version: occasion.version,
             updatedAt: occasion.updatedAt,

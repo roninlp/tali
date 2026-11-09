@@ -204,11 +204,14 @@ export class EventService extends Context.Service<EventService>()(
           version: event.version,
           updatedAt: event.updatedAt,
           deletedAt: event.deletedAt,
-          data: def.validate({ ...event } as Record<string, unknown>, {
-            version: event.version,
-            updatedAt: event.updatedAt,
-            deletedAt: event.deletedAt,
-          }),
+          data: def.validate(
+            { ...event },
+            {
+              version: event.version,
+              updatedAt: event.updatedAt,
+              deletedAt: event.deletedAt,
+            },
+          ),
         }
       }
 

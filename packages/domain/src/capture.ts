@@ -1,4 +1,4 @@
-import { Effect, Result, Schema, SchemaIssue } from 'effect'
+import { Effect, Option, Result, Schema, SchemaIssue } from 'effect'
 import { Temporal } from 'temporal-polyfill/full'
 import type { HabitFrequency } from './planning/habit.js'
 import type { ReminderRepeat } from './planning/reminder.js'
@@ -16,6 +16,7 @@ import {
 } from './planning/note-service.js'
 import { ReminderCreateInput } from './planning/reminder-service.js'
 import { TaskCreateInput } from './planning/task-service.js'
+import { JsonRecord } from './json.js'
 
 /**
  * Capture domain model (ADR-0012; ticket #101).
@@ -114,6 +115,13 @@ export const NeedsInput = Schema.Struct({
   question: Schema.String.check(Schema.isMinLength(1)),
 })
 export type NeedsInput = Schema.Schema.Type<typeof NeedsInput>
+
+/** One field the review card still has to ask about. */
+export const needsInput = (
+  field: string,
+  shape: NeedsInputShape,
+  question: string,
+): NeedsInput => ({ field, shape, question })
 
 /** The verbatim slice of the Capture text a draft was built from. */
 export const SourceQuote = Schema.String.check(Schema.isMinLength(1))
@@ -217,6 +225,52 @@ export const CaptureDraft = Schema.Union([
   ReminderDraft,
 ])
 export type CaptureDraft = Schema.Schema.Type<typeof CaptureDraft>
+
+/** Whether this draft proposes a task. */
+export const isTaskCaptureDraft = (draft: CaptureDraft): draft is TaskDraft =>
+  draft._tag === 'task'
+
+/** Whether this draft proposes an event. */
+export const isEventCaptureDraft = (draft: CaptureDraft): draft is EventDraft =>
+  draft._tag === 'event'
+
+/** Whether this draft proposes a note. */
+export const isNoteCaptureDraft = (draft: CaptureDraft): draft is NoteDraft =>
+  draft._tag === 'note'
+
+/** Whether this draft proposes a habit. */
+export const isHabitCaptureDraft = (draft: CaptureDraft): draft is HabitDraft =>
+  draft._tag === 'habit'
+
+/** Whether this draft proposes a reminder. */
+export const isReminderCaptureDraft = (
+  draft: CaptureDraft,
+): draft is ReminderDraft => draft._tag === 'reminder'
+
+/** A proposed task, constructed with its discriminant already set. */
+export const taskCaptureDraft = (
+  draft: Omit<TaskDraft, '_tag'>,
+): TaskDraft => ({ _tag: 'task', ...draft })
+
+/** A proposed event, constructed with its discriminant already set. */
+export const eventCaptureDraft = (
+  draft: Omit<EventDraft, '_tag'>,
+): EventDraft => ({ _tag: 'event', ...draft })
+
+/** A proposed note, constructed with its discriminant already set. */
+export const noteCaptureDraft = (
+  draft: Omit<NoteDraft, '_tag'>,
+): NoteDraft => ({ _tag: 'note', ...draft })
+
+/** A proposed habit, constructed with its discriminant already set. */
+export const habitCaptureDraft = (
+  draft: Omit<HabitDraft, '_tag'>,
+): HabitDraft => ({ _tag: 'habit', ...draft })
+
+/** A proposed reminder, constructed with its discriminant already set. */
+export const reminderCaptureDraft = (
+  draft: Omit<ReminderDraft, '_tag'>,
+): ReminderDraft => ({ _tag: 'reminder', ...draft })
 
 // ── The Capture row (ADR-0012 §6) ─────────────────────────────────────────
 
@@ -406,10 +460,7 @@ export const normalizeCaptureInstant = (value: string): string => {
   return Number.isNaN(parsed) ? trimmed : new Date(parsed).toISOString()
 }
 
-const asRecord = (value: unknown): Record<string, unknown> | undefined =>
-  value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined
+const decodeJsonObject = Schema.decodeUnknownOption(JsonRecord)
 
 const normalizeDigitsValue = (value: unknown): unknown =>
   typeof value === 'string' ? normalizeCaptureDigits(value) : value
@@ -430,7 +481,7 @@ const normalizeNumberArray = (value: unknown): unknown =>
   Array.isArray(value) ? value.map(normalizeNumberValue) : value
 
 const normalizeTimingInput = (value: unknown): unknown => {
-  const record = asRecord(value)
+  const record = Option.getOrUndefined(decodeJsonObject(value))
   if (record === undefined) return value
   if (record._tag === 'timed') {
     return {
@@ -446,10 +497,10 @@ const normalizeTimingInput = (value: unknown): unknown => {
 }
 
 const normalizeRecurrenceInput = (value: unknown): unknown => {
-  const record = asRecord(value)
+  const record = Option.getOrUndefined(decodeJsonObject(value))
   if (record === undefined) return value
-  const end = asRecord(record.end)
-  const nthWeekday = asRecord(record.nthWeekday)
+  const end = Option.getOrUndefined(decodeJsonObject(record.end))
+  const nthWeekday = Option.getOrUndefined(decodeJsonObject(record.nthWeekday))
   return {
     ...record,
     interval: normalizeNumberValue(record.interval),
@@ -478,7 +529,7 @@ const normalizeRecurrenceInput = (value: unknown): unknown => {
 }
 
 const normalizeFrequencyInput = (value: unknown): unknown => {
-  const record = asRecord(value)
+  const record = Option.getOrUndefined(decodeJsonObject(value))
   if (record === undefined) return value
   if (record._tag === 'weekdays') {
     return { ...record, days: normalizeNumberArray(record.days) }
@@ -490,7 +541,7 @@ const normalizeFrequencyInput = (value: unknown): unknown => {
 }
 
 const normalizeRepeatInput = (value: unknown): unknown => {
-  const record = asRecord(value)
+  const record = Option.getOrUndefined(decodeJsonObject(value))
   if (record === undefined) return value
   if (record._tag === 'daily') {
     return { ...record, time: normalizeDigitsValue(record.time) }
@@ -525,7 +576,7 @@ const MISSING_FIELD_ALIASES: Readonly<Record<string, string>> = {
 const normalizeMissingInput = (value: unknown): unknown =>
   Array.isArray(value)
     ? value.map(entry => {
-        const record = asRecord(entry)
+        const record = Option.getOrUndefined(decodeJsonObject(entry))
         if (record === undefined) return entry
         const field =
           typeof record.field === 'string'

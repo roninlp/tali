@@ -151,7 +151,11 @@ export const fetchToday = (
       }),
     )
 
-    const json: unknown = Option.getOrUndefined(maybeJson)
+    const json = Option.getOrUndefined(
+      Option.flatMap(maybeJson, value =>
+        Schema.decodeUnknownOption(Schema.Json)(value),
+      ),
+    )
 
     if (!response.ok) {
       return {

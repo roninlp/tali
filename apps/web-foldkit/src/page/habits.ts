@@ -490,11 +490,11 @@ const beginEdit = (model: Model, habit: HabitRow): Model =>
     reminderTime: () => habit.reminderTime ?? '',
     frequencyMode: () => habit.frequency._tag,
     weekdays: () =>
-      habit.frequency._tag === 'weekdays'
+      HabitFrequency.isAnyOf(['weekdays'])(habit.frequency)
         ? habit.frequency.days
         : model.weekdays,
     timesPerWeek: () =>
-      habit.frequency._tag === 'weekly'
+      HabitFrequency.isAnyOf(['weekly'])(habit.frequency)
         ? habit.frequency.times
         : model.timesPerWeek,
     icon: () => habit.icon ?? DEFAULT_HABIT_ICON,

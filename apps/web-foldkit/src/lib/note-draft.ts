@@ -1,3 +1,5 @@
+import { Option, Schema } from 'effect'
+
 /**
  * Crash-safe note drafts, ported from `apps/web/src/lib/notes/draft.ts`.
  *
@@ -15,12 +17,12 @@
  *   draft would clobber newer server text.
  */
 
-export interface NoteDraft {
+export const NoteDraft = Schema.Struct({
   /** The note version the text was written against. */
-  readonly version: number
-  readonly text: string
+  version: Schema.Int,
+  text: Schema.String,
   /** ISO instant, for diagnostics. */
-  readonly savedAt: string
+  savedAt: Schema.String,
   /**
    * The durable text this draft extends (the editor's last committed text).
    *
@@ -30,8 +32,10 @@ export interface NoteDraft {
    * the version moved while the draft was being written. Optional so drafts
    * from earlier builds keep the version-only heuristic.
    */
-  readonly baseText?: string
-}
+  baseText: Schema.optional(Schema.String),
+})
+
+export type NoteDraft = typeof NoteDraft.Type
 
 export type DraftDecision =
   | { readonly apply: true; readonly text: string }
@@ -40,43 +44,16 @@ export type DraftDecision =
       readonly reason: 'missing' | 'empty' | 'server-newer' | 'unchanged'
     }
 
-export const noteDraftKey = (noteId: string): string => `note.draft.${noteId}`
+const noteDraftJson = Schema.fromJsonString(NoteDraft)
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === 'object'
+export const noteDraftKey = (noteId: string): string => `note.draft.${noteId}`
 
 export const parseNoteDraft = (
   raw: string | undefined,
 ): NoteDraft | undefined => {
   if (raw === undefined) return undefined
 
-  try {
-    const parsed: unknown = JSON.parse(raw)
-
-    if (!isRecord(parsed)) return undefined
-
-    const record = parsed
-
-    if (
-      typeof record.version !== 'number' ||
-      !Number.isInteger(record.version) ||
-      typeof record.text !== 'string' ||
-      typeof record.savedAt !== 'string'
-    ) {
-      return undefined
-    }
-
-    return {
-      version: record.version,
-      text: record.text,
-      savedAt: record.savedAt,
-      ...(typeof record.baseText === 'string'
-        ? { baseText: record.baseText }
-        : {}),
-    }
-  } catch {
-    return undefined
-  }
+  return Schema.decodeOption(noteDraftJson)(raw).pipe(Option.getOrUndefined)
 }
 
 export const serializeNoteDraft = (draft: NoteDraft): string =>

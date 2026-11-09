@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Option } from 'effect'
+import { Context, Effect, Layer, Option, Predicate } from 'effect'
 import { D1Client } from '@effect/sql-d1'
 import {
   AlreadyInHousehold,
@@ -59,8 +59,8 @@ const uniqueViolationOn = (
   error: { readonly message: string; readonly cause: unknown },
   column: string,
 ): boolean => {
-  const reason = error.cause as { readonly cause?: unknown }
-  return `${error.message} ${String(reason)} ${String(reason.cause)}`.includes(
+  const reason = Predicate.isObject(error.cause) ? error.cause : undefined
+  return `${error.message} ${String(reason)} ${String(reason?.cause)}`.includes(
     `UNIQUE constraint failed: ${column}`,
   )
 }

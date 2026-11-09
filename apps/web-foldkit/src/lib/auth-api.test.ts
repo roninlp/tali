@@ -1,4 +1,4 @@
-import { Effect } from 'effect'
+import { Effect, Schema } from 'effect'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import { Email, LoginKey } from '@tali/domain'
@@ -6,7 +6,7 @@ import { Email, LoginKey } from '@tali/domain'
 import { sessionWithHousehold } from '../test-fixtures'
 import { authApi } from './auth-api'
 
-const jsonResponse = (status: number, body: unknown): Response =>
+const jsonResponse = (status: number, body: Schema.Json): Response =>
   new Response(JSON.stringify(body), {
     status,
     headers: { 'content-type': 'application/json' },

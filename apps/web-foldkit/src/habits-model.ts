@@ -1,4 +1,5 @@
 import { Array, Match, Option, Order, Schema } from 'effect'
+import { defineTaggedUnion } from 'foldkit/schema'
 
 import {
   DEFAULT_TIME_ZONE,
@@ -22,6 +23,8 @@ import type {
 } from '@tali/domain'
 import type { MirrorRecord } from '@tali/sync-client'
 
+import { JsonField } from './lib/json-field'
+
 /**
  * Habit read models, ported from `apps/web/src/lib/habits/model.ts`.
  *
@@ -30,21 +33,13 @@ import type { MirrorRecord } from '@tali/sync-client'
  * authoritative `habitStreak`, never stored or approximated.
  */
 
-export const HabitFrequency = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal('daily') }),
-  Schema.Struct({
-    _tag: Schema.Literal('weekdays'),
-    days: Schema.Array(Schema.Int),
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal('weekly'),
-    times: Schema.Int,
-  }),
-])
+export const HabitFrequency = defineTaggedUnion({
+  daily: {},
+  weekdays: { days: Schema.Array(Schema.Int) },
+  weekly: { times: Schema.Int },
+})
 
 export type HabitFrequency = typeof HabitFrequency.Type
-
-const dailyFrequency = (): HabitFrequency => ({ _tag: 'daily' })
 
 export const HabitFrequencyChange = Schema.Struct({
   effectiveFrom: Schema.String,
@@ -86,59 +81,51 @@ export const HabitEntryRow = Schema.Struct({
 
 export type HabitEntryRow = typeof HabitEntryRow.Type
 
-const asString = (value: unknown): string | null =>
-  typeof value === 'string' && value !== '' ? value : null
+const asNonEmptyString = Schema.decodeUnknownOption(
+  Schema.String.check(Schema.isMinLength(1)),
+)
 
-const weekdayNumbers = (value: unknown): ReadonlyArray<number> =>
-  Array.isArray(value)
-    ? Array.filter(
-        value,
-        (entry): entry is number =>
-          typeof entry === 'number' && Number.isInteger(entry),
+const asFrequency = Schema.decodeUnknownOption(JsonField(HabitFrequency))
+
+const StoredFrequencyEra = Schema.Struct({
+  effectiveFrom: Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/)),
+  frequency: HabitFrequency,
+})
+
+const asFrequencyEra = Schema.decodeUnknownOption(StoredFrequencyEra)
+
+const asHistoryItems = Schema.decodeUnknownOption(
+  JsonField(Schema.Array(Schema.Json)),
+)
+
+const asStatus = Schema.decodeUnknownOption(
+  Schema.Literals(['done', 'partial', 'missed']),
+)
+
+/** The frequency union from mirrored JSON, with the day set canonicalised. */
+const normalizeFrequency = (frequency: HabitFrequency): HabitFrequency =>
+  Match.value(frequency).pipe(
+    Match.tag('daily', () => HabitFrequency.daily()),
+    Match.tag('weekdays', ({ days }) => {
+      const valid = Array.sort(
+        Array.dedupe(Array.filter(days, day => day >= 1 && day <= 7)),
+        Order.Number,
       )
-    : []
 
-/** Decode the frequency union from mirrored JSON; a malformed value reads as daily. */
-export const parseHabitFrequency = (value: unknown): HabitFrequency => {
-  if (typeof value !== 'object' || value === null) {
-    return dailyFrequency()
-  }
-
-  const tag = Reflect.get(value, '_tag')
-
-  if (tag === 'weekdays') {
-    const days = [
-      ...new Set(
-        Array.filter(
-          weekdayNumbers(Reflect.get(value, 'days')),
-          day => day >= 1 && day <= 7,
-        ),
-      ),
-    ].sort((left, right) => left - right)
-
-    if (days.length > 0) {
-      return { _tag: 'weekdays', days }
-    }
-  }
-
-  if (tag === 'weekly') {
-    const times = Reflect.get(value, 'times')
-
-    if (
-      typeof times === 'number' &&
-      Number.isInteger(times) &&
-      times >= 1 &&
-      times <= 7
-    ) {
-      return { _tag: 'weekly', times }
-    }
-  }
-
-  return dailyFrequency()
-}
+      return Array.isArrayNonEmpty(valid)
+        ? HabitFrequency.weekdays({ days: valid })
+        : HabitFrequency.daily()
+    }),
+    Match.tag('weekly', ({ times }) =>
+      Number.isInteger(times) && times >= 1 && times <= 7
+        ? HabitFrequency.weekly({ times })
+        : HabitFrequency.daily(),
+    ),
+    Match.exhaustive,
+  )
 
 const parseHistory = (
-  value: unknown,
+  items: ReadonlyArray<Schema.Json>,
   startedOn: string,
   frequency: HabitFrequency,
 ): ReadonlyArray<HabitFrequencyChange> => {
@@ -146,39 +133,24 @@ const parseHistory = (
     HabitFrequencyChange.make({ effectiveFrom: startedOn, frequency }),
   ]
 
-  if (!Array.isArray(value)) {
-    return fallback
-  }
+  const eras = Array.getSomes(Array.map(items, item => asFrequencyEra(item)))
 
-  const seed: Array<HabitFrequencyChange> = []
+  const increasing = Array.reduce(
+    eras,
+    Array.empty<HabitFrequencyChange>(),
+    (acc, era) => {
+      const previous = Array.last(acc)
 
-  const eras = Array.reduce(value, seed, (acc, raw) => {
-    if (typeof raw !== 'object' || raw === null) {
-      return acc
-    }
+      const isNewer = Option.match(previous, {
+        onNone: () => true,
+        onSome: last => last.effectiveFrom < era.effectiveFrom,
+      })
 
-    const effectiveFrom = asString(Reflect.get(raw, 'effectiveFrom'))
+      return isNewer ? [...acc, era] : acc
+    },
+  )
 
-    if (effectiveFrom === null || !/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom)) {
-      return acc
-    }
-
-    const previous = Array.last(acc)
-
-    if (Option.exists(previous, era => era.effectiveFrom >= effectiveFrom)) {
-      return acc
-    }
-
-    return [
-      ...acc,
-      HabitFrequencyChange.make({
-        effectiveFrom,
-        frequency: parseHabitFrequency(Reflect.get(raw, 'frequency')),
-      }),
-    ]
-  })
-
-  return Array.isArrayNonEmpty(eras) ? eras : fallback
+  return Array.isArrayNonEmpty(increasing) ? increasing : fallback
 }
 
 const localDateOr = (
@@ -199,10 +171,22 @@ const localDateOr = (
 
 /** Project a mirrored habit row into the shape the screens understand. */
 export const toHabitRow = (record: MirrorRecord): HabitRow => {
-  const timeZone = asString(record.data.timeZone) ?? DEFAULT_TIME_ZONE
-  const frequency = parseHabitFrequency(record.data.frequency)
-  const createdAt = asString(record.data.createdAt) ?? record.updatedAt
-  const startedOnRaw = asString(record.data.startedOn)
+  const timeZone = Option.getOrElse(
+    asNonEmptyString(record.data.timeZone),
+    () => DEFAULT_TIME_ZONE,
+  )
+
+  const frequency = Option.match(asFrequency(record.data.frequency), {
+    onNone: () => HabitFrequency.daily(),
+    onSome: normalizeFrequency,
+  })
+
+  const createdAt = Option.getOrElse(
+    asNonEmptyString(record.data.createdAt),
+    () => record.updatedAt,
+  )
+
+  const startedOnRaw = Option.getOrNull(asNonEmptyString(record.data.startedOn))
 
   const startedOn =
     startedOnRaw !== null && /^\d{4}-\d{2}-\d{2}$/.test(startedOnRaw)
@@ -211,21 +195,23 @@ export const toHabitRow = (record: MirrorRecord): HabitRow => {
 
   return HabitRow.make({
     id: record.entityId,
-    title: asString(record.data.title) ?? 'بدون نام',
-    description: asString(record.data.description),
-    icon: asString(record.data.icon),
-    color: asString(record.data.color),
+    title: Option.getOrElse(
+      asNonEmptyString(record.data.title),
+      () => 'بدون نام',
+    ),
+    description: Option.getOrNull(asNonEmptyString(record.data.description)),
+    icon: Option.getOrNull(asNonEmptyString(record.data.icon)),
+    color: Option.getOrNull(asNonEmptyString(record.data.color)),
     frequency,
     frequencyHistory: parseHistory(
-      record.data.frequencyHistory,
+      Option.getOrElse(asHistoryItems(record.data.frequencyHistory), () => []),
       startedOn,
       frequency,
     ),
     startedOn,
-    reminderTime: asString(record.data.reminderTime),
+    reminderTime: Option.getOrNull(asNonEmptyString(record.data.reminderTime)),
     timeZone,
-    ownerId:
-      typeof record.data.ownerId === 'string' ? record.data.ownerId : null,
+    ownerId: Option.getOrNull(asNonEmptyString(record.data.ownerId)),
     visibility:
       record.data.visibility === 'private' ||
       record.data.visibility === 'shared'
@@ -238,17 +224,20 @@ export const toHabitRow = (record: MirrorRecord): HabitRow => {
   })
 }
 
-const asStatus = (value: unknown): HabitEntryStatus =>
-  value === 'partial' || value === 'missed' ? value : 'done'
-
 /** Project a mirrored habit entry (a day's log) into a row. */
 export const toHabitEntryRow = (record: MirrorRecord): HabitEntryRow =>
   HabitEntryRow.make({
     id: record.entityId,
-    habitId: asString(record.data.habitId) ?? '',
-    localDate: asString(record.data.localDate) ?? '1970-01-01',
-    status: asStatus(record.data.status),
-    timeZone: asString(record.data.timeZone) ?? DEFAULT_TIME_ZONE,
+    habitId: Option.getOrElse(asNonEmptyString(record.data.habitId), () => ''),
+    localDate: Option.getOrElse(
+      asNonEmptyString(record.data.localDate),
+      () => '1970-01-01',
+    ),
+    status: Option.getOrElse(asStatus(record.data.status), () => 'done'),
+    timeZone: Option.getOrElse(
+      asNonEmptyString(record.data.timeZone),
+      () => DEFAULT_TIME_ZONE,
+    ),
     updatedAt: record.updatedAt,
     version: record.version,
   })
@@ -315,17 +304,18 @@ export const habitEntryOn = (
 
 const PERSIAN_WEEKDAY_ORDER: ReadonlyArray<number> = [6, 7, 1, 2, 3, 4, 5]
 
-const WEEKDAY_NAMES: Readonly<Record<number, string>> = {
-  1: 'دوشنبه',
-  2: 'سه‌شنبه',
-  3: 'چهارشنبه',
-  4: 'پنج‌شنبه',
-  5: 'جمعه',
-  6: 'شنبه',
-  7: 'یکشنبه',
-}
+/** Persian name per ISO weekday; index 0 is Monday, so `isoDay - 1`. */
+const WEEKDAY_NAMES = [
+  'دوشنبه',
+  'سه‌شنبه',
+  'چهارشنبه',
+  'پنج‌شنبه',
+  'جمعه',
+  'شنبه',
+  'یکشنبه',
+]
 
-const weekdayName = (isoDay: number): string => WEEKDAY_NAMES[isoDay] ?? ''
+const weekdayName = (isoDay: number): string => WEEKDAY_NAMES[isoDay - 1] ?? ''
 
 /** «هر روز» / «شنبه، دوشنبه، چهارشنبه» / «۳ بار در هفته». */
 export const habitFrequencyLabel = (
@@ -523,7 +513,11 @@ export interface HabitHeatmapMonth {
 }
 
 const weekStartOffset = (weekStart: WeekStart): number =>
-  weekStart === 'saturday' ? 0 : weekStart === 'sunday' ? 1 : 2
+  Match.value(weekStart).pipe(
+    Match.when('saturday', () => 0),
+    Match.when('sunday', () => 1),
+    Match.orElse(() => 2),
+  )
 
 const statusOn = (
   entries: ReadonlyArray<HabitEntryRow>,
@@ -592,12 +586,12 @@ export const habitHeatmapMonth = (input: {
 }
 
 /** The Jalali year/month containing a local date (the heatmap's first bucket). */
-export const habitMonthOf = (
-  today: string,
-): Readonly<{
-  year: number
-  month: number
-}> => {
+export interface HabitMonth {
+  readonly year: number
+  readonly month: number
+}
+
+export const habitMonthOf = (today: string): HabitMonth => {
   const fields = toJalaliFields(toJalaliDate(today))
 
   return { year: fields.year, month: fields.month }
@@ -608,7 +602,7 @@ export const shiftHabitMonth = (
   year: number,
   month: number,
   delta: number,
-): Readonly<{ year: number; month: number }> => {
+): HabitMonth => {
   const zero = month - 1 + delta
 
   return {
@@ -666,17 +660,16 @@ export const habitFrequencyDraft = (
   timesPerWeek: number,
 ): HabitFrequency => {
   if (mode === 'weekdays') {
-    return {
-      _tag: 'weekdays',
+    return HabitFrequency.weekdays({
       days: Array.sort(weekdays, Order.Number),
-    }
+    })
   }
 
   if (mode === 'weekly') {
-    return { _tag: 'weekly', times: timesPerWeek }
+    return HabitFrequency.weekly({ times: timesPerWeek })
   }
 
-  return { _tag: 'daily' }
+  return HabitFrequency.daily()
 }
 
 /**

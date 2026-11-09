@@ -31,11 +31,6 @@ import {
  * the call inside the same run.
  */
 
-const asRecord = (value: unknown): Record<string, unknown> =>
-  value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
-
 const issueField = (
   issue: SchemaIssue.Issue,
 ): { field: string; message: string } => {
@@ -112,7 +107,7 @@ const makeDraftTool = <D extends CaptureDraft>(
     }),
     input =>
       Effect.gen(function* () {
-        const raw = normalizeCaptureDraftInput(asRecord(input))
+        const raw = normalizeCaptureDraftInput(input)
         const draft = yield* config.decode(raw).pipe(
           // The model reads this message; name the field so its next call can
           // repair exactly the malformed value.

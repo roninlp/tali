@@ -1,6 +1,6 @@
-import { Context, Effect, Layer, Option } from 'effect'
+import { Context, Effect, Layer, Option, Schema } from 'effect'
 import { SqlClient } from 'effect/sql'
-import { Note, type NoteId, type TagId, type UserId } from '@tali/domain'
+import { Note, type NoteId, TagId, type UserId } from '@tali/domain'
 
 /**
  * D1-backed repository for `Note` (ticket #33; FR-NOTE-01/03).
@@ -29,13 +29,17 @@ interface NoteRow extends Omit<
 const bit = (value: boolean): number => (value ? 1 : 0)
 const encodeTagIds = (ids: ReadonlyArray<TagId>): string => JSON.stringify(ids)
 
+const asBody = Schema.decodeOption(Schema.fromJsonString(Schema.Json))
+
+const asTagIds = Schema.decodeOption(Schema.fromJsonString(Schema.Array(TagId)))
+
 const toNote = (row: NoteRow): Note =>
   new Note({
     ...row,
-    body: row.body === null ? null : (JSON.parse(row.body) as Note['body']),
+    body: row.body === null ? null : Option.getOrThrow(asBody(row.body)),
     isPinned: row.isPinned === true || row.isPinned === 1,
     isArchived: row.isArchived === true || row.isArchived === 1,
-    tagIds: JSON.parse(row.tagIds) as ReadonlyArray<TagId>,
+    tagIds: Option.getOrElse(asTagIds(row.tagIds), () => []),
   })
 
 export class NoteRepo extends Context.Service<NoteRepo>()('NoteRepo', {

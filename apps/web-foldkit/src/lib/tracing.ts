@@ -1,4 +1,4 @@
-import { Duration, Effect, Layer, Tracer } from 'effect'
+import { Array, Duration, Effect, Layer, Option, Schema, Tracer } from 'effect'
 import { FetchHttpClient } from 'effect/http'
 import {
   OtlpExporter,
@@ -28,34 +28,30 @@ import { isDevServer } from './config'
 
 const endpoint = import.meta.env.VITE_OTLP_TRACES_URL?.trim()
 
-const stringRecordOf = (
-  raw: string | undefined,
-): Record<string, string> | undefined => {
+const HeaderValues = Schema.Record(Schema.String, Schema.Unknown)
+
+const asHeaderValues = Schema.decodeUnknownOption(
+  Schema.fromJsonString(HeaderValues),
+)
+
+const asString = Schema.decodeUnknownOption(Schema.String)
+
+const stringRecordOf = (raw: string | undefined) => {
   if (raw === undefined || raw.trim() === '') return undefined
 
-  try {
-    const parsed: unknown = JSON.parse(raw)
+  return Option.map(asHeaderValues(raw), record => {
+    const entries = Array.reduce(
+      Object.entries(record),
+      Array.empty<readonly [string, string]>(),
+      (acc, [key, value]) =>
+        Option.match(asString(value), {
+          onNone: () => acc,
+          onSome: text => [...acc, [key, text] as const],
+        }),
+    )
 
-    if (
-      parsed === null ||
-      typeof parsed !== 'object' ||
-      Array.isArray(parsed)
-    ) {
-      return undefined
-    }
-
-    const headers: Record<string, string> = {}
-
-    for (const [key, value] of Object.entries(parsed)) {
-      if (typeof value === 'string') {
-        headers[key] = value
-      }
-    }
-
-    return headers
-  } catch {
-    return undefined
-  }
+    return Object.fromEntries(entries)
+  }).pipe(Option.getOrUndefined)
 }
 
 const headers = stringRecordOf(import.meta.env.VITE_OTLP_TRACES_HEADERS)

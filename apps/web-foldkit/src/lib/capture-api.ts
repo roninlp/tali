@@ -1,4 +1,4 @@
-import { Effect, Schema } from 'effect'
+import { Effect, Option, Schema } from 'effect'
 
 import type {
   Capture,
@@ -29,10 +29,15 @@ export type CaptureApiResult<A> =
   | { readonly ok: true; readonly value: A }
   | { readonly ok: false; readonly error: CaptureFailure }
 
-const tagOf = (error: unknown): string | undefined =>
-  error !== null && typeof error === 'object' && '_tag' in error
-    ? String(error._tag)
-    : undefined
+/** The tagged shape an RPC failure carries across the wire. */
+const CaptureErrorEnvelope = Schema.Struct({
+  _tag: Schema.optional(Schema.String),
+  retryAfterSeconds: Schema.optional(Schema.Number),
+})
+
+type CaptureErrorEnvelope = typeof CaptureErrorEnvelope.Type
+
+const asCaptureErrorEnvelope = Schema.decodeUnknownOption(CaptureErrorEnvelope)
 
 const messageFor = (tag: string | undefined): string => {
   switch (tag) {
@@ -61,22 +66,19 @@ const messageFor = (tag: string | undefined): string => {
   }
 }
 
-export const captureFailureOf = (error: unknown): CaptureFailure => {
-  const tag = tagOf(error)
-
-  const rawRetry =
-    error !== null && typeof error === 'object' && 'retryAfterSeconds' in error
-      ? Number(error.retryAfterSeconds)
-      : undefined
-
-  const retryAfterSeconds =
-    rawRetry !== undefined && Number.isFinite(rawRetry) ? rawRetry : undefined
-
-  return {
-    code: tag ?? 'Network',
-    message: messageFor(tag),
-    ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
+export const captureFailureOf = (
+  envelope: CaptureErrorEnvelope,
+): CaptureFailure => {
+  const failure: CaptureFailure = {
+    code: envelope._tag ?? 'Network',
+    message: messageFor(envelope._tag),
   }
+
+  const retryAfterSeconds = envelope.retryAfterSeconds
+
+  return retryAfterSeconds === undefined || !Number.isFinite(retryAfterSeconds)
+    ? failure
+    : { ...failure, retryAfterSeconds }
 }
 
 const run = <A, E>(
@@ -86,7 +88,9 @@ const run = <A, E>(
     Effect.match({
       onFailure: error => ({
         ok: false as const,
-        error: captureFailureOf(error),
+        error: captureFailureOf(
+          Option.getOrElse(asCaptureErrorEnvelope(error), () => ({})),
+        ),
       }),
       onSuccess: value => ({ ok: true as const, value }),
     }),

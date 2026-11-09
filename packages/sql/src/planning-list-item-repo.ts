@@ -1,10 +1,10 @@
-import { Context, Effect, Layer, Option } from 'effect'
+import { Context, Effect, Layer, Option, Schema } from 'effect'
 import { SqlClient } from 'effect/sql'
 import {
   type ListId,
   PlanningListItem as ListItem,
   type PlanningListItemId as ListItemId,
-  type TagId,
+  TagId,
   type UserId,
 } from '@tali/domain'
 
@@ -31,11 +31,13 @@ interface ListItemRow extends Omit<ListItem, 'done' | 'tagIds'> {
   readonly tagIds: string
 }
 
+const asTagIds = Schema.decodeOption(Schema.fromJsonString(Schema.Array(TagId)))
+
 const toListItem = (row: ListItemRow): ListItem =>
   new ListItem({
     ...row,
     done: row.done === true || row.done === 1,
-    tagIds: JSON.parse(row.tagIds) as ReadonlyArray<TagId>,
+    tagIds: Option.getOrElse(asTagIds(row.tagIds), () => []),
   })
 
 const encodeTagIds = (ids: ReadonlyArray<TagId>): string => JSON.stringify(ids)

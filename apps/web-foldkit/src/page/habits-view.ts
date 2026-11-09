@@ -8,6 +8,7 @@ import {
   DEFAULT_HABIT_COLOR,
   HABIT_COLORS,
   HABIT_WINDOW_DAYS,
+  HabitFrequency,
   type HabitRow,
   habitBadgeLabel,
   habitBestLabel,
@@ -188,7 +189,8 @@ const frequencyFieldView = (
 const weekdayLabel = (
   day: number,
   digits: ViewInputs['display']['digits'],
-): string => habitFrequencyLabel({ _tag: 'weekdays', days: [day] }, digits)
+): string =>
+  habitFrequencyLabel(HabitFrequency.weekdays({ days: [day] }), digits)
 
 const weekdaysFieldView = (
   model: Model,

@@ -1,7 +1,10 @@
-import { Effect } from 'effect'
+import { Effect, Schema } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { noReminderLink } from '@tali/domain'
+
 import { API_URL } from '../config'
+import type { ReminderDispatch } from './api'
 import { fetchReminderInbox, respondToReminder } from './api'
 
 /**
@@ -11,7 +14,9 @@ import { fetchReminderInbox, respondToReminder } from './api'
  * body (including the preset snooze minutes), and error classification.
  */
 
-const dispatch = (overrides: Record<string, unknown> = {}) => ({
+const dispatch = (
+  overrides: Partial<ReminderDispatch> = {},
+): ReminderDispatch => ({
   id: '0192f0a0-0000-7000-8000-000000000101',
   reminderId: '0192f0a0-0000-7000-8000-000000000102',
   userId: '0192f0a0-0000-7000-8000-000000000001',
@@ -30,7 +35,7 @@ const dispatch = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 })
 
-const jsonResponse = (body: unknown, status = 200): Response =>
+const jsonResponse = (body: Schema.Json, status = 200): Response =>
   new Response(JSON.stringify(body), {
     status,
     headers: { 'content-type': 'application/json' },
@@ -52,7 +57,7 @@ describe('fetchReminderInbox', () => {
             note: 'یک قرص',
             kind: 'medication',
             tier: 'critical',
-            link: { _tag: 'none' },
+            link: noReminderLink(),
             visibility: 'private',
             state: 'inbox',
           },

@@ -12,7 +12,10 @@ import {
 } from './habits-model'
 import { CalendarRecurrenceRule } from './lib/calendar-data'
 import { EventRow, eventRowsFromMirror } from './lib/event-writes'
+import { JsonField } from './lib/json-field'
 import {
+  NoteData,
+  emptyNoteData,
   noteDisplayTitle,
   noteExcerpt,
   noteTextFromData,
@@ -133,63 +136,67 @@ export const emptyMirrorSnapshot = (): MirrorSnapshot =>
     trashedOccasions: [],
   })
 
-const asNullableString = (value: unknown): string | null =>
-  typeof value === 'string' ? value : null
+const asNullableString = Schema.decodeUnknownOption(Schema.String)
 
-const asString = (value: unknown): string | null =>
-  typeof value === 'string' && value !== '' ? value : null
+const asString = Schema.decodeUnknownOption(
+  Schema.String.check(Schema.isMinLength(1)),
+)
 
-const asPriority = (value: unknown): TaskRow['priority'] =>
-  value === 'high' || value === 'low' ? value : 'medium'
+const asPriority = Schema.decodeUnknownOption(
+  Schema.Literals(['high', 'medium', 'low']),
+)
 
-const asStatus = (value: unknown): TaskRow['status'] =>
-  value === 'doing' || value === 'done' ? value : 'todo'
+const asStatus = Schema.decodeUnknownOption(
+  Schema.Literals(['todo', 'doing', 'done']),
+)
 
-const asRecurrence = (value: unknown): TaskRow['recurrence'] => {
-  const parsed =
-    typeof value === 'string'
-      ? (() => {
-          try {
-            return JSON.parse(value)
-          } catch {
-            return undefined
-          }
-        })()
-      : value
+const asRecurrence = Schema.decodeUnknownOption(
+  JsonField(CalendarRecurrenceRule),
+)
 
-  const decoded = Schema.decodeUnknownOption(CalendarRecurrenceRule)(parsed)
+const asRecurrenceMode = Schema.decodeUnknownOption(
+  Schema.Literals(['onCompletion', 'onDueDate']),
+)
 
-  return Option.getOrUndefined(decoded)
-}
+const asTagIds = Schema.decodeUnknownOption(
+  JsonField(Schema.Array(Schema.String)),
+)
 
-const asRecurrenceMode = (value: unknown): TaskRow['recurrenceMode'] =>
-  value === 'onCompletion' || value === 'onDueDate' ? value : null
+const asNoteData = Schema.decodeUnknownOption(NoteData)
 
 /** Project a mirrored task row into the shape the screens understand. */
 export const toTaskRow = (record: MirrorRecord): TaskRow =>
   TaskRow.make({
     id: record.entityId,
-    title: typeof record.data.title === 'string' ? record.data.title : '',
-    description: asNullableString(record.data.description),
-    status: asStatus(record.data.status),
-    priority: asPriority(record.data.priority),
-    dueDate: asNullableString(record.data.dueDate),
-    dueAt: asNullableString(record.data.dueAt),
-    timeZone: asString(record.data.timeZone) ?? DEFAULT_TIME_ZONE,
-    projectId: asNullableString(record.data.projectId),
-    tagIds: Array.filter(
-      Array.isArray(record.data.tagIds) ? record.data.tagIds : [],
-      (entry): entry is string => typeof entry === 'string',
+    title: Option.getOrElse(asNullableString(record.data.title), () => ''),
+    description: Option.getOrNull(asNullableString(record.data.description)),
+    status: Option.getOrElse(asStatus(record.data.status), () => 'todo'),
+    priority: Option.getOrElse(
+      asPriority(record.data.priority),
+      () => 'medium',
     ),
-    startedAt: asNullableString(record.data.startedAt),
-    completedAt: asNullableString(record.data.completedAt),
-    recurrence: asRecurrence(record.data.recurrence),
-    recurrenceMode: asRecurrenceMode(record.data.recurrenceMode),
-    createdAt: asNullableString(record.data.createdAt) ?? record.updatedAt,
+    dueDate: Option.getOrNull(asNullableString(record.data.dueDate)),
+    dueAt: Option.getOrNull(asNullableString(record.data.dueAt)),
+    timeZone: Option.getOrElse(
+      asString(record.data.timeZone),
+      () => DEFAULT_TIME_ZONE,
+    ),
+    projectId: Option.getOrNull(asNullableString(record.data.projectId)),
+    tagIds: Option.getOrElse(asTagIds(record.data.tagIds), () => []),
+    startedAt: Option.getOrNull(asNullableString(record.data.startedAt)),
+    completedAt: Option.getOrNull(asNullableString(record.data.completedAt)),
+    recurrence: Option.getOrUndefined(asRecurrence(record.data.recurrence)),
+    recurrenceMode: Option.getOrNull(
+      asRecurrenceMode(record.data.recurrenceMode),
+    ),
+    createdAt: Option.getOrElse(
+      asNullableString(record.data.createdAt),
+      () => record.updatedAt,
+    ),
     updatedAt: record.updatedAt,
     version: record.version,
     hasSyncError: record.syncError !== undefined,
-    ownerId: asNullableString(record.data.ownerId),
+    ownerId: Option.getOrNull(asNullableString(record.data.ownerId)),
     visibility:
       record.data.visibility === 'private' ||
       record.data.visibility === 'shared'
@@ -198,35 +205,38 @@ export const toTaskRow = (record: MirrorRecord): TaskRow =>
   })
 
 /** Project a mirrored note row into the pinned-note lane's shape. */
-export const toNoteRow = (record: MirrorRecord): NoteRow =>
-  NoteRow.make({
+export const toNoteRow = (record: MirrorRecord): NoteRow => {
+  const data = Option.getOrElse(asNoteData(record.data), emptyNoteData)
+
+  return NoteRow.make({
     id: record.entityId,
-    title: noteDisplayTitle(record.data),
-    text: noteTextFromData(record.data),
-    excerpt: noteExcerpt(record.data),
+    title: noteDisplayTitle(data),
+    text: noteTextFromData(data),
+    excerpt: noteExcerpt(data),
     isPinned: record.data.isPinned === true,
     isArchived: record.data.isArchived === true,
-    tagIds: tagIdsOf(record.data.tagIds),
+    tagIds: tagIdsOf(data.tagIds),
     updatedAt: record.updatedAt,
     deletedAt: record.deletedAt,
     version: record.version,
     syncErrorCode: Option.fromNullishOr(record.syncError?.code),
   })
+}
 
 /** Project a mirrored project row into the filter sidebar's shape. */
 export const toProjectRow = (record: MirrorRecord): ProjectRow =>
   ProjectRow.make({
     id: record.entityId,
-    title: typeof record.data.title === 'string' ? record.data.title : '',
-    color: asNullableString(record.data.color),
+    title: Option.getOrElse(asNullableString(record.data.title), () => ''),
+    color: Option.getOrNull(asNullableString(record.data.color)),
   })
 
 /** Project a mirrored tag row into the chip / filter shape. */
 export const toTagRow = (record: MirrorRecord): TagRow =>
   TagRow.make({
     id: record.entityId,
-    name: typeof record.data.name === 'string' ? record.data.name : '',
-    color: asNullableString(record.data.color),
+    name: Option.getOrElse(asNullableString(record.data.name), () => ''),
+    color: Option.getOrNull(asNullableString(record.data.color)),
   })
 
 export const taskRowsFromMirror = (
@@ -353,11 +363,14 @@ export const taskRowFromServer = (task: ServerTask): TaskRow =>
     id: task.id,
     title: task.title,
     description: task.description ?? null,
-    status: asStatus(task.status),
-    priority: asPriority(task.priority),
+    status: Option.getOrElse(asStatus(task.status), () => 'todo'),
+    priority: Option.getOrElse(asPriority(task.priority), () => 'medium'),
     dueDate: task.dueDate ?? null,
     dueAt: task.dueAt ?? null,
-    timeZone: asString(task.timeZone) ?? DEFAULT_TIME_ZONE,
+    timeZone: Option.getOrElse(
+      asString(task.timeZone),
+      () => DEFAULT_TIME_ZONE,
+    ),
     projectId: task.projectId ?? null,
     tagIds: task.tagIds ?? [],
     startedAt: task.startedAt ?? null,
@@ -371,11 +384,11 @@ export const taskRowFromServer = (task: ServerTask): TaskRow =>
   })
 
 export const noteRowFromServer = (note: ServerNote): NoteRow => {
-  const data: Readonly<Record<string, unknown>> = {
+  const data = NoteData.make({
     title: note.title ?? '',
     body: note.body,
     plainText: note.plainText ?? '',
-  }
+  })
 
   return NoteRow.make({
     id: note.id,

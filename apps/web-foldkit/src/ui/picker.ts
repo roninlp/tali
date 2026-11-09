@@ -1,4 +1,4 @@
-import { Array, Effect, Option, Schema } from 'effect'
+import { Array, Effect, Match, Option, Schema } from 'effect'
 import { Command, Dom, Update } from 'foldkit'
 import type { ChildAttribute, Html, HtmlBuilder } from 'foldkit/html'
 import { defineMessageUnion } from 'foldkit/message'
@@ -20,7 +20,7 @@ import {
   toJalaliFields,
 } from '@tali/domain'
 
-import { buttonView } from './button'
+import { type ButtonConfig, buttonView } from './button'
 import {
   calendarIcon,
   chevronLeftIcon,
@@ -143,7 +143,7 @@ const isValidIsoDate = (value: string): boolean =>
 
 const isValidClockTime = (value: string): boolean => CLOCK_TIME.test(value)
 
-const clockParts = (value: string): { hour: number; minute: number } => {
+const clockParts = (value: string) => {
   const match = CLOCK_TIME.exec(value)
 
   if (match === null) {
@@ -162,7 +162,7 @@ const clockParts = (value: string): { hour: number; minute: number } => {
 const timeOf = (hour: number, minute: number): string =>
   `${pad2(hour)}:${pad2(minute)}`
 
-const jalaliFieldsOf = (isoDate: string): { year: number; month: number } => {
+const jalaliFieldsOf = (isoDate: string) => {
   const date = toJalaliDate(
     isValidIsoDate(isoDate) ? isoDate : toIsoDate(jalaliDate(1404, 1, 1)),
   )
@@ -172,9 +172,7 @@ const jalaliFieldsOf = (isoDate: string): { year: number; month: number } => {
   return { year: fields.year, month: fields.month }
 }
 
-const seedValues = (
-  config: typeof Message.RequestedOpen.Type,
-): { dateValue: string; timeValue: string } => {
+const seedValues = (config: typeof Message.RequestedOpen.Type) => {
   if (config.mode === 'date') {
     return {
       dateValue: isValidIsoDate(config.value) ? config.value : '',
@@ -951,12 +949,11 @@ const pickerDialogPanel = <ParentMessage>(
   toParentMessage: (message: Message) => ParentMessage,
   h: HtmlBuilder<ParentMessage>,
 ): Html => {
-  const title =
-    model.mode === 'date'
-      ? 'انتخاب تاریخ'
-      : model.mode === 'time'
-        ? 'انتخاب ساعت'
-        : 'انتخاب تاریخ و ساعت'
+  const title = Match.value(model.mode).pipe(
+    Match.when('date', () => 'انتخاب تاریخ'),
+    Match.when('time', () => 'انتخاب ساعت'),
+    Match.orElse(() => 'انتخاب تاریخ و ساعت'),
+  )
 
   return h.dialog(
     [
@@ -1202,6 +1199,49 @@ export const pickerTriggerView = <ParentMessage>(
       ? clockIcon('size-4 shrink-0 text-base-content/45')
       : calendarIcon('size-4 shrink-0 text-base-content/45')
 
+  const triggerButtonConfig = {
+    id: config.id,
+    variant: 'outline',
+    ariaLabel: config.label,
+    onClick: config.toParentMessage(
+      Message.RequestedOpen({
+        target: config.target,
+        mode: config.mode,
+        value: config.value,
+        today: config.today,
+      }),
+    ),
+    class: [
+      'min-h-11 w-full justify-between text-start font-normal',
+      config.class,
+    ]
+      .filter(value => value !== undefined && value !== '')
+      .join(' '),
+    children: [
+      h.span(
+        [
+          h.Class(
+            Option.isSome(maybeDisplay)
+              ? 'truncate text-[0.84rem] text-base-content'
+              : 'truncate text-[0.84rem] text-base-content/40',
+          ),
+        ],
+        [
+          Option.getOrElse(
+            maybeDisplay,
+            () => config.placeholder ?? 'انتخاب کنید',
+          ),
+        ],
+      ),
+      icon,
+    ],
+  } satisfies ButtonConfig<ParentMessage>
+
+  const buttonConfig =
+    config.isDisabled === true
+      ? { ...triggerButtonConfig, isDisabled: true }
+      : triggerButtonConfig
+
   return h.div(
     [h.Class('grid min-w-0 gap-1')],
     [
@@ -1212,47 +1252,7 @@ export const pickerTriggerView = <ParentMessage>(
         ],
         [config.label],
       ),
-      buttonView(
-        {
-          id: config.id,
-          variant: 'outline',
-          ariaLabel: config.label,
-          ...(config.isDisabled === true ? { isDisabled: true } : {}),
-          onClick: config.toParentMessage(
-            Message.RequestedOpen({
-              target: config.target,
-              mode: config.mode,
-              value: config.value,
-              today: config.today,
-            }),
-          ),
-          class: [
-            'min-h-11 w-full justify-between text-start font-normal',
-            config.class,
-          ]
-            .filter(value => value !== undefined && value !== '')
-            .join(' '),
-          children: [
-            h.span(
-              [
-                h.Class(
-                  Option.isSome(maybeDisplay)
-                    ? 'truncate text-[0.84rem] text-base-content'
-                    : 'truncate text-[0.84rem] text-base-content/40',
-                ),
-              ],
-              [
-                Option.getOrElse(
-                  maybeDisplay,
-                  () => config.placeholder ?? 'انتخاب کنید',
-                ),
-              ],
-            ),
-            icon,
-          ],
-        },
-        h,
-      ),
+      buttonView(buttonConfig, h),
       ...(config.hint === undefined
         ? []
         : [

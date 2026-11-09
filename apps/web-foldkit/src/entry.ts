@@ -20,7 +20,6 @@ import { readStoredMode, readStoredTheme } from './theme'
 
 const prefersDark = (): boolean =>
   typeof window !== 'undefined' &&
-  typeof window.matchMedia === 'function' &&
   window.matchMedia('(prefers-color-scheme: dark)').matches
 
 const flags: Effect.Effect<Flags> = Effect.sync(() => {

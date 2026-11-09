@@ -84,11 +84,24 @@ export const TaskEditPatch = Schema.Struct({
 
 export type TaskEditPatch = typeof TaskEditPatch.Type
 
-const localTaskPatch = (
-  patch: TaskEditPatch,
-  now: string,
-): Readonly<Record<string, unknown>> => {
-  const record: Record<string, unknown> = {}
+/**
+ * The local mirror patch an edit accumulates. A type alias keeps the implicit
+ * index signature the store's patch parameter accepts.
+ */
+type TaskLocalPatch = {
+  title?: string
+  description?: string | null
+  status?: 'todo' | 'doing' | 'done'
+  priority?: 'high' | 'medium' | 'low'
+  projectId?: string | null
+  tagIds?: ReadonlyArray<string>
+  dueDate?: string | null
+  dueAt?: null
+  startedAt?: string
+}
+
+const localTaskPatch = (patch: TaskEditPatch, now: string): TaskLocalPatch => {
+  const record: TaskLocalPatch = {}
 
   if (patch.title !== undefined) {
     record.title = patch.title.trim()

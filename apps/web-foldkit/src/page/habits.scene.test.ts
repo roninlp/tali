@@ -19,7 +19,7 @@ import { describe, test } from 'vitest'
 
 import { Animation, Dialog, Toast as UiToast } from '@foldkit/ui'
 
-import { HABIT_COLORS } from '../habits-model'
+import { HABIT_COLORS, HabitFrequency } from '../habits-model'
 import { entityKey } from '../mirror'
 import { USER_ID } from '../test-fixtures'
 import * as Habits from './habits'
@@ -110,7 +110,7 @@ describe('Habits screen', () => {
           title: 'کتاب خواندن',
           description: Option.none(),
           reminderTime: Option.none(),
-          frequency: { _tag: 'weekdays', days: [1, 2, 3, 6] },
+          frequency: HabitFrequency.weekdays({ days: [1, 2, 3, 6] }),
           icon: '🌱',
           color: HABIT_COLORS[0]?.value ?? '',
           timeZone: 'Asia/Tehran',

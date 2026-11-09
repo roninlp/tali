@@ -1,4 +1,4 @@
-import { Schema } from 'effect'
+import { Predicate, Schema } from 'effect'
 import { TRASH_RETENTION_MS, Visibility } from '../common.js'
 import { NoteId, TagIds } from './common.js'
 
@@ -244,11 +244,10 @@ export const extractNotePlainText = (body: unknown): string => {
       for (const entry of node) walk(entry)
       return
     }
-    if (node === null || typeof node !== 'object') return
-    const record = node as Record<string, unknown>
-    if (typeof record.text === 'string') parts.push(record.text)
-    if (Array.isArray(record.content)) {
-      for (const entry of record.content) walk(entry)
+    if (!Predicate.isObject(node)) return
+    if (typeof node.text === 'string') parts.push(node.text)
+    if (Array.isArray(node.content)) {
+      for (const entry of node.content) walk(entry)
     }
   }
   walk(body)

@@ -1,4 +1,13 @@
-import { Context, Data, DateTime, Effect, Layer, Option, Schema } from 'effect'
+import {
+  Context,
+  Data,
+  DateTime,
+  Effect,
+  Layer,
+  Option,
+  Predicate,
+  Schema,
+} from 'effect'
 import type { Statement } from 'effect/sql'
 import {
   type ChangeFeedEntry,
@@ -169,16 +178,15 @@ const errorTexts = (
 ): ReadonlyArray<string> => {
   if (error === null || error === undefined) return []
   if (typeof error === 'string') return [error]
-  if (typeof error !== 'object' || seen.has(error)) return []
+  if (!Predicate.isObject(error) || seen.has(error)) return []
   seen.add(error)
-  const record = error as Record<string, unknown>
   const texts: Array<string> = []
   for (const key of ['message', 'code', 'errstr']) {
-    const value = record[key]
+    const value = error[key]
     if (typeof value === 'string') texts.push(value)
   }
   for (const key of ['cause', 'reason', 'error']) {
-    texts.push(...errorTexts(record[key], seen))
+    texts.push(...errorTexts(error[key], seen))
   }
   return texts
 }

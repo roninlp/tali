@@ -10,6 +10,7 @@ import {
 } from 'foldkit/story'
 import { describe, expect, test } from 'vitest'
 
+import { CalendarTiming } from '../lib/calendar-data'
 import type { CalendarEventOccurrence } from '../lib/calendar-data'
 import { HOUSEHOLD_ID, TODAY_NOW, USER_ID } from '../test-fixtures'
 import * as Calendar from './calendar'
@@ -62,7 +63,7 @@ const oneOffOccurrence: CalendarEventOccurrence = {
   category: null,
   color: null,
   people: [],
-  timing: { _tag: 'allDay', date: TODAY },
+  timing: CalendarTiming.allDay({ date: TODAY }),
   timeZone: 'Asia/Tehran',
   projected: false,
   recurring: false,

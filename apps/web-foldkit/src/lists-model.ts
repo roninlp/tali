@@ -1,7 +1,9 @@
-import { Array, Option, Schema } from 'effect'
+import { Array, Match, Option, Schema } from 'effect'
 
 import { defaultVisibilityFor } from '@tali/domain'
 import type { MirrorRecord } from '@tali/sync-client'
+
+import { JsonField } from './lib/json-field'
 
 /**
  * The `/lists` read model and its ordering rules, ported from
@@ -87,71 +89,70 @@ export const ICON_CHOICES: ReadonlyArray<string> = [
   '✨',
 ]
 
-const asNullableString = (value: unknown): string | null =>
-  typeof value === 'string' ? value : null
+const asNullableString = Schema.decodeUnknownOption(Schema.String)
 
-const asString = (value: unknown): string | null =>
-  typeof value === 'string' && value !== '' ? value : null
+const asString = Schema.decodeUnknownOption(
+  Schema.String.check(Schema.isMinLength(1)),
+)
 
-const asVisibility = (
-  aggregate: 'list' | 'listItem',
-  value: unknown,
-): ListVisibility =>
-  value === 'private' || value === 'shared'
-    ? value
-    : defaultVisibilityFor(aggregate)
+const asVisibility = Schema.decodeUnknownOption(
+  Schema.Literals(['private', 'shared']),
+)
 
-const asSort = (value: unknown): ListSort =>
-  value === 'alpha' || value === 'status' ? value : 'manual'
+const asSort = Schema.decodeUnknownOption(ListSort)
 
-const asPlacement = (value: unknown): CheckedPlacement =>
-  value === 'inPlace' ? 'inPlace' : 'bottom'
+const asPlacement = Schema.decodeUnknownOption(CheckedPlacement)
 
-const isFiniteNumber = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isFinite(value)
+const asFiniteNumber = Schema.decodeUnknownOption(Schema.Finite)
 
-const asOrder = (record: MirrorRecord): number =>
-  Option.match(
-    Array.findFirst(
+const asStringArray = Schema.decodeUnknownOption(
+  JsonField(Schema.Array(Schema.String)),
+)
+
+const asOrder = (record: MirrorRecord): number => {
+  const candidates = Array.getSomes(
+    Array.map(
       [record.data.order, record.data.ordering, record.data.sortOrder],
-      isFiniteNumber,
+      value => asFiniteNumber(value),
     ),
-    {
-      onNone: () => 0,
-      onSome: value => Math.trunc(value),
-    },
   )
+
+  return Option.match(Array.head(candidates), {
+    onNone: () => 0,
+    onSome: value => Math.trunc(value),
+  })
+}
 
 const asDone = (record: MirrorRecord): boolean =>
   record.data.done === true || record.data.checked === true
 
 const asName = (record: MirrorRecord): string =>
-  typeof record.data.name === 'string'
-    ? record.data.name
-    : typeof record.data.title === 'string'
-      ? record.data.title
-      : ''
-
-const stringArray = (value: unknown): ReadonlyArray<string> =>
-  Array.filter(
-    Array.isArray(value) ? value : [],
-    (entry): entry is string => typeof entry === 'string',
+  Option.getOrElse(asString(record.data.name), () =>
+    Option.getOrElse(asString(record.data.title), () => ''),
   )
 
 /** Project a mirrored list row into the shape the screens understand. */
 export const toListRow = (record: MirrorRecord): ListRow =>
   ListRow.make({
     id: record.entityId,
-    ownerId: typeof record.data.ownerId === 'string' ? record.data.ownerId : '',
-    title: typeof record.data.title === 'string' ? record.data.title : '',
-    description: asNullableString(record.data.description),
-    color: asNullableString(record.data.color),
-    icon: asString(record.data.icon),
-    sort: asSort(record.data.sort),
-    checkedPlacement: asPlacement(record.data.checkedPlacement),
-    visibility: asVisibility('list', record.data.visibility),
-    lastWriterId: asNullableString(record.data.lastWriterId),
-    createdAt: asNullableString(record.data.createdAt) ?? record.updatedAt,
+    ownerId: Option.getOrElse(asNullableString(record.data.ownerId), () => ''),
+    title: Option.getOrElse(asNullableString(record.data.title), () => ''),
+    description: Option.getOrNull(asNullableString(record.data.description)),
+    color: Option.getOrNull(asNullableString(record.data.color)),
+    icon: Option.getOrNull(asString(record.data.icon)),
+    sort: Option.getOrElse(asSort(record.data.sort), () => 'manual'),
+    checkedPlacement: Option.getOrElse(
+      asPlacement(record.data.checkedPlacement),
+      () => 'bottom',
+    ),
+    visibility: Option.getOrElse(asVisibility(record.data.visibility), () =>
+      defaultVisibilityFor('list'),
+    ),
+    lastWriterId: Option.getOrNull(asNullableString(record.data.lastWriterId)),
+    createdAt: Option.getOrElse(
+      asNullableString(record.data.createdAt),
+      () => record.updatedAt,
+    ),
     updatedAt: record.updatedAt,
     version: record.version,
     hasSyncError: record.syncError !== undefined,
@@ -161,16 +162,21 @@ export const toListRow = (record: MirrorRecord): ListRow =>
 export const toListItemRow = (record: MirrorRecord): ListItemRow =>
   ListItemRow.make({
     id: record.entityId,
-    listId: typeof record.data.listId === 'string' ? record.data.listId : '',
+    listId: Option.getOrElse(asNullableString(record.data.listId), () => ''),
     name: asName(record),
     done: asDone(record),
     order: asOrder(record),
-    checkedAt: asNullableString(record.data.checkedAt),
-    color: asNullableString(record.data.color),
-    tagIds: stringArray(record.data.tagIds),
-    visibility: asVisibility('listItem', record.data.visibility),
-    lastWriterId: asNullableString(record.data.lastWriterId),
-    createdAt: asNullableString(record.data.createdAt) ?? record.updatedAt,
+    checkedAt: Option.getOrNull(asNullableString(record.data.checkedAt)),
+    color: Option.getOrNull(asNullableString(record.data.color)),
+    tagIds: Option.getOrElse(asStringArray(record.data.tagIds), () => []),
+    visibility: Option.getOrElse(asVisibility(record.data.visibility), () =>
+      defaultVisibilityFor('listItem'),
+    ),
+    lastWriterId: Option.getOrNull(asNullableString(record.data.lastWriterId)),
+    createdAt: Option.getOrElse(
+      asNullableString(record.data.createdAt),
+      () => record.updatedAt,
+    ),
     updatedAt: record.updatedAt,
     version: record.version,
     hasSyncError: record.syncError !== undefined,
@@ -198,12 +204,15 @@ const nameCompare = (left: ListItemRow, right: ListItemRow): number =>
 const compareFor = (
   sort: ListSort,
 ): ((left: ListItemRow, right: ListItemRow) => number) =>
-  sort === 'alpha'
-    ? nameCompare
-    : sort === 'status'
-      ? (left, right) =>
-          Number(left.done) - Number(right.done) || manualCompare(left, right)
-      : manualCompare
+  Match.value(sort).pipe(
+    Match.when('alpha', () => nameCompare),
+    Match.when(
+      'status',
+      () => (left: ListItemRow, right: ListItemRow) =>
+        Number(left.done) - Number(right.done) || manualCompare(left, right),
+    ),
+    Match.orElse(() => manualCompare),
+  )
 
 export interface ListItemsView {
   readonly open: ReadonlyArray<ListItemRow>
@@ -303,9 +312,7 @@ export const droppedOrder = (
 }
 
 /** The local patch that encodes a new manual position (both field dialects). */
-export const orderPatch = (
-  index: number,
-): Readonly<Record<string, number>> => ({
+export const orderPatch = (index: number) => ({
   order: index + 1,
   ordering: index + 1,
   sortOrder: index + 1,

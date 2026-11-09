@@ -1,14 +1,15 @@
-import { Context, Effect, Layer, Option } from 'effect'
+import { Context, Effect, Layer, Option, Schema } from 'effect'
 import { SqlClient, Statement } from 'effect/sql'
 import {
   Habit,
-  type HabitFrequency,
-  type HabitFrequencyChange,
+  HabitFrequency,
+  HabitFrequencyChange,
   type HabitId,
   type HabitReminderTime,
   type HouseholdId,
   type UserId,
   type Visibility,
+  dailyHabitFrequency,
 } from '@tali/domain'
 
 /**
@@ -62,19 +63,11 @@ export interface HabitRow extends Record<string, unknown> {
   readonly deletedAt: string | null
 }
 
-const parseJson = (value: string | null): unknown => {
-  if (value === null) return null
-  try {
-    return JSON.parse(value)
-  } catch {
-    return null
-  }
-}
+const asFrequency = Schema.decodeOption(Schema.fromJsonString(HabitFrequency))
 
-const parseArray = (value: string | null): ReadonlyArray<unknown> => {
-  const parsed = parseJson(value)
-  return Array.isArray(parsed) ? parsed : []
-}
+const asHistory = Schema.decodeOption(
+  Schema.fromJsonString(Schema.Array(HabitFrequencyChange)),
+)
 
 /**
  * A row's frequency.
@@ -83,42 +76,10 @@ const parseArray = (value: string | null): ReadonlyArray<unknown> => {
  * for a hand-edited database cell: a habit that cannot be decoded still maps
  * to a valid aggregate rather than crashing every read.
  */
-export const habitFrequencyOf = (value: string | null): HabitFrequency => {
-  const parsed = parseJson(value)
-  if (
-    typeof parsed === 'object' &&
-    parsed !== null &&
-    (parsed as { _tag?: unknown })._tag === 'daily'
-  ) {
-    return { _tag: 'daily' }
-  }
-  if (typeof parsed === 'object' && parsed !== null) {
-    const record = parsed as { _tag?: unknown; days?: unknown; times?: unknown }
-    if (record._tag === 'weekdays' && Array.isArray(record.days)) {
-      const days = record.days.filter(
-        (day): day is number =>
-          typeof day === 'number' &&
-          Number.isInteger(day) &&
-          day >= 1 &&
-          day <= 7,
-      )
-      // A cell with no usable weekday is not a valid union member; fall back
-      // rather than construct an aggregate that cannot decode.
-      if (days.length > 0)
-        return { _tag: 'weekdays', days: [...new Set(days)].sort() }
-    }
-    if (
-      record._tag === 'weekly' &&
-      typeof record.times === 'number' &&
-      Number.isInteger(record.times) &&
-      record.times >= 1 &&
-      record.times <= 7
-    ) {
-      return { _tag: 'weekly', times: record.times }
-    }
-  }
-  return { _tag: 'daily' }
-}
+export const habitFrequencyOf = (value: string | null): HabitFrequency =>
+  value === null
+    ? dailyHabitFrequency()
+    : Option.getOrElse(asFrequency(value), dailyHabitFrequency)
 
 /** The model's plain shape, built from a D1 row. */
 export const habitPropsOf = (row: HabitRow) => ({
@@ -129,9 +90,7 @@ export const habitPropsOf = (row: HabitRow) => ({
   icon: row.icon,
   startedOn: row.startedOn as Habit['startedOn'],
   frequency: habitFrequencyOf(row.frequency),
-  frequencyHistory: parseArray(
-    row.frequencyHistory,
-  ) as ReadonlyArray<HabitFrequencyChange>,
+  frequencyHistory: Option.getOrElse(asHistory(row.frequencyHistory), () => []),
   reminderTime: row.reminderTime as HabitReminderTime | null,
   timeZone: row.timeZone,
   ownerId: row.ownerId as UserId,

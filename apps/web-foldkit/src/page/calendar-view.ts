@@ -1,4 +1,4 @@
-import { Array, Option } from 'effect'
+import { Array, Option, Predicate } from 'effect'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
 import { Checkbox, Listbox } from '@foldkit/ui'
@@ -27,7 +27,7 @@ import { classNames } from '../ui/class-names'
 import { inputControlView } from '../ui/field'
 import { listboxViewInputs } from '../ui/listbox'
 import { pickerDialogView, pickerTriggerView } from '../ui/picker'
-import type { PickerMode } from '../ui/picker'
+import type { Message as PickerMessage, PickerMode } from '../ui/picker'
 import {
   Message,
   OccasionAdvanceListbox,
@@ -140,21 +140,24 @@ const pickerField = (
   }>,
   digits: Digits,
   h: HtmlBuilder<Message>,
-): Html =>
-  pickerTriggerView(
-    {
-      id: config.id,
-      label: config.label,
-      target: config.target,
-      mode: config.mode,
-      value: config.value,
-      today: config.today,
-      digits,
-      ...(config.isDisabled === true ? { isDisabled: true } : {}),
-      toParentMessage: message => Message.GotPickerMessage({ message }),
-    },
+): Html => {
+  const trigger = {
+    id: config.id,
+    label: config.label,
+    target: config.target,
+    mode: config.mode,
+    value: config.value,
+    today: config.today,
+    digits,
+    toParentMessage: (message: PickerMessage) =>
+      Message.GotPickerMessage({ message }),
+  }
+
+  return pickerTriggerView(
+    config.isDisabled === true ? { ...trigger, isDisabled: true } : trigger,
     h,
   )
+}
 
 const SCOPE_HINT_CLASS = 'text-[0.7rem] leading-6 text-base-content/55'
 
@@ -537,7 +540,7 @@ const eventChip = (
       h.Type('button'),
       h.Class(EVENT_CHIP_CLASS),
       h.DataAttribute('calendar-event-chip', 'true'),
-      ...(occurrence.timing._tag === 'allDay'
+      ...(Predicate.isTagged(occurrence.timing, 'allDay')
         ? [h.DataAttribute('allday', 'true')]
         : []),
       h.Title(`${time === null ? 'تمام روز' : time} — ${occurrence.title}`),
@@ -563,7 +566,7 @@ const eventRow = (
   return h.li(
     [
       h.Class('min-w-0'),
-      ...(occurrence.timing._tag === 'allDay'
+      ...(Predicate.isTagged(occurrence.timing, 'allDay')
         ? [h.DataAttribute('allday', 'true')]
         : []),
     ],
@@ -748,14 +751,12 @@ const eventLanes = (
 ): ReadonlyArray<Html> => {
   const label = dayLabel(day.date, digits)
 
-  const allDay = Array.filter(
-    day.events,
-    occurrence => occurrence.timing._tag === 'allDay',
+  const allDay = Array.filter(day.events, occurrence =>
+    Predicate.isTagged(occurrence.timing, 'allDay'),
   )
 
-  const timed = Array.filter(
-    day.events,
-    occurrence => occurrence.timing._tag === 'timed',
+  const timed = Array.filter(day.events, occurrence =>
+    Predicate.isTagged(occurrence.timing, 'timed'),
   )
 
   return [
@@ -1189,7 +1190,10 @@ const monthGrid = (
                                     'calendar-month-event',
                                     'true',
                                   ),
-                                  ...(occurrence.timing._tag === 'allDay'
+                                  ...(Predicate.isTagged(
+                                    occurrence.timing,
+                                    'allDay',
+                                  )
                                     ? [h.DataAttribute('allday', 'true')]
                                     : []),
                                   h.Title(occurrence.title),

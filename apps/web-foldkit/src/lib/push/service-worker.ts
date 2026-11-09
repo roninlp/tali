@@ -1,4 +1,4 @@
-import { Schema } from 'effect'
+import { Option, Schema } from 'effect'
 
 import { urlBase64ToUint8Array } from './config'
 import type { PushSubscriptionJson } from './subscription'
@@ -35,6 +35,12 @@ export const PushEnvironment = Schema.Struct({
 
 export type PushEnvironment = typeof PushEnvironment.Type
 
+const NavigatorStandalone = Schema.Struct({
+  standalone: Schema.optional(Schema.Boolean),
+})
+
+const asNavigatorStandalone = Schema.decodeUnknownOption(NavigatorStandalone)
+
 export const isSecureContext = (): boolean =>
   typeof window !== 'undefined' && window.isSecureContext
 
@@ -53,12 +59,13 @@ export const isInstalled = (): boolean => {
     return false
   }
 
-  const iosStandalone = Reflect.get(navigator, 'standalone') === true
+  const iosStandalone = Option.match(asNavigatorStandalone(navigator), {
+    onNone: () => false,
+    onSome: value => value.standalone === true,
+  })
 
   return (
-    iosStandalone ||
-    (typeof window.matchMedia === 'function' &&
-      window.matchMedia('(display-mode: standalone)').matches)
+    iosStandalone || window.matchMedia('(display-mode: standalone)').matches
   )
 }
 

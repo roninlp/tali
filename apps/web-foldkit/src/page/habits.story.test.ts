@@ -14,7 +14,7 @@ import { describe, expect, test } from 'vitest'
 import { Animation, Dialog, Toast as UiToast } from '@foldkit/ui'
 import { test as toastTest } from '@foldkit/ui/toast'
 
-import { HABIT_COLORS, HABIT_ICONS } from '../habits-model'
+import { HABIT_COLORS, HABIT_ICONS, HabitFrequency } from '../habits-model'
 import { USER_ID } from '../test-fixtures'
 import * as Habits from './habits'
 import type { Inputs, Model } from './habits'
@@ -76,7 +76,7 @@ describe('habit create', () => {
           title: 'کتاب خواندن',
           description: Option.some('هر شب'),
           reminderTime: Option.some('21:30'),
-          frequency: { _tag: 'weekly', times: 3 },
+          frequency: HabitFrequency.weekly({ times: 3 }),
           icon: '📚',
           color: HABIT_COLORS[2]?.value ?? '',
           timeZone: 'Asia/Tehran',
@@ -165,7 +165,7 @@ describe('habit create', () => {
           title: 'پیاده‌روی',
           description: Option.none(),
           reminderTime: Option.none(),
-          frequency: { _tag: 'weekdays', days: [5, 6] },
+          frequency: HabitFrequency.weekdays({ days: [5, 6] }),
           icon: '🌱',
           color: HABIT_COLORS[0]?.value ?? '',
           timeZone: 'Asia/Tehran',
@@ -290,7 +290,7 @@ describe('habit edit', () => {
           title: 'ورزش صبحگاهی',
           description: Option.some('هر هفته سه بار'),
           reminderTime: Option.some('07:00'),
-          frequency: { _tag: 'weekly', times: 3 },
+          frequency: HabitFrequency.weekly({ times: 3 }),
           icon: '🏃',
           color: '#2e9d57',
         }),

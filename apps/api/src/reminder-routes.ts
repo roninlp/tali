@@ -1,4 +1,4 @@
-import { Effect, Option, Schema } from 'effect'
+import { Effect, Option, Predicate, Schema } from 'effect'
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from 'effect/http'
 import {
   DispatchResponse,
@@ -73,7 +73,10 @@ export const ReminderRoutes = HttpRouter.use(router =>
     const unexpectedFailure = (
       error: unknown,
     ): Effect.Effect<HttpServerResponse.HttpServerResponse> => {
-      const tag = (error as { readonly _tag?: string })._tag
+      const tag =
+        Predicate.isObject(error) && typeof error._tag === 'string'
+          ? error._tag
+          : undefined
       switch (tag) {
         case 'ReminderDispatchNotFound':
         case 'ReminderNotFound':

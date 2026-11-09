@@ -219,231 +219,231 @@ const quickAddPanelView = (
 
   return Option.match(draft.maybePanel, {
     onNone: () => h.empty,
-    onSome: panel =>
-      panel === 'due'
-        ? h.div(
-            [h.Id('tasks-quick-add-due'), h.Class(QUICK_PANEL_CLASS)],
-            [
-              h.div(
-                [h.Role('group'), h.AriaLabel('موعد'), h.Class(CHIP_ROW_CLASS)],
-                Array.map(duePresets, option => {
-                  const isActive =
-                    dueValue === Option.getOrElse(option.value, () => '')
+    onSome: panel => {
+      if (panel === 'due') {
+        return h.div(
+          [h.Id('tasks-quick-add-due'), h.Class(QUICK_PANEL_CLASS)],
+          [
+            h.div(
+              [h.Role('group'), h.AriaLabel('موعد'), h.Class(CHIP_ROW_CLASS)],
+              Array.map(duePresets, option => {
+                const isActive =
+                  dueValue === Option.getOrElse(option.value, () => '')
 
-                  return h.button(
-                    [
-                      h.Type('button'),
-                      h.Class(PILL_CLASS),
-                      h.DataAttribute('active', isActive ? 'true' : 'false'),
-                      h.AriaPressed(isActive ? 'true' : 'false'),
-                      h.OnClick(
-                        Message.SelectedQuickAddDuePreset({
-                          maybeDueDate: option.value,
-                        }),
-                      ),
-                    ],
-                    [option.label],
-                  )
-                }),
-              ),
-              pickerTriggerView(
-                {
-                  id: 'tasks-quick-add-due-date',
-                  label: 'تاریخ دلخواه',
-                  target: 'quickAdd:due',
-                  mode: 'date',
-                  value: dueValue,
-                  today: view.bounds.today,
-                  digits: inputs.display.digits,
-                  toParentMessage: message =>
-                    Message.GotPickerMessage({ message }),
-                },
-                h,
-              ),
-            ],
-          )
-        : panel === 'priority'
-          ? h.div(
-              [h.Id('tasks-quick-add-priority'), h.Class(QUICK_PANEL_CLASS)],
-              [
-                h.div(
+                return h.button(
                   [
-                    h.Role('group'),
-                    h.AriaLabel('اولویت'),
-                    h.Class(CHIP_ROW_CLASS),
+                    h.Type('button'),
+                    h.Class(PILL_CLASS),
+                    h.DataAttribute('active', isActive ? 'true' : 'false'),
+                    h.AriaPressed(isActive ? 'true' : 'false'),
+                    h.OnClick(
+                      Message.SelectedQuickAddDuePreset({
+                        maybeDueDate: option.value,
+                      }),
+                    ),
                   ],
-                  Array.map(PRIORITY_CHOICES, choice =>
-                    h.button(
-                      [
-                        h.Type('button'),
-                        h.Class(PILL_CLASS),
-                        h.AriaPressed(
-                          draft.priority === choice.value ? 'true' : 'false',
-                        ),
-                        h.DataAttribute(
-                          'active',
-                          draft.priority === choice.value ? 'true' : 'false',
-                        ),
-                        h.OnClick(
-                          Message.SelectedQuickAddPriority({
-                            priority: choice.value,
-                          }),
-                        ),
-                      ],
-                      [choice.label],
+                  [option.label],
+                )
+              }),
+            ),
+            pickerTriggerView(
+              {
+                id: 'tasks-quick-add-due-date',
+                label: 'تاریخ دلخواه',
+                target: 'quickAdd:due',
+                mode: 'date',
+                value: dueValue,
+                today: view.bounds.today,
+                digits: inputs.display.digits,
+                toParentMessage: message =>
+                  Message.GotPickerMessage({ message }),
+              },
+              h,
+            ),
+          ],
+        )
+      }
+
+      if (panel === 'priority') {
+        return h.div(
+          [h.Id('tasks-quick-add-priority'), h.Class(QUICK_PANEL_CLASS)],
+          [
+            h.div(
+              [h.Role('group'), h.AriaLabel('اولویت'), h.Class(CHIP_ROW_CLASS)],
+              Array.map(PRIORITY_CHOICES, choice =>
+                h.button(
+                  [
+                    h.Type('button'),
+                    h.Class(PILL_CLASS),
+                    h.AriaPressed(
+                      draft.priority === choice.value ? 'true' : 'false',
+                    ),
+                    h.DataAttribute(
+                      'active',
+                      draft.priority === choice.value ? 'true' : 'false',
+                    ),
+                    h.OnClick(
+                      Message.SelectedQuickAddPriority({
+                        priority: choice.value,
+                      }),
+                    ),
+                  ],
+                  [choice.label],
+                ),
+              ),
+            ),
+          ],
+        )
+      }
+
+      if (panel === 'tags') {
+        return h.div(
+          [h.Id('tasks-quick-add-tags'), h.Class(QUICK_PANEL_CLASS)],
+          [
+            Array.match(inputs.mirror.tags, {
+              onEmpty: () =>
+                h.p([h.Class(QUIET_CLASS)], ['هنوز برچسبی ندارید.']),
+              onNonEmpty: tags =>
+                h.div(
+                  [h.Class(CHIP_ROW_CLASS)],
+                  Array.map(tags, tag =>
+                    tagChipView(
+                      tag,
+                      Option.some(draft.tagIds.includes(tag.id)),
+                      Option.some(
+                        Message.ToggledQuickAddTag({ tagId: tag.id }),
+                      ),
+                      h,
                     ),
                   ),
                 ),
-              ],
-            )
-          : panel === 'tags'
-            ? h.div(
-                [h.Id('tasks-quick-add-tags'), h.Class(QUICK_PANEL_CLASS)],
-                [
-                  Array.match(inputs.mirror.tags, {
-                    onEmpty: () =>
-                      h.p([h.Class(QUIET_CLASS)], ['هنوز برچسبی ندارید.']),
-                    onNonEmpty: tags =>
-                      h.div(
-                        [h.Class(CHIP_ROW_CLASS)],
-                        Array.map(tags, tag =>
-                          tagChipView(
-                            tag,
-                            Option.some(draft.tagIds.includes(tag.id)),
-                            Option.some(
-                              Message.ToggledQuickAddTag({ tagId: tag.id }),
-                            ),
-                            h,
-                          ),
-                        ),
-                      ),
-                  }),
-                  h.div(
-                    [h.Class(INLINE_CREATE_CLASS)],
-                    [
-                      inputControlView(
-                        {
-                          id: 'tasks-quick-add-new-tag',
-                          label: 'نام برچسب تازه',
-                          value: draft.newTagName,
-                          placeholder: 'برچسب تازه…',
-                          isDisabled: !inputs.isStoreReady,
-                          class: 'min-w-0 flex-1 basis-36',
-                          onInput: value =>
-                            Message.UpdatedQuickAddNewTag({ value }),
-                          attributes: [
-                            h.OnKeyDownPreventDefault(key =>
-                              key === 'Enter'
-                                ? Option.some(
-                                    Message.SubmittedQuickAddTag({
-                                      name: draft.newTagName,
-                                    }),
-                                  )
-                                : Option.none(),
-                            ),
-                          ],
-                        },
-                        h,
-                      ),
-                      h.button(
-                        [
-                          h.Type('button'),
-                          h.Class(PILL_CLASS),
-                          h.Disabled(
-                            !inputs.isStoreReady ||
-                              draft.newTagName.trim() === '',
-                          ),
-                          h.OnClick(
-                            Message.SubmittedQuickAddTag({
-                              name: draft.newTagName,
-                            }),
-                          ),
-                        ],
-                        ['ساخت برچسب'],
+            }),
+            h.div(
+              [h.Class(INLINE_CREATE_CLASS)],
+              [
+                inputControlView(
+                  {
+                    id: 'tasks-quick-add-new-tag',
+                    label: 'نام برچسب تازه',
+                    value: draft.newTagName,
+                    placeholder: 'برچسب تازه…',
+                    isDisabled: !inputs.isStoreReady,
+                    class: 'min-w-0 flex-1 basis-36',
+                    onInput: value => Message.UpdatedQuickAddNewTag({ value }),
+                    attributes: [
+                      h.OnKeyDownPreventDefault(key =>
+                        key === 'Enter'
+                          ? Option.some(
+                              Message.SubmittedQuickAddTag({
+                                name: draft.newTagName,
+                              }),
+                            )
+                          : Option.none(),
                       ),
                     ],
-                  ),
-                ],
-              )
-            : h.div(
-                [h.Id('tasks-quick-add-project'), h.Class(QUICK_PANEL_CLASS)],
-                [
-                  h.label(
-                    [h.Class(FIELD_CLASS)],
-                    [
-                      h.span(
-                        [h.Class('text-[0.76rem] text-base-content/60')],
-                        ['پروژه'],
-                      ),
-                      h.submodel({
-                        slotId: model.quickAddProjectListbox.id,
-                        model: model.quickAddProjectListbox,
-                        view: QuickAddProjectListbox.view,
-                        viewInputs: listboxViewInputs({
-                          items: [
-                            { value: '', label: 'بدون پروژه' },
-                            ...Array.map(inputs.mirror.projects, project => ({
-                              value: project.id,
-                              label: project.title,
-                            })),
-                          ],
-                          maybeSelectedValue: Option.some(
-                            Option.getOrElse(draft.maybeProjectId, () => ''),
-                          ),
-                          h,
-                        }),
-                        toParentMessage: message =>
-                          Message.GotQuickAddProjectListboxMessage({ message }),
+                  },
+                  h,
+                ),
+                h.button(
+                  [
+                    h.Type('button'),
+                    h.Class(PILL_CLASS),
+                    h.Disabled(
+                      !inputs.isStoreReady || draft.newTagName.trim() === '',
+                    ),
+                    h.OnClick(
+                      Message.SubmittedQuickAddTag({
+                        name: draft.newTagName,
                       }),
-                    ],
+                    ),
+                  ],
+                  ['ساخت برچسب'],
+                ),
+              ],
+            ),
+          ],
+        )
+      }
+
+      return h.div(
+        [h.Id('tasks-quick-add-project'), h.Class(QUICK_PANEL_CLASS)],
+        [
+          h.label(
+            [h.Class(FIELD_CLASS)],
+            [
+              h.span(
+                [h.Class('text-[0.76rem] text-base-content/60')],
+                ['پروژه'],
+              ),
+              h.submodel({
+                slotId: model.quickAddProjectListbox.id,
+                model: model.quickAddProjectListbox,
+                view: QuickAddProjectListbox.view,
+                viewInputs: listboxViewInputs({
+                  items: [
+                    { value: '', label: 'بدون پروژه' },
+                    ...Array.map(inputs.mirror.projects, project => ({
+                      value: project.id,
+                      label: project.title,
+                    })),
+                  ],
+                  maybeSelectedValue: Option.some(
+                    Option.getOrElse(draft.maybeProjectId, () => ''),
                   ),
-                  h.div(
-                    [h.Class(INLINE_CREATE_CLASS)],
-                    [
-                      inputControlView(
-                        {
-                          id: 'tasks-quick-add-new-project',
-                          label: 'نام پروژه‌ی تازه',
-                          value: draft.newProjectTitle,
-                          placeholder: 'پروژه‌ی تازه…',
-                          isDisabled: !inputs.isStoreReady,
-                          class: 'min-w-0 flex-1 basis-36',
-                          onInput: value =>
-                            Message.UpdatedQuickAddNewProject({ value }),
-                          attributes: [
-                            h.OnKeyDownPreventDefault(key =>
-                              key === 'Enter'
-                                ? Option.some(
-                                    Message.SubmittedQuickAddProject({
-                                      title: draft.newProjectTitle,
-                                    }),
-                                  )
-                                : Option.none(),
-                            ),
-                          ],
-                        },
-                        h,
-                      ),
-                      h.button(
-                        [
-                          h.Type('button'),
-                          h.Class(PILL_CLASS),
-                          h.Disabled(
-                            !inputs.isStoreReady ||
-                              draft.newProjectTitle.trim() === '',
-                          ),
-                          h.OnClick(
+                  h,
+                }),
+                toParentMessage: message =>
+                  Message.GotQuickAddProjectListboxMessage({ message }),
+              }),
+            ],
+          ),
+          h.div(
+            [h.Class(INLINE_CREATE_CLASS)],
+            [
+              inputControlView(
+                {
+                  id: 'tasks-quick-add-new-project',
+                  label: 'نام پروژه‌ی تازه',
+                  value: draft.newProjectTitle,
+                  placeholder: 'پروژه‌ی تازه…',
+                  isDisabled: !inputs.isStoreReady,
+                  class: 'min-w-0 flex-1 basis-36',
+                  onInput: value =>
+                    Message.UpdatedQuickAddNewProject({ value }),
+                  attributes: [
+                    h.OnKeyDownPreventDefault(key =>
+                      key === 'Enter'
+                        ? Option.some(
                             Message.SubmittedQuickAddProject({
                               title: draft.newProjectTitle,
                             }),
-                          ),
-                        ],
-                        ['ساخت پروژه'],
-                      ),
-                    ],
+                          )
+                        : Option.none(),
+                    ),
+                  ],
+                },
+                h,
+              ),
+              h.button(
+                [
+                  h.Type('button'),
+                  h.Class(PILL_CLASS),
+                  h.Disabled(
+                    !inputs.isStoreReady || draft.newProjectTitle.trim() === '',
+                  ),
+                  h.OnClick(
+                    Message.SubmittedQuickAddProject({
+                      title: draft.newProjectTitle,
+                    }),
                   ),
                 ],
+                ['ساخت پروژه'],
               ),
+            ],
+          ),
+        ],
+      )
+    },
   })
 }
 
@@ -712,7 +712,7 @@ const filterPanelView = (
               projectButtonView(
                 'همه‌ی کارها',
                 live.length,
-                model.settings.filters.project._tag === 'All',
+                ProjectFilter.isAnyOf(['All'])(model.settings.filters.project),
                 Message.SelectedProjectFilter({ project: ProjectFilter.All() }),
                 digits,
                 h,
@@ -721,8 +721,9 @@ const filterPanelView = (
                 projectButtonView(
                   project.title,
                   counts.get(project.id) ?? 0,
-                  model.settings.filters.project._tag === 'Project' &&
-                    model.settings.filters.project.projectId === project.id,
+                  ProjectFilter.guards.Project(
+                    model.settings.filters.project,
+                  ) && model.settings.filters.project.projectId === project.id,
                   Message.SelectedProjectFilter({
                     project: ProjectFilter.Project({ projectId: project.id }),
                   }),
@@ -733,7 +734,7 @@ const filterPanelView = (
               projectButtonView(
                 'بدون پروژه',
                 noProjectCountOf(live),
-                model.settings.filters.project._tag === 'None',
+                ProjectFilter.isAnyOf(['None'])(model.settings.filters.project),
                 Message.SelectedProjectFilter({
                   project: ProjectFilter.None(),
                 }),

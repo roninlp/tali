@@ -79,14 +79,30 @@ export const buttonView = <Message>(
       ? [h.span([h.Class('spinner spinner-xs')]), ...config.children]
       : config.children
 
+  type OptionalButtonConfig = {
+    onClick?: Message
+    isDisabled?: boolean
+    isAutofocus?: boolean
+  }
+
+  const optionalConfig: OptionalButtonConfig = {}
+
+  if (!isInactive && config.onClick !== undefined) {
+    optionalConfig.onClick = config.onClick
+  }
+
+  if (isInactive) {
+    optionalConfig.isDisabled = true
+  }
+
+  if (config.isAutofocus === true) {
+    optionalConfig.isAutofocus = true
+  }
+
   return Button.view<Message>(
     {
+      ...optionalConfig,
       type: config.type ?? 'button',
-      ...(isInactive || config.onClick === undefined
-        ? {}
-        : { onClick: config.onClick }),
-      ...(isInactive ? { isDisabled: true } : {}),
-      ...(config.isAutofocus === true ? { isAutofocus: true } : {}),
       toView: (attributes: Button.ButtonAttributes<Message>) =>
         h.button(
           [

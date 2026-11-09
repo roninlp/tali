@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Option } from 'effect'
+import { Context, Effect, Layer, Option, Schema } from 'effect'
 import { SqlClient, Statement } from 'effect/sql'
 import {
   defaultVisibilityFor,
@@ -10,13 +10,23 @@ import {
   type ReminderDispatchId,
   type ReminderId,
   type ReminderInboxItem,
-  type ReminderRepeat,
+  ReminderLink,
+  ReminderRepeat,
   type ReminderTier,
   type ReminderType,
+  EventId,
+  HabitId,
+  OccasionId,
+  TaskId,
   type UserId,
   type Visibility,
+  eventReminderLink,
+  habitReminderLink,
+  noReminderLink,
+  occasionReminderLink,
+  onceReminderRepeat,
+  taskReminderLink,
 } from '@tali/domain'
-import { ReminderLink } from '@tali/domain'
 
 /**
  * D1 persistence for the `Reminder` aggregate and its dispatch ledger
@@ -96,45 +106,31 @@ export interface ReminderDispatchRow extends Record<string, unknown> {
   readonly createdAt: string
 }
 
-const parseJson = (value: string | null): unknown => {
-  if (value === null) return null
-  try {
-    return JSON.parse(value)
-  } catch {
-    return null
-  }
-}
+const asRepeat = Schema.decodeOption(Schema.fromJsonString(ReminderRepeat))
 
 /** A row's repeat union; a malformed cell falls back to a one-off. */
-const repeatOf = (value: string): ReminderRepeat => {
-  const parsed = parseJson(value)
-  if (typeof parsed === 'object' && parsed !== null && '_tag' in parsed) {
-    return parsed as ReminderRepeat
-  }
-  return { _tag: 'once' }
-}
+const repeatOf = (value: string): ReminderRepeat =>
+  Option.getOrElse(asRepeat(value), onceReminderRepeat)
 
 /** A row's link union from the flattened columns. */
 const linkOf = (type: string, id: string | null): ReminderLink => {
   switch (type) {
     case 'task':
-      return id === null
-        ? { _tag: 'none' }
-        : { _tag: 'task', taskId: id as never }
+      return id === null ? noReminderLink() : taskReminderLink(TaskId.make(id))
     case 'event':
       return id === null
-        ? { _tag: 'none' }
-        : { _tag: 'event', eventId: id as never }
+        ? noReminderLink()
+        : eventReminderLink(EventId.make(id))
     case 'habit':
       return id === null
-        ? { _tag: 'none' }
-        : { _tag: 'habit', habitId: id as never }
+        ? noReminderLink()
+        : habitReminderLink(HabitId.make(id))
     case 'occasion':
       return id === null
-        ? { _tag: 'none' }
-        : { _tag: 'occasion', occasionId: id as never }
+        ? noReminderLink()
+        : occasionReminderLink(OccasionId.make(id))
     default:
-      return { _tag: 'none' }
+      return noReminderLink()
   }
 }
 

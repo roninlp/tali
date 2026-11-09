@@ -105,10 +105,10 @@ export const tapHabitEntry = async (
   const status =
     input.status ?? nextHabitEntryStatus(habitEntryStatusOf(current))
 
-  return store.writeLocal({
-    entityType: 'habitEntry',
+  const write = {
+    entityType: 'habitEntry' as const,
     entityId: current?.entityId ?? input.id,
-    op: 'upsert',
+    op: 'upsert' as const,
     patch: {
       habitId: input.habitId,
       localDate: input.localDate,
@@ -121,8 +121,11 @@ export const tapHabitEntry = async (
     // on the next push (or through the tombstone-repair path if it refuses).
     deletedAt: null,
     now: input.now,
-    ...(input.clientMutationId === undefined
-      ? {}
-      : { clientMutationId: input.clientMutationId }),
-  })
+  }
+
+  return store.writeLocal(
+    input.clientMutationId === undefined
+      ? write
+      : { ...write, clientMutationId: input.clientMutationId },
+  )
 }

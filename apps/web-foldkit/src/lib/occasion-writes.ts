@@ -1,4 +1,4 @@
-import { Array, Schema } from 'effect'
+import { Array, Match, Option, Schema } from 'effect'
 
 import {
   JALALI_MONTHS,
@@ -62,36 +62,44 @@ export type OccasionDraft = typeof OccasionDraft.Type
 
 // PROJECTION
 
-const asNullableString = (value: unknown): string | null =>
-  typeof value === 'string' ? value : null
+const asNullableString = Schema.decodeUnknownOption(Schema.String)
 
-const asNullableInt = (value: unknown): number | null =>
-  typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : null
+const asNonEmptyString = Schema.decodeUnknownOption(
+  Schema.String.check(Schema.isMinLength(1)),
+)
+
+const asNullableInt = Schema.decodeUnknownOption(Schema.Finite)
 
 export const toOccasionRow = (record: MirrorRecord): OccasionRow =>
   OccasionRow.make({
     id: record.entityId,
-    title: typeof record.data.title === 'string' ? record.data.title : '',
-    originDate:
-      typeof record.data.originDate === 'string'
-        ? record.data.originDate
-        : record.updatedAt.slice(0, 10),
-    timeZone:
-      typeof record.data.timeZone === 'string' ? record.data.timeZone : 'UTC',
+    title: Option.getOrElse(asNullableString(record.data.title), () => ''),
+    originDate: Option.getOrElse(asNullableString(record.data.originDate), () =>
+      record.updatedAt.slice(0, 10),
+    ),
+    timeZone: Option.getOrElse(
+      asNonEmptyString(record.data.timeZone),
+      () => 'UTC',
+    ),
     yearly: record.data.yearly !== false,
-    advanceReminderDays: asNullableInt(record.data.advanceReminderDays),
-    preparationTaskId: asNullableString(record.data.preparationTaskId),
-    color: asNullableString(record.data.color),
-    ownerId: asNullableString(record.data.ownerId),
+    advanceReminderDays: Option.match(
+      asNullableInt(record.data.advanceReminderDays),
+      { onNone: () => null, onSome: value => Math.trunc(value) },
+    ),
+    preparationTaskId: Option.getOrNull(
+      asNullableString(record.data.preparationTaskId),
+    ),
+    color: Option.getOrNull(asNullableString(record.data.color)),
+    ownerId: Option.getOrNull(asNullableString(record.data.ownerId)),
     visibility:
       record.data.visibility === 'private' ||
       record.data.visibility === 'shared'
         ? record.data.visibility
         : defaultVisibilityFor('occasion'),
-    createdAt:
-      typeof record.data.createdAt === 'string'
-        ? record.data.createdAt
-        : record.updatedAt,
+    createdAt: Option.getOrElse(
+      asNullableString(record.data.createdAt),
+      () => record.updatedAt,
+    ),
     updatedAt: record.updatedAt,
     version: record.version,
     hasSyncError: record.syncError !== undefined,
@@ -175,13 +183,21 @@ export const OccasionEditPatch = Schema.Struct({
 
 export type OccasionEditPatch = typeof OccasionEditPatch.Type
 
+/** The fields a single local write may carry; absent means "leave it". */
+type OccasionWritePatch = {
+  title?: string
+  originDate?: string
+  yearly?: boolean
+  advanceReminderDays?: number | null
+}
+
 export const updateOccasionInMirror = async (
   store: LocalStore,
   id: string,
   patch: OccasionEditPatch,
   now: string,
 ): Promise<void> => {
-  const record: Record<string, unknown> = {}
+  const record: OccasionWritePatch = {}
 
   if (patch.title !== undefined) {
     const title = patch.title.trim()
@@ -371,11 +387,11 @@ export const ADVANCE_OPTIONS: ReadonlyArray<
 ]
 
 export const advanceLabel = (days: number | null): string =>
-  days === null
-    ? 'بدون یادآوری پیش از موعد'
-    : days === 0
-      ? 'یادآوری همان روز'
-      : `یادآوری ${days.toLocaleString('fa-IR')} روز قبل`
+  Match.value(days).pipe(
+    Match.when(null, () => 'بدون یادآوری پیش از موعد'),
+    Match.when(0, () => 'یادآوری همان روز'),
+    Match.orElse(value => `یادآوری ${value.toLocaleString('fa-IR')} روز قبل`),
+  )
 
 export const GREGORIAN_MONTHS = [
   'ژانویه',

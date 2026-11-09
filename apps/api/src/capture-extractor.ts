@@ -1,4 +1,13 @@
-import { Context, Duration, Effect, Layer, Ref, Result, Schedule } from 'effect'
+import {
+  Context,
+  Duration,
+  Effect,
+  Layer,
+  Predicate,
+  Ref,
+  Result,
+  Schedule,
+} from 'effect'
 import { chat as aiChat } from '@tanstack/ai-effect'
 import { openaiCompatibleText } from '@tanstack/ai-openai/compatible'
 import {
@@ -200,12 +209,7 @@ const captureFetchWrapper =
   }
 
 const toModelError = (error: unknown): ModelTimeout | ModelUnavailable => {
-  if (
-    error !== null &&
-    typeof error === 'object' &&
-    '_tag' in error &&
-    error._tag === 'TimeoutError'
-  ) {
+  if (Predicate.isTagged(error, 'TimeoutError')) {
     return new ModelTimeout({ seconds: CAPTURE_TIMEOUT_SECONDS })
   }
   return new ModelUnavailable({

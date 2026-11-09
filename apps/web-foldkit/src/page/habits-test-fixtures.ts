@@ -3,6 +3,7 @@ import { Option } from 'effect'
 import {
   type HabitEntryRow,
   HabitEntryRow as HabitEntryRowSchema,
+  HabitFrequency,
   type HabitRow,
   HabitRow as HabitRowSchema,
 } from '../habits-model'
@@ -30,9 +31,9 @@ export const habitRow = (overrides: Partial<HabitRow> = {}): HabitRow =>
     description: null,
     icon: '💧',
     color: null,
-    frequency: { _tag: 'daily' },
+    frequency: HabitFrequency.daily(),
     frequencyHistory: [
-      { effectiveFrom: '2026-10-01', frequency: { _tag: 'daily' } },
+      { effectiveFrom: '2026-10-01', frequency: HabitFrequency.daily() },
     ],
     startedOn: '2026-10-01',
     reminderTime: null,
@@ -53,9 +54,12 @@ export const weeklyHabit = (overrides: Partial<HabitRow> = {}): HabitRow =>
     description: 'هر هفته سه بار',
     icon: '🏃',
     color: '#2e9d57',
-    frequency: { _tag: 'weekly', times: 3 },
+    frequency: HabitFrequency.weekly({ times: 3 }),
     frequencyHistory: [
-      { effectiveFrom: '2026-10-24', frequency: { _tag: 'weekly', times: 3 } },
+      {
+        effectiveFrom: '2026-10-24',
+        frequency: HabitFrequency.weekly({ times: 3 }),
+      },
     ],
     startedOn: '2026-10-24',
     reminderTime: '07:00',

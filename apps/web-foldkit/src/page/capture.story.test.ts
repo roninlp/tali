@@ -7,7 +7,12 @@ import {
   type CaptureCommitResult,
   type CaptureDraft,
   CaptureId,
+  TimestampUtc,
   UserId,
+  eventCaptureDraft,
+  needsInput,
+  taskCaptureDraft,
+  timedEventTiming,
 } from '@tali/domain'
 
 import { USER_ID } from '../test-fixtures'
@@ -43,36 +48,30 @@ const update = (overrides: Partial<Inputs> = {}) => {
 const initial = (): Model =>
   CapturePage.initialModel({ maybeUserId: Option.some(USER_ID) })
 
-const taskDraft: CaptureDraft = {
-  _tag: 'task',
+const taskDraft: CaptureDraft = taskCaptureDraft({
   title: 'خرید نان',
   sourceQuote: 'خرید نان',
   missing: [],
-}
+})
 
 /** An event whose day is known but whose clock time the model left open. */
 const eventDraft = (
   overrides: Partial<Extract<CaptureDraft, { _tag: 'event' }>> = {},
-): CaptureDraft => ({
-  _tag: 'event',
-  title: 'جلسه',
-  sourceQuote: 'سه شنبه ساعت ۴ جلسه با مدیر دارم',
-  timing: {
-    _tag: 'timed',
-    start: '2026-11-10T12:30:00.000Z',
-    end: '2026-11-10T13:30:00.000Z',
-  },
-  timeZone: 'Asia/Tehran',
-  missing: [
-    {
-      field: 'timing.start',
-      shape: 'clockTime',
-      question: 'ساعت شروع؟',
-    },
-    { field: 'timing.end', shape: 'clockTime', question: 'ساعت پایان؟' },
-  ],
-  ...overrides,
-})
+): CaptureDraft =>
+  eventCaptureDraft({
+    title: 'جلسه',
+    sourceQuote: 'سه شنبه ساعت ۴ جلسه با مدیر دارم',
+    timing: timedEventTiming(
+      TimestampUtc.make('2026-11-10T12:30:00.000Z'),
+      TimestampUtc.make('2026-11-10T13:30:00.000Z'),
+    ),
+    timeZone: 'Asia/Tehran',
+    missing: [
+      needsInput('timing.start', 'clockTime', 'ساعت شروع؟'),
+      needsInput('timing.end', 'clockTime', 'ساعت پایان؟'),
+    ],
+    ...overrides,
+  })
 
 const captureOf = (overrides: Partial<Capture> = {}): Capture => ({
   id: CaptureId.make('0192f0a0-0000-7000-8000-000000000010'),
@@ -230,7 +229,7 @@ describe('capture review', () => {
   test('an unanswered Needs Input blocks the commit with an explanation', () => {
     const blocked: CaptureDraft = {
       ...taskDraft,
-      missing: [{ field: 'dueDate', shape: 'localDate', question: 'چه روزی؟' }],
+      missing: [needsInput('dueDate', 'localDate', 'چه روزی؟')],
     }
 
     story(
@@ -253,7 +252,7 @@ describe('capture review', () => {
   test('answering a Needs Input writes the field and unblocks the card', () => {
     const blocked: CaptureDraft = {
       ...taskDraft,
-      missing: [{ field: 'dueDate', shape: 'localDate', question: 'چه روزی؟' }],
+      missing: [needsInput('dueDate', 'localDate', 'چه روزی؟')],
     }
 
     story(
@@ -299,11 +298,12 @@ describe('capture review', () => {
         expect(card?.draft._tag).toBe('event')
 
         if (card?.draft._tag === 'event') {
-          expect(card.draft.timing).toEqual({
-            _tag: 'timed',
-            start: '2026-11-10T13:30:00Z',
-            end: '2026-11-10T13:30:00.000Z',
-          })
+          expect(card.draft.timing).toEqual(
+            timedEventTiming(
+              TimestampUtc.make('2026-11-10T13:30:00Z'),
+              TimestampUtc.make('2026-11-10T13:30:00.000Z'),
+            ),
+          )
         }
 
         // The end question is a separate answer; it must stay open.
@@ -316,9 +316,7 @@ describe('capture review', () => {
 
   test('answering the event end clears only the end entry', () => {
     const draft = eventDraft({
-      missing: [
-        { field: 'timing.end', shape: 'clockTime', question: 'ساعت پایان؟' },
-      ],
+      missing: [needsInput('timing.end', 'clockTime', 'ساعت پایان؟')],
     })
 
     story(
@@ -336,11 +334,12 @@ describe('capture review', () => {
         expect(card?.draft._tag).toBe('event')
 
         if (card?.draft._tag === 'event') {
-          expect(card.draft.timing).toEqual({
-            _tag: 'timed',
-            start: '2026-11-10T12:30:00.000Z',
-            end: '2026-11-10T15:00:00Z',
-          })
+          expect(card.draft.timing).toEqual(
+            timedEventTiming(
+              TimestampUtc.make('2026-11-10T12:30:00.000Z'),
+              TimestampUtc.make('2026-11-10T15:00:00Z'),
+            ),
+          )
         }
 
         expect(card?.draft.missing).toEqual([])
@@ -364,11 +363,12 @@ describe('capture review', () => {
         expect(card?.draft._tag).toBe('event')
 
         if (card?.draft._tag === 'event') {
-          expect(card.draft.timing).toEqual({
-            _tag: 'timed',
-            start: '2026-11-10T14:00:00.000Z',
-            end: '2026-11-10T13:30:00.000Z',
-          })
+          expect(card.draft.timing).toEqual(
+            timedEventTiming(
+              TimestampUtc.make('2026-11-10T14:00:00.000Z'),
+              TimestampUtc.make('2026-11-10T13:30:00.000Z'),
+            ),
+          )
         }
 
         expect(card?.draft.missing.map(entry => entry.field)).toEqual([

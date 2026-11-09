@@ -37,3 +37,30 @@ export const ReminderLink = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal('occasion'), occasionId: OccasionId }),
 ])
 export type ReminderLink = Schema.Schema.Type<typeof ReminderLink>
+
+/** A reminder that is not linked to another item. */
+export const noReminderLink = (): ReminderLink => ({ _tag: 'none' })
+
+/** A reminder that completes the linked habit. */
+export const habitReminderLink = (habitId: HabitId): ReminderLink => ({
+  _tag: 'habit',
+  habitId,
+})
+
+/** A reminder that completes the linked task. */
+export const taskReminderLink = (taskId: TaskId): ReminderLink => ({
+  _tag: 'task',
+  taskId,
+})
+
+/** A reminder that applies to the linked event. */
+export const eventReminderLink = (eventId: EventId): ReminderLink => ({
+  _tag: 'event',
+  eventId,
+})
+
+/** A reminder about an occasion's projected occurrence. */
+export const occasionReminderLink = (occasionId: OccasionId): ReminderLink => ({
+  _tag: 'occasion',
+  occasionId,
+})

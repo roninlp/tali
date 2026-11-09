@@ -89,7 +89,11 @@ const read = <A>(
       }),
     )
 
-    const json: unknown = Option.getOrUndefined(maybeJson)
+    const json = Option.getOrUndefined(
+      Option.flatMap(maybeJson, value =>
+        Schema.decodeUnknownOption(Schema.Json)(value),
+      ),
+    )
 
     if (!response.ok) {
       return {
@@ -98,7 +102,7 @@ const read = <A>(
       }
     }
 
-    const decoded = Schema.decodeUnknownOption(schema)(json)
+    const decoded = Schema.decodeOption(schema)(json)
 
     if (Option.isNone(decoded)) {
       return {

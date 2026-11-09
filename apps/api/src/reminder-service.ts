@@ -240,11 +240,14 @@ export class ReminderService extends Context.Service<ReminderService>()(
           version: reminder.version,
           updatedAt: reminder.updatedAt,
           deletedAt: reminder.deletedAt,
-          data: def.validate({ ...reminder } as Record<string, unknown>, {
-            version: reminder.version,
-            updatedAt: reminder.updatedAt,
-            deletedAt: reminder.deletedAt,
-          }),
+          data: def.validate(
+            { ...reminder },
+            {
+              version: reminder.version,
+              updatedAt: reminder.updatedAt,
+              deletedAt: reminder.deletedAt,
+            },
+          ),
         }
       }
 
@@ -925,7 +928,7 @@ export class ReminderService extends Context.Service<ReminderService>()(
             updatedAt: value.updatedAt,
             deletedAt: value.deletedAt,
             data: taskDefinition.validate(
-              { ...value } as Record<string, unknown>,
+              { ...value },
               {
                 version: value.version,
                 updatedAt: value.updatedAt,

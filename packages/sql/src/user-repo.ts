@@ -32,7 +32,7 @@ export class UserRepo extends Context.Service<UserRepo>()('UserRepo', {
      * session atomically (D1 has no interactive transactions).
      */
     const insertStatement = (user: User): Statement.Statement<User> =>
-      sql<User>`INSERT INTO users ${sql.insert(user as unknown as Record<string, unknown>)} RETURNING *`
+      sql<User>`INSERT INTO users ${sql.insert({ ...user })} RETURNING *`
 
     return {
       insert: base.insert,

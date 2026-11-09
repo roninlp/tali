@@ -1931,11 +1931,13 @@ export const update = (
           )
         : modifyFields(model, { maybeError: () => Option.none() })
 
+      if (!isCurrent) {
+        return { model: next, outMessage: OutMessage.WroteLocalData() }
+      }
+
       return {
         model: next,
-        ...(isCurrent
-          ? { commands: [ClearTaskSaveState({ taskId, generation })] }
-          : {}),
+        commands: [ClearTaskSaveState({ taskId, generation })],
         outMessage: OutMessage.WroteLocalData(),
       }
     },

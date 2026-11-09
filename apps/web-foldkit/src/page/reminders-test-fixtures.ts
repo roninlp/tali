@@ -1,3 +1,5 @@
+import { noReminderLink } from '@tali/domain'
+
 import type { ReminderDispatch, ReminderInboxItem } from '../lib/reminders/api'
 import * as Reminders from './reminders'
 
@@ -38,7 +40,7 @@ export const inboxItem = (
   note: 'یک قرص همراه با غذا',
   kind: 'medication',
   tier: 'critical',
-  link: { _tag: 'none' },
+  link: noReminderLink(),
   visibility: 'private',
   state: 'inbox',
   ...overrides,

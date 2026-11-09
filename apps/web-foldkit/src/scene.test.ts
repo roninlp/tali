@@ -1,3 +1,4 @@
+import { Match } from 'effect'
 import {
   Command,
   Mount,
@@ -40,17 +41,14 @@ const NOTE_ID = NoteId.make('018f3a4c-7b2d-7c4e-8a1b-2c3d4e5f6a7b')
 const desktopNav = () => role('navigation', { name: 'بخش‌های تالی' })
 const mobileNav = () => role('navigation', { name: 'نوار پایین تالی' })
 
-const statusForRoute = (route: AppRoute): Auth.SessionStatus => {
-  if (route._tag === 'Login' || route._tag === 'Register') {
-    return signedOut()
-  }
-
-  if (route._tag === 'Household') {
-    return signedIn(sessionWithoutHousehold)
-  }
-
-  return signedIn()
-}
+const statusForRoute = (route: AppRoute): Auth.SessionStatus =>
+  Match.value(route).pipe(
+    Match.when(AppRoute.isAnyOf(['Login', 'Register']), () => signedOut()),
+    Match.when(AppRoute.isAnyOf(['Household']), () =>
+      signedIn(sessionWithoutHousehold),
+    ),
+    Match.orElse(() => signedIn()),
+  )
 
 const routeCases: ReadonlyArray<readonly [string, AppRoute, string]> = [
   ['Login', AppRoute.Login(), 'ورود به تالی'],

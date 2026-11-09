@@ -1,11 +1,24 @@
-import { Option } from 'effect'
+import { Match, Option, Schema } from 'effect'
 import { Submodel } from 'foldkit'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
 import {
   type Capture,
   type CaptureCreatedRow,
+  type CaptureDraftKind,
+  CaptureDraftKind as CaptureDraftKindSchema,
   type NeedsInput,
+  isAllDayEventTiming,
+  isDailyReminderRepeat,
+  isEventCaptureDraft,
+  isHabitCaptureDraft,
+  isNoteCaptureDraft,
+  isReminderCaptureDraft,
+  isTaskCaptureDraft,
+  isTimedEventTiming,
+  isWeekdaysHabitFrequency,
+  isWeeklyHabitFrequency,
+  isWeeklyReminderRepeat,
   localizeDigits,
 } from '@tali/domain'
 
@@ -22,6 +35,7 @@ import { buttonView } from '../ui/button'
 import { inputControlView, textAreaControlView } from '../ui/field'
 import { retryIcon, trashIcon } from '../ui/icons'
 import {
+  type Message as PickerMessage,
   type PickerMode,
   pickerDialogView,
   pickerTriggerView,
@@ -43,7 +57,7 @@ import {
  * an explanation while a visible card still needs input.
  */
 
-const TYPE_LABELS: Readonly<Record<string, string>> = {
+const TYPE_LABELS: Readonly<Record<CaptureDraftKind, string>> = {
   task: 'کار',
   event: 'رویداد',
   note: 'یادداشت',
@@ -74,18 +88,21 @@ const WEEKDAYS: ReadonlyArray<{
 const digitsOf = (display: DisplayFields) => display.digits
 
 const habitFrequencyKind = (value: string): 'daily' | 'weekdays' | 'weekly' =>
-  value === 'weekdays' ? 'weekdays' : value === 'weekly' ? 'weekly' : 'daily'
+  Match.value(value).pipe(
+    Match.when('weekdays', () => 'weekdays' as const),
+    Match.when('weekly', () => 'weekly' as const),
+    Match.orElse(() => 'daily' as const),
+  )
 
 const reminderRepeatKind = (
   value: string,
 ): 'once' | 'daily' | 'weekly' | 'interval' =>
-  value === 'once'
-    ? 'once'
-    : value === 'weekly'
-      ? 'weekly'
-      : value === 'interval'
-        ? 'interval'
-        : 'daily'
+  Match.value(value).pipe(
+    Match.when('once', () => 'once' as const),
+    Match.when('weekly', () => 'weekly' as const),
+    Match.when('interval', () => 'interval' as const),
+    Match.orElse(() => 'daily' as const),
+  )
 
 const countText = (count: number, display: DisplayFields): string =>
   localizeDigits(count, digitsOf(display))
@@ -115,10 +132,16 @@ const createdSummary = (
     return acc
   }, {})
 
-  const parts = Object.entries(counts).map(
-    ([type, count]) =>
-      `${countText(count, display)} ${TYPE_LABELS[type] ?? type}`,
-  )
+  const asDraftKind = Schema.decodeUnknownOption(CaptureDraftKindSchema)
+
+  const parts = Object.entries(counts).map(([type, count]) => {
+    const label = Option.match(asDraftKind(type), {
+      onNone: () => type,
+      onSome: kind => TYPE_LABELS[kind],
+    })
+
+    return `${countText(count, display)} ${label}`
+  })
 
   return parts.length === 0
     ? 'چیزی ساخته نشد.'
@@ -248,26 +271,31 @@ const pickerField = (
     placeholder?: string
   }>,
   h: HtmlBuilder<Message>,
-): Html =>
-  pickerTriggerView(
-    {
-      id: config.id,
-      label: config.label,
-      target: config.target,
-      mode: config.mode,
-      value: config.value,
-      today: config.inputs.today,
-      digits: digitsOf(config.inputs.display),
-      ...(config.isDisabled === undefined
-        ? {}
-        : { isDisabled: config.isDisabled }),
-      ...(config.placeholder === undefined
-        ? {}
-        : { placeholder: config.placeholder }),
-      toParentMessage: message => Message.GotPickerMessage({ message }),
-    },
+): Html => {
+  const base = {
+    id: config.id,
+    label: config.label,
+    target: config.target,
+    mode: config.mode,
+    value: config.value,
+    today: config.inputs.today,
+    digits: digitsOf(config.inputs.display),
+    toParentMessage: (message: PickerMessage) =>
+      Message.GotPickerMessage({ message }),
+  }
+
+  const trigger =
+    config.isDisabled === undefined
+      ? base
+      : { ...base, isDisabled: config.isDisabled }
+
+  return pickerTriggerView(
+    config.placeholder === undefined
+      ? trigger
+      : { ...trigger, placeholder: config.placeholder },
     h,
   )
+}
 
 const weekdayToggles = (
   days: ReadonlyArray<number>,
@@ -298,7 +326,7 @@ const habitStructural = (
   inputs: Inputs,
   h: HtmlBuilder<Message>,
 ): Html => {
-  if (card.draft._tag !== 'habit') return h.empty
+  if (!isHabitCaptureDraft(card.draft)) return h.empty
   const draft = card.draft
   const frequency = draft.frequency
   const kind = frequency?._tag ?? 'daily'
@@ -321,10 +349,10 @@ const habitStructural = (
           }),
         h,
       ),
-      frequency?._tag === 'weekdays'
+      frequency !== undefined && isWeekdaysHabitFrequency(frequency)
         ? weekdayToggles(frequency.days, 'habit', index, h)
         : h.empty,
-      frequency?._tag === 'weekly'
+      frequency !== undefined && isWeeklyHabitFrequency(frequency)
         ? numberField(
             'بار در هفته',
             frequency.times,
@@ -357,14 +385,14 @@ const reminderStructural = (
   inputs: Inputs,
   h: HtmlBuilder<Message>,
 ): Html => {
-  if (card.draft._tag !== 'reminder') return h.empty
+  if (!isReminderCaptureDraft(card.draft)) return h.empty
   const draft = card.draft
   const repeat = draft.repeat
   const kind = repeat?._tag ?? 'daily'
 
   const time =
     repeat !== undefined &&
-    (repeat._tag === 'daily' || repeat._tag === 'weekly')
+    (isDailyReminderRepeat(repeat) || isWeeklyReminderRepeat(repeat))
       ? repeat.time
       : ''
 
@@ -460,7 +488,7 @@ const taskStructural = (
   inputs: Inputs,
   h: HtmlBuilder<Message>,
 ): Html => {
-  if (card.draft._tag !== 'task') return h.empty
+  if (!isTaskCaptureDraft(card.draft)) return h.empty
   const draft = card.draft
 
   const maybeParts =
@@ -506,23 +534,23 @@ const eventStructural = (
   inputs: Inputs,
   h: HtmlBuilder<Message>,
 ): Html => {
-  if (card.draft._tag !== 'event') return h.empty
+  if (!isEventCaptureDraft(card.draft)) return h.empty
   const timing = card.draft.timing
 
   const maybeStartParts =
-    timing?._tag === 'timed'
+    timing !== undefined && isTimedEventTiming(timing)
       ? instantPartsOf(timing.start, inputs.display.timeZone)
       : undefined
 
   const maybeEndParts =
-    timing?._tag === 'timed'
+    timing !== undefined && isTimedEventTiming(timing)
       ? instantPartsOf(timing.end, inputs.display.timeZone)
       : undefined
 
   const date =
-    timing?._tag === 'allDay'
+    timing !== undefined && isAllDayEventTiming(timing)
       ? timing.date
-      : timing?._tag === 'timed'
+      : timing !== undefined && isTimedEventTiming(timing)
         ? (maybeStartParts?.date ?? '')
         : ''
 
@@ -587,15 +615,19 @@ const structuralView = (
   inputs: Inputs,
   h: HtmlBuilder<Message>,
 ): Html => {
-  if (card.draft._tag === 'task') return taskStructural(card, index, inputs, h)
+  if (isTaskCaptureDraft(card.draft)) {
+    return taskStructural(card, index, inputs, h)
+  }
 
-  if (card.draft._tag === 'event')
+  if (isEventCaptureDraft(card.draft)) {
     return eventStructural(card, index, inputs, h)
+  }
 
-  if (card.draft._tag === 'habit')
+  if (isHabitCaptureDraft(card.draft)) {
     return habitStructural(card, index, inputs, h)
+  }
 
-  if (card.draft._tag === 'reminder') {
+  if (isReminderCaptureDraft(card.draft)) {
     return reminderStructural(card, index, inputs, h)
   }
 
@@ -651,15 +683,19 @@ const currentInstantOf = (
 ): string | undefined => {
   const draft = card.draft
 
-  if (draft._tag === 'task' && field === 'dueAt') {
+  if (isTaskCaptureDraft(draft) && field === 'dueAt') {
     return draft.dueAt ?? undefined
   }
 
-  if (draft._tag === 'reminder' && field === 'fireAt') {
+  if (isReminderCaptureDraft(draft) && field === 'fireAt') {
     return draft.fireAt ?? undefined
   }
 
-  if (draft._tag === 'event' && draft.timing?._tag === 'timed') {
+  if (
+    isEventCaptureDraft(draft) &&
+    draft.timing !== undefined &&
+    isTimedEventTiming(draft.timing)
+  ) {
     if (field === 'timing.start' || field === 'start') {
       return draft.timing.start
     }
@@ -685,14 +721,14 @@ const draftDateOf = (
     if (date !== undefined) return date
   }
 
-  if (draft._tag === 'task' && field === 'dueAt') {
+  if (isTaskCaptureDraft(draft) && field === 'dueAt') {
     return draft.dueDate ?? undefined
   }
 
-  if (draft._tag === 'event') {
+  if (isEventCaptureDraft(draft)) {
     const timing = draft.timing
 
-    if (timing?._tag === 'allDay') return timing.date
+    if (timing !== undefined && isAllDayEventTiming(timing)) return timing.date
   }
 
   return undefined
@@ -736,14 +772,14 @@ const needsInputView = (
           [entry.question],
         )
 
-        if (entry.shape === 'frequency' && card.draft._tag === 'habit') {
+        if (entry.shape === 'frequency' && isHabitCaptureDraft(card.draft)) {
           return h.div(
             [h.Class('grid gap-1')],
             [question, habitStructural(card, index, inputs, h)],
           )
         }
 
-        if (entry.shape === 'repeat' && card.draft._tag === 'reminder') {
+        if (entry.shape === 'repeat' && isReminderCaptureDraft(card.draft)) {
           return h.div(
             [h.Class('grid gap-1')],
             [question, reminderStructural(card, index, inputs, h)],
@@ -897,7 +933,7 @@ const cardView = (
               ),
             ],
           ),
-          card.draft._tag === 'note'
+          isNoteCaptureDraft(card.draft)
             ? h.p(
                 [
                   h.Class(

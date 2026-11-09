@@ -208,10 +208,10 @@ export const SetReminderVisibility = Command.define('SetReminderVisibility', {
       Effect.catch(error =>
         Effect.succeed(
           Message.FailedSetReminderVisibility({
-            message:
-              typeof error === 'string'
-                ? error
-                : 'ذخیره در حافظه‌ی محلی ناموفق بود',
+            message: Option.getOrElse(
+              Schema.decodeUnknownOption(Schema.String)(error),
+              () => 'ذخیره در حافظه‌ی محلی ناموفق بود',
+            ),
           }),
         ),
       ),

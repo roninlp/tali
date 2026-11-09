@@ -178,11 +178,14 @@ export class NoteService extends Context.Service<NoteService>()('NoteService', {
         version: note.version,
         updatedAt: note.updatedAt,
         deletedAt: note.deletedAt,
-        data: def.validate({ ...note } as Record<string, unknown>, {
-          version: note.version,
-          updatedAt: note.updatedAt,
-          deletedAt: note.deletedAt,
-        }),
+        data: def.validate(
+          { ...note },
+          {
+            version: note.version,
+            updatedAt: note.updatedAt,
+            deletedAt: note.deletedAt,
+          },
+        ),
       }
     }
 

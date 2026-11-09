@@ -21,6 +21,7 @@ import { describe, test } from 'vitest'
 
 import { Listbox } from '@foldkit/ui'
 
+import { CalendarRecurrenceEnd } from '../lib/calendar-data'
 import { USER_ID } from '../test-fixtures'
 import * as Calendar from './calendar'
 import type { Inputs, Model } from './calendar'
@@ -111,7 +112,7 @@ describe('Calendar week view', () => {
                 frequency: 'weekly',
                 interval: 1,
                 byDay: [6],
-                end: { _tag: 'never' },
+                end: CalendarRecurrenceEnd.never(),
               },
               recurrenceMode: 'onDueDate',
             }),

@@ -1,5 +1,6 @@
-import { Option } from 'effect'
+import { Option, Schema } from 'effect'
 import type { HtmlBuilder } from 'foldkit/html'
+import { defineMessageUnion } from 'foldkit/message'
 import { expect, given, role, scene, text } from 'foldkit/scene'
 import { describe, test } from 'vitest'
 
@@ -7,14 +8,15 @@ import { formErrorView, textInputView } from './field'
 
 type Model = Readonly<{ maybeError: Option.Option<string> }>
 
-type Message = Readonly<{ _tag: 'UpdatedEmail'; value: string }>
+const Message = defineMessageUnion({
+  UpdatedEmail: { value: Schema.String },
+})
+
+type Message = typeof Message.Type
 
 const update = (model: Model, _message: Message) => ({ model })
 
-const updatedEmail = (value: string): Message => ({
-  _tag: 'UpdatedEmail',
-  value,
-})
+const updatedEmail = (value: string): Message => Message.UpdatedEmail({ value })
 
 const view = (model: Model, h: HtmlBuilder<Message>) =>
   h.div(

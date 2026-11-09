@@ -16,9 +16,7 @@ import {
 
 /** The filter bar persists per user and degrades to defaults on bad data. */
 
-const stored = (
-  settings: TaskViewSettings,
-): Readonly<{ filters: unknown; sort: unknown }> => {
+const stored = (settings: TaskViewSettings) => {
   const filters = settings.filters
 
   const projectId = ProjectFilter.match(filters.project, {

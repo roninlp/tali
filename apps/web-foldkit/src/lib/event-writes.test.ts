@@ -3,10 +3,18 @@ import { Option } from 'effect'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import type { Event } from '@tali/domain'
-import { uuidV7 } from '@tali/domain'
+import {
+  LocalDate,
+  TimestampUtc,
+  allDayEventTiming,
+  timedEventTiming,
+  untilRecurrenceEnd,
+  uuidV7,
+} from '@tali/domain'
 import { openLocalStore } from '@tali/sync-client'
 import type { LocalStore } from '@tali/sync-client'
 
+import { CalendarRecurrenceEnd, CalendarTiming } from './calendar-data'
 import type { CalendarEventSource } from './calendar-data'
 import {
   EVENT_MISSING_COPY,
@@ -42,7 +50,7 @@ const eventRow = (overrides: Partial<EventRow> = {}): EventRow =>
     category: null,
     color: null,
     people: [],
-    timing: { _tag: 'allDay', date: '2026-10-23' },
+    timing: CalendarTiming.allDay({ date: '2026-10-23' }),
     timeZone: 'Asia/Tehran',
     recurrence: null,
     exceptions: [],
@@ -64,7 +72,7 @@ const weeklyRow = (overrides: Partial<EventRow> = {}): EventRow =>
       frequency: 'weekly',
       interval: 1,
       byDay: [5],
-      end: { _tag: 'never' },
+      end: CalendarRecurrenceEnd.never(),
     },
     ...overrides,
   })
@@ -88,7 +96,7 @@ const source = (
   category: null,
   color: null,
   people: [],
-  timing: input.timing ?? { _tag: 'allDay', date: '2026-10-23' },
+  timing: input.timing ?? CalendarTiming.allDay({ date: '2026-10-23' }),
   timeZone: input.timeZone ?? 'UTC',
   recurrence: input.recurrence ?? null,
   exceptions: input.exceptions ?? [],
@@ -118,7 +126,7 @@ describe('event row projection', () => {
       data: {
         title: 'سفر',
         people: ['علی'],
-        timing: { _tag: 'allDay', date: '2026-10-22' },
+        timing: CalendarTiming.allDay({ date: '2026-10-22' }),
         timeZone: 'Asia/Tehran',
         exceptions: [],
       },
@@ -126,7 +134,7 @@ describe('event row projection', () => {
 
     expect(row.title).toBe('سفر')
     expect(row.people).toEqual(['علی'])
-    expect(row.timing).toEqual({ _tag: 'allDay', date: '2026-10-22' })
+    expect(row.timing).toEqual(CalendarTiming.allDay({ date: '2026-10-22' }))
     expect(row.timeZone).toBe('Asia/Tehran')
     expect(row.recurrence).toBeNull()
   })
@@ -162,7 +170,7 @@ describe('event row projection', () => {
       data: { timing: '{not json' },
     })
 
-    expect(broken.timing).toEqual({ _tag: 'allDay', date: '2026-04-01' })
+    expect(broken.timing).toEqual(CalendarTiming.allDay({ date: '2026-04-01' }))
   })
 
   it('hydrates the aggregate with the session fallbacks', () => {
@@ -236,7 +244,7 @@ describe('draft timing', () => {
         endTime: '10:00',
         timeZone: 'Asia/Tehran',
       }),
-    ).toEqual({ _tag: 'allDay', date: '2026-10-22' })
+    ).toEqual(allDayEventTiming(LocalDate.make('2026-10-22')))
   })
 
   it("turns a wall time in the event's zone into instants", () => {
@@ -249,11 +257,12 @@ describe('draft timing', () => {
         endTime: '10:30',
         timeZone: 'Asia/Tehran',
       }),
-    ).toEqual({
-      _tag: 'timed',
-      start: '2026-03-22T05:30:00.000Z',
-      end: '2026-03-22T07:00:00.000Z',
-    })
+    ).toEqual(
+      timedEventTiming(
+        TimestampUtc.make('2026-03-22T05:30:00.000Z'),
+        TimestampUtc.make('2026-03-22T07:00:00.000Z'),
+      ),
+    )
   })
 
   it('floors a backwards range at one hour', () => {
@@ -266,11 +275,12 @@ describe('draft timing', () => {
         endTime: '09:00',
         timeZone: 'UTC',
       }),
-    ).toEqual({
-      _tag: 'timed',
-      start: '2026-03-22T10:00:00.000Z',
-      end: '2026-03-22T11:00:00.000Z',
-    })
+    ).toEqual(
+      timedEventTiming(
+        TimestampUtc.make('2026-03-22T10:00:00.000Z'),
+        TimestampUtc.make('2026-03-22T11:00:00.000Z'),
+      ),
+    )
   })
 })
 
@@ -300,7 +310,9 @@ describe('event local writes', () => {
 
     const row = await store.get('event', id)
     expect(row?.data.title).toBe('مهمانی')
-    expect(row?.data.timing).toEqual({ _tag: 'allDay', date: '2026-10-30' })
+    expect(row?.data.timing).toEqual(
+      CalendarTiming.allDay({ date: '2026-10-30' }),
+    )
     expect(await store.pending()).toHaveLength(1)
     store.close()
   })
@@ -354,19 +366,20 @@ describe('edit scope — this occurrence', () => {
     const change = editEventWithinScope({
       event: eventOf(weeklyRow()),
       instanceId: '2026-10-30',
-      overrides: { timing: { _tag: 'allDay', date: '2026-10-31' } },
+      overrides: {
+        timing: allDayEventTiming(LocalDate.make('2026-10-31')),
+      },
       scope: 'thisOccurrence',
       exceptionId: uuidV7(),
       followingId: uuidV7(),
       now: NOW,
     })
 
-    expect(change.series.timing).toEqual({
-      _tag: 'allDay',
-      date: '2026-10-23',
-    })
+    expect(change.series.timing).toEqual(
+      allDayEventTiming(LocalDate.make('2026-10-23')),
+    )
     expect(change.series.exceptions[0]!.overrides).toEqual({
-      timing: { _tag: 'allDay', date: '2026-10-31' },
+      timing: allDayEventTiming(LocalDate.make('2026-10-31')),
     })
   })
 
@@ -410,12 +423,11 @@ describe('edit scope — this and following', () => {
       frequency: 'weekly',
       interval: 1,
       byDay: [5],
-      end: { _tag: 'until', date: '2026-10-29' },
+      end: untilRecurrenceEnd(LocalDate.make('2026-10-29')),
     })
-    expect(change.following!.timing).toEqual({
-      _tag: 'allDay',
-      date: '2026-10-30',
-    })
+    expect(change.following!.timing).toEqual(
+      allDayEventTiming(LocalDate.make('2026-10-30')),
+    )
   })
 
   it('degrades to a whole-series edit at the first occurrence', () => {
@@ -455,14 +467,15 @@ describe('edit scope — this and following', () => {
     })
 
     expect(later.series.deletedAt).toBeNull()
-    expect(later.series.recurrence!.end).toEqual({
-      _tag: 'until',
-      date: '2026-10-29',
-    })
+    expect(later.series.recurrence!.end).toEqual(
+      untilRecurrenceEnd(LocalDate.make('2026-10-29')),
+    )
   })
 
   it('edits a one-off event as a plain series edit', () => {
-    const row = eventRow({ timing: { _tag: 'allDay', date: '2026-10-30' } })
+    const row = eventRow({
+      timing: CalendarTiming.allDay({ date: '2026-10-30' }),
+    })
 
     const change = editEventWithinScope({
       event: eventOf(row),

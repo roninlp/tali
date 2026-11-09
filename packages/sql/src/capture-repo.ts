@@ -4,8 +4,8 @@ import {
   Capture,
   type CaptureId,
   type CaptureStatus,
-  type CaptureCreatedRow,
-  type CaptureDraft,
+  CaptureCreatedRow,
+  CaptureDraft,
   type UserId,
 } from '@tali/domain'
 
@@ -37,11 +37,19 @@ interface CaptureRow {
   readonly committedAt: string | null
 }
 
+const asDrafts = Schema.decodeOption(
+  Schema.fromJsonString(Schema.Array(CaptureDraft)),
+)
+
+const asCreatedRows = Schema.decodeOption(
+  Schema.fromJsonString(Schema.Array(CaptureCreatedRow)),
+)
+
 const toCapture = (row: CaptureRow): Capture =>
   Schema.decodeUnknownSync(Capture)({
     ...row,
-    drafts: JSON.parse(row.drafts) as ReadonlyArray<CaptureDraft>,
-    createdIds: JSON.parse(row.createdIds) as ReadonlyArray<CaptureCreatedRow>,
+    drafts: Option.getOrThrow(asDrafts(row.drafts)),
+    createdIds: Option.getOrThrow(asCreatedRows(row.createdIds)),
   })
 
 const encodeJson = (value: unknown): string => JSON.stringify(value)

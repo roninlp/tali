@@ -50,6 +50,11 @@ import { formErrorView } from './ui/field'
 
 // MODEL
 
+/** The service worker's subscription-change broadcast. */
+const PushSubscriptionChangeMessage = Schema.Struct({
+  type: Schema.Literal('tali:push-subscription-change'),
+})
+
 export const Model = Schema.Struct({
   maybeUserId: Schema.Option(Schema.String),
   environment: PushEnvironment,
@@ -678,12 +683,10 @@ const serviceWorkerEvents: Stream.Stream<Message> = eventStream(emit => {
       return
     }
 
-    const data: unknown = event.data
-
     if (
-      typeof data === 'object' &&
-      data !== null &&
-      Reflect.get(data, 'type') === 'tali:push-subscription-change'
+      Option.isSome(
+        Schema.decodeUnknownOption(PushSubscriptionChangeMessage)(event.data),
+      )
     ) {
       emit(Message.ReceivedPushSubscriptionChange())
     }
