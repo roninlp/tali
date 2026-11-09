@@ -147,6 +147,14 @@ and a non-generic User-Agent; both ride the adapter's `wrapFetch` middleware.
 provider later is one layer, not a rewrite; tests and the eval harness never
 call a model.
 
+Thinking is **off** for this call: `reasoning_effort: "none"` rides the
+adapter's `modelOptions` because the generic compatible adapter has no model
+catalog to map a normalized reasoning level. Dissect is a bounded extraction
+over at most 4000 characters against five tight tool schemas, so the model's
+default `high` effort only adds reasoning tokens and latency to every capture.
+An eval or a model swap must keep the field; a model that rejects it needs its
+own provider mapping, not a silent default.
+
 Note the platform constraint: OpenCode's free model ids are restricted to the
 OpenCode client, so a Worker uses paid ids.
 

@@ -30,7 +30,8 @@ import { makeDraftTools } from "./capture-tools.js"
  *   for a text and never touches the network, so `pnpm test` stays offline.
  *
  * The run has no chat surface: one user message, a Persian system prompt, the
- * five draft tools, `stream: false`, a 60-second total budget and one retry.
+ * five draft tools, `stream: false`, thinking off, a 60-second total budget and
+ * one retry.
  */
 
 // ── Config ────────────────────────────────────────────────────────────────
@@ -49,6 +50,17 @@ export const DEFAULT_CAPTURE_USER_AGENT = "tali-capture/0.1"
  * still bounding a runaway tool loop.
  */
 export const CAPTURE_TIMEOUT_SECONDS = 60
+/**
+ * Thinking is off for Dissect (ADR-0012 §7). Extraction is bounded and the
+ * default `high` effort adds reasoning tokens to every capture without
+ * improving a call against five tight schemas.
+ *
+ * The OpenCode Go gateway takes `reasoning_effort: "none"` on the Chat
+ * Completions wire. The generic OpenAI-compatible adapter has no model catalog,
+ * so it cannot map the normalized `reasoning` option to a provider value; the
+ * field has to ride `modelOptions`, which the adapter spreads into the request.
+ */
+export const CAPTURE_MODEL_OPTIONS = { reasoning_effort: "none" } as const
 
 export interface CaptureConfigValue {
   /** `undefined` means the feature is inert: Dissect fails typed, not raw. */
@@ -231,6 +243,7 @@ export const ExtractorLive = Layer.effect(
             systemPrompts: [captureSystemPrompt(input)],
             tools,
             stream: false as const,
+            modelOptions: CAPTURE_MODEL_OPTIONS,
             wrapFetch: captureFetchWrapper({ apiKey, sessionId }),
             // The SDK's error logger prints tool-call `rawArguments`, which are
             // the model's draft payloads: user titles, bodies, quotes, and

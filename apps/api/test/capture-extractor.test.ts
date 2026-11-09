@@ -6,6 +6,7 @@ import {
   type UserId
 } from "@tali/domain"
 import {
+  CAPTURE_MODEL_OPTIONS,
   CaptureConfig,
   DEFAULT_CAPTURE_BASE_URL,
   DEFAULT_CAPTURE_MODEL,
@@ -92,6 +93,10 @@ describe("ExtractorReplay", () => {
 })
 
 describe("ExtractorLive", () => {
+  it("sends thinking off on the Chat Completions wire", () => {
+    expect(CAPTURE_MODEL_OPTIONS).toEqual({ reasoning_effort: "none" })
+  })
+
   it("constructs without a key and fails typed at call time", async () => {
     const layer = ExtractorLive.pipe(
       Layer.provide(
