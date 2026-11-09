@@ -103,6 +103,8 @@ export type NeedsInputShape = Schema.Schema.Type<typeof NeedsInputShape>
  *
  * `field` is the draft field name the picker writes; `question` is the Persian
  * copy shown on the card. The entry is removed when the user answers it.
+ * `normalizeCaptureDraftInput` folds the model's common aliases (`endTime`)
+ * into the names the review cards implement.
  */
 export const NeedsInput = Schema.Struct({
   field: Schema.String.check(Schema.isMinLength(1)),
@@ -307,7 +309,7 @@ export class ModelUnavailable extends Schema.TaggedError<ModelUnavailable>()(
   { message: Schema.String }
 ) {}
 
-/** The model call exceeded the 30-second budget (including its one retry). */
+/** The model call exceeded the 60-second budget (including its one retry). */
 export class ModelTimeout extends Schema.TaggedError<ModelTimeout>()("ModelTimeout", {
   seconds: Schema.Int
 }) {}
@@ -483,11 +485,29 @@ const normalizeRepeatInput = (value: unknown): unknown => {
   return value
 }
 
+/**
+ * The model names a Needs Input field in its own words now and then
+ * (`endTime`); the review card only knows the canonical draft fields. Fold the
+ * observed aliases before validation so the answer lands in the right field.
+ */
+const MISSING_FIELD_ALIASES: Readonly<Record<string, string>> = {
+  startTime: "timing.start",
+  startsAt: "timing.start",
+  start_at: "timing.start",
+  endTime: "timing.end",
+  endsAt: "timing.end",
+  end_at: "timing.end"
+}
+
 const normalizeMissingInput = (value: unknown): unknown =>
   Array.isArray(value)
     ? value.map((entry) => {
       const record = asRecord(entry)
-      return record === undefined ? entry : { ...record }
+      if (record === undefined) return entry
+      const field = typeof record.field === "string"
+        ? MISSING_FIELD_ALIASES[record.field] ?? record.field
+        : record.field
+      return { ...record, field }
     })
     : value
 

@@ -109,7 +109,7 @@ export class CaptureService extends Context.Service<CaptureService>()("CaptureSe
       error._tag === "ModelUnavailable"
         ? error.message
         : error._tag === "ModelTimeout"
-        ? "مدل در ۳۰ ثانیه پاسخ نداد"
+        ? "مدل در ۶۰ ثانیه پاسخ نداد"
         : error._tag
 
     const dissect = (

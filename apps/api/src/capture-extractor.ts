@@ -29,7 +29,7 @@ import { makeDraftTools } from "./capture-tools.js"
  *   for a text and never touches the network, so `pnpm test` stays offline.
  *
  * The run has no chat surface: one user message, a Persian system prompt, the
- * five draft tools, `stream: false`, a 30-second total budget and one retry.
+ * five draft tools, `stream: false`, a 60-second total budget and one retry.
  */
 
 // ── Config ────────────────────────────────────────────────────────────────
@@ -39,6 +39,15 @@ export const DEFAULT_CAPTURE_BASE_URL = "https://opencode.ai/inference/go/openai
 export const DEFAULT_CAPTURE_MODEL = "deepseek-v4.1-flash"
 /** A non-generic UA; the gateway rejects the SDK default. */
 export const DEFAULT_CAPTURE_USER_AGENT = "tali-capture/0.1"
+/**
+ * The whole Dissect budget, retry included (ADR-0012 §9).
+ *
+ * Measured live runs of a one-intent sentence land at 12–23 s, and a
+ * three-intent sentence has been seen at 37 s; a 30 s cap turns ordinary
+ * gateway variance into a failed Capture. 60 s clears the observed tail while
+ * still bounding a runaway tool loop.
+ */
+export const CAPTURE_TIMEOUT_SECONDS = 60
 
 export interface CaptureConfigValue {
   /** `undefined` means the feature is inert: Dissect fails typed, not raw. */
@@ -129,7 +138,7 @@ export const captureSystemPrompt = (input: ExtractInput): string => {
     "- draft_habit: title و frequency (daily/weekdays/weekly) فقط اگر متن گفته باشد؛ reminderTime اگر ساعت محلی گفته شده.",
     "- draft_reminder: title، kind و repeat؛ برای once اگر fireAt در متن نیست، آن را در missing بگذار.",
     "",
-    "برای هر پیش‌نویس، missing را حتی وقتی خالی است بفرست."
+    "برای هر پیش‌نویس، missing را حتی وقتی خالی است بفرست. نام فیلد در missing باید دقیقاً یکی از این‌ها باشد: dueDate، dueAt، timing، timing.start، timing.end، repeat، repeat.time، frequency، fireAt، reminderTime. برای رویداد از timing.start و timing.end استفاده کن، نه startTime/endTime."
   ].join("\n")
 }
 
@@ -175,7 +184,7 @@ const toModelError = (error: unknown): ModelTimeout | ModelUnavailable => {
     "_tag" in error &&
     error._tag === "TimeoutError"
   ) {
-    return new ModelTimeout({ seconds: 30 })
+    return new ModelTimeout({ seconds: CAPTURE_TIMEOUT_SECONDS })
   }
   return new ModelUnavailable({
     message: error instanceof Error ? error.message : String(error)
@@ -226,9 +235,9 @@ export const ExtractorLive = Layer.effect(
         })
 
         const drafts = yield* attempt.pipe(
-          // One retry inside a single 30-second total budget (ADR-0012 §9).
+          // One retry inside a single 60-second total budget (ADR-0012 §9).
           Effect.retry(Schedule.recurs(1)),
-          Effect.timeout(Duration.seconds(30)),
+          Effect.timeout(Duration.seconds(CAPTURE_TIMEOUT_SECONDS)),
           Effect.mapError(toModelError)
         )
 

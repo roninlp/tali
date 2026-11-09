@@ -44,7 +44,7 @@ const messageFor = (tag: string | undefined): string => {
     case 'ModelUnavailable':
       return 'مدل در دسترس نیست. متن تو حفظ شده است؛ دوباره تلاش کن.'
     case 'ModelTimeout':
-      return 'مدل در ۳۰ ثانیه پاسخ نداد. متن تو حفظ شده است؛ دوباره تلاش کن.'
+      return 'مدل در ۶۰ ثانیه پاسخ نداد. متن تو حفظ شده است؛ دوباره تلاش کن.'
     case 'InvalidDraft':
       return 'یکی از پیشنویس‌ها با قالب کارت جور نیست؛ عنوان یا فیلد ساختاری را اصلاح کن.'
     case 'DraftIncomplete':

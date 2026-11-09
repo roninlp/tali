@@ -4,6 +4,7 @@ import {
   given,
   role,
   scene,
+  selector,
   text,
   withViewInputs,
 } from 'foldkit/scene'
@@ -118,6 +119,45 @@ describe('capture view', () => {
       expect(text('«فردا دکتر»')).toExist(),
       expect(text('این رویداد چه روزی است؟')).toExist(),
       expect(text(/تا وقتی Needs Input یک کارت پاسخ داده نشده/)).toExist(),
+    )
+  })
+
+  test('a malformed instant renders instead of crashing the screen', () => {
+    const broken: CaptureDraft = {
+      _tag: 'event',
+      title: 'جلسه',
+      sourceQuote: 'جلسه',
+      timing: { _tag: 'timed', start: '17:00', end: '18:00' },
+      missing: [],
+    }
+    scene(
+      setup(),
+      given(model({ phase: 'review', cards: [cardOf(broken)] })),
+      expect(role('heading', { name: 'کپچر' })).toExist(),
+      expect(text('«جلسه»')).toExist(),
+    )
+  })
+
+  test('a clock-time Needs Input renders a time picker when the day is known', () => {
+    const event: CaptureDraft = {
+      _tag: 'event',
+      title: 'جلسه',
+      sourceQuote: 'سه شنبه جلسه',
+      timing: {
+        _tag: 'timed',
+        start: '2026-11-10T12:30:00.000Z',
+        end: '2026-11-10T13:30:00.000Z',
+      },
+      timeZone: 'Asia/Tehran',
+      missing: [
+        { field: 'timing.start', shape: 'clockTime', question: 'ساعت شروع؟' },
+      ],
+    }
+    scene(
+      setup(),
+      given(model({ phase: 'review', cards: [cardOf(event)] })),
+      expect(text('ساعت شروع؟')).toExist(),
+      expect(selector('input[type="time"]')).toExist(),
     )
   })
 

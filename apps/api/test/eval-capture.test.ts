@@ -64,7 +64,7 @@ const dissect = (text: string) =>
 
 describe.skipIf(!hasKey)("live capture eval", () => {
   for (const fixture of fixtures) {
-    it(`live: ${fixture.text}`, { timeout: 60_000 }, async () => {
+    it(`live: ${fixture.text}`, { timeout: 120_000 }, async () => {
       const drafts = await dissect(fixture.text)
 
       expect(drafts.length).toBeLessThanOrEqual(12)

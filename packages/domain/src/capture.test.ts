@@ -114,6 +114,22 @@ describe("CaptureDraft", () => {
       }
     ])
   })
+
+  it("accepts a free-form Needs Input field name (old rows stay readable)", () => {
+    const decoded = Schema.decodeUnknownSync(CaptureDraft)({
+      _tag: "event",
+      title: "مصاحبه",
+      sourceQuote: "ساعت ۷ مصاحبه دارم",
+      missing: [
+        {
+          field: "endTime",
+          shape: "clockTime",
+          question: "تا چه ساعتی؟"
+        }
+      ]
+    })
+    expect(decoded.missing[0]?.field).toBe("endTime")
+  })
 })
 
 describe("normalizeCaptureText", () => {
@@ -147,6 +163,23 @@ describe("normalizeCaptureDraftInput", () => {
   it("normalizes an already-UTC instant idempotently", () => {
     expect(normalizeCaptureInstant("2026-11-09T13:30:00.000Z"))
       .toBe("2026-11-09T13:30:00.000Z")
+  })
+
+  it("folds the model's Needs Input field aliases into canonical names", () => {
+    const normalized = normalizeCaptureDraftInput({
+      title: "مصاحبه",
+      sourceQuote: "ساعت ۷ مصاحبه دارم",
+      missing: [
+        { field: "startTime", shape: "clockTime", question: "از چه ساعتی؟" },
+        { field: "endTime", shape: "clockTime", question: "تا چه ساعتی؟" },
+        { field: "repeat", shape: "repeat", question: "چند وقت یک‌بار؟" }
+      ]
+    })
+    expect(normalized.missing).toEqual([
+      { field: "timing.start", shape: "clockTime", question: "از چه ساعتی؟" },
+      { field: "timing.end", shape: "clockTime", question: "تا چه ساعتی؟" },
+      { field: "repeat", shape: "repeat", question: "چند وقت یک‌بار؟" }
+    ])
   })
 })
 

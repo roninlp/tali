@@ -6,10 +6,11 @@ import {
   type Capture,
   type CaptureCreatedRow,
   type NeedsInput,
-  instantToLocalParts,
   localDateTimeToInstant,
   localizeDigits,
 } from '@tali/domain'
+
+import { instantOf, instantPartsOf } from '../lib/capture-instant'
 
 import {
   calendarRouter,
@@ -316,7 +317,7 @@ const reminderStructural = (
   const maybeFireParts =
     draft.fireAt === undefined || draft.fireAt === null
       ? undefined
-      : instantToLocalParts(draft.fireAt, inputs.display.timeZone)
+      : instantPartsOf(draft.fireAt, inputs.display.timeZone)
   return h.div(
     [h.Class('grid gap-2')],
     [
@@ -413,7 +414,7 @@ const taskStructural = (
   const maybeParts =
     draft.dueAt === undefined || draft.dueAt === null
       ? undefined
-      : instantToLocalParts(draft.dueAt, inputs.display.timeZone)
+      : instantPartsOf(draft.dueAt, inputs.display.timeZone)
   const date = draft.dueDate ?? maybeParts?.date ?? ''
   return h.div(
     [h.Class('grid gap-2 sm:grid-cols-2')],
@@ -457,20 +458,22 @@ const eventStructural = (
 ): Html => {
   if (card.draft._tag !== 'event') return h.empty
   const timing = card.draft.timing
+  const maybeStartParts =
+    timing?._tag === 'timed'
+      ? instantPartsOf(timing.start, inputs.display.timeZone)
+      : undefined
+  const maybeEndParts =
+    timing?._tag === 'timed'
+      ? instantPartsOf(timing.end, inputs.display.timeZone)
+      : undefined
   const date =
     timing?._tag === 'allDay'
       ? timing.date
       : timing?._tag === 'timed'
-        ? instantToLocalParts(timing.start, inputs.display.timeZone).date
+        ? maybeStartParts?.date ?? ''
         : ''
-  const start =
-    timing?._tag === 'timed'
-      ? instantToLocalParts(timing.start, inputs.display.timeZone).time
-      : ''
-  const end =
-    timing?._tag === 'timed'
-      ? instantToLocalParts(timing.end, inputs.display.timeZone).time
-      : ''
+  const start = maybeStartParts?.time ?? ''
+  const end = maybeEndParts?.time ?? ''
   return h.div(
     [h.Class('grid gap-2')],
     [
@@ -557,45 +560,103 @@ const instantPicker = (
   inputs: Inputs,
   h: HtmlBuilder<Message>,
 ): Html => {
-  const draft = card.draft
-  const current =
-    entry.field === 'dueAt' && draft._tag === 'task'
-      ? draft.dueAt
-      : entry.field === 'fireAt' && draft._tag === 'reminder'
-        ? draft.fireAt
-        : undefined
-  const value =
-    current === undefined || current === null
-      ? ''
-      : (() => {
-          const parts = instantToLocalParts(current, inputs.display.timeZone)
-          return `${parts.date}T${parts.time}`
-        })()
+  const current = currentInstantOf(card, entry.field)
+  const parts =
+    current === undefined
+      ? undefined
+      : instantPartsOf(current, inputs.display.timeZone)
+  const value = parts === undefined ? '' : `${parts.date}T${parts.time}`
   return h.input([
     h.Type('datetime-local'),
     h.Class(inputClass),
     h.Value(value),
     h.OnInput((raw) => {
       // A datetime-local control may hand back a date without a time while
-      // the user is still picking; do not answer with an invalid instant.
-      if (raw.length < 16) {
-        return Message.AnsweredNeedsInput({
-          index,
-          field: entry.field,
-          value: '',
-        })
-      }
-      return Message.AnsweredNeedsInput({
-        index,
-        field: entry.field,
-        value: localDateTimeToInstant(
-          raw.slice(0, 10),
-          raw.slice(11, 16),
-          inputs.display.timeZone,
-        ),
-      })
+      // the user is still picking; ignore that instead of answering with a
+      // partial (or invalid) instant.
+      if (raw.length < 16) return Message.IgnoredInput()
+      const instant = instantOf(
+        raw.slice(0, 10),
+        raw.slice(11, 16),
+        inputs.display.timeZone,
+      )
+      return instant === undefined
+        ? Message.IgnoredInput()
+        : Message.AnsweredNeedsInput({
+            index,
+            field: entry.field,
+            value: instant,
+          })
     }),
   ])
+}
+
+/** Fields whose draft value is a UTC instant, never a bare clock time. */
+const INSTANT_FIELDS: ReadonlyArray<string> = [
+  'dueAt',
+  'fireAt',
+  'timing.start',
+  'timing.end',
+  'start',
+  'end',
+]
+
+const isInstantField = (field: string): boolean =>
+  INSTANT_FIELDS.includes(field)
+
+/** The draft's current value for one of the instant fields, if any. */
+const currentInstantOf = (
+  card: CaptureCard,
+  field: string,
+): string | undefined => {
+  const draft = card.draft
+  if (draft._tag === 'task' && field === 'dueAt') {
+    return draft.dueAt ?? undefined
+  }
+  if (draft._tag === 'reminder' && field === 'fireAt') {
+    return draft.fireAt ?? undefined
+  }
+  if (draft._tag === 'event' && draft.timing?._tag === 'timed') {
+    if (field === 'timing.start' || field === 'start') {
+      return draft.timing.start
+    }
+    if (field === 'timing.end' || field === 'end') return draft.timing.end
+  }
+  return undefined
+}
+
+/** The day a clock-time answer belongs to, from the draft's own date. */
+const draftDateOf = (
+  card: CaptureCard,
+  field: string,
+  timeZone: string,
+): string | undefined => {
+  const draft = card.draft
+  const instant = currentInstantOf(card, field)
+  if (instant !== undefined) {
+    const date = instantPartsOf(instant, timeZone)?.date
+    if (date !== undefined) return date
+  }
+  if (draft._tag === 'task' && field === 'dueAt') {
+    return draft.dueDate ?? undefined
+  }
+  if (draft._tag === 'event') {
+    const timing = draft.timing
+    if (timing?._tag === 'allDay') return timing.date
+  }
+  return undefined
+}
+
+/** The local clock time of the draft's current instant, for a time picker. */
+const draftClockTimeOf = (
+  card: CaptureCard,
+  field: string,
+  timeZone: string,
+): string => {
+  const instant = currentInstantOf(card, field)
+  return instant === undefined
+    ? ''
+    : (instantPartsOf(instant, timeZone)?.time ?? '')
 }
 
 const needsInputView = (
@@ -636,11 +697,22 @@ const needsInputView = (
           ])
         }
         if (entry.shape === 'clockTime') {
+          const date = isInstantField(entry.field)
+            ? draftDateOf(card, entry.field, inputs.display.timeZone)
+            : ''
+          // A clock time only answers an instant field when the draft already
+          // knows the day; otherwise the picker has to collect both.
+          if (isInstantField(entry.field) && date === undefined) {
+            return h.div([h.Class('grid gap-1')], [
+              question,
+              instantPicker(entry, card, index, inputs, h),
+            ])
+          }
           return h.div([h.Class('grid gap-1')], [
             question,
             timeField(
               'ساعت',
-              '',
+              draftClockTimeOf(card, entry.field, inputs.display.timeZone),
               (value) =>
                 Message.AnsweredNeedsInput({
                   index,

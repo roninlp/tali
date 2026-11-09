@@ -18,6 +18,12 @@ import {
   listCaptures,
 } from '../lib/capture-api'
 import { loadCaptureText, saveCaptureText } from '../lib/capture-draft-cache'
+import {
+  instantOf,
+  instantPartsOf,
+  isClockTime,
+  isInstant,
+} from '../lib/capture-instant'
 import type { DisplayFields } from '../preferences-model'
 import { captureView } from './capture-view'
 
@@ -157,6 +163,7 @@ export const Message = defineMessageUnion({
   FailedLoadHistory: { generation: Schema.Int, failure: CaptureFailure },
   ClickedToggleHistory: { captureId: Schema.String },
   CompletedCacheText: {},
+  IgnoredInput: {},
 })
 export type Message = typeof Message.Type
 
@@ -274,17 +281,23 @@ const cardToDraft = (card: CaptureCard): CaptureDraft => {
   return Struct.assign(card.draft, { title: title === '' ? undefined : title })
 }
 
-const missingFieldOf = (field: string): string => {
-  if (field === 'start' || field === 'end') return 'timing'
-  if (field.startsWith('timing.')) return 'timing'
-  if (field.startsWith('repeat.')) return 'repeat'
-  return field
+const answeredFieldsOf = (field: string): ReadonlyArray<string> => {
+  if (field === 'timing' || field === 'timing.date') {
+    return ['timing', 'timing.start', 'timing.end', 'start', 'end']
+  }
+  if (field === 'timing.start' || field === 'start') {
+    return ['timing', 'timing.start', 'start']
+  }
+  if (field === 'timing.end' || field === 'end') return ['timing.end', 'end']
+  return [field]
 }
 
 const withoutMissing = (draft: CaptureDraft, field: string): CaptureDraft =>
   modifyFields(draft, {
-    missing: () =>
-      draft.missing.filter((entry) => entry.field !== missingFieldOf(field)),
+    missing: () => {
+      const answered = answeredFieldsOf(field)
+      return draft.missing.filter((entry) => !answered.includes(entry.field))
+    },
   })
 
 const setDraftField = (
@@ -300,10 +313,11 @@ const setDraftField = (
       })
     }
     if (field === 'dueAt') {
-      return Struct.assign(draft, {
-        dueAt: value === '' ? undefined : value,
-        dueDate: undefined,
-      })
+      if (value === '') {
+        return Struct.assign(draft, { dueAt: undefined, dueDate: undefined })
+      }
+      if (!isInstant(value)) return draft
+      return Struct.assign(draft, { dueAt: value, dueDate: undefined })
     }
     return draft
   }
@@ -322,7 +336,7 @@ const setDraftField = (
       })
     }
     if (field === 'timing.start' || field === 'start') {
-      if (value === '') return draft
+      if (value === '' || !isInstant(value)) return draft
       const current = draft.timing
       const end =
         current?._tag === 'timed'
@@ -333,7 +347,7 @@ const setDraftField = (
       })
     }
     if (field === 'timing.end' || field === 'end') {
-      if (value === '') return draft
+      if (value === '' || !isInstant(value)) return draft
       const current = draft.timing
       const start = current?._tag === 'timed' ? current.start : value
       return Struct.assign(draft, {
@@ -354,9 +368,9 @@ const setDraftField = (
 
   if (draft._tag === 'reminder') {
     if (field === 'fireAt') {
-      return Struct.assign(draft, {
-        fireAt: value === '' ? undefined : value,
-      })
+      if (value === '') return Struct.assign(draft, { fireAt: undefined })
+      if (!isInstant(value)) return draft
+      return Struct.assign(draft, { fireAt: value })
     }
     if (field === 'repeat.time') {
       const repeat = draft.repeat
@@ -374,15 +388,66 @@ const setDraftField = (
   return draft
 }
 
+/**
+ * A Needs Input `clockTime` picker reports `HH:mm`, but the event/task/reminder
+ * fields that store instants need a full timestamp. Resolve the clock time
+ * against the day the draft already carries; refuse (leave the card blocked)
+ * rather than writing a bare clock time into an instant field.
+ */
+const resolveClockAnswer = (
+  draft: CaptureDraft,
+  field: string,
+  value: string,
+  timeZone: string,
+): string | undefined => {
+  if (!isClockTime(value)) return value
+  if (draft._tag === 'task' && field === 'dueAt') {
+    const date =
+      draft.dueDate ??
+      (draft.dueAt === undefined || draft.dueAt === null
+        ? undefined
+        : instantPartsOf(draft.dueAt, timeZone)?.date)
+    return date === undefined ? undefined : instantOf(date, value, timeZone)
+  }
+  if (draft._tag === 'reminder' && field === 'fireAt') {
+    const date =
+      draft.fireAt === undefined || draft.fireAt === null
+        ? undefined
+        : instantPartsOf(draft.fireAt, timeZone)?.date
+    return date === undefined ? undefined : instantOf(date, value, timeZone)
+  }
+  if (
+    draft._tag === 'event' &&
+    (field === 'timing' ||
+      field === 'timing.date' ||
+      field === 'timing.start' ||
+      field === 'timing.end' ||
+      field === 'start' ||
+      field === 'end')
+  ) {
+    // A date question cannot be answered with a bare clock time.
+    if (field === 'timing' || field === 'timing.date') return undefined
+    const timing = draft.timing
+    const date =
+      timing === undefined
+        ? undefined
+        : timing._tag === 'allDay'
+          ? timing.date
+          : instantPartsOf(timing.start, timeZone)?.date
+    return date === undefined ? undefined : instantOf(date, value, timeZone)
+  }
+  return value
+}
+
 const answerNeedsInput = (
   draft: CaptureDraft,
   field: string,
   value: string,
+  timeZone: string,
 ): CaptureDraft => {
-  if (field === 'timing' || field === 'timing.date') {
-    return withoutMissing(setDraftField(draft, 'timing.date', value), field)
-  }
-  return withoutMissing(setDraftField(draft, field, value), field)
+  const resolved = resolveClockAnswer(draft, field, value, timeZone)
+  if (resolved === undefined) return draft
+  return withoutMissing(setDraftField(draft, field, resolved), field)
 }
 
 const toggleWeekday = (
@@ -675,7 +740,13 @@ export const update = (
         modifyFields(card, {
           // Editing the structural field is an answer too: the card's real
           // picker and the Needs Input picker write the same draft field.
-          draft: () => answerNeedsInput(card.draft, field, value),
+          draft: () =>
+            answerNeedsInput(
+              card.draft,
+              field,
+              value,
+              inputs.display.timeZone,
+            ),
         }),
       ),
     }),
@@ -684,7 +755,12 @@ export const update = (
       model: updateCard(model, index, (card) =>
         modifyFields(card, {
           draft: () =>
-            answerNeedsInput(card.draft, field, value),
+            answerNeedsInput(
+              card.draft,
+              field,
+              value,
+              inputs.display.timeZone,
+            ),
         }),
       ),
     }),
@@ -787,6 +863,9 @@ export const update = (
     }),
 
     CompletedCacheText: () => ({ model }),
+
+    /** A picker emitted an incomplete value (mid-pick); keep the model as is. */
+    IgnoredInput: () => ({ model }),
   })
 
 // VIEW

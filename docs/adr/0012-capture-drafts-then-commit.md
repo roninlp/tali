@@ -165,7 +165,7 @@ tree is a large artifact nobody can validate.
 
 ### 9. Bounded and observable
 
-4000-character input, 12 drafts, 30-second timeout, one retry, 20 captures per
+4000-character input, 12 drafts, 60-second timeout, one retry, 20 captures per
 user per hour using the fixed-window limiter pattern already used for login
 attempts, and a 60-second identical-text dedupe that returns the existing capture
 instead of paying for a second run.
