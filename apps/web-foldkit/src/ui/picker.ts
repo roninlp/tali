@@ -1193,6 +1193,7 @@ export const pickerTriggerView = <ParentMessage>(
   h: HtmlBuilder<ParentMessage>,
 ): Html => {
   const maybeDisplay = formatTriggerValue(config)
+
   const display = Option.getOrElse(
     maybeDisplay,
     () => config.placeholder ?? 'انتخاب کنید',

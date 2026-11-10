@@ -297,7 +297,7 @@ export interface GateFixtures {
  * about registration and builds its own users.
  */
 export const test = base.extend<GateFixtures>({
-  people: async ({}, use) => {
+  people: async (_fixtures, use) => {
     await use(readSeed())
   },
   alice: async ({ browser, people }, use) => {
