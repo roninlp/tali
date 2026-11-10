@@ -179,6 +179,9 @@ catalogs:
     '@effect/sql-d1':
       specifier: ~4.1.0
       version: 4.1.0
+    '@effect/tsgo':
+      specifier: 0.50.0
+      version: 0.50.0
     '@noble/hashes':
       specifier: ^2.4.0
       version: 2.4.0
@@ -229,6 +232,9 @@ importers:
 
   .:
     devDependencies:
+      '@effect/tsgo':
+        specifier: 'catalog:'
+        version: 0.50.0
       '@tali/lint-config':
         specifier: workspace:*
         version: link:packages/lint-config
@@ -331,7 +337,7 @@ importers:
         version: 0.170.0(@effect/platform-browser@4.1.0(effect@4.1.0))(effect@4.1.0)
     devDependencies:
       '@effect/tsgo':
-        specifier: 0.50.0
+        specifier: 'catalog:'
         version: 0.50.0
       '@foldkit/devtools':
         specifier: 0.170.0

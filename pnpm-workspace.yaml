@@ -12,6 +12,10 @@ catalog:
   # future install pick 4.2.x and fork the runtime Foldkit was built against.
   '@effect/platform-browser': ~4.1.0
   '@effect/platform-node': ~4.1.0
+  # Effect LSP / Effect diagnostics (`effect-tsgo`). Pinned exactly: each
+  # release is built against one TypeScript and one Oxlint version, so an
+  # automatic bump would unpatch the compiler on the next install.
+  '@effect/tsgo': 0.50.0
   '@effect/sql-d1': ~4.1.0
   '@tailwindcss/vite': ^4.3.3
   # TanStack AI: the Dissect run (ADR-0012 §7). `ai-openai` supplies the

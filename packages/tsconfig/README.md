@@ -14,3 +14,19 @@ preset that matches its runtime and keeps its own `include` list.
 
 The package has no build step; TypeScript reads the JSON directly through the
 workspace link.
+
+## Effect language service
+
+`base.json` and `web.json` enable the Effect LSP plugin
+(`@effect/language-service`) for every project that extends them, so editors
+get Effect diagnostics, hover, completions and refactors without per-package
+configuration. Two options keep the noise in check:
+
+- `diagnosticSeverity.unstableApiUsage` is `off`: Effect 4 marks much of the
+  API this repo builds on as unstable, and
+  `apps/web-foldkit/.oxlintrc.effect.json` opts out of the same rule.
+- `ignoreEffectWarningsInTscExitCode` is `true`: Effect warnings appear in
+  `pnpm typecheck` output but only Effect errors fail the build.
+
+The plugin is inert until the installed TypeScript is patched by
+`effect-tsgo patch`, which the root `prepare` script does on every install.

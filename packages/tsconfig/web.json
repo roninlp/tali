@@ -11,6 +11,13 @@
     "esModuleInterop": true,
     "exactOptionalPropertyTypes": true,
     "isolatedModules": true,
-    "noEmit": true
+    "noEmit": true,
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "diagnosticSeverity": { "unstableApiUsage": "off" },
+        "ignoreEffectWarningsInTscExitCode": true
+      }
+    ]
   }
 }

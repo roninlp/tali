@@ -15,6 +15,13 @@
     "useDefineForClassFields": true,
     "noUncheckedIndexedAccess": false,
     "exactOptionalPropertyTypes": false,
-    "noEmit": true
+    "noEmit": true,
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "diagnosticSeverity": { "unstableApiUsage": "off" },
+        "ignoreEffectWarningsInTscExitCode": true
+      }
+    ]
   }
 }

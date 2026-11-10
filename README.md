@@ -71,6 +71,34 @@ pnpm stack:deploy     # alchemy deploy
 pnpm stack:destroy    # alchemy destroy
 ```
 
+### TypeScript and the Effect language service
+
+The workspace compiler is `@effect/tsgo`: TypeScript 7 with the Effect language
+service built in. The root `prepare` script (`effect-tsgo patch`) swaps the
+installed compiler for the patched one on every `pnpm install`, so both `tsc`
+and the editor's TypeScript server get Effect diagnostics, hover quick-info,
+completions and refactors.
+
+- The plugin is enabled once in `@tali/tsconfig` (`base.json` and `web.json`),
+  so every project inherits it; `packages/tsconfig/README.md` explains the
+  options.
+- `pnpm typecheck` prints Effect diagnostics next to TypeScript's. Effect
+  suggestions and warnings are advisory — only Effect errors fail the build.
+- VS Code / Cursor: `.vscode/settings.json` points the editor at the workspace
+  compiler and the native TS server. Accept "Use Workspace Version" if asked,
+  and keep this the only TypeScript server in the workspace. Other editors
+  should run their TypeScript LSP from the same workspace compiler
+  (`node_modules/typescript/bin`).
+- Effect *linting* stays with Oxlint: `apps/web-foldkit/.oxlintrc.effect.json`
+  is the curated rule set that gates `pnpm lint`. The LSP reports the broader
+  set in the editor.
+- Check a project or file without an editor:
+
+  ```sh
+  pnpm exec effect-tsgo diagnostics --project apps/api/tsconfig.json --format text
+  pnpm exec effect-tsgo diagnostics --file apps/web-foldkit/src/main.ts --format json
+  ```
+
 Package-level dev servers still work on their own when you want one process:
 `pnpm --filter @tali/web-foldkit exec vite` (Vite on :3001). Alchemy owns the
 API Worker — there is no separate `wrangler dev` path.

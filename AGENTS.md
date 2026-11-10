@@ -20,6 +20,14 @@ The Solid app has been removed.
 - **AI setup:** Foldkit skills are linked in `.agents/skills/`; DevTools MCP is configured in `opencode.json` and `apps/web-foldkit/.mcp.json`. Start the app with `pnpm --filter @tali/web-foldkit dev` (port 3001), open it in a browser, then use the `foldkit_*` MCP tools to inspect the Model and Message history.
 - **Versions:** shared dependency versions are defined once in the pnpm catalog in `pnpm-workspace.yaml` and referenced as `catalog:` in each `package.json`. The whole workspace runs Effect 4.1. Bump shared versions in the catalog, not in individual manifests.
 
+## TypeScript and Effect diagnostics
+
+The root `prepare` script patches the workspace TypeScript install with `@effect/tsgo` (`effect-tsgo patch`), so `pnpm typecheck` emits Effect diagnostics as TypeScript diagnostics. The LSP plugin is configured once in `packages/tsconfig`; `unstableApiUsage` is off and Effect warnings do not fail `tsc`.
+
+- Read Effect diagnostics without an editor: `pnpm exec effect-tsgo diagnostics --project <tsconfig> --format json` (`--file <path>` for one file).
+- `@effect/tsgo` is pinned exactly in the catalog: each release is built against one TypeScript and one Oxlint version. Bump it together with `typescript` / `oxlint`.
+- Effect lint rules are separate and stay with Oxlint: `apps/web-foldkit/.oxlintrc.effect.json`, run by `pnpm --filter @tali/web-foldkit lint:effect`.
+
 ## Agent skills
 
 ### Issue tracker

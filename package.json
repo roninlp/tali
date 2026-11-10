@@ -5,6 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@12.6.0",
   "scripts": {
+    "prepare": "effect-tsgo patch",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "lint": "oxlint --ignore-pattern 'repos/**' --deny-warnings . && pnpm --filter @tali/web-foldkit lint:effect",
@@ -25,6 +26,7 @@
     "format:fix": "oxfmt ."
   },
   "devDependencies": {
+    "@effect/tsgo": "catalog:",
     "turbo": "^2.11.8",
     "typescript": "catalog:",
     "web-push": "^3.6.7",

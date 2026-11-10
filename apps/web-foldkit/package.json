@@ -23,7 +23,7 @@
     "foldkit": "0.170.0"
   },
   "devDependencies": {
-    "@effect/tsgo": "0.50.0",
+    "@effect/tsgo": "catalog:",
     "@foldkit/devtools": "0.170.0",
     "@foldkit/devtools-mcp": "0.26.0",
     "@foldkit/oxlint-plugin": "0.15.4",
