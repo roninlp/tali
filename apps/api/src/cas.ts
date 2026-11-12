@@ -1,7 +1,11 @@
 import { Effect } from 'effect'
 
 /**
- * Compare-and-swap retry loop shared by every mutating service (ADR-0007).
+ * Compare-and-swap retry loop shared by every mutating service: the
+ * service-side form of `docs/sync-protocol-draft.md` §4.2 ("Server apply,
+ * idempotent + atomic on D1"), where the entity upsert is guarded by
+ * `WHERE id = :id AND version = :baseVersion` and `applied_mutations`
+ * dedupes replays.
  *
  * The write path is always the same: a client sends a mutation with the
  * version it last saw, the service re-reads the row, applies the patch to the

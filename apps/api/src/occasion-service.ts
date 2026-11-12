@@ -881,6 +881,10 @@ export class OccasionService extends Context.Service<OccasionService>()(
           const replayed = yield* replayPreparation(viewer, input)
           if (Option.isSome(replayed)) return replayed.value
 
+          // Not `casUpdate`: the settled branch returns the live linked task
+          // *and* the occasion, but a null plan can only return that row. The
+          // pair would need a nullable placeholder plus a non-null assertion,
+          // so the loop stays, bounded by the shared `MAX_CAS_ATTEMPTS`.
           for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
             const current = yield* readOccasion(viewer, input.id, false)
 
