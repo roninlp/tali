@@ -1,11 +1,7 @@
-import { createHash } from 'node:crypto'
-import { readFileSync, readdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
-import { Layer, Schema, String as Str } from 'effect'
+import { Layer, Schema } from 'effect'
 import { HttpRouter } from 'effect/http'
-import { D1Client } from '@effect/sql-d1'
 import {
   addJalaliDays,
   taskBucketBounds,
@@ -16,6 +12,13 @@ import {
 } from '@tali/domain'
 import { AppLayer } from '../src/http-layer.js'
 import { FakeD1 } from './fake-d1.js'
+import {
+  seedHousehold,
+  seedMembership,
+  seedSession,
+  seedUser,
+} from './fixtures/seed.js'
+import { makeHarnessCore, type HarnessEnv } from './harness.js'
 
 /**
  * Ticket #42 at the HTTP seam: the real `GET /today` route, the real #36/#40
@@ -26,24 +29,11 @@ import { FakeD1 } from './fake-d1.js'
  * flags/counts, and the 401/403 edges.
  */
 
-const MIGRATIONS_DIR = new URL(
-  '../../../packages/sql/migrations/',
-  import.meta.url,
-)
-
-const migrationFiles = (): ReadonlyArray<string> =>
-  readdirSync(fileURLToPath(MIGRATIONS_DIR))
-    .filter(file => file.endsWith('.sql'))
-    .sort()
-
 const NOW = new Date().toISOString()
 const FUTURE = new Date(Date.now() + 60 * 60 * 1000).toISOString()
 const TZ = 'Asia/Tehran'
 const bounds = taskBucketBounds(TZ, NOW)
 const YESTERDAY = toIsoDate(addJalaliDays(toJalaliDate(bounds.today), -1))
-
-const sha256 = (value: string): string =>
-  createHash('sha256').update(value).digest('hex')
 
 const USER_A = uuidV7()
 const USER_B = uuidV7()
@@ -68,52 +58,14 @@ interface Harness {
   readonly dispose: () => Promise<void>
 }
 
+const appLayer = ({ d1 }: HarnessEnv) => AppLayer.pipe(Layer.provide(d1))
+
 const makeHarness = async (): Promise<Harness> => {
-  const db = new DatabaseSync(':memory:')
-  for (const file of migrationFiles()) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), 'utf8'))
-  }
-
-  const fake = new FakeD1(db)
-  const d1 = D1Client.layer({
-    db: fake.asD1Database(),
-    transformQueryNames: Str.camelToSnake,
-    transformResultNames: Str.snakeToCamel,
+  const harness = makeHarnessCore(appLayer)
+  const { db } = harness
+  const { handler, dispose } = HttpRouter.toWebHandler(harness.layer, {
+    disableLogger: true,
   })
-  const { handler, dispose } = HttpRouter.toWebHandler(
-    AppLayer.pipe(Layer.provide(d1)),
-    { disableLogger: true },
-  )
-
-  const seedUser = (id: string, email: string, timeZone: string): void => {
-    db.prepare(
-      `INSERT INTO users
-        (id, email, credential_verifier, credential_salt, kdf_version,
-         display_name, time_zone, week_start, digits, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 1, ?, ?, 'saturday', 'persian', ?, ?)`,
-    ).run(id, email, '0'.repeat(64), '0'.repeat(32), email, timeZone, NOW, NOW)
-  }
-
-  const seedSession = (userId: string, token: string): void => {
-    db.prepare(
-      `INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
-    ).run(uuidV7(), userId, sha256(token), FUTURE, NOW)
-  }
-
-  const seedHousehold = (id: string, creator: string, invite: string): void => {
-    db.prepare(
-      `INSERT INTO households (id, name, invite_code, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
-    ).run(id, invite, invite, creator, NOW)
-  }
-
-  const seedMembership = (userId: string, householdId: string): void => {
-    db.prepare(
-      `INSERT INTO memberships (id, household_id, user_id, role, joined_at)
-       VALUES (?, ?, ?, 'owner', ?)`,
-    ).run(uuidV7(), householdId, userId, NOW)
-  }
 
   interface TaskSeed {
     readonly id: string
@@ -185,23 +137,66 @@ const makeHarness = async (): Promise<Harness> => {
     )
   }
 
-  seedUser(USER_A, 'today-a@example.com', TZ)
-  seedUser(USER_B, 'today-b@example.com', TZ)
-  seedUser(USER_C, 'today-c@example.com', TZ)
-  seedUser(USER_EMPTY, 'today-e@example.com', TZ)
-  seedUser(USER_NO_HOUSEHOLD, 'today-d@example.com', TZ)
-  seedHousehold(HOUSEHOLD, USER_A, 'TODAY-A')
-  seedHousehold(OTHER_HOUSEHOLD, USER_C, 'TODAY-C')
-  seedHousehold(EMPTY_HOUSEHOLD, USER_EMPTY, 'TODAY-E')
-  seedMembership(USER_A, HOUSEHOLD)
-  seedMembership(USER_B, HOUSEHOLD)
-  seedMembership(USER_C, OTHER_HOUSEHOLD)
-  seedMembership(USER_EMPTY, EMPTY_HOUSEHOLD)
-  seedSession(USER_A, TOKEN_A)
-  seedSession(USER_B, TOKEN_B)
-  seedSession(USER_C, TOKEN_C)
-  seedSession(USER_EMPTY, TOKEN_EMPTY)
-  seedSession(USER_NO_HOUSEHOLD, TOKEN_NO_HOUSEHOLD)
+  seedUser(db, {
+    id: USER_A,
+    email: 'today-a@example.com',
+    timeZone: TZ,
+    now: NOW,
+  })
+  seedUser(db, {
+    id: USER_B,
+    email: 'today-b@example.com',
+    timeZone: TZ,
+    now: NOW,
+  })
+  seedUser(db, {
+    id: USER_C,
+    email: 'today-c@example.com',
+    timeZone: TZ,
+    now: NOW,
+  })
+  seedUser(db, {
+    id: USER_EMPTY,
+    email: 'today-e@example.com',
+    timeZone: TZ,
+    now: NOW,
+  })
+  seedUser(db, {
+    id: USER_NO_HOUSEHOLD,
+    email: 'today-d@example.com',
+    timeZone: TZ,
+    now: NOW,
+  })
+  seedHousehold(db, {
+    id: HOUSEHOLD,
+    creator: USER_A,
+    inviteCode: 'TODAY-A',
+    now: NOW,
+  })
+  seedHousehold(db, {
+    id: OTHER_HOUSEHOLD,
+    creator: USER_C,
+    inviteCode: 'TODAY-C',
+    now: NOW,
+  })
+  seedHousehold(db, {
+    id: EMPTY_HOUSEHOLD,
+    creator: USER_EMPTY,
+    inviteCode: 'TODAY-E',
+    now: NOW,
+  })
+  seedMembership(db, USER_A, HOUSEHOLD, { now: NOW })
+  seedMembership(db, USER_B, HOUSEHOLD, { now: NOW })
+  seedMembership(db, USER_C, OTHER_HOUSEHOLD, { now: NOW })
+  seedMembership(db, USER_EMPTY, EMPTY_HOUSEHOLD, { now: NOW })
+  seedSession(db, USER_A, TOKEN_A, { now: NOW, expiresAt: FUTURE })
+  seedSession(db, USER_B, TOKEN_B, { now: NOW, expiresAt: FUTURE })
+  seedSession(db, USER_C, TOKEN_C, { now: NOW, expiresAt: FUTURE })
+  seedSession(db, USER_EMPTY, TOKEN_EMPTY, { now: NOW, expiresAt: FUTURE })
+  seedSession(db, USER_NO_HOUSEHOLD, TOKEN_NO_HOUSEHOLD, {
+    now: NOW,
+    expiresAt: FUTURE,
+  })
 
   db.prepare(
     `INSERT INTO user_preferences
@@ -337,7 +332,7 @@ const makeHarness = async (): Promise<Harness> => {
     updatedAt: '2025-12-30T00:00:00.000Z',
   })
 
-  return { db, fake, handler, dispose }
+  return { db, fake: harness.fake, handler, dispose }
 }
 
 const getToday = async (

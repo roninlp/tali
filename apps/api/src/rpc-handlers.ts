@@ -11,18 +11,20 @@ import {
   OccasionForbidden,
   TaskForbidden,
   Unauthorized,
+  type WeekStart,
 } from '@tali/domain'
-import { AuthService } from './auth-service.js'
+import type { AuthService } from './auth-service.js'
 import { CaptureService, type CaptureViewer } from './capture-service.js'
 import { EventService, type EventViewer } from './event-service.js'
 import { HabitService, type HabitViewer } from './habit-service.js'
+import { SESSION_COOKIE } from './http-envelope.js'
 import { ListService, type ListViewer } from './list-service.js'
 import { NoteService } from './note-service.js'
 import { OccasionService, type OccasionViewer } from './occasion-service.js'
-import { PreferencesService } from './preferences-service.js'
+import type { PreferencesService } from './preferences-service.js'
+import { principalFromToken } from './principal.js'
 import { ReminderService, type ReminderViewer } from './reminder-service.js'
 import { TaskService, type TaskViewer } from './task-service.js'
-import { SESSION_COOKIE } from './auth-routes.js'
 
 /**
  * The RPC handler map (ticket #36).
@@ -44,39 +46,59 @@ const cookieToken = (cookie: string | undefined): string | undefined => {
   return undefined
 }
 
+/**
+ * The edge always resolves `weekStart` from the stored preferences, so it can
+ * promise what the service-level `TaskViewer` leaves optional.
+ */
+type RpcViewer = TaskViewer & { readonly weekStart: WeekStart }
+
 export const viewerFromHeaders = (
   headers: Headers,
 ): Effect.Effect<
-  TaskViewer,
+  RpcViewer,
   Unauthorized | TaskForbidden,
   AuthService | PreferencesService
 > =>
   Effect.gen(function* () {
-    const auth = yield* AuthService
-    const preferences = yield* PreferencesService
     const token = cookieToken(headers['cookie'])
     if (token === undefined) {
-      return yield* Effect.fail(new Unauthorized())
+      return yield* new Unauthorized()
     }
-    const context = yield* auth.me(token)
+    const { context, preferences } = yield* principalFromToken(token)
     if (context.householdId === null) {
-      return yield* Effect.fail(
-        new TaskForbidden({ id: null, reason: 'noHousehold' }),
-      )
+      return yield* new TaskForbidden({ id: null, reason: 'noHousehold' })
     }
-    const prefs = yield* preferences.get(context.user.id, {
-      timeZone: context.user.timeZone,
-      weekStart: context.user.weekStart,
-      digits: context.user.digits,
-    })
     return {
       userId: context.user.id,
       householdId: context.householdId,
-      timeZone: prefs.timeZone,
-      weekStart: prefs.weekStart,
-      defaultCheckedPlacement: prefs.checkedItemPlacement,
+      timeZone: preferences.timeZone,
+      weekStart: preferences.weekStart,
+      defaultCheckedPlacement: preferences.checkedItemPlacement,
     } as const
   })
+
+/**
+ * Resolve the viewer, then run the handler. Notes, lists, events, habits,
+ * reminders, occasions and capture each keep their own typed forbidden error,
+ * so the edge's "no household" failure is translated into that aggregate's
+ * error instead of leaking a task-named tag into another contract. A forbidden
+ * error raised by the handler itself passes through untouched.
+ */
+const withServiceViewer = <A, E, F, R>(
+  headers: Headers,
+  forbidden: (reason: 'private' | 'household' | 'noHousehold') => F,
+  run: (viewer: RpcViewer) => Effect.Effect<A, E, R>,
+): Effect.Effect<
+  A,
+  E | F | Unauthorized,
+  AuthService | PreferencesService | R
+> =>
+  viewerFromHeaders(headers).pipe(
+    Effect.mapError(error =>
+      error._tag === 'TaskForbidden' ? forbidden(error.reason) : error,
+    ),
+    Effect.flatMap(run),
+  )
 
 const withViewer = <A, E, R>(
   headers: Headers,
@@ -86,17 +108,12 @@ const withViewer = <A, E, R>(
   E | Unauthorized | TaskForbidden,
   AuthService | PreferencesService | R
 > =>
-  Effect.gen(function* () {
-    const viewer = yield* viewerFromHeaders(headers)
-    return yield* run(viewer)
-  })
+  withServiceViewer(
+    headers,
+    reason => new TaskForbidden({ id: null, reason }),
+    run,
+  )
 
-/**
- * Notes have their own typed forbidden error, so the edge's "no household"
- * failure is mapped into `NoteForbidden` before the handler runs. This keeps
- * each aggregate's wire union self-contained instead of leaking a task-named
- * tag into the note contract.
- */
 const withNoteViewer = <A, E, R>(
   headers: Headers,
   run: (viewer: TaskViewer) => Effect.Effect<A, E, R>,
@@ -105,19 +122,12 @@ const withNoteViewer = <A, E, R>(
   E | Unauthorized | NoteForbidden,
   AuthService | PreferencesService | R
 > =>
-  viewerFromHeaders(headers).pipe(
-    Effect.mapError(error =>
-      error._tag === 'TaskForbidden'
-        ? new NoteForbidden({ id: error.id, reason: error.reason })
-        : error,
-    ),
-    Effect.flatMap(run),
+  withServiceViewer(
+    headers,
+    reason => new NoteForbidden({ id: null, reason }),
+    run,
   )
 
-/**
- * Lists have their own typed forbidden error, so the edge's "no household"
- * failure is mapped before the handler runs (same pattern as notes).
- */
 const withListViewer = <A, E, R>(
   headers: Headers,
   run: (viewer: ListViewer) => Effect.Effect<A, E, R>,
@@ -126,19 +136,12 @@ const withListViewer = <A, E, R>(
   E | Unauthorized | ListForbidden,
   AuthService | PreferencesService | R
 > =>
-  viewerFromHeaders(headers).pipe(
-    Effect.mapError(error =>
-      error._tag === 'TaskForbidden'
-        ? new ListForbidden({ id: error.id, reason: error.reason })
-        : error,
-    ),
-    Effect.flatMap(run),
+  withServiceViewer(
+    headers,
+    reason => new ListForbidden({ id: null, reason }),
+    run,
   )
 
-/**
- * Events have their own typed forbidden error, so the edge's "no household"
- * failure is mapped before the handler runs (same pattern as notes/lists).
- */
 const withEventViewer = <A, E, R>(
   headers: Headers,
   run: (viewer: EventViewer) => Effect.Effect<A, E, R>,
@@ -147,19 +150,12 @@ const withEventViewer = <A, E, R>(
   E | Unauthorized | EventForbidden,
   AuthService | PreferencesService | R
 > =>
-  viewerFromHeaders(headers).pipe(
-    Effect.mapError(error =>
-      error._tag === 'TaskForbidden'
-        ? new EventForbidden({ id: error.id, reason: error.reason })
-        : error,
-    ),
-    Effect.flatMap(run),
+  withServiceViewer(
+    headers,
+    reason => new EventForbidden({ id: null, reason }),
+    run,
   )
 
-/**
- * Habits have their own typed forbidden error, so the edge's "no household"
- * failure is mapped before the handler runs (same pattern as notes/lists/events).
- */
 const withHabitViewer = <A, E, R>(
   headers: Headers,
   run: (viewer: HabitViewer) => Effect.Effect<A, E, R>,
@@ -168,20 +164,12 @@ const withHabitViewer = <A, E, R>(
   E | Unauthorized | HabitForbidden,
   AuthService | PreferencesService | R
 > =>
-  viewerFromHeaders(headers).pipe(
-    Effect.mapError(error =>
-      error._tag === 'TaskForbidden'
-        ? new HabitForbidden({ id: error.id, reason: error.reason })
-        : error,
-    ),
-    Effect.flatMap(run),
+  withServiceViewer(
+    headers,
+    reason => new HabitForbidden({ id: null, reason }),
+    run,
   )
 
-/**
- * Reminders have their own typed forbidden error (same pattern as notes,
- * lists and events), so the edge's "no household" failure is mapped before
- * the handler runs.
- */
 const withReminderViewer = <A, E, R>(
   headers: Headers,
   run: (viewer: ReminderViewer) => Effect.Effect<A, E, R>,
@@ -190,19 +178,12 @@ const withReminderViewer = <A, E, R>(
   E | Unauthorized | ReminderForbidden,
   AuthService | PreferencesService | R
 > =>
-  viewerFromHeaders(headers).pipe(
-    Effect.mapError(error =>
-      error._tag === 'TaskForbidden'
-        ? new ReminderForbidden({ id: error.id, reason: error.reason })
-        : error,
-    ),
-    Effect.flatMap(run),
+  withServiceViewer(
+    headers,
+    reason => new ReminderForbidden({ id: null, reason }),
+    run,
   )
 
-/**
- * Occasions have their own typed forbidden error, so the edge's "no household"
- * failure is mapped before the handler runs (same pattern as events).
- */
 const withOccasionViewer = <A, E, R>(
   headers: Headers,
   run: (viewer: OccasionViewer) => Effect.Effect<A, E, R>,
@@ -211,19 +192,12 @@ const withOccasionViewer = <A, E, R>(
   E | Unauthorized | OccasionForbidden,
   AuthService | PreferencesService | R
 > =>
-  viewerFromHeaders(headers).pipe(
-    Effect.mapError(error =>
-      error._tag === 'TaskForbidden'
-        ? new OccasionForbidden({ id: error.id, reason: error.reason })
-        : error,
-    ),
-    Effect.flatMap(run),
+  withServiceViewer(
+    headers,
+    reason => new OccasionForbidden({ id: null, reason }),
+    run,
   )
 
-/**
- * Capture has its own typed forbidden error (same pattern as notes/lists). The
- * viewer also carries the display week start the Dissect prompt needs.
- */
 const withCaptureViewer = <A, E, R>(
   headers: Headers,
   run: (viewer: CaptureViewer) => Effect.Effect<A, E, R>,
@@ -232,20 +206,16 @@ const withCaptureViewer = <A, E, R>(
   E | Unauthorized | CaptureForbidden,
   AuthService | PreferencesService | R
 > =>
-  viewerFromHeaders(headers).pipe(
-    Effect.mapError(error =>
-      error._tag === 'TaskForbidden'
-        ? new CaptureForbidden({ reason: error.reason })
-        : error,
-    ),
-    Effect.flatMap(viewer =>
+  withServiceViewer(
+    headers,
+    reason => new CaptureForbidden({ reason }),
+    viewer =>
       run({
         userId: viewer.userId,
         householdId: viewer.householdId,
         timeZone: viewer.timeZone,
-        weekStart: viewer.weekStart ?? 'saturday',
+        weekStart: viewer.weekStart,
       }),
-    ),
   )
 
 export const RpcHandlers = ApiRpcs.toLayer({

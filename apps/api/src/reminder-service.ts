@@ -32,14 +32,13 @@ import {
   type ReminderInboxQuery,
   ReminderNotFound,
   type ReminderPatch,
-  type ReminderRepeat,
+  ReminderRepeat,
   type ReminderResponseResult,
   type ReminderRespondInput,
   type ReminderServiceError,
   type ReminderUpdateInput,
   ReminderValidationError,
   type ReminderMutationInput,
-  type SyncEntityType,
   Task,
   type TaskId,
   type UserId,
@@ -54,6 +53,10 @@ import {
   resolveCreateVisibility,
   uuidV7,
 } from '@tali/domain'
+import { readScoped } from './row-scope.js'
+import { casUpdate } from './cas.js'
+import { makeSyncKit, type CommitEntry } from './sync-write.js'
+import { unchangedExcept } from './patch-compare.js'
 
 /**
  * `ReminderService` — create, edit, silence, delete, and the response log
@@ -91,9 +94,6 @@ import {
  * A snooze inserts exactly one child row (unique on `parent_dispatch_id`) and
  * leaves the series' `fireAt` untouched — snooze is this-occurrence-only.
  */
-
-/** How many CAS retries a service mutation makes before reporting contention. */
-const MAX_CAS_ATTEMPTS = 3
 
 export interface ReminderViewer {
   readonly userId: UserId
@@ -220,64 +220,16 @@ export class ReminderService extends Context.Service<ReminderService>()(
       const occasions = yield* OccasionRepo
       const sync = yield* SyncRepo
 
-      const definition = (entityType: SyncEntityType) => {
-        const def = sync.definition(entityType)
-        if (def === undefined) {
-          throw new Error(`sync entity type is not registered: ${entityType}`)
-        }
-        return def
-      }
+      const kit = makeSyncKit<ReminderServiceError>({ sync, invalid })
 
       /** Turn a validated aggregate into the registry's trusted write state. */
-      const reminderState = (reminder: Reminder): SyncEntityState => {
-        const def = definition('reminder')
-        return {
-          entityType: 'reminder',
-          entityId: reminder.id,
-          householdId: reminder.householdId,
-          ownerId: reminder.ownerId,
-          visibility: reminder.visibility,
-          version: reminder.version,
-          updatedAt: reminder.updatedAt,
-          deletedAt: reminder.deletedAt,
-          data: def.validate(
-            { ...reminder },
-            {
-              version: reminder.version,
-              updatedAt: reminder.updatedAt,
-              deletedAt: reminder.deletedAt,
-            },
-          ),
-        }
-      }
+      const reminderState = (reminder: Reminder): SyncEntityState =>
+        kit.stateOf('reminder', reminder)
 
       const appliedMutation = (
         viewer: ReminderViewer,
         clientMutationId: string,
-      ) =>
-        Effect.gen(function* () {
-          const applied = yield* sync
-            .findApplied({
-              householdId: viewer.householdId,
-              clientMutationIds: [clientMutationId],
-            })
-            .pipe(Effect.orDie)
-          return Option.fromUndefinedOr(applied.get(clientMutationId))
-        })
-
-      /** A mutation id may not be reused for a different row or aggregate. */
-      const reusedMutationId = (
-        row: { readonly entityType: SyncEntityType; readonly entityId: string },
-        expectedId?: string,
-      ): boolean =>
-        row.entityType !== 'reminder' ||
-        (expectedId !== undefined && row.entityId !== expectedId)
-
-      const reusedMutationIdError = (_id: string) =>
-        invalid(
-          'clientMutationId',
-          'this mutation id was already applied to a different change',
-        )
+      ) => kit.appliedMutation(viewer.householdId, clientMutationId)
 
       /** Read one reminder with the standard scope rules. */
       const readReminder = (
@@ -285,29 +237,16 @@ export class ReminderService extends Context.Service<ReminderService>()(
         id: ReminderId,
         includeTrashed: boolean,
       ): Effect.Effect<Reminder, ReminderServiceError> =>
-        Effect.gen(function* () {
-          const found = yield* reminders.findById(id).pipe(Effect.orDie)
-          if (Option.isNone(found)) {
-            return yield* Effect.fail(new ReminderNotFound({ id }))
-          }
-          const reminder = found.value
-          if (reminder.householdId !== viewer.householdId) {
-            return yield* Effect.fail(
-              new ReminderForbidden({ id, reason: 'household' }),
-            )
-          }
-          if (
-            reminder.visibility === 'private' &&
-            reminder.ownerId !== viewer.userId
-          ) {
-            return yield* Effect.fail(
-              new ReminderForbidden({ id, reason: 'private' }),
-            )
-          }
-          if (!includeTrashed && reminder.deletedAt !== null) {
-            return yield* Effect.fail(new ReminderNotFound({ id }))
-          }
-          return reminder
+        readScoped({
+          viewer,
+          id,
+          find: reminders.findById,
+          includeTrashed,
+          trash: 'last',
+          onViolation: violation =>
+            violation === 'notFound' || violation === 'trashed'
+              ? new ReminderNotFound({ id })
+              : new ReminderForbidden({ id, reason: violation }),
         })
 
       /** Replay guard: the same mutation id already committed (lost response). */
@@ -319,8 +258,13 @@ export class ReminderService extends Context.Service<ReminderService>()(
         Effect.gen(function* () {
           const row = yield* appliedMutation(viewer, clientMutationId)
           if (Option.isNone(row)) return Option.none()
-          if (reusedMutationId(row.value, expectedId)) {
-            return yield* reusedMutationIdError(
+          if (
+            kit.reusedMutationId(row.value, {
+              entityType: 'reminder',
+              id: expectedId,
+            })
+          ) {
+            return yield* kit.reusedMutationIdError(
               expectedId ?? row.value.entityId,
             )
           }
@@ -358,17 +302,19 @@ export class ReminderService extends Context.Service<ReminderService>()(
               }
               const task = found.value
               if (task.householdId !== viewer.householdId) {
-                return yield* Effect.fail(
-                  new ReminderForbidden({ id: task.id, reason: 'household' }),
-                )
+                return yield* new ReminderForbidden({
+                  id: task.id,
+                  reason: 'household',
+                })
               }
               if (
                 task.visibility === 'private' &&
                 task.ownerId !== viewer.userId
               ) {
-                return yield* Effect.fail(
-                  new ReminderForbidden({ id: task.id, reason: 'private' }),
-                )
+                return yield* new ReminderForbidden({
+                  id: task.id,
+                  reason: 'private',
+                })
               }
               return linkedInstantOf(task)
             }
@@ -384,17 +330,19 @@ export class ReminderService extends Context.Service<ReminderService>()(
               }
               const event = found.value
               if (event.householdId !== viewer.householdId) {
-                return yield* Effect.fail(
-                  new ReminderForbidden({ id: event.id, reason: 'household' }),
-                )
+                return yield* new ReminderForbidden({
+                  id: event.id,
+                  reason: 'household',
+                })
               }
               if (
                 event.visibility === 'private' &&
                 event.ownerId !== viewer.userId
               ) {
-                return yield* Effect.fail(
-                  new ReminderForbidden({ id: event.id, reason: 'private' }),
-                )
+                return yield* new ReminderForbidden({
+                  id: event.id,
+                  reason: 'private',
+                })
               }
               return linkedInstantOf(event)
             }
@@ -412,20 +360,19 @@ export class ReminderService extends Context.Service<ReminderService>()(
               }
               const occasion = found.value
               if (occasion.householdId !== viewer.householdId) {
-                return yield* Effect.fail(
-                  new ReminderForbidden({
-                    id: occasion.id,
-                    reason: 'household',
-                  }),
-                )
+                return yield* new ReminderForbidden({
+                  id: occasion.id,
+                  reason: 'household',
+                })
               }
               if (
                 occasion.visibility === 'private' &&
                 occasion.ownerId !== viewer.userId
               ) {
-                return yield* Effect.fail(
-                  new ReminderForbidden({ id: occasion.id, reason: 'private' }),
-                )
+                return yield* new ReminderForbidden({
+                  id: occasion.id,
+                  reason: 'private',
+                })
               }
               // An occasion's advance instant is a projection of the occurrence,
               // not one stored instant, so there is no link-derived default: the
@@ -459,30 +406,7 @@ export class ReminderService extends Context.Service<ReminderService>()(
       const decodeRepeat = (
         repeat: ReminderRepeat,
       ): Effect.Effect<ReminderRepeat, ReminderValidationError> => {
-        const decoded = Schema.decodeUnknownOption(
-          Schema.Union([
-            Schema.Struct({ _tag: Schema.Literal('once') }),
-            Schema.Struct({
-              _tag: Schema.Literal('daily'),
-              time: Schema.String.check(
-                Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/),
-              ),
-            }),
-            Schema.Struct({
-              _tag: Schema.Literal('weekly'),
-              days: Schema.Array(
-                Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 7 })),
-              ).check(Schema.isMinLength(1)),
-              time: Schema.String.check(
-                Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/),
-              ),
-            }),
-            Schema.Struct({
-              _tag: Schema.Literal('interval'),
-              hours: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
-            }),
-          ]),
-        )(repeat)
+        const decoded = Schema.decodeOption(ReminderRepeat)(repeat)
         return Option.isNone(decoded)
           ? invalid('repeat', 'the repeat pattern is not valid')
           : Effect.succeed(decoded.value)
@@ -515,97 +439,6 @@ export class ReminderService extends Context.Service<ReminderService>()(
             )
           }
           return normalizeInstant(fireAt)
-        })
-
-      interface CommitEntry {
-        readonly state: SyncEntityState
-        readonly expectedVersion: number | null
-        readonly clientMutationId: string
-        readonly op?: 'upsert' | 'delete'
-      }
-
-      /** One batch: entity write, gated feed, gated ledger, gated index hook. */
-      const commitEntries = (input: {
-        readonly viewer: ReminderViewer
-        readonly entries: ReadonlyArray<CommitEntry>
-        readonly now: string
-      }): Effect.Effect<boolean, ReminderServiceError> =>
-        Effect.gen(function* () {
-          if (input.entries.length === 0) return true
-          const ids = input.entries.map(entry => entry.clientMutationId)
-          const prior = yield* sync
-            .findApplied({
-              householdId: input.viewer.householdId,
-              clientMutationIds: ids,
-            })
-            .pipe(Effect.orDie)
-          for (const entry of input.entries) {
-            const row = Option.fromUndefinedOr(
-              prior.get(entry.clientMutationId),
-            )
-            if (
-              Option.isSome(row) &&
-              reusedMutationId(row.value, entry.state.entityId)
-            ) {
-              return yield* reusedMutationIdError(entry.state.entityId)
-            }
-          }
-
-          const statements = input.entries.flatMap(entry => [
-            sync.writeEntity({
-              state: entry.state,
-              expectedVersion: entry.expectedVersion,
-            }),
-            sync.appendFeed({
-              householdId: input.viewer.householdId,
-              entityType: entry.state.entityType,
-              entityId: entry.state.entityId,
-              op: entry.op ?? 'upsert',
-              version: entry.state.version,
-              updatedAt: entry.state.updatedAt,
-              ownerId: entry.state.ownerId,
-              visibility: entry.state.visibility,
-            }),
-            sync.recordApplied({
-              clientMutationId: entry.clientMutationId,
-              householdId: input.viewer.householdId,
-              entityType: entry.state.entityType,
-              entityId: entry.state.entityId,
-              version: entry.state.version,
-              createdAt: input.now,
-            }),
-            ...sync.indexStatements(entry.state),
-          ])
-          yield* sync.commit(statements).pipe(Effect.orDie)
-
-          const applied = yield* sync
-            .findApplied({
-              householdId: input.viewer.householdId,
-              clientMutationIds: ids,
-            })
-            .pipe(Effect.orDie)
-          return ids.every(id => applied.has(id))
-        })
-
-      const commitReminder = (input: {
-        readonly viewer: ReminderViewer
-        readonly state: SyncEntityState
-        readonly expectedVersion: number | null
-        readonly clientMutationId: string
-        readonly now: string
-        readonly op?: 'upsert' | 'delete'
-      }): Effect.Effect<boolean, ReminderServiceError> =>
-        commitEntries({
-          viewer: input.viewer,
-          now: input.now,
-          entries: [
-            {
-              state: input.state,
-              expectedVersion: input.expectedVersion,
-              clientMutationId: input.clientMutationId,
-              op: input.op,
-            },
-          ],
         })
 
       const create = (
@@ -669,15 +502,15 @@ export class ReminderService extends Context.Service<ReminderService>()(
             deletedAt: null,
           })
 
-          const applied = yield* commitReminder({
-            viewer,
+          const applied = yield* kit.commitOne({
+            householdId: viewer.householdId,
             state: reminderState(reminder),
             expectedVersion: null,
             clientMutationId: input.clientMutationId,
             now,
           })
           if (!applied) {
-            return yield* Effect.fail(new ReminderConflict({ id: reminder.id }))
+            return yield* new ReminderConflict({ id: reminder.id })
           }
           return reminder
         })
@@ -776,22 +609,6 @@ export class ReminderService extends Context.Service<ReminderService>()(
           })
         })
 
-      /** Are two reminders equal in every field the service owns? */
-      const sameReminder = (a: Reminder, b: Reminder): boolean =>
-        a.title === b.title &&
-        a.note === b.note &&
-        a.kind === b.kind &&
-        a.tier === b.tier &&
-        a.repeat._tag === b.repeat._tag &&
-        JSON.stringify(a.repeat) === JSON.stringify(b.repeat) &&
-        a.fireAt === b.fireAt &&
-        a.offsetMinutes === b.offsetMinutes &&
-        JSON.stringify(a.link) === JSON.stringify(b.link) &&
-        a.silencedUntil === b.silencedUntil &&
-        a.timeZone === b.timeZone &&
-        a.color === b.color &&
-        a.visibility === b.visibility
-
       const update = (
         viewer: ReminderViewer,
         input: Schema.Schema.Type<typeof ReminderUpdateInput>,
@@ -805,20 +622,37 @@ export class ReminderService extends Context.Service<ReminderService>()(
           )
           if (Option.isSome(replayed)) return replayed.value
 
-          for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-            const current = yield* readReminder(viewer, input.id, false)
-            const next = yield* patchReminder(viewer, current, input.patch, now)
-            if (sameReminder(current, next)) return current
-            const applied = yield* commitReminder({
-              viewer,
-              state: reminderState(next),
-              expectedVersion: current.version,
-              clientMutationId: input.clientMutationId,
-              now,
-            })
-            if (applied) return next
-          }
-          return yield* Effect.fail(new ReminderConflict({ id: input.id }))
+          return yield* casUpdate({
+            read: readReminder(viewer, input.id, false),
+            plan: current =>
+              Effect.gen(function* () {
+                const next = yield* patchReminder(
+                  viewer,
+                  current,
+                  input.patch,
+                  now,
+                )
+                // `patchReminder` writes patch fields only (`tier` comes from
+                // `kind`), plus one plan-only mutation: a scheduling patch
+                // re-derives `fireAt` from `now`, so an identical schedule
+                // patch still re-arms an overdue reminder. `fireAt` is in the
+                // patch schema, but only when the caller sent it — the derived
+                // value needs its own comparison or that re-arm is dropped.
+                return unchangedExcept(current, next, input.patch) &&
+                  current.fireAt === next.fireAt
+                  ? null
+                  : next
+              }),
+            write: (current, next) =>
+              kit.commitOne({
+                householdId: viewer.householdId,
+                state: reminderState(next),
+                expectedVersion: current.version,
+                clientMutationId: input.clientMutationId,
+                now,
+              }),
+            conflict: () => new ReminderConflict({ id: input.id }),
+          })
         })
 
       /** Soft delete: tombstone + the registry hook expires any owed dispatch. */
@@ -835,25 +669,28 @@ export class ReminderService extends Context.Service<ReminderService>()(
           )
           if (Option.isSome(replayed)) return replayed.value
 
-          for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-            const current = yield* readReminder(viewer, input.id, false)
-            const next = new Reminder({
-              ...current,
-              deletedAt: now,
-              version: current.version + 1,
-              updatedAt: now,
-            })
-            const applied = yield* commitReminder({
-              viewer,
-              state: reminderState(next),
-              expectedVersion: current.version,
-              clientMutationId: input.clientMutationId,
-              now,
-              op: 'delete',
-            })
-            if (applied) return next
-          }
-          return yield* Effect.fail(new ReminderConflict({ id: input.id }))
+          return yield* casUpdate({
+            read: readReminder(viewer, input.id, false),
+            plan: current =>
+              Effect.succeed(
+                new Reminder({
+                  ...current,
+                  deletedAt: now,
+                  version: current.version + 1,
+                  updatedAt: now,
+                }),
+              ),
+            write: (current, next) =>
+              kit.commitOne({
+                householdId: viewer.householdId,
+                state: reminderState(next),
+                expectedVersion: current.version,
+                clientMutationId: input.clientMutationId,
+                now,
+                op: 'delete',
+              }),
+            conflict: () => new ReminderConflict({ id: input.id }),
+          })
         })
 
       const list = (
@@ -917,80 +754,35 @@ export class ReminderService extends Context.Service<ReminderService>()(
             version: task.version + 1,
             updatedAt: now,
           })
-          const taskDefinition = definition('task')
-          const state = (value: Task): SyncEntityState => ({
-            entityType: 'task',
-            entityId: value.id,
-            householdId: value.householdId,
-            ownerId: value.ownerId,
-            visibility: value.visibility,
-            version: value.version,
-            updatedAt: value.updatedAt,
-            deletedAt: value.deletedAt,
-            data: taskDefinition.validate(
-              { ...value },
-              {
-                version: value.version,
-                updatedAt: value.updatedAt,
-                deletedAt: value.deletedAt,
-              },
-            ),
-          })
-          const nextState = state(next)
-          const statements = [
-            sync.writeEntity({
-              state: nextState,
+          const doneState = kit.stateOf('task', next)
+          const entries: Array<CommitEntry> = [
+            {
+              state: doneState,
               expectedVersion: task.version,
-            }),
-            sync.appendFeed({
-              householdId: viewer.householdId,
-              entityType: 'task',
-              entityId: next.id,
-              op: 'upsert',
-              version: next.version,
-              updatedAt: next.updatedAt,
-              ownerId: next.ownerId,
-              visibility: next.visibility,
-            }),
-            sync.recordApplied({
               clientMutationId: `reminder-done:${dispatchId}`,
-              householdId: viewer.householdId,
-              entityType: 'task',
-              entityId: next.id,
-              version: next.version,
-              createdAt: now,
-            }),
+              ledger: 'derived',
+            },
           ]
-          const spawn = taskDefinition.spawn?.({
-            previous: state(task),
-            next: nextState,
+          const spawn = kit.definition('task').spawn?.({
+            previous: kit.stateOf('task', task),
+            next: doneState,
             now,
           })
           if (spawn !== undefined) {
-            statements.push(
-              spawn.insert(spawn.state),
-              sync.appendFeed({
-                householdId: viewer.householdId,
-                entityType: spawn.state.entityType,
-                entityId: spawn.state.entityId,
-                op: 'upsert',
-                version: spawn.state.version,
-                updatedAt: spawn.state.updatedAt,
-                ownerId: spawn.state.ownerId,
-                visibility: spawn.state.visibility,
-              }),
-              sync.recordApplied({
-                clientMutationId: `recurrence:${spawn.parentId}`,
-                householdId: viewer.householdId,
-                entityType: spawn.state.entityType,
-                entityId: spawn.state.entityId,
-                version: spawn.state.version,
-                createdAt: now,
-              }),
-              ...(spawn.joins?.(spawn.state) ?? []),
-            )
+            entries.push({
+              state: spawn.state,
+              expectedVersion: null,
+              clientMutationId: `recurrence:${spawn.parentId}`,
+              insert: spawn.insert,
+              ledger: 'derived',
+              extra: () => spawn.joins?.(spawn.state) ?? [],
+            })
           }
-          return statements
+          return kit.entryStatements({
+            householdId: viewer.householdId,
+            entries,
+            now,
+          })
         })
 
       /**
@@ -1009,9 +801,7 @@ export class ReminderService extends Context.Service<ReminderService>()(
       > =>
         Effect.gen(function* () {
           const now = input.now ?? new Date().toISOString()
-          const found = yield* reminders
-            .findById(input.reminderId)
-            .pipe(Effect.orDie)
+          const found = yield* reminders.findById(input.reminderId)
           if (Option.isNone(found)) return Option.none()
           const reminder = found.value
           if (
@@ -1037,15 +827,13 @@ export class ReminderService extends Context.Service<ReminderService>()(
               silencedUntil,
             )
             if (next !== input.scheduledFor) {
-              yield* sync
-                .commit([
-                  dispatches.advanceSuppressedStatement({
-                    reminderId: reminder.id,
-                    from: input.scheduledFor,
-                    to: next,
-                  }),
-                ])
-                .pipe(Effect.orDie)
+              yield* sync.commit([
+                dispatches.advanceSuppressedStatement({
+                  reminderId: reminder.id,
+                  from: input.scheduledFor,
+                  to: next,
+                }),
+              ])
             }
             return Option.none()
           }
@@ -1074,25 +862,23 @@ export class ReminderService extends Context.Service<ReminderService>()(
             now,
           )
 
-          yield* sync
-            .commit([
-              dispatches.claimInsertStatement(dispatch),
-              ...(next === null
-                ? []
-                : [
-                    dispatches.advanceFireAtStatement({
-                      reminderId: reminder.id,
-                      from: input.scheduledFor,
-                      to: next,
-                    }),
-                  ]),
-            ])
-            .pipe(Effect.orDie)
+          yield* sync.commit([
+            dispatches.claimInsertStatement(dispatch),
+            ...(next === null
+              ? []
+              : [
+                  dispatches.advanceFireAtStatement({
+                    reminderId: reminder.id,
+                    from: input.scheduledFor,
+                    to: next,
+                  }),
+                ]),
+          ])
 
           // The unique key is the mutex: if an overlapping tick won, our INSERT
           // wrote nothing and the read returns None.
-          return yield* dispatches.findById(dispatch.id).pipe(Effect.orDie)
-        })
+          return yield* dispatches.findById(dispatch.id)
+        }).pipe(Effect.orDie)
 
       /**
        * Claim a tick's whole due list in one batch (ADR-0005 §3, §9).
@@ -1199,9 +985,7 @@ export class ReminderService extends Context.Service<ReminderService>()(
             .findById(input.dispatchId)
             .pipe(Effect.orDie)
           if (Option.isNone(found) || found.value.userId !== viewer.userId) {
-            return yield* Effect.fail(
-              new ReminderDispatchNotFound({ id: input.dispatchId }),
-            )
+            return yield* new ReminderDispatchNotFound({ id: input.dispatchId })
           }
           const current = found.value
           // A double tap is a no-op: return the stored answer, not a new one.

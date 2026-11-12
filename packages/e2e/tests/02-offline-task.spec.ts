@@ -1,4 +1,11 @@
-import { expect, pullAll, syncStatus, test, uniqueTag } from './support'
+import {
+  API_URL,
+  expect,
+  pullAll,
+  syncStatus,
+  test,
+  uniqueTag,
+} from './support'
 
 /**
  * Gate flow 2 (#81/#84): offline quick-add → reload while offline → reconnect
@@ -54,9 +61,7 @@ test('flow 2: offline quick-adds survive a reload and converge on both devices',
       window.dispatchEvent(new Event(next ? 'online' : 'offline'))
     }
   })
-  await alice.route('http://localhost:8787/**', route =>
-    route.abort('connectionrefused'),
-  )
+  await alice.route(`${API_URL}/**`, route => route.abort('connectionrefused'))
   await alicePage.reload()
 
   await expect(alicePage.locator('[data-today-source]')).toHaveAttribute(
@@ -89,7 +94,7 @@ test('flow 2: offline quick-adds survive a reload and converge on both devices',
   await expect(syncStatus(alicePage)).toHaveText('آفلاین')
 
   // ── Reconnect: the outbox drains and B pulls both rows ─────────────────
-  await alice.unroute('http://localhost:8787/**')
+  await alice.unroute(`${API_URL}/**`)
   await alicePage.evaluate(() => {
     ;(
       window as unknown as { __taliSetOnline: (next: boolean) => void }

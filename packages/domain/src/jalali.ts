@@ -1,5 +1,6 @@
+import { Schema } from 'effect'
 import { Temporal } from 'temporal-polyfill/full'
-import type { Digits, WeekStart } from './common.js'
+import { type Digits, TimeZone, type WeekStart } from './common.js'
 import { DEFAULT_DIGITS, localizeDigits } from './digits.js'
 
 /**
@@ -23,6 +24,17 @@ export const JALALI_CALENDAR = 'persian'
 
 /** The household's default zone; a user profile can override it. */
 export const DEFAULT_TIME_ZONE = 'Asia/Tehran'
+
+/**
+ * Validate a stored IANA zone and fall back to the household default.
+ *
+ * Every screen resolves a stored zone through this one function: an invalid or
+ * empty value used to render in UTC on `/tasks` but in Tehran everywhere else.
+ * The check is the shared `TimeZone` filter, i.e. the platform's own zone
+ * database, so this rejects exactly what the date formatting below would.
+ */
+export const resolveTimeZone = (value: string): string =>
+  Schema.is(TimeZone)(value) ? value : DEFAULT_TIME_ZONE
 
 export const JALALI_MONTHS = [
   'فروردین',

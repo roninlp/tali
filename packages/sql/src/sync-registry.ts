@@ -1,13 +1,11 @@
-import { Match, Option, Predicate, Schema } from 'effect'
+import { Option, Predicate, Schema } from 'effect'
 import { type SqlClient, Statement } from 'effect/sql'
 import {
   Event,
-  EventId,
   EventTiming,
   Habit,
   HabitEntry,
   HabitFrequency,
-  HabitId,
   habitFrequencyHistoryAfter,
   type HabitFrequencyChange,
   List,
@@ -17,26 +15,23 @@ import {
   Note,
   normalizePersian,
   Occasion,
-  OccasionId,
   Project,
   Reminder,
   ReminderLink,
+  type ReminderLinkColumns,
   ReminderRepeat,
   reminderFireAt,
   type ReminderType,
   reminderTierFor,
-  TaskId,
   TimestampUtc,
   allDayEventTiming,
   dailyHabitFrequency,
-  eventReminderLink,
-  habitReminderLink,
+  decodeReminderLink,
+  encodeReminderLink,
   isAllDayEventTiming,
   noReminderLink,
-  occasionReminderLink,
   onceReminderRepeat,
   sameHabitFrequency,
-  taskReminderLink,
   timedEventTiming,
   defaultVisibilityFor,
   resolveCreateVisibility,
@@ -427,8 +422,7 @@ const isJson: SyncFieldGuard = value => {
 }
 const isJsonArray: SyncFieldGuard = value => Array.isArray(value)
 /** Local calendar date `YYYY-MM-DD` (a habit entry's day). */
-const isLocalDate: SyncFieldGuard = value =>
-  typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+const isLocalDate: SyncFieldGuard = Schema.is(LocalDate)
 const isNullableIntInRange =
   (minimum: number, maximum: number): SyncFieldGuard =>
   value =>
@@ -1821,7 +1815,7 @@ const habitDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
       // comparison is structural, so a differently-shaped-but-equal patch
       // (`{_tag:"daily", days:[1]}`) cannot grow a phantom era. An invalid
       // union is left as-is and rejected by `validate` below.
-      const decoded = Schema.decodeUnknownOption(HabitFrequency)(nextFrequency)
+      const decoded = Schema.decodeOption(HabitFrequency)(nextFrequency)
       if (decoded._tag === 'None') return next
       const frequency = decoded.value
       next.frequency = frequency
@@ -1999,57 +1993,28 @@ const REMINDER_COLUMNS =
   `link_type AS linkType, link_id AS linkId, silenced_until AS silencedUntil, ` +
   `time_zone AS timeZone, created_at AS createdAt`
 
-/** Rebuild the link union from the flattened columns (malformed → none). */
-const reminderLinkOf = (type: unknown, id: unknown): ReminderLink => {
-  const linkId = asText(id)
-  switch (type) {
-    case 'task':
-      return linkId === null
-        ? noReminderLink()
-        : taskReminderLink(TaskId.make(linkId))
-    case 'event':
-      return linkId === null
-        ? noReminderLink()
-        : eventReminderLink(EventId.make(linkId))
-    case 'habit':
-      return linkId === null
-        ? noReminderLink()
-        : habitReminderLink(HabitId.make(linkId))
-    case 'occasion':
-      return linkId === null
-        ? noReminderLink()
-        : occasionReminderLink(OccasionId.make(linkId))
-    default:
-      return noReminderLink()
-  }
-}
+/**
+ * Rebuild the link union from the flattened columns.
+ *
+ * The row cells are `unknown` (D1 hands back whatever SQLite stored), so
+ * normalise to `string | null` first and let the shared codec own the
+ * variant→brand mapping and the malformed-row fallback.
+ */
+const reminderLinkOf = (type: unknown, id: unknown): ReminderLink =>
+  decodeReminderLink(asText(type) ?? 'none', asText(id))
 
-/** Flatten the link union for the two columns (the only writer is trusted). */
+/**
+ * Flatten the link union for the two columns.
+ *
+ * The client patch's `link` is `unknown`, and its only writer is trusted, so a
+ * missing or malformed value is written as `none` rather than rejected here.
+ */
 const reminderLinkColumns = (
   data: Record<string, unknown>,
-): { readonly linkType: string; readonly linkId: string | null } => {
-  const link = Option.getOrNull(asReminderLink(data.link))
-  if (link === null) return { linkType: 'none', linkId: null }
-  return Match.value(link).pipe(
-    Match.tag('task', value => ({
-      linkType: 'task',
-      linkId: value.taskId,
-    })),
-    Match.tag('event', value => ({
-      linkType: 'event',
-      linkId: value.eventId,
-    })),
-    Match.tag('habit', value => ({
-      linkType: 'habit',
-      linkId: value.habitId,
-    })),
-    Match.tag('occasion', value => ({
-      linkType: 'occasion',
-      linkId: value.occasionId,
-    })),
-    Match.orElse(() => ({ linkType: 'none', linkId: null })),
+): ReminderLinkColumns =>
+  encodeReminderLink(
+    Option.getOrElse(asReminderLink(data.link), noReminderLink),
   )
-}
 
 /** A stored row's repeat; a malformed cell reads as a one-off. */
 const reminderRepeatOf = (value: unknown): ReminderRepeat =>

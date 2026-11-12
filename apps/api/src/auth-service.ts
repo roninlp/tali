@@ -4,6 +4,8 @@ import {
   AlreadyInHousehold,
   ChangePasswordInput,
   CreateHouseholdInput,
+  DEFAULT_DIGITS_STYLE,
+  DEFAULT_WEEK_START,
   EmailAlreadyRegistered,
   Household,
   HouseholdFull,
@@ -109,7 +111,7 @@ export class AuthService extends Context.Service<AuthService>()('AuthService', {
         const email = normalizeEmail(input.email)
         const existing = yield* users.findByEmail(email).pipe(Effect.orDie)
         if (Option.isSome(existing)) {
-          return yield* Effect.fail(new EmailAlreadyRegistered({ email }))
+          return yield* new EmailAlreadyRegistered({ email })
         }
         const credential = yield* verifier.enroll(input.loginKey)
         const now = new Date().toISOString()
@@ -118,8 +120,8 @@ export class AuthService extends Context.Service<AuthService>()('AuthService', {
           ...credential,
           displayName: input.displayName,
           timeZone: input.timeZone,
-          weekStart: 'saturday',
-          digits: 'persian',
+          weekStart: DEFAULT_WEEK_START,
+          digits: DEFAULT_DIGITS_STYLE,
           createdAt: now,
           updatedAt: now,
         })
@@ -151,21 +153,21 @@ export class AuthService extends Context.Service<AuthService>()('AuthService', {
         const key = limitKey(email, clientIp)
         const limit = yield* limiter.consume(key)
         if (limit.limited) {
-          return yield* Effect.fail(
-            new RateLimited({ retryAfterSeconds: limit.retryAfterSeconds }),
-          )
+          return yield* new RateLimited({
+            retryAfterSeconds: limit.retryAfterSeconds,
+          })
         }
 
         const found = yield* users.findByEmail(email).pipe(Effect.orDie)
         if (Option.isNone(found)) {
           yield* verifier.verifyDummy(input.loginKey)
-          return yield* Effect.fail(new InvalidCredentials())
+          return yield* new InvalidCredentials()
         }
 
         const user = found.value
         const ok = yield* verifier.verify(input.loginKey, user)
         if (!ok) {
-          return yield* Effect.fail(new InvalidCredentials())
+          return yield* new InvalidCredentials()
         }
 
         yield* limiter.clear(key)
@@ -198,14 +200,14 @@ export class AuthService extends Context.Service<AuthService>()('AuthService', {
         const key = limitKey(user.email, clientIp)
         const limit = yield* limiter.consume(key)
         if (limit.limited) {
-          return yield* Effect.fail(
-            new RateLimited({ retryAfterSeconds: limit.retryAfterSeconds }),
-          )
+          return yield* new RateLimited({
+            retryAfterSeconds: limit.retryAfterSeconds,
+          })
         }
 
         const ok = yield* verifier.verify(input.currentLoginKey, user)
         if (!ok) {
-          return yield* Effect.fail(new InvalidCredentials())
+          return yield* new InvalidCredentials()
         }
 
         const credential = yield* verifier.enroll(input.newLoginKey)
@@ -244,7 +246,7 @@ export class AuthService extends Context.Service<AuthService>()('AuthService', {
             .findByTokenHash(tokenHash)
             .pipe(Effect.orDie)
           if (Option.isNone(found)) {
-            return yield* Effect.fail(new Unauthorized())
+            return yield* new Unauthorized()
           }
           const session = found.value
           const now = Date.now()
@@ -252,7 +254,7 @@ export class AuthService extends Context.Service<AuthService>()('AuthService', {
           // A corrupted timestamp must fail closed, not become an immortal session.
           if (!Number.isFinite(expiresAt) || expiresAt <= now) {
             yield* sessions.deleteByTokenHash(tokenHash).pipe(Effect.orDie)
-            return yield* Effect.fail(new Unauthorized())
+            return yield* new Unauthorized()
           }
           const renewed = renew && expiresAt - now < SESSION_RENEW_THRESHOLD_MS
           if (renewed) {
@@ -302,7 +304,7 @@ export class AuthService extends Context.Service<AuthService>()('AuthService', {
           .findByUserId(userId)
           .pipe(Effect.orDie)
         if (Option.isSome(existing)) {
-          return yield* Effect.fail(new AlreadyInHousehold())
+          return yield* new AlreadyInHousehold()
         }
         const now = new Date().toISOString()
         const household = Household.insert.make({
@@ -339,14 +341,14 @@ export class AuthService extends Context.Service<AuthService>()('AuthService', {
           .findByUserId(userId)
           .pipe(Effect.orDie)
         if (Option.isSome(existing)) {
-          return yield* Effect.fail(new AlreadyInHousehold())
+          return yield* new AlreadyInHousehold()
         }
         const inviteCode = input.inviteCode.trim()
         const found = yield* households
           .findByInviteCode(inviteCode)
           .pipe(Effect.orDie)
         if (Option.isNone(found)) {
-          return yield* Effect.fail(new InviteInvalid({ inviteCode }))
+          return yield* new InviteInvalid({ inviteCode })
         }
         const household = found.value
         const membership = Membership.insert.make({
@@ -358,15 +360,16 @@ export class AuthService extends Context.Service<AuthService>()('AuthService', {
         // The cap is enforced inside the insert, so two concurrent joins cannot
         // both occupy the second slot (CC-01: two memberships).
         const inserted = yield* memberships.insertIfRoom(membership).pipe(
-          Effect.catchTag('SqlError', error =>
-            uniqueViolationOn(error, 'memberships.user_id')
-              ? Effect.fail(new AlreadyInHousehold())
-              : Effect.die(error),
-          ),
-          Effect.catchTag('SchemaError', Effect.die),
+          Effect.catchTags({
+            SqlError: error =>
+              uniqueViolationOn(error, 'memberships.user_id')
+                ? Effect.fail(new AlreadyInHousehold())
+                : Effect.die(error),
+            SchemaError: Effect.die,
+          }),
         )
         if (Option.isNone(inserted)) {
-          return yield* Effect.fail(new HouseholdFull())
+          return yield* new HouseholdFull()
         }
         return household
       })

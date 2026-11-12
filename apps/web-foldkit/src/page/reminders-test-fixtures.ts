@@ -1,35 +1,19 @@
 import { noReminderLink } from '@tali/domain'
 
-import type { ReminderDispatch, ReminderInboxItem } from '../lib/reminders/api'
+import type { ReminderInboxItem } from '../lib/reminders/api'
+import { REMINDER_ID, dispatchRow } from '../lib/reminders/fixtures'
 import * as Reminders from './reminders'
 
-export const DISPATCH_ID = '0192f0a0-0000-7000-8000-000000000101'
+export {
+  DISPATCH_ID,
+  REMINDER_ID,
+  dispatchRow,
+} from '../lib/reminders/fixtures'
+
 export const SECOND_DISPATCH_ID = '0192f0a0-0000-7000-8000-000000000104'
 export const THIRD_DISPATCH_ID = '0192f0a0-0000-7000-8000-000000000105'
 export const FOURTH_DISPATCH_ID = '0192f0a0-0000-7000-8000-000000000106'
 export const FIFTH_DISPATCH_ID = '0192f0a0-0000-7000-8000-000000000107'
-export const REMINDER_ID = '0192f0a0-0000-7000-8000-000000000102'
-
-export const dispatchRow = (
-  overrides: Partial<ReminderDispatch> = {},
-): ReminderDispatch => ({
-  id: DISPATCH_ID,
-  reminderId: REMINDER_ID,
-  userId: '0192f0a0-0000-7000-8000-000000000001',
-  scheduledFor: '2026-10-20T08:00:00.000Z',
-  deliverAt: '2026-10-20T08:00:00.000Z',
-  rootScheduledFor: '2026-10-20T08:00:00.000Z',
-  origin: 'schedule',
-  pushOutcome: 'accepted',
-  attempts: 1,
-  lastAttemptAt: '2026-10-20T08:00:05.000Z',
-  parentDispatchId: null,
-  response: null,
-  respondedAt: null,
-  snoozedUntil: null,
-  createdAt: '2026-10-20T08:00:00.000Z',
-  ...overrides,
-})
 
 export const inboxItem = (
   overrides: Partial<ReminderInboxItem> = {},

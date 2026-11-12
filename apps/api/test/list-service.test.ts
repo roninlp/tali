@@ -1,13 +1,8 @@
-import { readFileSync, readdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { Effect, Layer, String as Str } from 'effect'
-import { D1Client } from '@effect/sql-d1'
+import { Layer } from 'effect'
 import {
   ListForbidden,
   uuidV7,
-  type HouseholdId,
   type ListId,
   type ListItemId,
   type SyncPushEntry,
@@ -16,11 +11,17 @@ import {
 import {
   ListService,
   ListServiceLive,
-  type ListServiceApi,
   type ListViewer,
 } from '../src/list-service.js'
-import { SyncService, SyncServiceLive } from '../src/sync-service.js'
-import { FakeD1 } from './fake-d1.js'
+import { SyncServiceLive } from '../src/sync-service.js'
+import {
+  HOUSEHOLD,
+  NOW,
+  USER_A,
+  USER_B,
+  makeViewer,
+} from './fixtures/identities.js'
+import { makeServiceHarness, type HarnessEnv } from './harness.js'
 
 /**
  * Ticket #39 at the service/sync seam. These run the real ListService, repos
@@ -29,79 +30,32 @@ import { FakeD1 } from './fake-d1.js'
  * production. "Two devices" are independent cursors over the same server.
  */
 
-const MIGRATIONS_DIR = new URL(
-  '../../../packages/sql/migrations/',
-  import.meta.url,
-)
-const migrationFiles = (): ReadonlyArray<string> =>
-  readdirSync(fileURLToPath(MIGRATIONS_DIR))
-    .filter(file => file.endsWith('.sql'))
-    .sort()
+const viewer = makeViewer<ListViewer>()
 
-const USER_A = 'user-a' as UserId
-const USER_B = 'user-b' as UserId
-const HOUSEHOLD = 'household-a' as HouseholdId
-const NOW = '2026-10-20T09:30:00.000Z'
-
-const viewer = (overrides: Partial<ListViewer> = {}): ListViewer => ({
-  userId: USER_A,
-  householdId: HOUSEHOLD,
-  ...overrides,
-})
+const serviceLayer = ({ d1 }: HarnessEnv) =>
+  Layer.mergeAll(ListServiceLive, SyncServiceLive).pipe(Layer.provide(d1))
 
 const makeHarness = () => {
-  const db = new DatabaseSync(':memory:')
-  for (const file of migrationFiles()) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), 'utf8'))
-  }
-  const fake = new FakeD1(db)
-  const d1 = D1Client.layer({
-    db: fake.asD1Database(),
-    transformQueryNames: Str.camelToSnake,
-    transformResultNames: Str.snakeToCamel,
-  })
-  const layer = Layer.mergeAll(ListServiceLive, SyncServiceLive).pipe(
-    Layer.provide(d1),
-  )
-
-  const run = <A, E>(
-    effect: Effect.Effect<A, E, ListService | SyncService>,
-  ): Promise<A> => Effect.runPromise(Effect.provide(effect, layer))
-
-  const svc = <A, E>(
-    f: (service: ListServiceApi) => Effect.Effect<A, E, never>,
-  ): Promise<A> =>
-    run(
-      Effect.gen(function* () {
-        const service = yield* ListService
-        return yield* f(service)
-      }),
-    )
-
-  const sync = <A, E>(
-    f: (service: SyncService) => Effect.Effect<A, E, never>,
-  ): Promise<A> =>
-    run(
-      Effect.gen(function* () {
-        const service = yield* SyncService
-        return yield* f(service)
-      }),
-    )
+  const harness = makeServiceHarness(serviceLayer, ListService)
 
   const pull = (userId: UserId, cursor: number) =>
-    sync(service => service.pull({ userId, householdId: HOUSEHOLD, cursor }))
+    harness.sync(service =>
+      service.pull({ userId, householdId: HOUSEHOLD, cursor }),
+    )
 
   const push = (userId: UserId, entries: ReadonlyArray<SyncPushEntry>) =>
-    sync(service => service.push({ userId, householdId: HOUSEHOLD, entries }))
+    harness.sync(service =>
+      service.push({ userId, householdId: HOUSEHOLD, entries }),
+    )
 
   const feedCount = (): number =>
     (
-      db.prepare('SELECT COUNT(*) AS n FROM change_feed').get() as {
+      harness.db.prepare('SELECT COUNT(*) AS n FROM change_feed').get() as {
         readonly n: number
       }
     ).n
 
-  return { db, fake, run, svc, sync, pull, push, feedCount }
+  return { ...harness, pull, push, feedCount }
 }
 
 const createSharedList = async (
@@ -637,6 +591,73 @@ describe('reorder replay and delete', () => {
           items.some(item => item.id === row.entityId),
       ),
     ).toBe(false)
+  })
+})
+
+describe('replay after a delete', () => {
+  it('returns the same deleted list for a repeated client mutation id', async () => {
+    const h = makeHarness()
+    const list = await createSharedList(h)
+    const input = { id: list.id, clientMutationId: 'delete-list-once' }
+
+    const deleted = await h.svc(svc => svc.remove(viewer(), input, NOW))
+    const feedAfterDelete = h.feedCount()
+    expect(deleted.deletedAt).toBe(NOW)
+
+    // A retried delete (lost response) must hand back the stored tombstone,
+    // not ListNotFound.
+    const replay = await h.svc(svc =>
+      svc.remove(viewer(), input, '2026-10-21T09:30:00.000Z'),
+    )
+
+    expect(replay.id).toBe(deleted.id)
+    expect(replay.version).toBe(deleted.version)
+    expect(replay.deletedAt).toBe(NOW)
+    expect(h.feedCount()).toBe(feedAfterDelete)
+    const visible = await h.svc(svc => svc.list(viewer()))
+    expect(visible.map(entry => entry.id)).not.toContain(list.id)
+  })
+
+  it('returns the same deleted item when its list is already deleted', async () => {
+    const h = makeHarness()
+    const list = await createSharedList(h)
+    const items = await h.svc(svc =>
+      svc.appendItems(
+        viewer(),
+        {
+          listId: list.id,
+          clientMutationId: 'append-one',
+          items: [{ id: uuidV7() as ListItemId, name: 'نان' }],
+        },
+        NOW,
+      ),
+    )
+    const item = items[0]
+    if (item === undefined) throw new Error('expected the seeded item')
+
+    const input = { id: item.id, clientMutationId: 'delete-item-once' }
+    const deleted = await h.svc(svc => svc.deleteItem(viewer(), input, NOW))
+    expect(deleted.deletedAt).toBe(NOW)
+
+    // The parent list goes next, so the retried item delete has to tolerate a
+    // tombstoned parent while still replaying the stored item.
+    await h.svc(svc =>
+      svc.remove(
+        viewer(),
+        { id: list.id, clientMutationId: 'delete-list-after-item' },
+        NOW,
+      ),
+    )
+    const feedAfterDelete = h.feedCount()
+
+    const replay = await h.svc(svc =>
+      svc.deleteItem(viewer(), input, '2026-10-21T09:30:00.000Z'),
+    )
+
+    expect(replay.id).toBe(deleted.id)
+    expect(replay.version).toBe(deleted.version)
+    expect(replay.deletedAt).toBe(NOW)
+    expect(h.feedCount()).toBe(feedAfterDelete)
   })
 })
 

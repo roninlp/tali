@@ -1,5 +1,3 @@
-import { readFileSync, readdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
 import { TRASH_RETENTION_MS } from '@tali/domain'
@@ -8,6 +6,7 @@ import worker from '../src/index.js'
 import { FEED_RETENTION_MS } from '../src/sync-service.js'
 import { FakeD1 } from './fake-d1.js'
 import { FakeR2 } from './fake-r2.js'
+import { openMigratedDatabase } from './harness.js'
 
 /**
  * The real `scheduled()` dispatch (ticket #85).
@@ -20,23 +19,7 @@ import { FakeR2 } from './fake-r2.js'
  * `/cdn-cgi/handler/scheduled` route.
  */
 
-const MIGRATIONS_DIR = new URL(
-  '../../../packages/sql/migrations/',
-  import.meta.url,
-)
-
-const migrationFiles = (): ReadonlyArray<string> =>
-  readdirSync(fileURLToPath(MIGRATIONS_DIR))
-    .filter(file => file.endsWith('.sql'))
-    .sort()
-
-const makeDatabase = (): DatabaseSync => {
-  const db = new DatabaseSync(':memory:')
-  for (const file of migrationFiles()) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), 'utf8'))
-  }
-  return db
-}
+const makeDatabase = (): DatabaseSync => openMigratedDatabase()
 
 const seedOldNote = (db: DatabaseSync, id: string) => {
   const now = '2026-10-23T03:17:00.000Z'

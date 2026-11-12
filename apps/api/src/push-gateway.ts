@@ -1,9 +1,10 @@
-import { Context, Effect, Layer } from 'effect'
+import { Context, Effect, Layer, Schema } from 'effect'
 import { isSafePushEndpoint, type PushSubscription } from '@tali/domain'
 import {
   base64UrlDecode,
   createVapidJwt,
   encryptPushPayload,
+  PushCryptoError,
   type VapidKeyPair,
 } from './push-crypto.js'
 
@@ -110,6 +111,16 @@ export const classifyPushStatus = (status: number): PushSendResult => {
 
 const originOf = (endpoint: string): string => new URL(endpoint).origin
 
+/**
+ * The push service could not be reached at all (DNS, TLS, reset). Unlike an
+ * HTTP status this says nothing about the subscription, so the sweep retries
+ * within its budget (ADR-0005 §Consequences).
+ */
+export class PushTransportError extends Schema.TaggedError<PushTransportError>()(
+  'PushTransportError',
+  { cause: Schema.Defect() },
+) {}
+
 export const makePushGateway = (
   config: VapidConfig | null,
 ): PushGatewayApi => ({
@@ -133,7 +144,7 @@ export const makePushGateway = (
             p256dh: input.subscription.p256dh,
             auth: input.subscription.auth,
           }),
-        catch: error => error,
+        catch: cause => new PushCryptoError({ cause }),
       }).pipe(Effect.option)
       // Bad subscription keys are permanent: a different message cannot fix them.
       if (encrypted._tag === 'None')
@@ -147,7 +158,7 @@ export const makePushGateway = (
             keys,
             now: input.now,
           }),
-        catch: error => error,
+        catch: cause => new PushCryptoError({ cause }),
       }).pipe(Effect.option)
       if (jwt._tag === 'None')
         return { _tag: 'transient', status: null } as const
@@ -171,7 +182,7 @@ export const makePushGateway = (
             },
             body: encrypted.value.body,
           }),
-        catch: error => error,
+        catch: cause => new PushTransportError({ cause }),
       }).pipe(Effect.option)
 
       return response._tag === 'None'

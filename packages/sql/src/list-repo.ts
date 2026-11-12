@@ -1,6 +1,7 @@
 import { Context, Effect, Layer, Option } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { List, type ListId, type UserId } from '@tali/domain'
+import { visibleScopeSql } from './scope'
 
 /**
  * D1-backed repository for `List` (ticket #33; FR-LIST-01/02).
@@ -31,9 +32,7 @@ export class ListRepo extends Context.Service<ListRepo>()('ListRepo', {
       Effect.map(
         sql<List>`
           SELECT ${sql.literal(LIST_COLUMNS)} FROM lists
-          WHERE household_id = ${input.householdId}
-            AND deleted_at IS NULL
-            AND (owner_id = ${input.userId} OR visibility = 'shared')
+          WHERE ${visibleScopeSql(sql, input)}
           ORDER BY updated_at DESC, id ASC
         `,
         rows => rows,

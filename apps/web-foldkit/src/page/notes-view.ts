@@ -8,6 +8,7 @@ import { excerptAroundMatch, markMatches } from '../lib/note-search'
 import type { NoteRow } from '../mirror'
 import { notePath, notesTrashRouter } from '../route'
 import { buttonView } from '../ui/button'
+import { pendingBadgeView } from '../ui/feedback'
 import { formErrorView, inputControlView } from '../ui/field'
 import {
   archiveIcon,
@@ -16,6 +17,7 @@ import {
   searchIcon,
   trashIcon,
 } from '../ui/icons'
+import { pageHeaderView } from '../ui/page'
 import { Message } from './notes'
 import type { Model, SearchHit, ViewInputs } from './notes'
 import { noteSections, pendingNoteIds } from './notes-model'
@@ -336,17 +338,9 @@ const noteRowView = (
                 [pinIcon('size-3'), 'پین'],
               )
             : h.empty,
-          isPending
-            ? h.span(
-                [h.Class('badge badge-warning badge-sm')],
-                ['در انتظار ارسال'],
-              )
-            : h.empty,
+          isPending ? pendingBadgeView('pending', h) : h.empty,
           Option.isSome(note.syncErrorCode)
-            ? h.span(
-                [h.Class('badge badge-error badge-sm')],
-                ['خطا در همگام‌سازی'],
-              )
+            ? pendingBadgeView('error', h)
             : h.empty,
         ],
       ),
@@ -526,29 +520,12 @@ export const notesIndexView = (
       h.div(
         [h.Class('page-wrap grid w-full max-w-3xl grid-cols-1 gap-4')],
         [
-          h.header(
-            [h.Class('flex flex-wrap items-center justify-between gap-3')],
-            [
-              h.div(
-                [h.Class('grid gap-1')],
-                [
-                  h.h1(
-                    [
-                      h.Class(
-                        'm-0 text-2xl font-bold tracking-tight sm:text-3xl',
-                      ),
-                    ],
-                    ['یادداشت‌ها'],
-                  ),
-                  h.p(
-                    [h.Class('m-0 text-sm leading-7 text-base-content/70')],
-                    [
-                      'جست‌وجو، پین، آرشیو و برچسب — همه روی همین دستگاه اول ذخیره می‌شوند.',
-                    ],
-                  ),
-                ],
-              ),
-              h.div(
+          pageHeaderView(
+            {
+              title: 'یادداشت‌ها',
+              subtitle:
+                'جست‌وجو، پین، آرشیو و برچسب — همه روی همین دستگاه اول ذخیره می‌شوند.',
+              actions: h.div(
                 [h.Class('flex flex-wrap items-center gap-2')],
                 [
                   buttonView(
@@ -571,7 +548,8 @@ export const notesIndexView = (
                   ),
                 ],
               ),
-            ],
+            },
+            h,
           ),
           inputs.isOnline
             ? h.empty

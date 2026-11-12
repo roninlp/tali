@@ -4,6 +4,7 @@ import type { Html, HtmlBuilder } from 'foldkit/html'
 import { notesRouter } from '../route'
 import { buttonView } from '../ui/button'
 import { formErrorView } from '../ui/field'
+import { pageHeaderView } from '../ui/page'
 import { Message } from './notes'
 import type { Model, ViewInputs } from './notes'
 import { sortTrashedNoteRows } from './notes-model'
@@ -33,33 +34,17 @@ export const notesTrashView = (
       h.div(
         [h.Class('page-wrap grid w-full max-w-3xl grid-cols-1 gap-4')],
         [
-          h.header(
-            [h.Class('flex flex-wrap items-center justify-between gap-3')],
-            [
-              h.div(
-                [h.Class('grid gap-1')],
-                [
-                  h.h1(
-                    [
-                      h.Class(
-                        'm-0 text-2xl font-bold tracking-tight sm:text-3xl',
-                      ),
-                    ],
-                    ['سطل زباله'],
-                  ),
-                  h.p(
-                    [h.Class('m-0 text-sm leading-7 text-base-content/70')],
-                    [
-                      'یادداشت‌های حذف‌شده تا ۳۰ روز اینجا می‌مانند و بعد از آن پاک می‌شوند.',
-                    ],
-                  ),
-                ],
-              ),
-              h.a(
+          pageHeaderView(
+            {
+              title: 'سطل زباله',
+              subtitle:
+                'یادداشت‌های حذف‌شده تا ۳۰ روز اینجا می‌مانند و بعد از آن پاک می‌شوند.',
+              actions: h.a(
                 [h.Href(notesRouter()), h.Class('btn btn-ghost')],
                 ['بازگشت به یادداشت‌ها'],
               ),
-            ],
+            },
+            h,
           ),
           formErrorView(model.maybeTrashError, h),
           Array.match(rows, {

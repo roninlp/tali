@@ -1,9 +1,6 @@
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { Effect, Layer, String as Str } from 'effect'
-import { D1Client } from '@effect/sql-d1'
+import { Effect, Layer } from 'effect'
 import {
   uuidV7,
   type SyncEntityRow,
@@ -23,7 +20,7 @@ import {
   SyncService,
   SyncServiceLive,
 } from '../src/sync-service.js'
-import { FakeD1 } from './fake-d1.js'
+import { makeHarnessCore, type HarnessEnv } from './harness.js'
 
 /**
  * The sync-engine suite: #18's two-device convergence for the dummy aggregate,
@@ -36,19 +33,6 @@ import { FakeD1 } from './fake-d1.js'
  * server, which is exactly what two browsers do.
  */
 
-const MIGRATIONS = [
-  '0001_list_items.sql',
-  '0002_auth.sql',
-  '0003_sync_engine.sql',
-  '0005_core_planning.sql',
-  '0007_task_recurrence.sql',
-  '0008_list_last_writer.sql',
-  '0009_note_search.sql',
-  '0010_events.sql',
-  '0011_habits.sql',
-  '0012_reminders.sql',
-  '0013_occasions.sql',
-]
 const NOW = (): string => new Date().toISOString()
 const PAST = '2020-01-01T00:00:00.000Z'
 const FUTURE = (): string => new Date(Date.now() + 60_000).toISOString()
@@ -59,35 +43,12 @@ const USER_B = 'user-b'
 const HOUSEHOLD_B = 'household-b'
 const USER_C = 'user-c'
 
-const makeHarness = () => {
-  const db = new DatabaseSync(':memory:')
-  const dir = new URL('../../../packages/sql/migrations/', import.meta.url)
-  for (const file of MIGRATIONS) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, dir)), 'utf8'))
-  }
+const serviceLayer = ({ d1 }: HarnessEnv) =>
+  Layer.mergeAll(NoteSearchServiceLive, SyncServiceLive, SyncRepoLive).pipe(
+    Layer.provide(d1),
+  )
 
-  const fake = new FakeD1(db)
-  const d1 = D1Client.layer({
-    db: fake.asD1Database(),
-    transformQueryNames: Str.camelToSnake,
-    transformResultNames: Str.snakeToCamel,
-  })
-  const layer = Layer.mergeAll(
-    NoteSearchServiceLive,
-    SyncServiceLive,
-    SyncRepoLive,
-  ).pipe(Layer.provide(d1))
-
-  const run = <A>(
-    effect: Effect.Effect<
-      A,
-      unknown,
-      SyncService | NoteSearchService | SyncRepo
-    >,
-  ): Promise<A> => Effect.runPromise(Effect.provide(effect, layer))
-
-  return { db, fake, run }
-}
+const makeHarness = () => makeHarnessCore(serviceLayer)
 
 type Harness = ReturnType<typeof makeHarness>
 

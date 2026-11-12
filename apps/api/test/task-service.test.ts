@@ -1,23 +1,22 @@
-import { readFileSync, readdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { Effect, Layer, String as Str } from 'effect'
-import { D1Client } from '@effect/sql-d1'
-import {
-  uuidV7,
-  type HouseholdId,
-  type TaskId,
-  type UserId,
-} from '@tali/domain'
-import { SyncService, SyncServiceLive } from '../src/sync-service.js'
+import { Layer } from 'effect'
+import { uuidV7, type TaskId } from '@tali/domain'
+import { SyncServiceLive } from '../src/sync-service.js'
 import {
   TaskService,
   TaskServiceLive,
-  type TaskServiceApi,
   type TaskViewer,
 } from '../src/task-service.js'
-import { FakeD1 } from './fake-d1.js'
+import {
+  HOUSEHOLD,
+  NOW,
+  OTHER_HOUSEHOLD,
+  TZ,
+  USER_A,
+  USER_B,
+  makeViewer,
+} from './fixtures/identities.js'
+import { makeServiceHarness, type HarnessEnv } from './harness.js'
 
 /**
  * Ticket #36, at the service seam. These run the real service + repository +
@@ -26,78 +25,22 @@ import { FakeD1 } from './fake-d1.js'
  * production.
  */
 
-const MIGRATIONS_DIR = new URL(
-  '../../../packages/sql/migrations/',
-  import.meta.url,
-)
+const viewer = makeViewer<TaskViewer>({ timeZone: TZ })
 
-const migrationFiles = (): ReadonlyArray<string> =>
-  readdirSync(fileURLToPath(MIGRATIONS_DIR))
-    .filter(file => file.endsWith('.sql'))
-    .sort()
-
-const USER_A = 'user-a' as UserId
-const USER_B = 'user-b' as UserId
-const HOUSEHOLD = 'household-a' as HouseholdId
-const OTHER_HOUSEHOLD = 'household-b' as HouseholdId
-const TZ = 'Asia/Tehran'
-const NOW = '2026-10-20T09:30:00.000Z'
-
-const viewer = (overrides: Partial<TaskViewer> = {}): TaskViewer => ({
-  userId: USER_A,
-  householdId: HOUSEHOLD,
-  timeZone: TZ,
-  ...overrides,
-})
+const serviceLayer = ({ d1 }: HarnessEnv) =>
+  Layer.mergeAll(TaskServiceLive, SyncServiceLive).pipe(Layer.provide(d1))
 
 const makeHarness = () => {
-  const db = new DatabaseSync(':memory:')
-  for (const file of migrationFiles()) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), 'utf8'))
-  }
-
-  const fake = new FakeD1(db)
-  const d1 = D1Client.layer({
-    db: fake.asD1Database(),
-    transformQueryNames: Str.camelToSnake,
-    transformResultNames: Str.snakeToCamel,
-  })
-  const layer = Layer.mergeAll(TaskServiceLive, SyncServiceLive).pipe(
-    Layer.provide(d1),
-  )
-
-  const run = <A, E>(
-    effect: Effect.Effect<A, E, TaskService | SyncService>,
-  ): Promise<A> => Effect.runPromise(Effect.provide(effect, layer))
-
-  const svc = <A, E>(
-    f: (service: TaskServiceApi) => Effect.Effect<A, E, never>,
-  ): Promise<A> =>
-    run(
-      Effect.gen(function* () {
-        const service = yield* TaskService
-        return yield* f(service)
-      }),
-    )
-
-  const sync = <A, E>(
-    f: (service: SyncService) => Effect.Effect<A, E, never>,
-  ): Promise<A> =>
-    run(
-      Effect.gen(function* () {
-        const service = yield* SyncService
-        return yield* f(service)
-      }),
-    )
+  const harness = makeServiceHarness(serviceLayer, TaskService)
 
   const feedCount = (): number =>
     (
-      db.prepare('SELECT COUNT(*) AS n FROM change_feed').get() as {
+      harness.db.prepare('SELECT COUNT(*) AS n FROM change_feed').get() as {
         readonly n: number
       }
     ).n
 
-  return { db, fake, run, svc, sync, feedCount }
+  return { ...harness, feedCount }
 }
 
 describe('TaskService round-trip', () => {
@@ -358,6 +301,55 @@ describe('TaskService round-trip', () => {
     expect(again.version).toBe(done.version)
     expect(again.completedAt).toBe(done.completedAt)
     expect(h.feedCount()).toBe(feedAfterFirst)
+  })
+
+  it('an update whose patch matches the stored row writes nothing', async () => {
+    const h = makeHarness()
+    const id = uuidV7() as TaskId
+    await h.svc(svc =>
+      svc.create(
+        viewer(),
+        {
+          clientMutationId: 'm-create',
+          id,
+          title: 'خرید نان',
+          tagIds: [],
+        },
+        NOW,
+      ),
+    )
+    const feedAfterCreate = h.feedCount()
+
+    // Every field the caller sent already has this value: no version, no row.
+    const same = await h.svc(svc =>
+      svc.update(
+        viewer(),
+        {
+          id,
+          clientMutationId: 'm-update-same',
+          patch: { title: 'خرید نان', priority: 'medium', tagIds: [] },
+        },
+        NOW,
+      ),
+    )
+    expect(same.version).toBe(1)
+    expect(h.feedCount()).toBe(feedAfterCreate)
+
+    // One different field is enough to write, and it is written.
+    const changed = await h.svc(svc =>
+      svc.update(
+        viewer(),
+        {
+          id,
+          clientMutationId: 'm-update-changed',
+          patch: { title: 'خرید نان', priority: 'high', tagIds: [] },
+        },
+        NOW,
+      ),
+    )
+    expect(changed).toMatchObject({ priority: 'high', title: 'خرید نان' })
+    expect(changed.version).toBe(2)
+    expect(h.feedCount()).toBe(feedAfterCreate + 1)
   })
 
   it('undo restores a task completed directly from todo', async () => {

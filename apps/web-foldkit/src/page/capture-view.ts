@@ -34,6 +34,7 @@ import {
 import { buttonView } from '../ui/button'
 import { inputControlView, textAreaControlView } from '../ui/field'
 import { retryIcon, trashIcon } from '../ui/icons'
+import { pageHeaderView } from '../ui/page'
 import {
   type Message as PickerMessage,
   type PickerMode,
@@ -1312,22 +1313,19 @@ const historyView = (
 export const captureView = Submodel.defineView<Model, Message, Inputs>(
   (model, inputs, h) =>
     h.section(
-      [h.Class('page-wrap grid w-full max-w-3xl min-w-0 grid-cols-1 gap-4')],
       [
-        h.header(
-          [h.Class('grid gap-1')],
-          [
-            h.h1(
-              [h.Class('m-0 text-2xl font-bold tracking-tight sm:text-3xl')],
-              ['کپچر'],
-            ),
-            h.p(
-              [h.Class('m-0 text-sm leading-7 text-base-content/70')],
-              [
-                'هر چه در ذهن داری بنویس؛ پیشنهادها را ببین، ویرایش کن و یک‌جا بساز.',
-              ],
-            ),
-          ],
+        h.Class('page-wrap grid w-full max-w-3xl min-w-0 grid-cols-1 gap-4'),
+        h.Dir('rtl'),
+        h.Lang('fa'),
+      ],
+      [
+        pageHeaderView(
+          {
+            title: 'کپچر',
+            subtitle:
+              'هر چه در ذهن داری بنویس؛ پیشنهادها را ببین، ویرایش کن و یک‌جا بساز.',
+          },
+          h,
         ),
         composerView(model, inputs, h),
         model.phase === 'dissecting'

@@ -12,6 +12,7 @@ import { describe, expect, test } from 'vitest'
 
 import { CalendarTiming } from '../lib/calendar-data'
 import type { CalendarEventOccurrence } from '../lib/calendar-data'
+import { mirrorSnapshot } from '../mirror-fixtures'
 import { HOUSEHOLD_ID, TODAY_NOW, USER_ID } from '../test-fixtures'
 import * as Calendar from './calendar'
 import type { Inputs, Model } from './calendar'
@@ -27,7 +28,7 @@ import {
   calendarModel,
   calendarTask,
   eventRow,
-  mirrorWith,
+  monthPayload,
   occasionRow,
   weekPayload,
   weeklyEventRow,
@@ -44,7 +45,7 @@ const inputsWith = (overrides: Partial<Inputs> = {}) =>
 
 const weekInputs = (overrides: Partial<Inputs> = {}) =>
   inputsWith({
-    mirror: mirrorWith({
+    mirror: mirrorSnapshot({
       tasks: [calendarTask()],
       events: [eventRow()],
       occasions: [occasionRow()],
@@ -162,17 +163,7 @@ describe('Calendar entry and reads', () => {
       given(
         calendarModel({
           maybeServerWeek: Option.some(weekPayload()),
-          maybeServerMonth: Option.some({
-            year: 1405,
-            month: 8,
-            start: WEEK_START,
-            end: '2026-11-20',
-            timeZone: 'Asia/Tehran',
-            weekStart: 'saturday',
-            tasks: [],
-            events: [],
-            occasions: [],
-          }),
+          maybeServerMonth: Option.some(monthPayload({ start: WEEK_START })),
         }),
       ),
       message(Calendar.Message.WentOffline()),
@@ -263,17 +254,7 @@ describe('Calendar entry and reads', () => {
         Calendar.FetchCalendar,
         Calendar.Message.SucceededFetchMonth({
           generation: 1,
-          model: {
-            year: 1405,
-            month: 8,
-            start: WEEK_START,
-            end: '2026-11-20',
-            timeZone: 'Asia/Tehran',
-            weekStart: 'saturday',
-            tasks: [],
-            events: [],
-            occasions: [],
-          },
+          model: monthPayload({ start: WEEK_START }),
           maybeEtag: Option.some('month-1'),
           dirtyAtRequest: [],
           dirtyEventsAtRequest: [],
@@ -305,17 +286,7 @@ describe('Calendar entry and reads', () => {
         Calendar.FetchCalendar,
         Calendar.Message.SucceededFetchMonth({
           generation: 1,
-          model: {
-            year: 1405,
-            month: 8,
-            start: WEEK_START,
-            end: '2026-11-20',
-            timeZone: 'Asia/Tehran',
-            weekStart: 'saturday',
-            tasks: [],
-            events: [],
-            occasions: [],
-          },
+          model: monthPayload({ start: WEEK_START }),
           maybeEtag: Option.some('month-2'),
           dirtyAtRequest: [],
           dirtyEventsAtRequest: [],
@@ -717,7 +688,7 @@ describe('Calendar event lane', () => {
   test('a recurring save asks for the scope ids and the choice', () => {
     story(
       update(
-        weekInputs({ mirror: mirrorWith({ events: [weeklyEventRow()] }) }),
+        weekInputs({ mirror: mirrorSnapshot({ events: [weeklyEventRow()] }) }),
       ),
       given(calendarModel()),
       message(
@@ -880,7 +851,7 @@ describe('Calendar occasions', () => {
   test('editing fills the form and saves the same row', () => {
     story(
       update(
-        weekInputs({ mirror: mirrorWith({ occasions: [occasionRow()] }) }),
+        weekInputs({ mirror: mirrorSnapshot({ occasions: [occasionRow()] }) }),
       ),
       given(calendarModel()),
       message(
@@ -920,7 +891,7 @@ describe('Calendar occasions', () => {
   test('deleting an occasion writes a tombstone', () => {
     story(
       update(
-        weekInputs({ mirror: mirrorWith({ occasions: [occasionRow()] }) }),
+        weekInputs({ mirror: mirrorSnapshot({ occasions: [occasionRow()] }) }),
       ),
       given(calendarModel()),
       message(
@@ -952,7 +923,7 @@ describe('Calendar occasions', () => {
   test('preparing a task starts from the row and announces the result', () => {
     story(
       update(
-        weekInputs({ mirror: mirrorWith({ occasions: [occasionRow()] }) }),
+        weekInputs({ mirror: mirrorSnapshot({ occasions: [occasionRow()] }) }),
       ),
       given(calendarModel()),
       message(
@@ -1039,7 +1010,7 @@ describe('Calendar visibility actions', () => {
     story(
       update(
         weekInputs({
-          mirror: mirrorWith({
+          mirror: mirrorSnapshot({
             events: [eventRow({ ownerId: 'another-user' })],
           }),
         }),
@@ -1061,7 +1032,7 @@ describe('Calendar visibility actions', () => {
     story(
       update(
         weekInputs({
-          mirror: mirrorWith({
+          mirror: mirrorSnapshot({
             occasions: [
               occasionRow({ ownerId: USER_ID, visibility: 'private' }),
             ],

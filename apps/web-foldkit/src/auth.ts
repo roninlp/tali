@@ -17,7 +17,7 @@ import {
   accountMenuView,
 } from './ui/account-menu'
 import { bootView as bootSplashView } from './ui/boot'
-import { Toast, toastStackView } from './ui/toast'
+import { Toast, toastFolds, toastStackView } from './ui/toast'
 
 // MODEL
 
@@ -239,30 +239,17 @@ const foldAccountMenu = Update.foldChild({
   foldOutMessage: foldAccountMenuOutMessage,
 })
 
-const foldToastOutMessage = Toast.OutMessage.match<Update.Step<Model, Message>>(
-  {
-    DismissedToast: () => model => ({ model }),
-  },
-)
-
-const foldToast = Update.foldChild({
-  update: Toast.update,
-  read: (model: Model) => Option.some(model.toast),
-  write: (model, nextToast) => modifyFields(model, { toast: () => nextToast }),
+const toast = toastFolds<Model, Message>({
+  field: model => model.toast,
+  setField: (model, nextToast) =>
+    modifyFields(model, { toast: () => nextToast }),
   toParentMessage: message => Message.GotToastMessage({ message }),
-  foldOutMessage: foldToastOutMessage,
 })
 
+const foldToast = toast.fold
+
 const shownToastStep = (body: string): Update.Step<Model, Message> =>
-  Update.foldChildStep({
-    update: toast =>
-      Toast.show(toast, { payload: { text: body }, variant: 'Error' }),
-    read: (model: Model) => Option.some(model.toast),
-    write: (model, nextToast) =>
-      modifyFields(model, { toast: () => nextToast }),
-    toParentMessage: message => Message.GotToastMessage({ message }),
-    foldOutMessage: () => stepModel => ({ model: stepModel }),
-  })
+  toast.shownStep({ text: body }, 'Error')
 
 const clearSession = (model: Model): UpdateReturn => ({
   model: modifyFields(model, {

@@ -22,7 +22,6 @@ import {
   type ListUpdateInput,
   ListNotFound,
   PlanningListItem as ListItem,
-  type SyncEntityType,
   type TagId,
   type UserId,
   resolveCreateVisibility,
@@ -41,6 +40,9 @@ import {
   PlanningListItemRepo,
   PlanningListItemRepoLive,
 } from '@tali/sql'
+import { readScoped } from './row-scope.js'
+import { casUpdate } from './cas.js'
+import { makeSyncKit } from './sync-write.js'
 import { loadAssignableTags } from './tag-guard.js'
 
 /**
@@ -68,8 +70,6 @@ import { loadAssignableTags } from './tag-guard.js'
  * the owning list's version bumps once per reorder so a stale list edit can be
  * detected.
  */
-
-const MAX_CAS_ATTEMPTS = 3
 
 export interface ListViewer {
   readonly userId: UserId
@@ -176,63 +176,23 @@ export class ListService extends Context.Service<ListService>()('ListService', {
     const tags = yield* TagRepo
     const sync = yield* SyncRepo
 
-    const definition = (entityType: SyncEntityType) => {
-      const def = sync.definition(entityType)
-      if (def === undefined) {
-        throw new Error(`sync entity type is not registered: ${entityType}`)
-      }
-      return def
-    }
+    const kit = makeSyncKit<ListServiceError>({ sync, invalid })
 
     /**
      * The list aggregate + the server-stamped last writer (#39). The List
      * model does not carry attribution, so it is added after the same schema
      * boundary the sync push uses; the registry writes/reads the column.
      */
-    const listState = (list: List, writerId: string): SyncEntityState => {
-      const def = definition('list')
-      const data = def.validate(
-        { ...list },
-        {
-          version: list.version,
-          updatedAt: list.updatedAt,
-          deletedAt: list.deletedAt,
-        },
-      )
-      return {
-        entityType: 'list',
-        entityId: list.id,
-        householdId: list.householdId,
-        ownerId: list.ownerId,
-        visibility: list.visibility,
-        version: list.version,
-        updatedAt: list.updatedAt,
-        deletedAt: list.deletedAt,
-        data: { ...data, lastWriterId: writerId },
-      }
-    }
+    const listState = (list: List, writerId: string): SyncEntityState =>
+      kit.stateOf('list', list, {
+        decorate: data => ({ ...data, lastWriterId: writerId }),
+      })
 
-    const itemState = (item: ListItem, writerId: string): SyncEntityState => {
-      const def = definition('listItem')
-      return {
-        entityType: 'listItem',
-        entityId: item.id,
-        householdId: item.householdId,
-        ownerId: item.ownerId,
-        visibility: item.visibility,
-        version: item.version,
-        updatedAt: item.updatedAt,
-        deletedAt: item.deletedAt,
-        data: {
-          ...def.validate(itemWire(item), {
-            version: item.version,
-            updatedAt: item.updatedAt,
-            deletedAt: item.deletedAt,
-          }),
-          lastWriterId: writerId,
-        },
-      }
-    }
+    const itemState = (item: ListItem, writerId: string): SyncEntityState =>
+      kit.stateOf('listItem', item, {
+        encode: itemWire,
+        decorate: data => ({ ...data, lastWriterId: writerId }),
+      })
 
     const appliedMutations = (viewer: ListViewer, ids: ReadonlyArray<string>) =>
       sync
@@ -242,146 +202,107 @@ export class ListService extends Context.Service<ListService>()('ListService', {
         })
         .pipe(Effect.orDie)
 
-    const reusedMutationIdError = (_id: string) =>
-      invalid(
-        'clientMutationId',
-        'this mutation id was already applied to a different change',
-      )
-
     /**
      * One batch over N entity groups. Groups already recorded for this
      * mutation id are skipped, so a replay after a lost response cannot write
-     * twice; a group whose id belongs to another row is rejected.
+     * twice; a group whose id belongs to another row is rejected. The returned
+     * set reports every group the ledger records, replayed or fresh.
      */
     const commitGroups = (
       viewer: ListViewer,
       groups: ReadonlyArray<EntityGroup>,
       now: string,
     ) =>
-      Effect.gen(function* () {
-        const prior = yield* appliedMutations(
-          viewer,
-          groups.map(group => group.clientMutationId),
-        )
-        for (const group of groups) {
-          const applied = prior.get(group.clientMutationId)
-          if (
-            applied !== undefined &&
-            (applied.entityType !== group.state.entityType ||
-              applied.entityId !== group.state.entityId)
-          ) {
-            return yield* reusedMutationIdError(group.state.entityId)
-          }
-        }
-
-        const statements = groups
-          .filter(group => !prior.has(group.clientMutationId))
-          .flatMap(group => {
-            const batch = [
-              sync.writeEntity({
-                state: group.state,
-                expectedVersion: group.expectedVersion,
-              }),
-              sync.appendFeed({
-                householdId: viewer.householdId,
-                entityType: group.state.entityType,
-                entityId: group.state.entityId,
-                op: group.op ?? 'upsert',
-                version: group.state.version,
-                updatedAt: group.state.updatedAt,
-                ownerId: group.state.ownerId,
-                visibility: group.state.visibility,
-              }),
-              sync.recordApplied({
-                clientMutationId: group.clientMutationId,
-                householdId: viewer.householdId,
-                entityType: group.state.entityType,
-                entityId: group.state.entityId,
-                version: group.state.version,
-                createdAt: now,
-              }),
-            ]
-            if (
-              group.tagChanges !== undefined &&
-              !sameTags(group.tagChanges.previous, group.tagChanges.next)
-            ) {
-              batch.push(
-                items.detachTagsIfVersion({
-                  itemId: group.state.entityId as ListItem['id'],
-                  version: group.state.version,
-                  updatedAt: group.state.updatedAt,
-                }),
-                ...group.tagChanges.next.map(tagId =>
-                  items.attachTagIfVersion({
-                    itemId: group.state.entityId as ListItem['id'],
-                    tagId,
-                    householdId: viewer.householdId,
-                    createdAt: now,
-                    version: group.state.version,
-                    updatedAt: group.state.updatedAt,
+      kit.commitEntries({
+        householdId: viewer.householdId,
+        skipApplied: true,
+        now,
+        entries: groups.map(group => ({
+          state: group.state,
+          expectedVersion: group.expectedVersion,
+          clientMutationId: group.clientMutationId,
+          op: group.op,
+          extra: (state: SyncEntityState) =>
+            group.tagChanges !== undefined &&
+            !sameTags(group.tagChanges.previous, group.tagChanges.next)
+              ? [
+                  items.detachTagsIfVersion({
+                    itemId: state.entityId as ListItem['id'],
+                    version: state.version,
+                    updatedAt: state.updatedAt,
                   }),
-                ),
-              )
-            }
-            return batch
-          })
+                  ...group.tagChanges.next.map(tagId =>
+                    items.attachTagIfVersion({
+                      itemId: state.entityId as ListItem['id'],
+                      tagId,
+                      householdId: viewer.householdId,
+                      createdAt: now,
+                      version: state.version,
+                      updatedAt: state.updatedAt,
+                    }),
+                  ),
+                ]
+              : [],
+        })),
+      })
 
-        if (statements.length > 0)
-          yield* sync.commit(statements).pipe(Effect.orDie)
-        return yield* appliedMutations(
-          viewer,
-          groups.map(group => group.clientMutationId),
-        )
+    /**
+     * One read path for lists. A normal read rejects a tombstone; a replay
+     * passes `includeTrashed` so a retried delete hands the stored row back
+     * instead of `ListNotFound`, exactly like the event/note replay guards.
+     */
+    const readList = (
+      viewer: ListViewer,
+      id: List['id'],
+      includeTrashed = false,
+    ): Effect.Effect<List, ListServiceError> =>
+      readScoped({
+        viewer,
+        id,
+        find: lists.findById,
+        includeTrashed,
+        // A tombstone reads as missing before the household/owner checks.
+        trash: 'first',
+        onViolation: violation =>
+          violation === 'notFound' || violation === 'trashed'
+            ? new ListNotFound({ id })
+            : new ListForbidden({ id, reason: violation }),
       })
 
     const loadList = (
       viewer: ListViewer,
       id: List['id'],
-    ): Effect.Effect<List, ListServiceError> =>
+    ): Effect.Effect<List, ListServiceError> => readList(viewer, id)
+
+    const readItem = (
+      viewer: ListViewer,
+      id: ListItem['id'],
+      includeTrashed = false,
+    ): Effect.Effect<ListItem, ListServiceError> =>
       Effect.gen(function* () {
-        const found = yield* lists.findById(id).pipe(Effect.orDie)
-        if (Option.isNone(found) || found.value.deletedAt !== null) {
-          return yield* Effect.fail(new ListNotFound({ id }))
-        }
-        const list = found.value
-        if (list.householdId !== viewer.householdId) {
-          return yield* Effect.fail(
-            new ListForbidden({ id, reason: 'household' }),
-          )
-        }
-        if (list.visibility === 'private' && list.ownerId !== viewer.userId) {
-          return yield* Effect.fail(
-            new ListForbidden({ id, reason: 'private' }),
-          )
-        }
-        return list
+        const item = yield* readScoped({
+          viewer,
+          id,
+          find: items.findById,
+          includeTrashed,
+          trash: 'first',
+          onViolation: violation =>
+            violation === 'notFound' || violation === 'trashed'
+              ? new ListEntryNotFound({ id })
+              : new ListForbidden({ id, reason: violation }),
+        })
+        // The parent list's visibility is a second gate: an item can never be
+        // read through a private list owned by the other member. A replayed
+        // item delete also tolerates a tombstoned parent, because the list
+        // delete may have landed first; the household/owner rule still holds.
+        yield* readList(viewer, item.listId, includeTrashed)
+        return item
       })
 
     const loadItem = (
       viewer: ListViewer,
       id: ListItem['id'],
-    ): Effect.Effect<ListItem, ListServiceError> =>
-      Effect.gen(function* () {
-        const found = yield* items.findById(id).pipe(Effect.orDie)
-        if (Option.isNone(found) || found.value.deletedAt !== null) {
-          return yield* Effect.fail(new ListEntryNotFound({ id }))
-        }
-        const item = found.value
-        if (item.householdId !== viewer.householdId) {
-          return yield* Effect.fail(
-            new ListForbidden({ id, reason: 'household' }),
-          )
-        }
-        if (item.visibility === 'private' && item.ownerId !== viewer.userId) {
-          return yield* Effect.fail(
-            new ListForbidden({ id, reason: 'private' }),
-          )
-        }
-        // The parent list's visibility is a second gate: an item can never be
-        // read through a private list owned by the other member.
-        yield* loadList(viewer, item.listId)
-        return item
-      })
+    ): Effect.Effect<ListItem, ListServiceError> => readItem(viewer, id)
 
     const requireTags = (
       viewer: ListViewer,
@@ -424,14 +345,13 @@ export class ListService extends Context.Service<ListService>()('ListService', {
         const prior = yield* appliedMutations(viewer, [clientMutationId])
         const row = prior.get(clientMutationId)
         if (row === undefined) return Option.none()
-        if (
-          row.entityType !== 'list' ||
-          (expectedId !== undefined && row.entityId !== expectedId)
-        ) {
-          return yield* reusedMutationIdError(expectedId ?? row.entityId)
+        if (kit.reusedMutationId(row, { entityType: 'list', id: expectedId })) {
+          return yield* kit.reusedMutationIdError(expectedId ?? row.entityId)
         }
-        return yield* Effect.option(
-          loadList(viewer, row.entityId as List['id']),
+        // Same household/owner rules as any read, but a delete replay needs
+        // the stored tombstone back.
+        return Option.some(
+          yield* readList(viewer, row.entityId as List['id'], true),
         )
       })
 
@@ -445,13 +365,12 @@ export class ListService extends Context.Service<ListService>()('ListService', {
         const row = prior.get(clientMutationId)
         if (row === undefined) return Option.none()
         if (
-          row.entityType !== 'listItem' ||
-          (expectedId !== undefined && row.entityId !== expectedId)
+          kit.reusedMutationId(row, { entityType: 'listItem', id: expectedId })
         ) {
-          return yield* reusedMutationIdError(expectedId ?? row.entityId)
+          return yield* kit.reusedMutationIdError(expectedId ?? row.entityId)
         }
-        return yield* Effect.option(
-          loadItem(viewer, row.entityId as ListItem['id']),
+        return Option.some(
+          yield* readItem(viewer, row.entityId as ListItem['id'], true),
         )
       })
 
@@ -526,7 +445,7 @@ export class ListService extends Context.Service<ListService>()('ListService', {
           now,
         )
         if (!applied.has(input.clientMutationId)) {
-          return yield* Effect.fail(new ListConflict({ id: list.id }))
+          return yield* new ListConflict({ id: list.id })
         }
         return list
       })
@@ -549,64 +468,68 @@ export class ListService extends Context.Service<ListService>()('ListService', {
         )
         if (Option.isSome(replayed)) return replayed.value
 
-        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-          const current = yield* loadList(viewer, input.id)
-          const patch: ListPatch = input.patch
-          if (patch.title !== undefined && patch.title.trim() === '') {
-            return yield* invalid('title', 'a list needs a title')
-          }
-          // Only the creator can flip a shared list to private; the other
-          // member must not be able to lock the owner out.
-          if (
-            patch.visibility === 'private' &&
-            current.ownerId !== viewer.userId
-          ) {
-            return yield* invalid(
-              'visibility',
-              'only the list owner can make it private',
-            )
-          }
-          const next = new List({
-            ...current,
-            title: patch.title?.trim() ?? current.title,
-            description:
-              patch.description !== undefined
-                ? patch.description
-                : current.description,
-            color: patch.color !== undefined ? patch.color : current.color,
-            icon: patch.icon !== undefined ? patch.icon : current.icon,
-            sort: patch.sort ?? current.sort,
-            checkedPlacement:
-              patch.checkedPlacement ?? current.checkedPlacement,
-            visibility: patch.visibility ?? current.visibility,
-            version: current.version + 1,
-            updatedAt: now,
-          })
-          if (
-            next.title === current.title &&
-            next.description === current.description &&
-            next.color === current.color &&
-            next.icon === current.icon &&
-            next.sort === current.sort &&
-            next.checkedPlacement === current.checkedPlacement &&
-            next.visibility === current.visibility
-          ) {
-            return current
-          }
-          const applied = yield* commitGroups(
-            viewer,
-            [
-              {
-                state: listState(next, viewer.userId),
-                expectedVersion: current.version,
-                clientMutationId: input.clientMutationId,
-              },
-            ],
-            now,
-          )
-          if (applied.has(input.clientMutationId)) return next
-        }
-        return yield* Effect.fail(new ListConflict({ id: input.id }))
+        return yield* casUpdate({
+          read: loadList(viewer, input.id),
+          plan: current =>
+            Effect.gen(function* () {
+              const patch: ListPatch = input.patch
+              if (patch.title !== undefined && patch.title.trim() === '') {
+                return yield* invalid('title', 'a list needs a title')
+              }
+              // Only the creator can flip a shared list to private; the other
+              // member must not be able to lock the owner out.
+              if (
+                patch.visibility === 'private' &&
+                current.ownerId !== viewer.userId
+              ) {
+                return yield* invalid(
+                  'visibility',
+                  'only the list owner can make it private',
+                )
+              }
+              const next = new List({
+                ...current,
+                title: patch.title?.trim() ?? current.title,
+                description:
+                  patch.description !== undefined
+                    ? patch.description
+                    : current.description,
+                color: patch.color !== undefined ? patch.color : current.color,
+                icon: patch.icon !== undefined ? patch.icon : current.icon,
+                sort: patch.sort ?? current.sort,
+                checkedPlacement:
+                  patch.checkedPlacement ?? current.checkedPlacement,
+                visibility: patch.visibility ?? current.visibility,
+                version: current.version + 1,
+                updatedAt: now,
+              })
+              if (
+                next.title === current.title &&
+                next.description === current.description &&
+                next.color === current.color &&
+                next.icon === current.icon &&
+                next.sort === current.sort &&
+                next.checkedPlacement === current.checkedPlacement &&
+                next.visibility === current.visibility
+              ) {
+                return null
+              }
+              return next
+            }),
+          write: (current, next) =>
+            commitGroups(
+              viewer,
+              [
+                {
+                  state: listState(next, viewer.userId),
+                  expectedVersion: current.version,
+                  clientMutationId: input.clientMutationId,
+                },
+              ],
+              now,
+            ).pipe(Effect.map(applied => applied.has(input.clientMutationId))),
+          conflict: () => new ListConflict({ id: input.id }),
+        })
       })
 
     const remove = (
@@ -615,65 +538,63 @@ export class ListService extends Context.Service<ListService>()('ListService', {
       now: string = new Date().toISOString(),
     ): Effect.Effect<List, ListServiceError> =>
       Effect.gen(function* () {
-        const replayed = yield* replayList(
-          viewer,
-          input.clientMutationId,
-          input.id,
-        )
+        // The delete commits its list group under `${id}:list`, so the replay
+        // must look up that same ledger key (a plain id may belong to a
+        // create/update) — otherwise a lost response would surface as
+        // ListNotFound on the tombstoned row.
+        const listKey = `${input.clientMutationId}:list`
+        const replayed = yield* replayList(viewer, listKey, input.id)
         if (Option.isSome(replayed)) return replayed.value
 
-        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-          const current = yield* loadList(viewer, input.id)
-          // Cascade the soft delete to every live item, including a spouse's
-          // private rows, so nothing outlives the list in their mirror.
-          const children = yield* items
-            .listAllForList({
-              listId: current.id,
-              householdId: viewer.householdId,
-            })
-            .pipe(Effect.orDie)
-          const listId = `${input.clientMutationId}:list`
-          const groups: Array<EntityGroup> = [
-            {
-              state: listState(
-                new List({
-                  ...current,
-                  version: current.version + 1,
-                  updatedAt: now,
-                  deletedAt: now,
-                }),
-                viewer.userId,
-              ),
-              expectedVersion: current.version,
-              clientMutationId: listId,
-              op: 'delete',
-            },
-            ...children.map(item => ({
-              state: itemState(
-                new ListItem({
-                  ...item,
-                  version: item.version + 1,
-                  updatedAt: now,
-                  deletedAt: now,
-                }),
-                viewer.userId,
-              ),
-              expectedVersion: item.version,
-              clientMutationId: `${input.clientMutationId}:item:${item.id}`,
-              op: 'delete' as const,
-            })),
-          ]
-          const applied = yield* commitGroups(viewer, groups, now)
-          if (applied.has(listId)) {
-            return new List({
-              ...current,
-              version: current.version + 1,
-              updatedAt: now,
-              deletedAt: now,
-            })
-          }
-        }
-        return yield* Effect.fail(new ListConflict({ id: input.id }))
+        return yield* casUpdate({
+          read: loadList(viewer, input.id),
+          plan: current =>
+            Effect.succeed(
+              new List({
+                ...current,
+                version: current.version + 1,
+                updatedAt: now,
+                deletedAt: now,
+              }),
+            ),
+          write: (current, next) =>
+            Effect.gen(function* () {
+              // Cascade the soft delete to every live item, including a
+              // spouse's private rows, so nothing outlives the list in their
+              // mirror.
+              const children = yield* items
+                .listAllForList({
+                  listId: current.id,
+                  householdId: viewer.householdId,
+                })
+                .pipe(Effect.orDie)
+              const groups: Array<EntityGroup> = [
+                {
+                  state: listState(next, viewer.userId),
+                  expectedVersion: current.version,
+                  clientMutationId: listKey,
+                  op: 'delete',
+                },
+                ...children.map(item => ({
+                  state: itemState(
+                    new ListItem({
+                      ...item,
+                      version: item.version + 1,
+                      updatedAt: now,
+                      deletedAt: now,
+                    }),
+                    viewer.userId,
+                  ),
+                  expectedVersion: item.version,
+                  clientMutationId: `${input.clientMutationId}:item:${item.id}`,
+                  op: 'delete' as const,
+                })),
+              ]
+              const applied = yield* commitGroups(viewer, groups, now)
+              return applied.has(listKey)
+            }),
+          conflict: () => new ListConflict({ id: input.id }),
+        })
       })
 
     const list = (
@@ -737,7 +658,7 @@ export class ListService extends Context.Service<ListService>()('ListService', {
           now,
         )
         if (!applied.has(input.clientMutationId)) {
-          return yield* Effect.fail(new ListConflict({ id: item.id }))
+          return yield* new ListConflict({ id: item.id })
         }
         return item
       })
@@ -819,68 +740,74 @@ export class ListService extends Context.Service<ListService>()('ListService', {
         )
         if (Option.isSome(replayed)) return replayed.value
 
-        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-          const current = yield* loadItem(viewer, input.id)
-          const patch: ListItemPatch = input.patch
-          if (patch.name !== undefined && patch.name.trim() === '') {
-            return yield* invalid('name', 'an item needs a name')
-          }
-          if (patch.tagIds !== undefined)
-            yield* requireTags(viewer, patch.tagIds)
-          // Shared means co-edit; un-sharing is the owner's alone (ADR-0011).
-          if (
-            patch.visibility === 'private' &&
-            current.ownerId !== viewer.userId
-          ) {
-            return yield* invalid(
-              'visibility',
-              'only the item owner can make it private',
-            )
-          }
-          const parent = yield* loadList(viewer, current.listId)
-          // A no-op field edit is still a write: a legacy shared item in a
-          // private list must converge to private, exactly as the sync ceiling
-          // does, rather than stay shared because the patch omitted visibility.
-          const visibility =
-            patch.visibility !== undefined
-              ? yield* itemVisibility(parent, patch.visibility)
-              : parent.visibility === 'private'
-                ? 'private'
-                : current.visibility
-          const next = new ListItem({
-            ...current,
-            name: patch.name?.trim() ?? current.name,
-            order: patch.order ?? current.order,
-            color: patch.color !== undefined ? patch.color : current.color,
-            tagIds: patch.tagIds ?? current.tagIds,
-            visibility,
-            version: current.version + 1,
-            updatedAt: now,
-          })
-          if (
-            next.name === current.name &&
-            next.order === current.order &&
-            next.color === current.color &&
-            next.visibility === current.visibility &&
-            sameTags(next.tagIds, current.tagIds)
-          ) {
-            return current
-          }
-          const applied = yield* commitGroups(
-            viewer,
-            [
-              {
-                state: itemState(next, viewer.userId),
-                expectedVersion: current.version,
-                clientMutationId: input.clientMutationId,
-                tagChanges: { previous: current.tagIds, next: next.tagIds },
-              },
-            ],
-            now,
-          )
-          if (applied.has(input.clientMutationId)) return next
-        }
-        return yield* Effect.fail(new ListConflict({ id: input.id }))
+        return yield* casUpdate({
+          read: loadItem(viewer, input.id),
+          plan: current =>
+            Effect.gen(function* () {
+              const patch: ListItemPatch = input.patch
+              if (patch.name !== undefined && patch.name.trim() === '') {
+                return yield* invalid('name', 'an item needs a name')
+              }
+              if (patch.tagIds !== undefined)
+                yield* requireTags(viewer, patch.tagIds)
+              // Shared means co-edit; un-sharing is the owner's alone
+              // (ADR-0011).
+              if (
+                patch.visibility === 'private' &&
+                current.ownerId !== viewer.userId
+              ) {
+                return yield* invalid(
+                  'visibility',
+                  'only the item owner can make it private',
+                )
+              }
+              const parent = yield* loadList(viewer, current.listId)
+              // A no-op field edit is still a write: a legacy shared item in a
+              // private list must converge to private, exactly as the sync
+              // ceiling does, rather than stay shared because the patch omitted
+              // visibility.
+              const visibility =
+                patch.visibility !== undefined
+                  ? yield* itemVisibility(parent, patch.visibility)
+                  : parent.visibility === 'private'
+                    ? 'private'
+                    : current.visibility
+              const next = new ListItem({
+                ...current,
+                name: patch.name?.trim() ?? current.name,
+                order: patch.order ?? current.order,
+                color: patch.color !== undefined ? patch.color : current.color,
+                tagIds: patch.tagIds ?? current.tagIds,
+                visibility,
+                version: current.version + 1,
+                updatedAt: now,
+              })
+              if (
+                next.name === current.name &&
+                next.order === current.order &&
+                next.color === current.color &&
+                next.visibility === current.visibility &&
+                sameTags(next.tagIds, current.tagIds)
+              ) {
+                return null
+              }
+              return next
+            }),
+          write: (current, next) =>
+            commitGroups(
+              viewer,
+              [
+                {
+                  state: itemState(next, viewer.userId),
+                  expectedVersion: current.version,
+                  clientMutationId: input.clientMutationId,
+                  tagChanges: { previous: current.tagIds, next: next.tagIds },
+                },
+              ],
+              now,
+            ).pipe(Effect.map(applied => applied.has(input.clientMutationId))),
+          conflict: () => new ListConflict({ id: input.id }),
+        })
       })
 
     const setItemChecked = (
@@ -896,35 +823,40 @@ export class ListService extends Context.Service<ListService>()('ListService', {
         )
         if (Option.isSome(replayed)) return replayed.value
 
-        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-          const current = yield* loadItem(viewer, input.id)
-          // Idempotent: re-checking a checked item (or unchecking an unchecked
-          // one) writes nothing and does not mint a version.
-          if (current.done === input.checked) return current
-          const parent = yield* loadList(viewer, current.listId)
-          const next = new ListItem({
-            ...current,
-            done: input.checked,
-            checkedAt: input.checked ? now : null,
-            visibility:
-              parent.visibility === 'private' ? 'private' : current.visibility,
-            version: current.version + 1,
-            updatedAt: now,
-          })
-          const applied = yield* commitGroups(
-            viewer,
-            [
-              {
-                state: itemState(next, viewer.userId),
-                expectedVersion: current.version,
-                clientMutationId: input.clientMutationId,
-              },
-            ],
-            now,
-          )
-          if (applied.has(input.clientMutationId)) return next
-        }
-        return yield* Effect.fail(new ListConflict({ id: input.id }))
+        return yield* casUpdate({
+          read: loadItem(viewer, input.id),
+          plan: current =>
+            Effect.gen(function* () {
+              // Idempotent: re-checking a checked item (or unchecking an
+              // unchecked one) writes nothing and does not mint a version.
+              if (current.done === input.checked) return null
+              const parent = yield* loadList(viewer, current.listId)
+              return new ListItem({
+                ...current,
+                done: input.checked,
+                checkedAt: input.checked ? now : null,
+                visibility:
+                  parent.visibility === 'private'
+                    ? 'private'
+                    : current.visibility,
+                version: current.version + 1,
+                updatedAt: now,
+              })
+            }),
+          write: (current, next) =>
+            commitGroups(
+              viewer,
+              [
+                {
+                  state: itemState(next, viewer.userId),
+                  expectedVersion: current.version,
+                  clientMutationId: input.clientMutationId,
+                },
+              ],
+              now,
+            ).pipe(Effect.map(applied => applied.has(input.clientMutationId))),
+          conflict: () => new ListConflict({ id: input.id }),
+        })
       })
 
     const deleteItem = (
@@ -940,29 +872,32 @@ export class ListService extends Context.Service<ListService>()('ListService', {
         )
         if (Option.isSome(replayed)) return replayed.value
 
-        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-          const current = yield* loadItem(viewer, input.id)
-          const next = new ListItem({
-            ...current,
-            version: current.version + 1,
-            updatedAt: now,
-            deletedAt: now,
-          })
-          const applied = yield* commitGroups(
-            viewer,
-            [
-              {
-                state: itemState(next, viewer.userId),
-                expectedVersion: current.version,
-                clientMutationId: input.clientMutationId,
-                op: 'delete',
-              },
-            ],
-            now,
-          )
-          if (applied.has(input.clientMutationId)) return next
-        }
-        return yield* Effect.fail(new ListConflict({ id: input.id }))
+        return yield* casUpdate({
+          read: loadItem(viewer, input.id),
+          plan: current =>
+            Effect.succeed(
+              new ListItem({
+                ...current,
+                version: current.version + 1,
+                updatedAt: now,
+                deletedAt: now,
+              }),
+            ),
+          write: (current, next) =>
+            commitGroups(
+              viewer,
+              [
+                {
+                  state: itemState(next, viewer.userId),
+                  expectedVersion: current.version,
+                  clientMutationId: input.clientMutationId,
+                  op: 'delete',
+                },
+              ],
+              now,
+            ).pipe(Effect.map(applied => applied.has(input.clientMutationId))),
+          conflict: () => new ListConflict({ id: input.id }),
+        })
       })
 
     const reorder = (
@@ -976,95 +911,104 @@ export class ListService extends Context.Service<ListService>()('ListService', {
         if (prior.has(listKey))
           return yield* listItems(viewer, { listId: input.listId })
 
-        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-          const currentList = yield* loadList(viewer, input.listId)
-          const visible = yield* items
-            .listByList({
-              listId: input.listId,
-              householdId: viewer.householdId,
-              userId: viewer.userId,
-            })
-            .pipe(Effect.orDie)
-          const all = yield* items
-            .listAllForList({
-              listId: input.listId,
-              householdId: viewer.householdId,
-            })
-            .pipe(Effect.orDie)
-          const visibleIds = new Set(visible.map(item => item.id))
-          const byId = new Map(all.map(item => [item.id, item]))
-          for (const id of input.itemIds) {
-            if (!visibleIds.has(id)) {
-              return yield* invalid(
-                'itemIds',
-                'every reordered item must belong to this list',
-              )
-            }
-          }
-          // Unknown or duplicate ids would silently drop rows; require a
-          // complete, unique permutation of the visible items.
-          if (
-            new Set(input.itemIds).size !== input.itemIds.length ||
-            input.itemIds.length !== visible.length
-          ) {
-            return yield* invalid(
-              'itemIds',
-              'itemIds must contain every visible item exactly once',
-            )
-          }
-          const ordered = [
-            ...input.itemIds.map(id => byId.get(id)!),
-            ...visible
-              .filter(item => !input.itemIds.includes(item.id))
-              .map(item => byId.get(item.id)!),
-          ]
-          const hidden = all.filter(
-            item => !ordered.some(entry => entry.id === item.id),
-          )
-          const final = [...ordered, ...hidden]
-
-          const groups: Array<EntityGroup> = []
-          final.forEach((item, index) => {
-            const order = index + 1
-            const visibility =
-              currentList.visibility === 'private' ? 'private' : item.visibility
-            if (item.order === order && item.visibility === visibility) return
-            groups.push({
-              state: itemState(
-                new ListItem({
-                  ...item,
-                  order,
-                  visibility,
-                  version: item.version + 1,
-                  updatedAt: now,
-                }),
-                viewer.userId,
-              ),
-              expectedVersion: item.version,
-              clientMutationId: `${input.clientMutationId}:item:${item.id}`,
-            })
-          })
-          // The list's version bumps once per reorder (domain-model §3.8), so a
-          // concurrently edited list row cannot claim the old ordering.
-          groups.push({
-            state: listState(
+        yield* casUpdate({
+          read: loadList(viewer, input.listId),
+          // The list's own version bumps on every reorder (domain-model §3.8),
+          // so a concurrently edited list row cannot claim the old ordering.
+          plan: currentList =>
+            Effect.succeed(
               new List({
                 ...currentList,
                 version: currentList.version + 1,
                 updatedAt: now,
               }),
-              viewer.userId,
             ),
-            expectedVersion: currentList.version,
-            clientMutationId: listKey,
-          })
+          write: (currentList, nextList) =>
+            Effect.gen(function* () {
+              // The items are read against the same fresh list version the CAS
+              // guards, and the whole permutation lands as one batch.
+              const visible = yield* items
+                .listByList({
+                  listId: input.listId,
+                  householdId: viewer.householdId,
+                  userId: viewer.userId,
+                })
+                .pipe(Effect.orDie)
+              const all = yield* items
+                .listAllForList({
+                  listId: input.listId,
+                  householdId: viewer.householdId,
+                })
+                .pipe(Effect.orDie)
+              const visibleIds = new Set(visible.map(item => item.id))
+              const byId = new Map(all.map(item => [item.id, item]))
+              for (const id of input.itemIds) {
+                if (!visibleIds.has(id)) {
+                  return yield* invalid(
+                    'itemIds',
+                    'every reordered item must belong to this list',
+                  )
+                }
+              }
+              // Unknown or duplicate ids would silently drop rows; require a
+              // complete, unique permutation of the visible items.
+              if (
+                new Set(input.itemIds).size !== input.itemIds.length ||
+                input.itemIds.length !== visible.length
+              ) {
+                return yield* invalid(
+                  'itemIds',
+                  'itemIds must contain every visible item exactly once',
+                )
+              }
+              const ordered = [
+                ...input.itemIds.map(id => byId.get(id)!),
+                ...visible
+                  .filter(item => !input.itemIds.includes(item.id))
+                  .map(item => byId.get(item.id)!),
+              ]
+              const hidden = all.filter(
+                item => !ordered.some(entry => entry.id === item.id),
+              )
+              const final = [...ordered, ...hidden]
 
-          const applied = yield* commitGroups(viewer, groups, now)
-          if (applied.has(listKey)) {
-            return yield* listItems(viewer, { listId: input.listId })
-          }
-        }
-        return yield* Effect.fail(new ListConflict({ id: input.listId }))
+              const groups: Array<EntityGroup> = []
+              final.forEach((item, index) => {
+                const order = index + 1
+                const visibility =
+                  currentList.visibility === 'private'
+                    ? 'private'
+                    : item.visibility
+                if (item.order === order && item.visibility === visibility)
+                  return
+                groups.push({
+                  state: itemState(
+                    new ListItem({
+                      ...item,
+                      order,
+                      visibility,
+                      version: item.version + 1,
+                      updatedAt: now,
+                    }),
+                    viewer.userId,
+                  ),
+                  expectedVersion: item.version,
+                  clientMutationId: `${input.clientMutationId}:item:${item.id}`,
+                })
+              })
+              groups.push({
+                state: listState(nextList, viewer.userId),
+                expectedVersion: currentList.version,
+                clientMutationId: listKey,
+              })
+
+              const applied = yield* commitGroups(viewer, groups, now)
+              return applied.has(listKey)
+            }),
+          conflict: () => new ListConflict({ id: input.listId }),
+        })
+
+        return yield* listItems(viewer, { listId: input.listId })
       })
 
     return {

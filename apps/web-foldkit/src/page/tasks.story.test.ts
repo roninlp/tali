@@ -15,20 +15,14 @@ import { taskKey } from '../mirror'
 import { TODAY_NOW, USER_ID } from '../test-fixtures'
 import * as Tasks from './tasks'
 import type { Inputs } from './tasks'
-import {
-  DEFAULT_TASK_FILTERS,
-  DEFAULT_TASK_SORT,
-  ProjectFilter,
-  TaskFilters,
-  TaskSort,
-  TaskViewSettings,
-} from './tasks-model'
+import { DEFAULT_TASK_FILTERS, ProjectFilter, TaskSort } from './tasks-model'
 import {
   baseModel,
   defaultInputs,
   inboxTask,
   laterTask,
   projectId,
+  settingsFor,
   tagId,
   tasks,
   todayTask,
@@ -39,15 +33,6 @@ const inputWith = (overrides: Partial<Inputs> = {}) => defaultInputs(overrides)
 
 const update = (today: Tasks.Model, message: Tasks.Message) =>
   Tasks.update(today, message, inputWith())
-
-const settingsFor = (
-  filters: Partial<typeof DEFAULT_TASK_FILTERS> = {},
-  sort: Partial<typeof DEFAULT_TASK_SORT> = {},
-): TaskViewSettings =>
-  TaskViewSettings.make({
-    filters: TaskFilters.make({ ...DEFAULT_TASK_FILTERS, ...filters }),
-    sort: TaskSort.make({ ...DEFAULT_TASK_SORT, ...sort }),
-  })
 
 const withToast = (model: Tasks.Model, task = laterTask): Tasks.Model =>
   modifyFields(model, {

@@ -110,8 +110,10 @@ export class CaptureService extends Context.Service<CaptureService>()(
         Effect.gen(function* () {
           const found = yield* captures.findById(id).pipe(Effect.orDie)
           // Another owner's row is indistinguishable from a missing one.
+          // Deliberately not `row-scope`: a capture is owner-only and is never
+          // checked against the household or a visibility flag.
           if (Option.isNone(found) || found.value.ownerId !== viewer.userId) {
-            return yield* Effect.fail(new CaptureNotFound({ id }))
+            return yield* new CaptureNotFound({ id })
           }
           return found.value
         })
@@ -131,15 +133,13 @@ export class CaptureService extends Context.Service<CaptureService>()(
         Effect.gen(function* () {
           const text = normalizeCaptureText(input.text)
           if (text === '') {
-            return yield* Effect.fail(new CaptureEmpty())
+            return yield* new CaptureEmpty()
           }
           if (text.length > CAPTURE_MAX_TEXT_LENGTH) {
-            return yield* Effect.fail(
-              new CaptureTooLong({
-                length: text.length,
-                max: CAPTURE_MAX_TEXT_LENGTH,
-              }),
-            )
+            return yield* new CaptureTooLong({
+              length: text.length,
+              max: CAPTURE_MAX_TEXT_LENGTH,
+            })
           }
 
           // Dedupe before the limiter: an accidental double-submit must not
@@ -162,11 +162,9 @@ export class CaptureService extends Context.Service<CaptureService>()(
 
           const limit = yield* limiter.consume(viewer.userId)
           if (limit.limited) {
-            return yield* Effect.fail(
-              new CaptureRateLimited({
-                retryAfterSeconds: limit.retryAfterSeconds,
-              }),
-            )
+            return yield* new CaptureRateLimited({
+              retryAfterSeconds: limit.retryAfterSeconds,
+            })
           }
 
           const pending: Capture = {
@@ -342,12 +340,10 @@ export class CaptureService extends Context.Service<CaptureService>()(
           // before any validation or write (ADR-0012 §4).
           const unanswered = drafts.findIndex(draft => draft.missing.length > 0)
           if (unanswered >= 0) {
-            return yield* Effect.fail(
-              new DraftIncomplete({
-                draftIndex: unanswered,
-                fields: drafts[unanswered]!.missing.map(entry => entry.field),
-              }),
-            )
+            return yield* new DraftIncomplete({
+              draftIndex: unanswered,
+              fields: drafts[unanswered]!.missing.map(entry => entry.field),
+            })
           }
 
           // Validate every card first: one bad card fails the request and
@@ -471,9 +467,7 @@ export class CaptureService extends Context.Service<CaptureService>()(
             .remove({ id: capture.id, ownerId: viewer.userId })
             .pipe(Effect.orDie)
           if (!removed) {
-            return yield* Effect.fail(
-              new CaptureNotFound({ id: input.captureId }),
-            )
+            return yield* new CaptureNotFound({ id: input.captureId })
           }
           return capture
         })

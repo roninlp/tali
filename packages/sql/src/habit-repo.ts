@@ -11,6 +11,7 @@ import {
   type Visibility,
   dailyHabitFrequency,
 } from '@tali/domain'
+import { visibleScopeSql } from './scope'
 
 /**
  * D1-backed repository for `Habit` (ticket #63; FR-HAB-01).
@@ -115,16 +116,11 @@ export class HabitRepo extends Context.Service<HabitRepo>()('HabitRepo', {
   make: Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
 
-    /** The visibility filter every habit read shares (private owner-only). */
+    /** ADR-0011: the visibility filter every habit read shares. */
     const visibleScope = (input: {
       readonly householdId: string
       readonly userId: UserId
-    }): Statement.Fragment =>
-      sql`
-        household_id = ${input.householdId}
-        AND deleted_at IS NULL
-        AND (owner_id = ${input.userId} OR visibility = 'shared')
-      `
+    }): Statement.Fragment => visibleScopeSql(sql, input)
 
     const findById = (id: HabitId) =>
       Effect.map(

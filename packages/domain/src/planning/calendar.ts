@@ -1,12 +1,12 @@
 import { Schema } from 'effect'
 import { Temporal } from 'temporal-polyfill/full'
 import { WeekStart } from '../common.js'
+import { addLocalDays, localDateOfInstantOption } from '../local-date.js'
 import {
   jalaliMonthGrid,
   jalaliWeek,
   toIsoDate,
   toJalaliDate,
-  toJalaliDateInZone,
 } from '../jalali.js'
 import {
   occurrenceDates,
@@ -320,9 +320,7 @@ export const weekRange = (
   return {
     start: days[0]!,
     end: days[days.length - 1]!,
-    endExclusive: toIsoDate(
-      Temporal.PlainDate.from(days[days.length - 1]!).add({ days: 1 }),
-    ) as LocalDate,
+    endExclusive: addLocalDays(days[days.length - 1]!, 1),
   }
 }
 
@@ -334,9 +332,7 @@ export const singleDayRange = (
   return {
     start: day,
     end: day,
-    endExclusive: toIsoDate(
-      Temporal.PlainDate.from(day).add({ days: 1 }),
-    ) as LocalDate,
+    endExclusive: addLocalDays(day, 1),
   }
 }
 
@@ -380,15 +376,6 @@ export const monthRange = (
 }
 
 // ── Occurrence expansion ─────────────────────────────────────────────────
-
-const localDateOfInstant = (
-  instant: string,
-  timeZone: string,
-): string | null => {
-  const millis = Date.parse(instant)
-  if (!Number.isFinite(millis)) return null
-  return toIsoDate(toJalaliDateInZone(new Date(millis), timeZone))
-}
 
 const priorityRank: Record<Priority, number> = { high: 0, medium: 1, low: 2 }
 
@@ -442,7 +429,7 @@ export const taskOccurrences = (input: {
       task.dueDate ??
       (task.dueAt === null
         ? null
-        : localDateOfInstant(task.dueAt, input.timeZone))
+        : localDateOfInstantOption(task.dueAt, input.timeZone))
     if (dueDate === null) continue
 
     if (inRange(dueDate, input.range)) {

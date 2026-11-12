@@ -23,14 +23,7 @@ import { emptyMirrorSnapshot, taskKey } from '../mirror'
 import { TODAY_NOW, USER_ID } from '../test-fixtures'
 import type { Inputs } from './tasks'
 import * as Tasks from './tasks'
-import {
-  DEFAULT_TASK_FILTERS,
-  DEFAULT_TASK_SORT,
-  ProjectFilter,
-  TaskFilters,
-  TaskSort,
-  TaskViewSettings,
-} from './tasks-model'
+import { ProjectFilter } from './tasks-model'
 import {
   baseModel,
   defaultInputs,
@@ -40,6 +33,7 @@ import {
   overdueTask,
   project,
   projectId,
+  settingsFor,
   tag,
   tagId,
   todayTask,
@@ -56,15 +50,6 @@ const sceneWith = (model: Tasks.Model, overrides: Partial<Inputs> = {}) => {
     view: withViewInputs(Tasks.view, viewInputs)(),
   }
 }
-
-const settings = (
-  filters: Partial<typeof DEFAULT_TASK_FILTERS> = {},
-  sort: Partial<typeof DEFAULT_TASK_SORT> = {},
-): TaskViewSettings =>
-  TaskViewSettings.make({
-    filters: TaskFilters.make({ ...DEFAULT_TASK_FILTERS, ...filters }),
-    sort: TaskSort.make({ ...DEFAULT_TASK_SORT, ...sort }),
-  })
 
 describe('Tasks screen', () => {
   test('renders the three boards from the mirror with counts and chips', () => {
@@ -241,7 +226,7 @@ describe('Tasks screen', () => {
       Command.expectExact(
         Tasks.CacheTaskView({
           userId: '0192f0a0-0000-7000-8000-000000000001',
-          settings: settings({ tagIds: [tagId] }),
+          settings: settingsFor({ tagIds: [tagId] }),
         }),
       ),
       Command.resolve(
@@ -543,7 +528,7 @@ describe('Tasks screen', () => {
 
   test('the active filter bar starts from the saved model view', () => {
     const filtered = modifyFields(baseModel(), {
-      settings: () => settings({ project: ProjectFilter.None() }),
+      settings: () => settingsFor({ project: ProjectFilter.None() }),
     })
 
     scene(

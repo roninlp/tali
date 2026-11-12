@@ -1,12 +1,16 @@
 import { Option } from 'effect'
 
-import { HabitFrequency } from '../habits-model'
 import type { HabitEntryRow, HabitRow } from '../habits-model'
 import { TodayReadModel } from '../lib/today-api'
 import type { TodayCounts } from '../lib/today-api'
-import { emptyMirrorSnapshot } from '../mirror'
 import type { NoteRow, TaskRow } from '../mirror'
-import { TODAY_NOW } from '../test-fixtures'
+import {
+  mirrorHabit,
+  mirrorNote,
+  mirrorSnapshot,
+  mirrorTask,
+} from '../mirror-fixtures'
+import { DISPLAY, TODAY_NOW } from '../test-fixtures'
 import type { Inputs } from './today'
 
 /**
@@ -24,24 +28,7 @@ export const noteId = '0192f0a0-0000-7000-8000-000000000020'
 export const habitId = '0192f0a0-0000-7000-8000-000000000030'
 export const habitEntryId = '0192f0a0-0000-7000-8000-000000000031'
 
-export const task: TaskRow = {
-  id: taskId,
-  title: 'خرید نان',
-  description: null,
-  status: 'todo',
-  priority: 'medium',
-  dueDate: '2026-10-30',
-  dueAt: null,
-  timeZone: 'Asia/Tehran',
-  projectId: null,
-  tagIds: [],
-  startedAt: null,
-  completedAt: null,
-  createdAt: '2026-10-28T08:00:00.000Z',
-  updatedAt: '2026-10-28T08:00:00.000Z',
-  version: 1,
-  hasSyncError: false,
-}
+export const task: TaskRow = mirrorTask({ id: taskId })
 
 export const secondTask: TaskRow = {
   ...task,
@@ -58,40 +45,16 @@ export const tomorrowTask: TaskRow = {
   dueDate: '2026-10-31',
 }
 
-export const note: NoteRow = {
+export const note: NoteRow = mirrorNote({
   id: noteId,
   title: 'ایده‌های هفته',
   text: 'متن یادداشت',
   excerpt: 'متن یادداشت',
   isPinned: true,
-  isArchived: false,
-  tagIds: [],
   updatedAt: '2026-10-29T08:00:00.000Z',
-  deletedAt: null,
-  version: 1,
-  syncErrorCode: Option.none(),
-}
+})
 
-export const habit: HabitRow = {
-  id: habitId,
-  title: 'آب خوردن',
-  description: null,
-  icon: '💧',
-  color: null,
-  frequency: HabitFrequency.daily(),
-  frequencyHistory: [
-    { effectiveFrom: '2026-10-01', frequency: HabitFrequency.daily() },
-  ],
-  startedOn: '2026-10-01',
-  reminderTime: null,
-  timeZone: 'Asia/Tehran',
-  ownerId: null,
-  visibility: 'shared',
-  createdAt: '2026-10-01T08:00:00.000Z',
-  updatedAt: '2026-10-01T08:00:00.000Z',
-  version: 1,
-  hasSyncError: false,
-}
+export const habit: HabitRow = mirrorHabit({ id: habitId })
 
 export const habitEntry: HabitEntryRow = {
   id: habitEntryId,
@@ -171,16 +134,12 @@ export const readModel = (input: {
 }
 
 export const defaultInputs = (overrides: Partial<Inputs> = {}): Inputs => ({
-  display: {
-    timeZone: 'Asia/Tehran',
-    weekStart: 'saturday',
-    digits: 'persian',
-  },
+  display: DISPLAY,
   sectionOrder: ['tasks', 'events', 'reminders', 'habits', 'notes'],
   isStoreReady: true,
   isOnline: true,
   pending: 0,
-  mirror: emptyMirrorSnapshot(),
+  mirror: mirrorSnapshot(),
   pendingKeys: [],
   ...overrides,
 })

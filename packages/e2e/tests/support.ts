@@ -8,8 +8,8 @@ import {
   type TestInfo,
 } from '@playwright/test'
 import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
+import { API_URL, SEED_STATE_DIR, WEB_URL } from '../config.mjs'
 
 /**
  * Shared harness for the five gate flows (#84): seeded identities, client-side
@@ -17,18 +17,13 @@ import { fileURLToPath } from 'node:url'
  * through (`/sync/push`, the reminder inbox).
  */
 
-export const WEB_URL = 'http://localhost:3001'
-export const API_URL = 'http://localhost:8787'
+export { API_URL, WEB_URL }
 
 /** The session cookie minted by `/auth/register` (auth-routes.ts). */
 export const SESSION_COOKIE = 'tali_session'
 
-/** The Alchemy stage `scripts/stack.mjs` boots and the seed project fills. */
-export const STATE_DIR = join(
-  dirname(fileURLToPath(import.meta.url)),
-  '..',
-  '.state',
-)
+/** The seed project's output: identities, the household and the run tag. */
+export const STATE_DIR = SEED_STATE_DIR
 
 export interface SeededPeople {
   readonly householdId: string

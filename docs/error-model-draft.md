@@ -16,19 +16,18 @@ Effect separates two failure kinds, and the entire error model follows from keep
 | **Expected / typed error** | `Effect<A, E, R>` — the `E` in the effect signature, raised with `Effect.fail` | The caller is *expected* to handle it; it is part of the service contract and crosses the wire to the client as a typed value. | `ListItemNotFound`, `ValidationError`, `ConflictError`, `AuthError` |
 | **Unexpected / defect** | the **defect** channel, raised with `Effect.die` / `Effect.orDie` | A bug or an invariant violation; the caller is *not* expected to handle it. It does **not** cross the wire as a typed value (it surfaces as a generic 500 / `RpcClientDefect`). | a SQL query that returns a malformed row, a null deref, an impossible enum value |
 
-The scaffold already encodes this rule in `apps/api/src/list-item-service.ts`:
+The service layer encodes this rule; for example `apps/api/src/list-service.ts`:
 
 ```ts
 // Repository SqlError/SchemaError are unexpected (broken DB/query) → surfaced
 // as defects (Effect.orDie); only the domain error stays in the error channel.
-const setChecked = (id, checked) =>
-  Effect.gen(function*() {
-    const currentOpt = yield* repo.findById(id).pipe(Effect.orDie)
-    if (Option.isNone(currentOpt)) {
-      return yield* Effect.fail(new ListItemNotFound({ id }))   // typed error
-    }
-    // ...
-  })
+Effect.gen(function* () {
+  const found = yield* lists.findById(id).pipe(Effect.orDie)
+  if (Option.isNone(found)) {
+    return yield* new ListNotFound({ id }) // typed error
+  }
+  // ...
+})
 ```
 
 This draft **refines** that rule: it keeps domain errors typed, and it *promotes* "the DB is unreachable" from a raw defect into a typed `InfrastructureError` (see §3.3), because the client needs to distinguish "try again in a second" from "this will never work" (§3.4, DP-3). True bugs stay defects.

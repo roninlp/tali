@@ -160,6 +160,13 @@ export const updateHabitInMirror = async (
     })
   }
 
+  // An edit that changes nothing (an empty patch, or a frequency equal to the
+  // stored one) must not touch the mirror or queue an outbox entry; the other
+  // builders bail the same way.
+  if (Object.keys(local).length === 0) {
+    return
+  }
+
   await store.writeLocal({
     entityType: 'habit',
     entityId: habit.id,

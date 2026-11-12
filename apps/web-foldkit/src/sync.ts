@@ -4,7 +4,6 @@ import {
   Duration,
   Effect,
   Option,
-  Queue,
   Random,
   Schema,
   Stream,
@@ -27,6 +26,7 @@ import {
   syncDelayMs,
 } from '@tali/sync-client'
 
+import { TimestampMillis } from './lib/schema-primitives'
 import { syncTransport } from './lib/sync-transport'
 import {
   emptyMirrorSnapshot,
@@ -41,6 +41,7 @@ import {
   storeErrorMessage,
 } from './sync/local-store'
 import type { LocalStoreService } from './sync/local-store'
+import { eventStream, onlineEvents, visibilityEvents } from './ui/dom-stream'
 import { syncStatusView } from './ui/sync-status'
 import type { SyncStatusKind } from './ui/sync-status'
 
@@ -69,10 +70,10 @@ export const StoreStatus = defineTaggedUnion({
 export type StoreStatus = typeof StoreStatus.Type
 
 const Snapshot = {
-  at: Schema.Number,
+  at: TimestampMillis,
   pending: Schema.Int,
   maybeFailed: Schema.Option(Schema.Int),
-  failedRefreshedAt: Schema.Number,
+  failedRefreshedAt: TimestampMillis,
   mirror: MirrorSnapshot,
   pendingKeys: Schema.Array(Schema.String),
 }
@@ -85,11 +86,11 @@ export const Model = Schema.Struct({
   isVisible: Schema.Boolean,
   pending: Schema.Int,
   failed: Schema.Int,
-  failedRefreshedAt: Schema.Number,
+  failedRefreshedAt: TimestampMillis,
   isSyncing: Schema.Boolean,
   wakePending: Schema.Boolean,
   failures: Schema.Int,
-  lastActivity: Schema.Number,
+  lastActivity: TimestampMillis,
   isHalted: Schema.Boolean,
   hasSyncedOnce: Schema.Boolean,
   tick: Schema.Int,
@@ -177,7 +178,7 @@ const shouldRefreshFailed = (
   now - failedRefreshedAt >= FAILED_REFRESH_INTERVAL_MS
 
 export const ReadMirror = Command.define('ReadMirror', {
-  args: { pendingBefore: Schema.Int, failedRefreshedAt: Schema.Number },
+  args: { pendingBefore: Schema.Int, failedRefreshedAt: TimestampMillis },
   messages: [Message.SucceededReadMirror, Message.FailedReadMirror],
   execute: ({ pendingBefore, failedRefreshedAt }) =>
     Effect.gen(function* () {
@@ -217,7 +218,7 @@ export const ReadMirror = Command.define('ReadMirror', {
 const syncEngine = createSyncEngine(syncTransport())
 
 export const RunSyncPass = Command.define('RunSyncPass', {
-  args: { pendingBefore: Schema.Int, failedRefreshedAt: Schema.Number },
+  args: { pendingBefore: Schema.Int, failedRefreshedAt: TimestampMillis },
   messages: [Message.SucceededSyncPass, Message.FailedSyncPass],
   execute: ({ pendingBefore, failedRefreshedAt }) =>
     Effect.gen(function* () {
@@ -547,47 +548,14 @@ export const managedResources = ManagedResource.make<Model, Message>()(
 
 // SUBSCRIPTION
 
-const eventStream = <A>(
-  subscribe: (emit: (value: A) => void) => () => void,
-): Stream.Stream<A> =>
-  Stream.callback<A>(queue =>
-    Effect.acquireRelease(
-      Effect.sync(() =>
-        subscribe(value => {
-          Queue.offerUnsafe(queue, value)
-        }),
-      ),
-      unsubscribe => Effect.sync(unsubscribe),
-    ).pipe(Effect.flatMap(() => Effect.never)),
-  )
-
-const onlineEvents: Stream.Stream<Message> = eventStream(emit => {
-  const onOnline = () => emit(Message.WentOnline())
-  const onOffline = () => emit(Message.WentOffline())
-
-  window.addEventListener('online', onOnline)
-  window.addEventListener('offline', onOffline)
-
-  return () => {
-    window.removeEventListener('online', onOnline)
-    window.removeEventListener('offline', onOffline)
-  }
+const onlineStream = onlineEvents<Message>({
+  onOnline: () => Message.WentOnline(),
+  onOffline: () => Message.WentOffline(),
 })
 
-const visibilityEvents: Stream.Stream<Message> = eventStream(emit => {
-  const onVisibilityChange = () =>
-    emit(
-      Message.ChangedVisibility({
-        isVisible: document.visibilityState !== 'hidden',
-      }),
-    )
-
-  document.addEventListener('visibilitychange', onVisibilityChange)
-
-  return () => {
-    document.removeEventListener('visibilitychange', onVisibilityChange)
-  }
-})
+const visibilityStream: Stream.Stream<Message> = visibilityEvents(isVisible =>
+  Message.ChangedVisibility({ isVisible }),
+)
 
 const focusEvents: Stream.Stream<Message> = eventStream(emit => {
   const onFocus = () => emit(Message.FocusedApp())
@@ -604,7 +572,7 @@ export const subscriptions = Subscription.make<Model, Message>()(entry => ({
     {},
     {
       modelToDependencies: () => ({}),
-      dependenciesToStream: () => onlineEvents,
+      dependenciesToStream: () => onlineStream,
     },
   ),
 
@@ -612,7 +580,7 @@ export const subscriptions = Subscription.make<Model, Message>()(entry => ({
     {},
     {
       modelToDependencies: () => ({}),
-      dependenciesToStream: () => visibilityEvents,
+      dependenciesToStream: () => visibilityStream,
     },
   ),
 
@@ -629,7 +597,7 @@ export const subscriptions = Subscription.make<Model, Message>()(entry => ({
       shouldPoll: Schema.Boolean,
       failures: Schema.Int,
       isVisible: Schema.Boolean,
-      lastActivity: Schema.Number,
+      lastActivity: TimestampMillis,
       tick: Schema.Int,
     },
     {

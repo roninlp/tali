@@ -1,4 +1,4 @@
-import { Array, Effect, Option, Queue, Schema, Stream } from 'effect'
+import { Array, Effect, Option, Schema, Stream } from 'effect'
 import { Command, Submodel, Subscription, Update } from 'foldkit'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 import { defineMessageUnion } from 'foldkit/message'
@@ -32,6 +32,7 @@ import {
   toRegistrationInput,
 } from './lib/push/subscription'
 import { buttonView } from './ui/button'
+import { eventStream, visibilityEvents } from './ui/dom-stream'
 import { formErrorView } from './ui/field'
 
 /**
@@ -189,7 +190,7 @@ export const RefreshPush = Command.define('RefreshPush', {
         },
         catch: () => undefined,
       }).pipe(
-        Effect.catch(() => Effect.succeed(undefined)),
+        Effect.orElseSucceed(() => undefined),
         Effect.map(subscription => Option.fromNullishOr(subscription)),
       )
 
@@ -274,7 +275,7 @@ export const EnablePush = Command.define('EnablePush', {
       const maybeSubscription = yield* Effect.tryPromise({
         try: () => subscribeThisDevice(key, API_URL),
         catch: () => undefined,
-      }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+      }).pipe(Effect.orElseSucceed(() => undefined))
 
       if (maybeSubscription === undefined) {
         return Message.FailedEnablePush({
@@ -307,7 +308,7 @@ export const DisablePush = Command.define('DisablePush', {
       try: unsubscribeThisDevice,
       catch: () => false,
     }).pipe(
-      Effect.catch(() => Effect.succeed(false)),
+      Effect.orElseSucceed(() => false),
       Effect.map(succeeded =>
         succeeded
           ? Message.SucceededDisablePush({ maybeUserId })
@@ -330,7 +331,7 @@ export const CopySubscription = Command.define('CopySubscription', {
           .then(() => true),
       catch: () => false,
     }).pipe(
-      Effect.catch(() => Effect.succeed(false)),
+      Effect.orElseSucceed(() => false),
       Effect.map(isCopied => Message.CompletedCopySubscription({ isCopied })),
     ),
 })
@@ -646,20 +647,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 
 // SUBSCRIPTION
 
-const eventStream = <A>(
-  subscribe: (emit: (value: A) => void) => () => void,
-): Stream.Stream<A> =>
-  Stream.callback<A>(queue =>
-    Effect.acquireRelease(
-      Effect.sync(() =>
-        subscribe(value => {
-          Queue.offerUnsafe(queue, value)
-        }),
-      ),
-      unsubscribe => Effect.sync(unsubscribe),
-    ).pipe(Effect.flatMap(() => Effect.never)),
-  )
-
 const serviceWorkerEvents: Stream.Stream<Message> = eventStream(emit => {
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
     return () => {}
@@ -699,24 +686,11 @@ const serviceWorkerEvents: Stream.Stream<Message> = eventStream(emit => {
   }
 })
 
-const visibilityEvents: Stream.Stream<Message> = eventStream(emit => {
-  const onVisibilityChange = () =>
-    emit(
-      Message.ChangedVisibility({
-        isVisible: document.visibilityState !== 'hidden',
-      }),
-    )
-
-  document.addEventListener('visibilitychange', onVisibilityChange)
-
-  return () => {
-    document.removeEventListener('visibilitychange', onVisibilityChange)
-  }
-})
-
 export const subscriptions = Subscription.make<Model, Message>()(_entry => ({
   serviceWorker: Subscription.persistentEntry(serviceWorkerEvents),
-  pushVisibility: Subscription.persistentEntry(visibilityEvents),
+  pushVisibility: Subscription.persistentEntry(
+    visibilityEvents(isVisible => Message.ChangedVisibility({ isVisible })),
+  ),
 }))
 
 // VIEW

@@ -15,6 +15,7 @@ import { Animation, Dialog, Toast as UiToast } from '@foldkit/ui'
 import { test as toastTest } from '@foldkit/ui/toast'
 
 import { HABIT_COLORS, HABIT_ICONS, HabitFrequency } from '../habits-model'
+import { mirrorSnapshot } from '../mirror-fixtures'
 import { USER_ID } from '../test-fixtures'
 import * as Habits from './habits'
 import type { Inputs, Model } from './habits'
@@ -24,7 +25,6 @@ import {
   habitRow,
   habitsInputs,
   habitsModel,
-  mirrorWith,
   weeklyHabit,
 } from './habits-test-fixtures'
 
@@ -35,7 +35,7 @@ const defaultUpdate = update(habitsInputs())
 
 const withHabits = (overrides: Partial<Inputs> = {}): Inputs =>
   habitsInputs({
-    mirror: mirrorWith([habitRow(), weeklyHabit()], []),
+    mirror: mirrorSnapshot({ habits: [habitRow(), weeklyHabit()] }),
     ...overrides,
   })
 
@@ -230,7 +230,7 @@ describe('habit create', () => {
 
   test('a stored custom icon stays in the picker while editing it', () => {
     const inputs = habitsInputs({
-      mirror: mirrorWith([weeklyHabit({ icon: '🪴' })], []),
+      mirror: mirrorSnapshot({ habits: [weeklyHabit({ icon: '🪴' })] }),
     })
 
     const editing = Habits.update(
@@ -784,7 +784,7 @@ describe('habit visibility', () => {
 
   const ownerUpdate = update(
     habitsInputs({
-      mirror: mirrorWith([ownerHabit], []),
+      mirror: mirrorSnapshot({ habits: [ownerHabit] }),
       maybeUserId: Option.some(USER_ID),
     }),
   )
@@ -820,7 +820,7 @@ describe('habit visibility', () => {
     story(
       update(
         habitsInputs({
-          mirror: mirrorWith([ownerHabit], []),
+          mirror: mirrorSnapshot({ habits: [ownerHabit] }),
           maybeUserId: Option.some('another-user'),
         }),
       ),

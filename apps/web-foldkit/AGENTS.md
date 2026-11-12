@@ -56,7 +56,9 @@ subtree_prompted: true
   mirror, engine Commands, cadence Subscription, and live mirror snapshot.
   `src/mirror.ts` projects the mirrored Task, Project, Tag, Note, Habit,
   HabitEntry, List, ListItem, Event, and Occasion rows the feature screens
-  read (plus the Event/Occasion trash tombstones the calendar overlays);
+  read (plus the Event/Occasion trash tombstones the calendar overlays), with
+  the id/text/zone/timestamp/visibility rules every row shares coming from
+  `src/lib/mirror-field.ts`;
   `src/habits-model.ts` holds the streak/rate/copy projection plus the habit
   form presets and monthly heatmap; `src/lists-model.ts` the List/ListItem
   ordering, summaries, and pending-key projection; `src/page/today-model.ts`
@@ -79,7 +81,10 @@ subtree_prompted: true
   `habit-log.ts`, `habit-writes.ts`, `note-body.ts`, `note-draft.ts`,
   `note-search.ts`, `note-search-api.ts`, `note-writes.ts`, `list-writes.ts`,
   `calendar-data.ts`, `calendar-api.ts`, `event-writes.ts`,
-  `occasion-writes.ts`, and `reminders/api.ts`. `/settings`
+  `occasion-writes.ts`, and `reminders/api.ts`. The one plain-HTTP JSON client
+  (timeout, session cookie, JSON decode, status classification, ETag/304) lives
+  in `src/lib/http.ts`; every module above that rides `fetch` delegates to it.
+  `/settings`
   renders `src/preferences.ts`'s display form, `src/settings.ts`'s password
   form, the theme gallery, and the push health panel. All feature screens are
   delivered.
@@ -151,13 +156,26 @@ subtree_prompted: true
   pair), never a bare `h.input`/`h.textarea`. Date and time fields go through
   `src/ui/picker.ts`: each screen owns one `Picker.Model` field, routes its
   `GotPickerMessage`, and renders `pickerTriggerView` at the field plus one
-  `pickerDialogView` at the page root. The picker renders a Jalali month grid
-  and a scroll-snap clock wheel with hour, minute, and ق.ظ/ب.ظ columns on the
-  Foldkit `Dialog`/`Button` primitives; `@foldkit/ui`'s own DatePicker is
-  Gregorian-only and is not used. Vazirmatn
-  ships in `src/fonts/` with its OFL licence and Vite fingerprints it on build.
-  The theme toggle is device-local and restores from `public/theme-boot.js`,
-  which accepts only the two house theme ids, before first paint.
+  `pickerDialogView` at the page root. The picker fold itself comes from
+  `Picker.pickerFieldFold`, which takes the screen's field accessors, its
+  `GotPickerMessage` wrapper, and the one per-screen `applyValue`. The picker
+  renders a Jalali month grid and a scroll-snap clock wheel with hour, minute,
+  and ق.ظ/ب.ظ columns on the Foldkit `Dialog`/`Button` primitives;
+  `@foldkit/ui`'s own DatePicker is Gregorian-only and is not used. Child
+  Submodels a screen owns in a plain Model field fold through `src/ui/fold.ts`:
+  `foldFieldChild` / `foldFieldChildStep` replace the `read`/`write` pair, and
+  `listboxOutMessageFold` (plus its `optional…` variant) turns a listbox
+  `Selected` into the parent `Message`. The confirm dialog's update half is
+  `confirmDialogFolds` in `src/ui/confirm.ts` and the toast's is `toastFolds`
+  in `src/ui/toast.ts`, so no screen keeps a private copy of those folds.
+  Browser event Subscriptions go through `src/ui/dom-stream.ts`: `eventStream`
+  wraps an `addEventListener`/unsubscribe pair as a Stream, and `clockEvents`,
+  `onlineEvents`, and `visibilityEvents` supply the per-minute clock,
+  connectivity, and tab-visibility listeners every screen shares.
+  Vazirmatn ships in `src/fonts/` with its OFL licence and Vite fingerprints it
+  on build. The theme toggle is device-local and restores from
+  `public/theme-boot.js`, which accepts only the two house theme ids, before
+  first paint.
 - **Migration record.** The completed Phase 2 slices and acceptance criteria
   live in `../../docs/plans/foldkit-migration.md`. Keep this file's notes
   project-specific.

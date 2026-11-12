@@ -1,7 +1,9 @@
 import { Option } from 'effect'
 
-import { type MirrorSnapshot, emptyMirrorSnapshot } from '../mirror'
+import type { MirrorSnapshot } from '../mirror'
 import { NoteRow, TagRow } from '../mirror'
+import { mirrorNote, mirrorSnapshot } from '../mirror-fixtures'
+import { DISPLAY } from '../test-fixtures'
 import * as Notes from './notes'
 import type { Inputs, Model } from './notes'
 /**
@@ -26,20 +28,7 @@ export const tagRow = (overrides: Partial<TagRow> = {}): TagRow =>
   })
 
 export const noteRow = (overrides: Partial<NoteRow> = {}): NoteRow =>
-  NoteRow.make({
-    id: NOTE_ID,
-    title: 'خرید دارو',
-    text: 'قرص می‌روم و دارو می‌خورم',
-    excerpt: 'قرص می‌روم و دارو می‌خورم',
-    isPinned: false,
-    isArchived: false,
-    tagIds: [],
-    updatedAt: '2026-10-20T09:30:00.000Z',
-    deletedAt: null,
-    version: 1,
-    syncErrorCode: Option.none(),
-    ...overrides,
-  })
+  mirrorNote({ id: NOTE_ID, ...overrides })
 
 export const pinnedNoteRow = (overrides: Partial<NoteRow> = {}): NoteRow =>
   noteRow({
@@ -80,19 +69,15 @@ export const mirrorWithNotes = (
     readonly trashedNotes?: ReadonlyArray<NoteRow>
     readonly tags?: ReadonlyArray<TagRow>
   } = {},
-): MirrorSnapshot => ({
-  ...emptyMirrorSnapshot(),
-  notes: overrides.notes ?? [noteRow(), pinnedNoteRow(), archivedNoteRow()],
-  trashedNotes: overrides.trashedNotes ?? [trashedNoteRow()],
-  tags: overrides.tags ?? [tagRow()],
-})
+): MirrorSnapshot =>
+  mirrorSnapshot({
+    notes: overrides.notes ?? [noteRow(), pinnedNoteRow(), archivedNoteRow()],
+    trashedNotes: overrides.trashedNotes ?? [trashedNoteRow()],
+    tags: overrides.tags ?? [tagRow()],
+  })
 
 export const notesInputs = (overrides: Partial<Inputs> = {}): Inputs => ({
-  display: {
-    timeZone: 'Asia/Tehran',
-    weekStart: 'saturday',
-    digits: 'persian',
-  },
+  display: DISPLAY,
   isStoreReady: true,
   isOnline: true,
   pending: 0,

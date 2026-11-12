@@ -1,4 +1,4 @@
-import { Array, Clock, Effect, Option, Schema } from 'effect'
+import { Array, Option, Schema } from 'effect'
 
 import {
   type Event,
@@ -43,6 +43,16 @@ import {
   timingWithDomainValues,
 } from './calendar-data'
 import { JsonField } from './json-field'
+import {
+  asOptionalString,
+  mirrorCreatedAt,
+  mirrorId,
+  mirrorMeta,
+  mirrorNullableNonEmpty,
+  mirrorText,
+  mirrorTimeZone,
+  mirrorVisibility,
+} from './mirror-field'
 
 const asRecurrenceOption = Schema.decodeUnknownOption(
   JsonField(CalendarRecurrenceRuleSchema),
@@ -58,14 +68,6 @@ const asExceptionsOption = Schema.decodeUnknownOption(
 
 const asPeopleItems = Schema.decodeUnknownOption(
   JsonField(Schema.Array(Schema.Unknown)),
-)
-
-const asString = Schema.decodeUnknownOption(Schema.String)
-
-const asStringOption = Schema.decodeUnknownOption(Schema.String)
-
-const nullableString = Schema.decodeUnknownOption(
-  Schema.String.check(Schema.isMinLength(1)),
 )
 
 /**
@@ -131,16 +133,16 @@ export type CalendarEventDraft = typeof CalendarEventDraft.Type
 /** One mirrored event row, in the plain shape the screen's Model holds. */
 export const toEventRow = (record: MirrorRecord): EventRow =>
   EventRow.make({
-    id: record.entityId,
-    title: Option.getOrElse(asStringOption(record.data.title), () => ''),
-    description: Option.getOrNull(nullableString(record.data.description)),
-    location: Option.getOrNull(nullableString(record.data.location)),
-    category: Option.getOrNull(nullableString(record.data.category)),
-    color: Option.getOrNull(nullableString(record.data.color)),
+    id: mirrorId(record),
+    title: mirrorText(record, 'title'),
+    description: mirrorNullableNonEmpty(record, 'description'),
+    location: mirrorNullableNonEmpty(record, 'location'),
+    category: mirrorNullableNonEmpty(record, 'category'),
+    color: mirrorNullableNonEmpty(record, 'color'),
     people: Array.getSomes(
       Array.map(
         Option.getOrElse(asPeopleItems(record.data.people), () => []),
-        value => asString(value),
+        value => asOptionalString(value),
       ),
     ),
     timing: Option.getOrElse(asTimingOption(record.data.timing), () =>
@@ -150,31 +152,19 @@ export const toEventRow = (record: MirrorRecord): EventRow =>
           : '1970-01-01',
       }),
     ),
-    timeZone: Option.getOrElse(
-      asStringOption(record.data.timeZone),
-      () => 'UTC',
-    ),
+    timeZone: mirrorTimeZone(record),
     recurrence: Option.getOrNull(asRecurrenceOption(record.data.recurrence)),
     exceptions: Option.getOrElse(
       asExceptionsOption(record.data.exceptions),
       () => [],
     ),
-    occasionId: Option.getOrNull(nullableString(record.data.occasionId)),
-    ownerId: Option.getOrNull(nullableString(record.data.ownerId)),
-    householdId: Option.getOrNull(nullableString(record.data.householdId)),
-    visibility:
-      record.data.visibility === 'private' ||
-      record.data.visibility === 'shared'
-        ? record.data.visibility
-        : defaultVisibilityFor('event'),
-    createdAt: Option.getOrElse(
-      asStringOption(record.data.createdAt),
-      () => record.updatedAt,
-    ),
-    updatedAt: record.updatedAt,
-    version: record.version,
+    occasionId: mirrorNullableNonEmpty(record, 'occasionId'),
+    ownerId: mirrorNullableNonEmpty(record, 'ownerId'),
+    householdId: mirrorNullableNonEmpty(record, 'householdId'),
+    visibility: mirrorVisibility(record, 'event'),
+    createdAt: mirrorCreatedAt(record),
+    ...mirrorMeta(record),
     deletedAt: record.deletedAt,
-    hasSyncError: record.syncError !== undefined,
   })
 
 export const eventRowsFromMirror = (
@@ -907,11 +897,6 @@ export const draftFromOccurrence = (
         : `${twoDigits(endParts.hour)}:${twoDigits(endParts.minute)}`,
   })
 }
-
-/** The clock instant a Command's result needs for server-stamped fields. */
-export const currentIso = Clock.currentTimeMillis.pipe(
-  Effect.map(millis => new Date(millis).toISOString()),
-)
 
 export const eventScopeIdsOrMint = (
   maybeIds: Option.Option<EventScopeIds>,

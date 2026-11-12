@@ -5,6 +5,7 @@ import {
   commonItemFields,
   ListId,
   ListItemId,
+  NonEmptyString,
   TagIds,
   TimestampUtc,
 } from './common.js'
@@ -31,7 +32,7 @@ export class ListItem extends Model.Class<ListItem>('ListItem')({
   /** Inherited from the parent list, at most narrower (ADR-0011). */
   visibility: Visibility,
   listId: ListId,
-  name: Schema.String.check(Schema.isMinLength(1)),
+  name: NonEmptyString,
   done: Schema.Boolean,
   /** Manual ordering integer; reorder bumps the owning list's version. */
   order: Schema.Int,
@@ -43,7 +44,7 @@ export class ListItem extends Model.Class<ListItem>('ListItem')({
 
 export const ListItemCreate = Schema.Struct({
   listId: ListId,
-  name: Schema.String.check(Schema.isMinLength(1)),
+  name: NonEmptyString,
   order: Schema.optional(Schema.Int),
   color: Schema.optional(Schema.NullOr(Schema.String)),
   tagIds: Schema.optional(TagIds),

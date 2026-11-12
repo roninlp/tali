@@ -1,8 +1,11 @@
 import { Schema } from 'effect'
+import { Update } from 'foldkit'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
 import { Toast as UiToast } from '@foldkit/ui'
 import type { EntryHandlers } from '@foldkit/ui/toast'
+
+import { type ChildField, foldFieldChild, foldFieldChildStep } from './fold'
 
 /**
  * The shared toast stack, built on the Foldkit UI `Toast` submodel.
@@ -42,6 +45,68 @@ const VARIANT_ICON: Readonly<Record<ToastVariant, string>> = {
 }
 
 type ToastEntry = typeof Toast.Entry.Type
+
+// UPDATE
+
+type ToastModel = typeof Toast.Model.Type
+
+type ToastMessage = typeof Toast.Message.Type
+
+type ToastUpdateReturn = Update.ReturnWithOutMessage<
+  ToastModel,
+  ToastMessage,
+  typeof Toast.OutMessage.Type
+>
+
+export type ToastFolds<ParentModel, ParentMessage> = Readonly<{
+  fold: Update.Fold<ParentModel, ParentMessage, ToastMessage>
+  shownStep: (
+    payload: ToastPayload,
+    variant: ToastVariant,
+  ) => Update.Step<ParentModel, ParentMessage>
+  dismissedStep: (entryId: string) => Update.Step<ParentModel, ParentMessage>
+}>
+
+/** The update half of a screen's toast stack: the `Toast.update` fold plus the
+ *  two Model-only entry points screens use to show and dismiss an entry. The
+ *  toast OutMessage stops at the screen, so every fold here ignores it. */
+export const toastFolds = <ParentModel, ParentMessage>(
+  config: Readonly<
+    ChildField<ParentModel, ToastModel> & {
+      toParentMessage: (message: ToastMessage) => ParentMessage
+    }
+  >,
+): ToastFolds<ParentModel, ParentMessage> => {
+  const foldOutMessage = () => (stepModel: ParentModel) => ({
+    model: stepModel,
+  })
+
+  const step = (
+    update: (toast: ToastModel) => ToastUpdateReturn,
+  ): Update.Step<ParentModel, ParentMessage> =>
+    foldFieldChildStep({
+      update,
+      field: config.field,
+      setField: config.setField,
+      toParentMessage: config.toParentMessage,
+      foldOutMessage,
+    })
+
+  return {
+    fold: foldFieldChild({
+      update: Toast.update,
+      field: config.field,
+      setField: config.setField,
+      toParentMessage: config.toParentMessage,
+      foldOutMessage,
+    }),
+    shownStep: (payload, variant) =>
+      step(toast => Toast.show(toast, { payload, variant })),
+    dismissedStep: entryId => step(toast => Toast.dismiss(toast, entryId)),
+  }
+}
+
+// VIEW
 
 const toastEntryView = <Message>(
   entry: ToastEntry,

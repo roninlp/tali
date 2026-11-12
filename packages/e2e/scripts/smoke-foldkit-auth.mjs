@@ -1,4 +1,12 @@
-import { chromium } from '@playwright/test'
+import {
+  BASE,
+  PASSWORD,
+  launchApp,
+  log,
+  preflight,
+  register,
+  waitForHeading,
+} from './smoke-support.mjs'
 
 /**
  * The P2.3 auth smoke check against the Foldkit app on :3001.
@@ -9,64 +17,11 @@ import { chromium } from '@playwright/test'
  * checks the guard redirects and the no-household onboarding path.
  */
 
-const BASE = 'http://localhost:3001'
-const password = 'correct horse battery'
 const stamp = Date.now()
 const firstEmail = `smoke+${stamp}@example.com`
 const secondEmail = `smoke+${stamp}+2@example.com`
 
-const preflight = async () => {
-  let response
-  try {
-    response = await fetch(`${BASE}/health`)
-  } catch {
-    throw new Error(
-      `The Foldkit app is not reachable on ${BASE}. Start the local stack with \`pnpm dev\`.`,
-    )
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      `The api Worker is not reachable through ${BASE}/health (HTTP ${response.status}). Start the local stack with \`pnpm dev\`.`,
-    )
-  }
-}
-
-const browser = await chromium.launch({ headless: true })
-const context = await browser.newContext({
-  locale: 'fa-IR',
-  timezoneId: 'Asia/Tehran',
-  viewport: { width: 1280, height: 800 },
-})
-const page = await context.newPage()
-const consoleErrors = []
-const pageErrors = []
-
-page.on('console', message => {
-  // A signed-out boot calls /auth/me and the browser logs the expected 401.
-  if (
-    message.type() === 'error' &&
-    !message.text().includes('401 (Unauthorized)')
-  ) {
-    consoleErrors.push(message.text())
-  }
-})
-page.on('pageerror', error => {
-  pageErrors.push(error.message)
-})
-
-const log = message => console.log(`PASS ${message}`)
-const waitForHeading = name =>
-  page.getByRole('heading', { name, exact: true }).waitFor({ timeout: 15_000 })
-
-const register = async (displayName, email) => {
-  await page.goto(`${BASE}/register`)
-  await waitForHeading('ساخت حساب')
-  await page.getByLabel('نام نمایشی').fill(displayName)
-  await page.getByLabel('ایمیل').fill(email)
-  await page.getByLabel('گذرواژه').fill(password)
-  await page.getByRole('button', { name: 'ساخت حساب' }).click()
-}
+const { page, consoleErrors, pageErrors, close } = await launchApp()
 
 const signOut = async () => {
   await page.locator('summary[aria-label="حساب کاربری"]').click()
@@ -128,7 +83,7 @@ try {
   log('/ redirects a signed-out visitor to /login')
 
   await page.getByLabel('ایمیل').fill(firstEmail)
-  await page.getByLabel('گذرواژه').fill(password)
+  await page.getByLabel('گذرواژه').fill(PASSWORD)
   await page.getByRole('button', { name: 'ورود' }).click()
   await page.waitForURL(`${BASE}/today`, { timeout: 20_000 })
   await waitForHeading('امروز')
@@ -168,5 +123,5 @@ try {
 
   console.log('SMOKE PASS')
 } finally {
-  await browser.close()
+  await close()
 }

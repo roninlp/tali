@@ -2,11 +2,11 @@ import { Effect, Schema } from 'effect'
 import { HttpRouter, HttpServerRequest } from 'effect/http'
 import { NoteSearchResponse } from '@tali/domain'
 import { AuthService } from './auth-service.js'
-import { SESSION_COOKIE } from './auth-routes.js'
 import {
   NoteSearchService,
   type NoteSearchViewer,
 } from './note-search-service.js'
+import { sessionResolver } from './principal.js'
 import { fail, json, requestUrl } from './read-model-http.js'
 
 /**
@@ -40,11 +40,7 @@ export const NoteSearchRoutes = HttpRouter.use(router =>
       '/search/notes',
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
-        const token = request.cookies[SESSION_COOKIE]
-        if (token === undefined) {
-          return yield* fail(401, 'Unauthorized', 'No active session')
-        }
-        const context = yield* auth.me(token)
+        const context = yield* sessionResolver(auth)(request)
         if (context.householdId === null) {
           return yield* fail(
             403,

@@ -6,6 +6,7 @@ import {
   ListCheckedPlacement,
   ListId,
   ListItemSort,
+  NonEmptyString,
 } from './common.js'
 
 /**
@@ -18,19 +19,9 @@ export class List extends Model.Class<List>('List')({
   ...commonItemFields('list', ListId),
   /** Resolved from the list's `shareable` policy (ADR-0011). */
   visibility: Visibility,
-  title: Schema.String.check(Schema.isMinLength(1)),
+  title: NonEmptyString,
   description: Schema.NullOr(Schema.String),
   icon: Schema.NullOr(Schema.String),
   sort: ListItemSort,
   checkedPlacement: ListCheckedPlacement,
 }) {}
-
-export const ListCreate = Schema.Struct({
-  title: Schema.String.check(Schema.isMinLength(1)),
-  description: Schema.optional(Schema.NullOr(Schema.String)),
-  icon: Schema.optional(Schema.NullOr(Schema.String)),
-  sort: Schema.optional(ListItemSort),
-  checkedPlacement: Schema.optional(ListCheckedPlacement),
-  visibility: Schema.optional(Visibility),
-})
-export type ListCreate = Schema.Schema.Type<typeof ListCreate>

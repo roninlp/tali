@@ -1,23 +1,16 @@
 import { Effect, Schema } from 'effect'
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from 'effect/http'
+import { HttpRouter, HttpServerRequest } from 'effect/http'
 import {
   localDateStartInstant,
   MonthReadModel,
-  Unauthorized,
   WeekReadModel,
   type LocalDate,
 } from '@tali/domain'
 import { AuthService } from './auth-service.js'
-import { SESSION_COOKIE } from './auth-routes.js'
 import { CalendarService, type CalendarViewer } from './calendar-service.js'
+import { conditionalJson, fail, requestUrl } from './http-envelope.js'
 import { PreferencesService } from './preferences-service.js'
-import {
-  cacheHeaders,
-  etagOf,
-  fail,
-  matchesIfNoneMatch,
-  requestUrl,
-} from './read-model-http.js'
+import { principalResolver } from './principal.js'
 
 /**
  * `GET /week` and `GET /month` — the calendar read models (ticket #43;
@@ -61,37 +54,15 @@ export const CalendarRoutes = HttpRouter.use(router =>
     const auth = yield* AuthService
     const preferences = yield* PreferencesService
     const calendar = yield* CalendarService
-
-    /** Resolve the cookie principal into a viewer + the saved week start. */
-    const principal = (request: HttpServerRequest.HttpServerRequest) =>
-      Effect.gen(function* () {
-        const token = request.cookies[SESSION_COOKIE]
-        if (token === undefined) {
-          return yield* Effect.fail(new Unauthorized())
-        }
-        const context = yield* auth.me(token)
-        const prefs = yield* preferences.get(context.user.id, {
-          timeZone: context.user.timeZone,
-          weekStart: context.user.weekStart,
-          digits: context.user.digits,
-        })
-        return {
-          candidate: {
-            userId: context.user.id,
-            householdId: context.householdId,
-            timeZone: prefs.timeZone,
-            weekStart: prefs.weekStart,
-          },
-        }
-      })
+    const principal = principalResolver(auth, preferences)
 
     yield* router.add(
       'GET',
       '/week',
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
-        const { candidate } = yield* principal(request)
-        if (candidate.householdId === null) {
+        const resolved = yield* principal(request)
+        if (resolved.context.householdId === null) {
           return yield* fail(
             403,
             'Forbidden',
@@ -107,31 +78,15 @@ export const CalendarRoutes = HttpRouter.use(router =>
           )
         }
         const viewer: CalendarViewer = {
-          userId: candidate.userId,
-          householdId: candidate.householdId,
-          timeZone: candidate.timeZone,
-          weekStart: candidate.weekStart,
+          userId: resolved.context.user.id,
+          householdId: resolved.context.householdId,
+          timeZone: resolved.preferences.timeZone,
+          weekStart: resolved.preferences.weekStart,
         }
 
         const model = yield* calendar.week(viewer, anchor)
         const body = yield* Schema.encodeEffect(WeekReadModel)(model)
-        const etag = yield* etagOf(body)
-        const ifNoneMatch = request.headers['if-none-match']
-
-        if (
-          ifNoneMatch !== undefined &&
-          matchesIfNoneMatch(ifNoneMatch, etag)
-        ) {
-          return HttpServerResponse.empty({
-            status: 304,
-            headers: cacheHeaders(etag),
-          })
-        }
-
-        return yield* HttpServerResponse.json(body, {
-          status: 200,
-          headers: cacheHeaders(etag),
-        })
+        return yield* conditionalJson(request, body)
       }).pipe(
         Effect.catchTags(
           {
@@ -147,8 +102,8 @@ export const CalendarRoutes = HttpRouter.use(router =>
       '/month',
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
-        const { candidate } = yield* principal(request)
-        if (candidate.householdId === null) {
+        const resolved = yield* principal(request)
+        if (resolved.context.householdId === null) {
           return yield* fail(
             403,
             'Forbidden',
@@ -166,10 +121,10 @@ export const CalendarRoutes = HttpRouter.use(router =>
           )
         }
         const viewer: CalendarViewer = {
-          userId: candidate.userId,
-          householdId: candidate.householdId,
-          timeZone: candidate.timeZone,
-          weekStart: candidate.weekStart,
+          userId: resolved.context.user.id,
+          householdId: resolved.context.householdId,
+          timeZone: resolved.preferences.timeZone,
+          weekStart: resolved.preferences.weekStart,
         }
 
         const model = yield* calendar.month(viewer, {
@@ -177,23 +132,7 @@ export const CalendarRoutes = HttpRouter.use(router =>
           day: day ?? null,
         })
         const body = yield* Schema.encodeEffect(MonthReadModel)(model)
-        const etag = yield* etagOf(body)
-        const ifNoneMatch = request.headers['if-none-match']
-
-        if (
-          ifNoneMatch !== undefined &&
-          matchesIfNoneMatch(ifNoneMatch, etag)
-        ) {
-          return HttpServerResponse.empty({
-            status: 304,
-            headers: cacheHeaders(etag),
-          })
-        }
-
-        return yield* HttpServerResponse.json(body, {
-          status: 200,
-          headers: cacheHeaders(etag),
-        })
+        return yield* conditionalJson(request, body)
       }).pipe(
         Effect.catchTags(
           {

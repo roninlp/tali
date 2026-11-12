@@ -1,32 +1,11 @@
-import { Effect, Schema } from 'effect'
+import { Effect } from 'effect'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import { Email, LoginKey } from '@tali/domain'
 
 import { sessionWithHousehold } from '../test-fixtures'
+import { jsonResponse, stubFetch } from '../test-http'
 import { authApi } from './auth-api'
-
-const jsonResponse = (status: number, body: Schema.Json): Response =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  })
-
-const stubFetch = (response: Response | Error) => {
-  const fetchMock = vi.fn(
-    async (_input: RequestInfo | URL, _init?: RequestInit) => {
-      if (response instanceof Error) {
-        throw response
-      }
-
-      return response
-    },
-  )
-
-  vi.stubGlobal('fetch', fetchMock)
-
-  return fetchMock
-}
 
 const run = <A>(effect: Effect.Effect<A>) => Effect.runPromise(effect)
 

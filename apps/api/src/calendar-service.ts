@@ -114,26 +114,24 @@ export class CalendarService extends Context.Service<CalendarService>()(
             viewer.timeZone,
           )
 
-          const allDay = yield* tasks
-            .listDueDateRange({
-              ...scope,
-              from: range.start,
-              before: range.endExclusive,
-            })
-            .pipe(Effect.orDie)
-          const timed = yield* tasks
-            .listDueInstantRange({ ...scope, from, before })
-            .pipe(Effect.orDie)
-          const recurring = yield* tasks
-            .listRecurringLive(scope)
-            .pipe(Effect.orDie)
+          const allDay = yield* tasks.listDueDateRange({
+            ...scope,
+            from: range.start,
+            before: range.endExclusive,
+          })
+          const timed = yield* tasks.listDueInstantRange({
+            ...scope,
+            from,
+            before,
+          })
+          const recurring = yield* tasks.listRecurringLive(scope)
 
           const byId = new Map<string, Task>()
           for (const task of [...allDay, ...timed, ...recurring]) {
             byId.set(task.id, task)
           }
           return [...byId.values()]
-        })
+        }).pipe(Effect.orDie)
 
       /**
        * The events a range needs: the rows anchored inside it plus every live
@@ -150,27 +148,23 @@ export class CalendarService extends Context.Service<CalendarService>()(
             householdId: viewer.householdId,
             userId: viewer.userId,
           }
-          const inRange = yield* events
-            .listInRange({
-              ...scope,
-              dateFrom: range.start,
-              dateBefore: range.endExclusive,
-              instantFrom: localDateStartInstant(range.start, viewer.timeZone),
-              instantBefore: localDateStartInstant(
-                range.endExclusive,
-                viewer.timeZone,
-              ),
-            })
-            .pipe(Effect.orDie)
-          const recurring = yield* events
-            .listRecurringLive(scope)
-            .pipe(Effect.orDie)
+          const inRange = yield* events.listInRange({
+            ...scope,
+            dateFrom: range.start,
+            dateBefore: range.endExclusive,
+            instantFrom: localDateStartInstant(range.start, viewer.timeZone),
+            instantBefore: localDateStartInstant(
+              range.endExclusive,
+              viewer.timeZone,
+            ),
+          })
+          const recurring = yield* events.listRecurringLive(scope)
 
           const byId = new Map<string, CalendarEventSource>()
           for (const event of [...inRange, ...recurring])
             byId.set(event.id, event)
           return [...byId.values()]
-        })
+        }).pipe(Effect.orDie)
 
       /**
        * Every occasion visible to the viewer. An occasion is an annual date

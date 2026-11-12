@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
+import { WEB_URL } from './config.mjs'
 
 /**
  * The five gate flows from #81, run against a real local stack (#84).
@@ -27,7 +28,7 @@ export default defineConfig({
       ? [['list'], ['html', { open: 'never' }]]
       : [['github'], ['html', { open: 'never' }]],
   use: {
-    baseURL: 'http://localhost:3001',
+    baseURL: WEB_URL,
     // A failing flow must leave enough to debug it: the trace carries the DOM
     // and network, the video the timing, and the screenshot the final frame.
     trace: 'retain-on-failure',
@@ -49,7 +50,7 @@ export default defineConfig({
   ],
   webServer: {
     command: 'node scripts/stack.mjs',
-    url: 'http://localhost:3001',
+    url: WEB_URL,
     // Never attach to a developer stack: the flows need the fresh `e2e` stage,
     // and silently reusing `dev_<user>` would run them against real local data.
     reuseExistingServer: false,

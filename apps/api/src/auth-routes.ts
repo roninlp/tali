@@ -1,10 +1,5 @@
-import { Effect, Option, Schema } from 'effect'
-import {
-  HttpRouter,
-  HttpServerError,
-  HttpServerRequest,
-  HttpServerResponse,
-} from 'effect/http'
+import { Effect, Option } from 'effect'
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from 'effect/http'
 import {
   ChangePasswordInput,
   CreateHouseholdInput,
@@ -14,9 +9,14 @@ import {
   RegisterInput,
   toUserProfile,
   Unauthorized,
-  type AuthErrorCode,
 } from '@tali/domain'
-import { AuthService } from './auth-service.js'
+import { AuthService } from './auth-service'
+import {
+  fail,
+  json,
+  SESSION_COOKIE,
+  unexpectedFailure,
+} from './http-envelope'
 
 /**
  * Auth & household endpoints (Slice 1 / ticket #15, shell in #16).
@@ -31,39 +31,10 @@ import { AuthService } from './auth-service.js'
  * `message`, a `retryable` flag, and machine-readable `details`.
  */
 
-const SESSION_COOKIE = 'tali_session'
 const SESSION_MAX_AGE = '30 days'
 
 /** The session cookie name, shared with route modules that authenticate too. */
 export { SESSION_COOKIE }
-
-/** Serialize a body and mark it uncacheable (auth responses are per-session). */
-const json = (
-  status: number,
-  body: unknown,
-): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
-  HttpServerResponse.json(body, { status }).pipe(
-    Effect.map(HttpServerResponse.setHeader('cache-control', 'no-store')),
-    Effect.orDie,
-  )
-
-/** The one plain-HTTP error shape (see the file header). */
-const fail = (
-  status: number,
-  code: AuthErrorCode,
-  message: string,
-  retryable = false,
-  details: Record<string, unknown> = {},
-): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
-  json(status, { error: { code, message, retryable, details } })
-
-/** Maps non-domain failures: a bad body is a 400, anything else a 500. */
-const unexpectedFailure = (
-  error: unknown,
-): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
-  Schema.isSchemaError(error) || HttpServerError.isHttpServerError(error)
-    ? fail(400, 'BadRequest', 'Malformed request body')
-    : fail(500, 'InternalError', 'Unexpected server error', true)
 
 /**
  * Rate-limit bucket IP. Cloudflare sets `CF-Connecting-IP`; Effect's adapter
@@ -102,7 +73,7 @@ export const AuthRoutes = HttpRouter.use(router =>
       Effect.gen(function* () {
         const token = request.cookies[SESSION_COOKIE]
         if (token === undefined) {
-          return yield* Effect.fail(new Unauthorized())
+          return yield* new Unauthorized()
         }
         const { context, renewed } = yield* auth.meWithRenewal(token)
         return { token, context, renewed }
@@ -127,7 +98,7 @@ export const AuthRoutes = HttpRouter.use(router =>
             EmailAlreadyRegistered: () =>
               fail(409, 'EmailAlreadyRegistered', 'Email already registered'),
           },
-          unexpectedFailure,
+          unexpectedFailure('Malformed request body'),
         ),
       ),
     )
@@ -170,7 +141,7 @@ export const AuthRoutes = HttpRouter.use(router =>
                 ),
               ),
           },
-          unexpectedFailure,
+          unexpectedFailure('Malformed request body'),
         ),
       ),
     )
@@ -206,7 +177,7 @@ export const AuthRoutes = HttpRouter.use(router =>
                 ),
               ),
           },
-          unexpectedFailure,
+          unexpectedFailure('Malformed request body'),
         ),
       ),
     )
@@ -224,7 +195,7 @@ export const AuthRoutes = HttpRouter.use(router =>
         return HttpServerResponse.expireCookieUnsafe(response, SESSION_COOKIE, {
           path: '/',
         })
-      }).pipe(Effect.catchTags({}, unexpectedFailure)),
+      }),
     )
 
     yield* router.add(
@@ -234,7 +205,7 @@ export const AuthRoutes = HttpRouter.use(router =>
         const request = yield* HttpServerRequest.HttpServerRequest
         const token = request.cookies[SESSION_COOKIE]
         if (token === undefined) {
-          return yield* Effect.fail(new Unauthorized())
+          return yield* new Unauthorized()
         }
         const { context, renewed } = yield* auth.meWithRenewal(token)
         const response = yield* json(200, context)
@@ -246,7 +217,7 @@ export const AuthRoutes = HttpRouter.use(router =>
           {
             Unauthorized: () => fail(401, 'Unauthorized', 'No active session'),
           },
-          unexpectedFailure,
+          unexpectedFailure('Malformed request body'),
         ),
       ),
     )
@@ -274,7 +245,7 @@ export const AuthRoutes = HttpRouter.use(router =>
                 'Already a member of a household',
               ),
           },
-          unexpectedFailure,
+          unexpectedFailure('Malformed request body'),
         ),
       ),
     )
@@ -306,7 +277,7 @@ export const AuthRoutes = HttpRouter.use(router =>
             InviteInvalid: () =>
               fail(404, 'InviteInvalid', 'Invite code is invalid'),
           },
-          unexpectedFailure,
+          unexpectedFailure('Malformed request body'),
         ),
       ),
     )

@@ -5,8 +5,16 @@ import {
   EventExceptionId,
   EventId,
   LocalDate,
+  NonEmptyString,
   OccasionId,
   TimeZone,
+  conflictFields,
+  createEnvelope,
+  forbiddenFields,
+  mutationEnvelope,
+  notFoundFields,
+  updateEnvelope,
+  validationFields,
 } from './common.js'
 import {
   Event,
@@ -40,7 +48,7 @@ const eventFields = {
   location: Schema.NullOr(Schema.String),
   category: Schema.NullOr(Schema.String),
   color: Schema.NullOr(Schema.String),
-  people: Schema.Array(Schema.String.check(Schema.isMinLength(1))),
+  people: Schema.Array(NonEmptyString),
   timing: EventTiming,
   timeZone: TimeZone,
   recurrence: Schema.NullOr(RecurrenceRule),
@@ -53,39 +61,25 @@ const eventFields = {
 /** The event does not exist, or is not visible to this viewer. */
 export class EventNotFound extends Schema.TaggedError<EventNotFound>()(
   'EventNotFound',
-  {
-    id: EventId,
-  },
+  notFoundFields(EventId),
 ) {}
 
 /** The row exists but this viewer may not read/write it. */
 export class EventForbidden extends Schema.TaggedError<EventForbidden>()(
   'EventForbidden',
-  {
-    id: Schema.NullOr(Schema.String),
-    reason: Schema.Literals(['private', 'household', 'noHousehold']),
-  },
+  forbiddenFields,
 ) {}
 
 /** Field-level validation (empty title, both timing shapes, end before start, …). */
 export class EventValidationError extends Schema.TaggedError<EventValidationError>()(
   'EventValidationError',
-  {
-    issues: Schema.Array(
-      Schema.Struct({
-        field: Schema.String,
-        message: Schema.String,
-      }),
-    ),
-  },
+  validationFields,
 ) {}
 
 /** A concurrent writer won the version CAS; the caller may retry. */
 export class EventConflict extends Schema.TaggedError<EventConflict>()(
   'EventConflict',
-  {
-    id: Schema.String,
-  },
+  conflictFields,
 ) {}
 
 export const EventServiceError = Schema.Union([
@@ -102,10 +96,7 @@ export type EventServiceError = Schema.Schema.Type<typeof EventServiceError>
  * Create input. The timing is required: an event without a date is not an
  * event, and the quick-add paths always know the day they were clicked from.
  */
-export const EventCreateInput = Schema.Struct({
-  /** A client may mint the UUID v7 offline; the server mints one otherwise. */
-  id: Schema.optional(EventId),
-  clientMutationId: Schema.String,
+export const EventCreateInput = createEnvelope(EventId, {
   title: eventFields.title,
   /**
    * The event's time. Required: an event without a date is not an event, and
@@ -142,20 +133,11 @@ export const EventPatch = Schema.Struct({
 })
 export type EventPatch = Schema.Schema.Type<typeof EventPatch>
 
-export const EventUpdateInput = Schema.Struct({
-  id: EventId,
-  clientMutationId: Schema.String,
-  /** Informational; the update re-reads and retries on a lost CAS. */
-  baseVersion: Schema.optional(Schema.Int),
-  patch: EventPatch,
-})
+export const EventUpdateInput = updateEnvelope(EventId, EventPatch)
 export type EventUpdateInput = Schema.Schema.Type<typeof EventUpdateInput>
 
 /** Delete carries only the row id plus the replay key. */
-export const EventMutationInput = Schema.Struct({
-  id: EventId,
-  clientMutationId: Schema.String,
-})
+export const EventMutationInput = mutationEnvelope(EventId)
 export type EventMutationInput = Schema.Schema.Type<typeof EventMutationInput>
 
 // ── Occurrence-level edits (ticket #58; FR-CAL-03) ───────────────────────

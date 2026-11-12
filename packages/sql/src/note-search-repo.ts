@@ -10,6 +10,7 @@ import {
   type NoteSearchSegment,
   type UserId,
 } from '@tali/domain'
+import { visibleScopeSql } from './scope'
 
 /**
  * The note search index (ticket #41; FR-NOTE-04).
@@ -81,9 +82,7 @@ export class NoteSearchRepo extends Context.Service<NoteSearchRepo>()(
           FROM notes_fts
           JOIN notes n ON n.id = notes_fts.note_id
           WHERE notes_fts MATCH ${match}
-            AND n.household_id = ${input.householdId}
-            AND n.deleted_at IS NULL
-            AND (n.owner_id = ${input.userId} OR n.visibility = 'shared')
+            AND ${visibleScopeSql(sql, input, { alias: 'n' })}
           ORDER BY notes_fts.rank
           LIMIT ${input.limit}
         `

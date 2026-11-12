@@ -7,6 +7,7 @@ import {
   type LocalDate,
   type UserId,
 } from '@tali/domain'
+import { visibleScopeSql } from './scope'
 
 /**
  * D1-backed repository for `HabitEntry` (ticket #63; FR-HAB-02).
@@ -89,16 +90,11 @@ export class HabitEntryRepo extends Context.Service<HabitEntryRepo>()(
     make: Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient
 
-      /** The visibility filter every entry read shares (a private habit's log is private). */
+      /** ADR-0011: the visibility filter every entry read shares (a private habit's log is private). */
       const visibleScope = (input: {
         readonly householdId: string
         readonly userId: UserId
-      }): Statement.Fragment =>
-        sql`
-        household_id = ${input.householdId}
-        AND deleted_at IS NULL
-        AND (owner_id = ${input.userId} OR visibility = 'shared')
-      `
+      }): Statement.Fragment => visibleScopeSql(sql, input)
 
       /**
        * The entry's *habit* must be visible to the viewer right now.
@@ -107,10 +103,9 @@ export class HabitEntryRepo extends Context.Service<HabitEntryRepo>()(
        * (ADR-0006), so it goes stale the moment a habit is flipped to private or
        * trashed: a day logged while the habit was shared would otherwise keep
        * leaking through a read after the owner made the habit private. Resolving
-       * the parent here — the same own-or-shared rule and the same
-       * `deleted_at IS NULL` the habit list uses — is the read-side half of the
-       * #63 parent rule ("the entry inherits the habit's visibility"); the write
-       * path already forces the column on every tap.
+       * the parent here with the same ADR-0011 scope the habit list uses is the
+       * read-side half of the #63 parent rule ("the entry inherits the habit's
+       * visibility"); the write path already forces the column on every tap.
        */
       const visibleParent = (input: {
         readonly householdId: string
@@ -119,9 +114,7 @@ export class HabitEntryRepo extends Context.Service<HabitEntryRepo>()(
         sql`
         habit_id IN (
           SELECT id FROM habits
-          WHERE household_id = ${input.householdId}
-            AND deleted_at IS NULL
-            AND (owner_id = ${input.userId} OR visibility = 'shared')
+          WHERE ${visibleScopeSql(sql, input)}
         )
       `
 

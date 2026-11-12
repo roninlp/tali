@@ -17,6 +17,20 @@
  * the RFC 8291 Appendix A vector is pinned in `test/push-crypto.test.ts`.
  */
 
+import { Schema } from 'effect'
+
+/**
+ * Encryption or VAPID signing rejected this subscription or key pair.
+ *
+ * The underlying throw is WebCrypto's (`DOMException`) or a shape check in this
+ * module; either way the caller degrades instead of retrying with the same
+ * bytes (ADR-0005 §Consequences).
+ */
+export class PushCryptoError extends Schema.TaggedError<PushCryptoError>()(
+  'PushCryptoError',
+  { cause: Schema.Defect() },
+) {}
+
 const P256 = { name: 'ECDH', namedCurve: 'P-256' } as const
 const AES_GCM = { name: 'AES-GCM', length: 128 } as const
 const ECDH_BITS = 256

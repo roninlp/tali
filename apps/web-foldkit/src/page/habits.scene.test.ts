@@ -21,6 +21,7 @@ import { Animation, Dialog, Toast as UiToast } from '@foldkit/ui'
 
 import { HABIT_COLORS, HabitFrequency } from '../habits-model'
 import { entityKey } from '../mirror'
+import { mirrorSnapshot } from '../mirror-fixtures'
 import { USER_ID } from '../test-fixtures'
 import * as Habits from './habits'
 import type { Inputs, Model } from './habits'
@@ -31,7 +32,6 @@ import {
   habitRow,
   habitsInputs,
   habitsModel,
-  mirrorWith,
   weeklyHabit,
 } from './habits-test-fixtures'
 
@@ -47,28 +47,28 @@ const setup = (overrides: Partial<Inputs> = {}) => {
 
 const withWeekly = (overrides: Partial<Inputs> = {}): Inputs =>
   habitsInputs({
-    mirror: mirrorWith([weeklyHabit()], []),
+    mirror: mirrorSnapshot({ habits: [weeklyHabit()] }),
     ...overrides,
   })
 
 const todayEntryScene = () =>
   setup({
-    mirror: mirrorWith(
-      [habitRow()],
-      [
+    mirror: mirrorSnapshot({
+      habits: [habitRow()],
+      habitEntries: [
         habitEntryRow({
           localDate: '2026-10-30',
           status: 'done',
           updatedAt: '2026-10-30T08:00:00.000Z',
         }),
       ],
-    ),
+    }),
   })
 
 describe('Habits screen', () => {
   test('an empty screen explains the one form and hides the list', () => {
     scene(
-      setup({ mirror: mirrorWith() }),
+      setup({ mirror: mirrorSnapshot() }),
       given(habitsModel()),
       expect(role('heading', { name: 'عادت‌ها' })).toExist(),
       expect(
@@ -99,7 +99,7 @@ describe('Habits screen', () => {
 
   test('the create form submits the typed title and chosen weekdays', () => {
     scene(
-      setup({ mirror: mirrorWith() }),
+      setup({ mirror: mirrorSnapshot() }),
       given(habitsModel()),
       type(role('textbox', { name: 'عنوان عادت' }), 'کتاب خواندن'),
       click(role('button', { name: 'روزهای هفته' })),
@@ -349,7 +349,7 @@ describe('Habits screen', () => {
   test('the pending and sync-error badges mark a failing row', () => {
     scene(
       setup({
-        mirror: mirrorWith([habitRow({ hasSyncError: true })], []),
+        mirror: mirrorSnapshot({ habits: [habitRow({ hasSyncError: true })] }),
         pendingKeys: [entityKey('habit', HABIT_ID)],
       }),
       given(habitsModel()),
@@ -361,7 +361,7 @@ describe('Habits screen', () => {
   test('a closed store disables the form and the tap', () => {
     scene(
       setup({
-        mirror: mirrorWith([habitRow()], []),
+        mirror: mirrorSnapshot({ habits: [habitRow()] }),
         isStoreReady: false,
       }),
       given(habitsModel()),
@@ -418,7 +418,7 @@ describe('habit visibility action', () => {
   test('the owner sees the share action', () => {
     scene(
       setup({
-        mirror: mirrorWith([privateHabit], []),
+        mirror: mirrorSnapshot({ habits: [privateHabit] }),
         maybeUserId: Option.some(USER_ID),
       }),
       given(habitsModel()),
@@ -429,7 +429,7 @@ describe('habit visibility action', () => {
   test('the partner does not see the share action', () => {
     scene(
       setup({
-        mirror: mirrorWith([privateHabit], []),
+        mirror: mirrorSnapshot({ habits: [privateHabit] }),
         maybeUserId: Option.some('another-user'),
       }),
       given(habitsModel()),

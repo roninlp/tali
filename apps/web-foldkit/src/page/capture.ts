@@ -751,28 +751,14 @@ const applyPickerValue = (
   return model
 }
 
-const foldPickerOutMessage = (inputs: Inputs) =>
-  Picker.OutMessage.match<Update.Step<Model, Message>>({
-    PickedValue:
-      ({ target, value }) =>
-      stepModel => ({
-        model: applyPickerValue(stepModel, target, value, inputs),
-      }),
-    ClearedValue:
-      ({ target }) =>
-      stepModel => ({
-        model: applyPickerValue(stepModel, target, '', inputs),
-      }),
-  })
-
 const makeFoldPicker = (inputs: Inputs) =>
-  Update.foldChild({
-    update: Picker.update,
-    read: (model: Model) => Option.some(model.picker),
-    write: (model, nextPicker) =>
+  Picker.pickerFieldFold<Model, Message>({
+    field: model => model.picker,
+    setField: (model, nextPicker) =>
       modifyFields(model, { picker: () => nextPicker }),
     toParentMessage: message => Message.GotPickerMessage({ message }),
-    foldOutMessage: foldPickerOutMessage(inputs),
+    applyValue: (model, target, value) =>
+      applyPickerValue(model, target, value, inputs),
   })
 
 const toggleWeekday = (

@@ -16,7 +16,7 @@ import {
   Preferences as PreferencesRow,
   defaultPreferences,
 } from '../preferences-model'
-import { TODAY_NOW, USER_ID } from '../test-fixtures'
+import { DISPLAY, TODAY_NOW, USER_ID } from '../test-fixtures'
 import * as Today from './today'
 import type { Inputs } from './today'
 import { TodayFetchState, boundsFor } from './today-model'
@@ -29,11 +29,7 @@ import {
 } from './today-test-fixtures'
 
 const inputs = (overrides: Partial<Inputs> = {}): Inputs => ({
-  display: {
-    timeZone: 'Asia/Tehran',
-    weekStart: 'saturday',
-    digits: 'persian',
-  },
+  display: DISPLAY,
   sectionOrder: ['tasks', 'events', 'reminders', 'habits', 'notes'],
   isStoreReady: true,
   isOnline: true,

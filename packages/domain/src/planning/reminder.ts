@@ -1,6 +1,6 @@
 import { Schema } from 'effect'
 import { Model } from 'effect/schema'
-import { Visibility } from '../common.js'
+import { ClockTime, IsoWeekday, Visibility } from '../common.js'
 import {
   commonItemFields,
   ReminderDispatchId,
@@ -77,34 +77,26 @@ export const REMINDER_KIND_LABELS: Readonly<Record<ReminderType, string>> = {
   general: 'یادآوری',
 }
 
-/** Local wall-clock time `HH:mm` (00:00–23:59), interpreted in the reminder's zone. */
-export const ClockTime = Schema.String.check(
-  Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/),
-)
-export type ClockTime = Schema.Schema.Type<typeof ClockTime>
-
-/** ISO weekday, 1 = Monday … 7 = Sunday — the numbering the recurrence engine uses. */
-export const IsoWeekday = Schema.Int.check(
-  Schema.isBetween({ minimum: 1, maximum: 7 }),
-)
-export type IsoWeekday = Schema.Schema.Type<typeof IsoWeekday>
+/**
+ * Re-exported so the reminder contract's public surface is unchanged. Both
+ * scalars are owned by `../common.ts` because habits and auth name the same
+ * `HH:mm` and 1..7 weekday rules.
+ */
+export { ClockTime, IsoWeekday } from '../common.js'
 
 export const ReminderRepeat = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal('once') }),
-  Schema.Struct({
-    _tag: Schema.Literal('daily'),
+  Schema.TaggedStruct('once', {}),
+  Schema.TaggedStruct('daily', {
     /** Local `HH:mm` in the reminder's zone. */
     time: ClockTime,
   }),
-  Schema.Struct({
-    _tag: Schema.Literal('weekly'),
+  Schema.TaggedStruct('weekly', {
     /** The weekdays it repeats on. */
     days: Schema.Array(IsoWeekday).check(Schema.isMinLength(1)),
     /** Local `HH:mm` in the reminder's zone. */
     time: ClockTime,
   }),
-  Schema.Struct({
-    _tag: Schema.Literal('interval'),
+  Schema.TaggedStruct('interval', {
     /** "Every N hours" — the medication pattern. */
     hours: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
   }),

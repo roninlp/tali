@@ -1,23 +1,22 @@
-import { readFileSync, readdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { Effect, Layer, String as Str } from 'effect'
-import { D1Client } from '@effect/sql-d1'
-import {
-  type HouseholdId,
-  type ReminderId,
-  type UserId,
-  uuidV7,
-} from '@tali/domain'
+import { Layer } from 'effect'
+import { type ReminderId, uuidV7 } from '@tali/domain'
 import { ReminderDispatchRepoLive } from '@tali/sql'
 import {
   ReminderService,
   ReminderServiceLive,
-  type ReminderServiceApi,
   type ReminderViewer,
 } from '../src/reminder-service.js'
-import { FakeD1 } from './fake-d1.js'
+import {
+  HOUSEHOLD,
+  NOW,
+  TZ,
+  USER_A,
+  USER_B,
+  makeViewer,
+} from './fixtures/identities.js'
+import { seedHousehold, seedUser } from './fixtures/seed.js'
+import { makeServiceHarness, type HarnessEnv } from './harness.js'
 
 /**
  * Ticket #60 at the service seam. These run the real service + repository +
@@ -32,74 +31,26 @@ import { FakeD1 } from './fake-d1.js'
  * - an unanswered dispatch lands in the missed inbox and rolls to history.
  */
 
-const MIGRATIONS_DIR = new URL(
-  '../../../packages/sql/migrations/',
-  import.meta.url,
-)
+const viewer = makeViewer<ReminderViewer>({ timeZone: TZ })
 
-const migrationFiles = (): ReadonlyArray<string> =>
-  readdirSync(fileURLToPath(MIGRATIONS_DIR))
-    .filter(file => file.endsWith('.sql'))
-    .sort()
-
-const USER_A = 'user-a' as UserId
-const USER_B = 'user-b' as UserId
-const HOUSEHOLD = 'household-a' as HouseholdId
-const TZ = 'Asia/Tehran'
-const NOW = '2026-10-20T09:30:00.000Z'
-
-const viewer = (overrides: Partial<ReminderViewer> = {}): ReminderViewer => ({
-  userId: USER_A,
-  householdId: HOUSEHOLD,
-  timeZone: TZ,
-  ...overrides,
-})
-
-const seedUser = (db: DatabaseSync, id: string, email: string) => {
-  db.prepare(
-    `INSERT INTO users
-      (id, email, credential_verifier, credential_salt, kdf_version,
-       display_name, time_zone, week_start, digits, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 1, ?, ?, 'saturday', 'persian', ?, ?)`,
-  ).run(id, email, '0'.repeat(64), '0'.repeat(32), email, TZ, NOW, NOW)
-}
+const serviceLayer = ({ d1 }: HarnessEnv) =>
+  Layer.mergeAll(ReminderServiceLive, ReminderDispatchRepoLive).pipe(
+    Layer.provide(d1),
+  )
 
 const makeHarness = () => {
-  const db = new DatabaseSync(':memory:')
-  for (const file of migrationFiles()) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), 'utf8'))
-  }
-  seedUser(db, USER_A, 'a@example.com')
-  seedUser(db, USER_B, 'b@example.com')
-  db.prepare(
-    `INSERT INTO households (id, name, invite_code, created_by, created_at)
-     VALUES (?, 'خانه', 'rem-invite', ?, ?)`,
-  ).run(HOUSEHOLD, USER_A, NOW)
+  const harness = makeServiceHarness(serviceLayer, ReminderService)
+  const { db } = harness
 
-  const fake = new FakeD1(db)
-  const d1 = D1Client.layer({
-    db: fake.asD1Database(),
-    transformQueryNames: Str.camelToSnake,
-    transformResultNames: Str.snakeToCamel,
+  seedUser(db, { id: USER_A, email: 'a@example.com', now: NOW })
+  seedUser(db, { id: USER_B, email: 'b@example.com', now: NOW })
+  seedHousehold(db, {
+    id: HOUSEHOLD,
+    creator: USER_A,
+    inviteCode: 'rem-invite',
+    name: 'خانه',
+    now: NOW,
   })
-  const layer = Layer.mergeAll(
-    ReminderServiceLive,
-    ReminderDispatchRepoLive,
-  ).pipe(Layer.provide(d1))
-
-  const run = <A, E>(
-    effect: Effect.Effect<A, E, ReminderService | ReminderDispatchRepo>,
-  ): Promise<A> => Effect.runPromise(Effect.provide(effect, layer))
-
-  const svc = <A, E>(
-    f: (service: ReminderServiceApi) => Effect.Effect<A, E, never>,
-  ): Promise<A> =>
-    run(
-      Effect.gen(function* () {
-        const service = yield* ReminderService
-        return yield* f(service)
-      }),
-    )
 
   /** Insert a task directly; the scheduling derivation only needs its columns. */
   const insertTask = (input: {
@@ -216,9 +167,7 @@ const makeHarness = () => {
       | undefined
 
   return {
-    db,
-    fake,
-    svc,
+    ...harness,
     insertTask,
     insertOccasion,
     insertDispatch,

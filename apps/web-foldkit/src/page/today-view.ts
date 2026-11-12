@@ -18,6 +18,7 @@ import {
 } from '../habits-model'
 import type { TaskRow } from '../mirror'
 import { habitsRouter, notePath, notesRouter, taskAnchorPath } from '../route'
+import { inlineAlertView } from '../ui/feedback'
 import { inputControlView } from '../ui/field'
 import { Message } from './today'
 import type { Model, ViewInputs } from './today'
@@ -1279,17 +1280,7 @@ export const todayPageView = (
           headerView(model, inputs, view, h),
           quickAddView(model, inputs, h),
           orderPanelView(model, inputs, h),
-          Option.match(model.maybeError, {
-            onNone: () => h.empty,
-            onSome: message =>
-              h.p(
-                [
-                  h.Role('alert'),
-                  h.Class('notice notice-error m-0 text-sm leading-7'),
-                ],
-                [message],
-              ),
-          }),
+          inlineAlertView(model.maybeError, h),
           timelineView(model, inputs, view, h),
           h.div(
             [

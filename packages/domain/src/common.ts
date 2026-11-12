@@ -50,6 +50,13 @@ export const TRASH_RETENTION_MS = TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000
 export const MembershipRole = Schema.Literals(['owner', 'member'])
 export type MembershipRole = Schema.Schema.Type<typeof MembershipRole>
 
+/**
+ * A string that is not empty. The one "must have a value" rule every title,
+ * name and free-text label in the domain uses, so the check is written once.
+ */
+export const NonEmptyString = Schema.String.check(Schema.isMinLength(1))
+export type NonEmptyString = Schema.Schema.Type<typeof NonEmptyString>
+
 const EMAIL_PATTERN = /^\s*[^\s@]+@[^\s@]+\.[^\s@]+\s*$/
 
 /** Email address: format-checked at the schema edge, canonicalized by `normalizeEmail`. */
@@ -64,6 +71,38 @@ export type Email = Schema.Schema.Type<typeof Email>
  */
 export const normalizeEmail = (raw: string): Email =>
   raw.trim().toLowerCase() as Email
+
+// ── Scalar conventions ─────────────────────────────────────────────────────
+//
+// The scalars more than one layer names: planning (reminders, habits, events)
+// and auth both store a wall-clock time, a weekday and a zone, so the check
+// lives here and planning re-exports it.
+
+/** Local wall-clock time `HH:mm` (00:00–23:59), interpreted in the owning item's zone. */
+export const ClockTime = Schema.String.check(
+  Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/),
+)
+export type ClockTime = Schema.Schema.Type<typeof ClockTime>
+
+/** ISO weekday, 1 = Monday … 7 = Sunday — the numbering the recurrence engine uses. */
+export const IsoWeekday = Schema.Int.check(
+  Schema.isBetween({ minimum: 1, maximum: 7 }),
+)
+export type IsoWeekday = Schema.Schema.Type<typeof IsoWeekday>
+
+/** Real IANA time-zone identifiers only (validated by the platform's `Intl`). */
+export const isIanaTimeZone = Schema.makeFilter<string>(value => {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value })
+    return true
+  } catch {
+    return 'must be a valid IANA time zone identifier'
+  }
+})
+
+/** IANA time-zone identifier; stored per item so all-day dates stay unambiguous. */
+export const TimeZone = Schema.String.check(isIanaTimeZone)
+export type TimeZone = Schema.Schema.Type<typeof TimeZone>
 
 /** Opaque invite secret the second user presents to join a household. */
 export const InviteCode = Schema.String.pipe(Schema.brand('InviteCode'))

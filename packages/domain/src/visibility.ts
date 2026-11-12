@@ -1,4 +1,4 @@
-import type { Visibility } from './common.js'
+import type { HouseholdId, UserId, Visibility } from './common.js'
 import type { ItemType } from './planning/common.js'
 
 /**
@@ -174,3 +174,41 @@ export const resolveInheritedVisibility = (
     ? { _tag: 'resolved', visibility: requested }
     : { _tag: 'refused' }
 }
+
+/** The three columns every read-path scope guard needs from a stored row. */
+export interface VisibilityRow {
+  readonly householdId: HouseholdId
+  readonly ownerId: UserId
+  readonly visibility: Visibility
+}
+
+/** The two facts every read-path scope guard needs about the caller. */
+export interface VisibilityViewer {
+  readonly householdId: HouseholdId
+  readonly userId: UserId
+}
+
+/**
+ * The read-authorization predicate for a row that carries a visibility.
+ *
+ * `null` means the viewer may read the row. A row in another household is
+ * denied as `household` before its own `visibility` is even considered, so
+ * `household` wins over `private` — the same precedence every service's
+ * hand-written cascade used. The check is ordered, not a boolean, because the
+ * caller maps the reason into its own tagged error.
+ */
+export const visibilityDenial = (
+  row: VisibilityRow,
+  viewer: VisibilityViewer,
+): 'household' | 'private' | null =>
+  row.householdId !== viewer.householdId
+    ? 'household'
+    : row.visibility === 'private' && row.ownerId !== viewer.userId
+      ? 'private'
+      : null
+
+/** Boolean form of `visibilityDenial`, for predicates that want no reason. */
+export const canView = (
+  row: VisibilityRow,
+  viewer: VisibilityViewer,
+): boolean => visibilityDenial(row, viewer) === null

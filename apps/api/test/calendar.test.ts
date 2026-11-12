@@ -1,11 +1,7 @@
-import { createHash } from 'node:crypto'
-import { readFileSync, readdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
-import { Layer, Schema, String as Str } from 'effect'
+import { Layer, Schema } from 'effect'
 import { HttpRouter } from 'effect/http'
-import { D1Client } from '@effect/sql-d1'
 import {
   MonthReadModel,
   uuidV7,
@@ -14,6 +10,13 @@ import {
 } from '@tali/domain'
 import { AppLayer } from '../src/http-layer.js'
 import { FakeD1 } from './fake-d1.js'
+import {
+  seedHousehold,
+  seedMembership,
+  seedSession,
+  seedUser,
+} from './fixtures/seed.js'
+import { makeHarnessCore, type HarnessEnv } from './harness.js'
 
 /**
  * Ticket #43 at the HTTP seam: the real `GET /week` / `GET /month` routes, the
@@ -25,22 +28,9 @@ import { FakeD1 } from './fake-d1.js'
  * drill-down, household/private authorization, and the ETag 200↔304 exchange.
  */
 
-const MIGRATIONS_DIR = new URL(
-  '../../../packages/sql/migrations/',
-  import.meta.url,
-)
-
-const migrationFiles = (): ReadonlyArray<string> =>
-  readdirSync(fileURLToPath(MIGRATIONS_DIR))
-    .filter(file => file.endsWith('.sql'))
-    .sort()
-
 const NOW = new Date().toISOString()
 const FUTURE = new Date(Date.now() + 60 * 60 * 1000).toISOString()
 const TZ = 'Asia/Tehran'
-
-const sha256 = (value: string): string =>
-  createHash('sha256').update(value).digest('hex')
 
 const USER_A = uuidV7()
 const USER_B = uuidV7()
@@ -192,88 +182,80 @@ const seedOccasion = (db: DatabaseSync, occasion: OccasionSeed): void => {
   )
 }
 
+const appLayer = ({ d1 }: HarnessEnv) => AppLayer.pipe(Layer.provide(d1))
+
 const makeHarness = async (): Promise<Harness> => {
-  const db = new DatabaseSync(':memory:')
-  for (const file of migrationFiles()) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), 'utf8'))
-  }
-
-  const fake = new FakeD1(db)
-  const d1 = D1Client.layer({
-    db: fake.asD1Database(),
-    transformQueryNames: Str.camelToSnake,
-    transformResultNames: Str.snakeToCamel,
+  const harness = makeHarnessCore(appLayer)
+  const { db } = harness
+  const { handler, dispose } = HttpRouter.toWebHandler(harness.layer, {
+    disableLogger: true,
   })
-  const { handler, dispose } = HttpRouter.toWebHandler(
-    AppLayer.pipe(Layer.provide(d1)),
-    { disableLogger: true },
-  )
 
-  const seedUser = (
-    id: string,
-    email: string,
-    timeZone: string,
-    weekStart = 'saturday',
-  ): void => {
-    db.prepare(
-      `INSERT INTO users
-        (id, email, credential_verifier, credential_salt, kdf_version,
-         display_name, time_zone, week_start, digits, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 1, ?, ?, ?, 'persian', ?, ?)`,
-    ).run(
-      id,
-      email,
-      '0'.repeat(64),
-      '0'.repeat(32),
-      email,
-      timeZone,
-      weekStart,
-      NOW,
-      NOW,
-    )
-  }
-
-  const seedSession = (userId: string, token: string): void => {
-    db.prepare(
-      `INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
-    ).run(uuidV7(), userId, sha256(token), FUTURE, NOW)
-  }
-
-  const seedHousehold = (id: string, creator: string, invite: string): void => {
-    db.prepare(
-      `INSERT INTO households (id, name, invite_code, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
-    ).run(id, invite, invite, creator, NOW)
-  }
-
-  const seedMembership = (userId: string, householdId: string): void => {
-    db.prepare(
-      `INSERT INTO memberships (id, household_id, user_id, role, joined_at)
-       VALUES (?, ?, ?, 'owner', ?)`,
-    ).run(uuidV7(), householdId, userId, NOW)
-  }
-
-  seedUser(USER_A, 'cal-a@example.com', TZ)
-  seedUser(USER_B, 'cal-b@example.com', TZ)
-  seedUser(USER_C, 'cal-c@example.com', TZ)
-  seedUser(USER_SUNDAY, 'cal-sun@example.com', TZ, 'sunday')
-  seedUser(USER_MONDAY, 'cal-mon@example.com', TZ, 'monday')
-  seedUser(USER_NO_HOUSEHOLD, 'cal-n@example.com', TZ)
-  seedHousehold(HOUSEHOLD, USER_A, 'CAL-A')
-  seedHousehold(OTHER_HOUSEHOLD, USER_C, 'CAL-C')
+  seedUser(db, {
+    id: USER_A,
+    email: 'cal-a@example.com',
+    timeZone: TZ,
+    now: NOW,
+  })
+  seedUser(db, {
+    id: USER_B,
+    email: 'cal-b@example.com',
+    timeZone: TZ,
+    now: NOW,
+  })
+  seedUser(db, {
+    id: USER_C,
+    email: 'cal-c@example.com',
+    timeZone: TZ,
+    now: NOW,
+  })
+  seedUser(db, {
+    id: USER_SUNDAY,
+    email: 'cal-sun@example.com',
+    timeZone: TZ,
+    weekStart: 'sunday',
+    now: NOW,
+  })
+  seedUser(db, {
+    id: USER_MONDAY,
+    email: 'cal-mon@example.com',
+    timeZone: TZ,
+    weekStart: 'monday',
+    now: NOW,
+  })
+  seedUser(db, {
+    id: USER_NO_HOUSEHOLD,
+    email: 'cal-n@example.com',
+    timeZone: TZ,
+    now: NOW,
+  })
+  seedHousehold(db, {
+    id: HOUSEHOLD,
+    creator: USER_A,
+    inviteCode: 'CAL-A',
+    now: NOW,
+  })
+  seedHousehold(db, {
+    id: OTHER_HOUSEHOLD,
+    creator: USER_C,
+    inviteCode: 'CAL-C',
+    now: NOW,
+  })
   for (const user of [USER_A, USER_B, USER_SUNDAY, USER_MONDAY]) {
-    seedMembership(user, HOUSEHOLD)
+    seedMembership(db, user, HOUSEHOLD, { now: NOW })
   }
-  seedMembership(USER_C, OTHER_HOUSEHOLD)
-  seedSession(USER_A, TOKEN_A)
-  seedSession(USER_B, TOKEN_B)
-  seedSession(USER_C, TOKEN_C)
-  seedSession(USER_SUNDAY, TOKEN_SUNDAY)
-  seedSession(USER_MONDAY, TOKEN_MONDAY)
-  seedSession(USER_NO_HOUSEHOLD, TOKEN_NO_HOUSEHOLD)
+  seedMembership(db, USER_C, OTHER_HOUSEHOLD, { now: NOW })
+  seedSession(db, USER_A, TOKEN_A, { now: NOW, expiresAt: FUTURE })
+  seedSession(db, USER_B, TOKEN_B, { now: NOW, expiresAt: FUTURE })
+  seedSession(db, USER_C, TOKEN_C, { now: NOW, expiresAt: FUTURE })
+  seedSession(db, USER_SUNDAY, TOKEN_SUNDAY, { now: NOW, expiresAt: FUTURE })
+  seedSession(db, USER_MONDAY, TOKEN_MONDAY, { now: NOW, expiresAt: FUTURE })
+  seedSession(db, USER_NO_HOUSEHOLD, TOKEN_NO_HOUSEHOLD, {
+    now: NOW,
+    expiresAt: FUTURE,
+  })
 
-  return { db, fake, handler, dispose }
+  return { db, fake: harness.fake, handler, dispose }
 }
 
 interface CallOptions {

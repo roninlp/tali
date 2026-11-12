@@ -1,15 +1,7 @@
-import { readFileSync, readdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
 import { Effect, Layer, Option, String as Str } from 'effect'
 import { D1Client } from '@effect/sql-d1'
-import {
-  type HouseholdId,
-  type ReminderId,
-  type UserId,
-  uuidV7,
-} from '@tali/domain'
+import { type ReminderId, uuidV7 } from '@tali/domain'
 import {
   PushSubscriptionRepoLive,
   ReminderDispatchRepo,
@@ -30,7 +22,16 @@ import {
 } from '../src/reminder-service.js'
 import { ReminderSweep, ReminderSweepLive } from '../src/reminder-sweep.js'
 import { runReminderSweep } from '../src/reminder-sweep-runner.js'
-import { FakeD1 } from './fake-d1.js'
+import {
+  HOUSEHOLD,
+  NOW,
+  TZ,
+  USER_A,
+  USER_B,
+  makeViewer,
+} from './fixtures/identities.js'
+import { seedHousehold, seedUser } from './fixtures/seed.js'
+import { makeHarnessCore, type HarnessEnv } from './harness.js'
 
 /**
  * Ticket #61 at the delivery seam: claim → push → outcome, the missed inbox,
@@ -42,21 +43,6 @@ import { FakeD1 } from './fake-d1.js'
  * (quiet hours, medication bypass) rather than "roughly when".
  */
 
-const MIGRATIONS_DIR = new URL(
-  '../../../packages/sql/migrations/',
-  import.meta.url,
-)
-
-const migrationFiles = (): ReadonlyArray<string> =>
-  readdirSync(fileURLToPath(MIGRATIONS_DIR))
-    .filter(file => file.endsWith('.sql'))
-    .sort()
-
-const USER_A = 'user-a' as UserId
-const USER_B = 'user-b' as UserId
-const HOUSEHOLD = 'household-a' as HouseholdId
-const TZ = 'Asia/Tehran'
-const NOW = '2026-10-20T09:30:00.000Z'
 /** Tehran is UTC+03:30 (Iran dropped DST in 2022). */
 const T = (localHour: string, day = '2026-10-21'): string =>
   new Date(`${day}T${localHour}+03:30`).toISOString()
@@ -64,39 +50,13 @@ const T = (localHour: string, day = '2026-10-21'): string =>
 const after = (instant: string, ms: number): string =>
   new Date(Date.parse(instant) + ms).toISOString()
 
-const viewer = (overrides: Partial<ReminderViewer> = {}): ReminderViewer => ({
-  userId: USER_A,
-  householdId: HOUSEHOLD,
-  timeZone: TZ,
-  ...overrides,
-})
-
-const seedUser = (db: DatabaseSync, id: string, email: string) => {
-  db.prepare(
-    `INSERT INTO users
-      (id, email, credential_verifier, credential_salt, kdf_version,
-       display_name, time_zone, week_start, digits, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 1, ?, ?, 'saturday', 'persian', ?, ?)`,
-  ).run(id, email, '0'.repeat(64), '0'.repeat(32), email, TZ, NOW, NOW)
-}
+const viewer = makeViewer<ReminderViewer>({ timeZone: TZ })
 
 interface SendRecord extends PushSendInput {
   readonly result: PushSendResult
 }
 
 const makeHarness = () => {
-  const db = new DatabaseSync(':memory:')
-  for (const file of migrationFiles()) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), 'utf8'))
-  }
-  seedUser(db, USER_A, 'a@example.com')
-  seedUser(db, USER_B, 'b@example.com')
-  db.prepare(
-    `INSERT INTO households (id, name, invite_code, created_by, created_at)
-     VALUES (?, 'خانه', 'delivery-invite', ?, ?)`,
-  ).run(HOUSEHOLD, USER_A, NOW)
-
-  const fake = new FakeD1(db)
   const sends: Array<SendRecord> = []
   /** Scripted push-service answer; defaults to accepted. */
   let answer: (input: PushSendInput) => PushSendResult = () => ({
@@ -113,43 +73,45 @@ const makeHarness = () => {
       }),
   }
 
-  const d1 = D1Client.layer({
-    db: fake.asD1Database(),
-    transformQueryNames: Str.camelToSnake,
-    transformResultNames: Str.snakeToCamel,
-  })
+  const sweepLayer = ({ db, d1 }: HarnessEnv) => {
+    seedUser(db, { id: USER_A, email: 'a@example.com', now: NOW })
+    seedUser(db, { id: USER_B, email: 'b@example.com', now: NOW })
+    seedHousehold(db, {
+      id: HOUSEHOLD,
+      creator: USER_A,
+      inviteCode: 'delivery-invite',
+      name: 'خانه',
+      now: NOW,
+    })
 
-  // The sweep now materialises occasion advance reminders before claiming
-  // (#61), so its layer includes the occasion service.
-  const services = Layer.mergeAll(ReminderServiceLive, OccasionServiceLive)
-  const layer = Layer.mergeAll(
-    ReminderSweepLive.pipe(Layer.provide(services)),
-    // The tests also answer dispatches directly, so the service is an output
-    // as well as the sweep's dependency.
-    services,
-  ).pipe(
-    Layer.provide(Layer.succeed(PushGateway, gateway)),
-    Layer.provide(
-      Layer.mergeAll(
-        ReminderDispatchRepoLive,
-        PushSubscriptionRepoLive,
-        SyncRepoLive,
+    // The sweep now materialises occasion advance reminders before claiming
+    // (#61), so its layer includes the occasion service.
+    const services = Layer.mergeAll(ReminderServiceLive, OccasionServiceLive)
+    const layer = Layer.mergeAll(
+      ReminderSweepLive.pipe(Layer.provide(services)),
+      // The tests also answer dispatches directly, so the service is an output
+      // as well as the sweep's dependency.
+      services,
+    ).pipe(
+      Layer.provide(Layer.succeed(PushGateway, gateway)),
+      Layer.provide(
+        Layer.mergeAll(
+          ReminderDispatchRepoLive,
+          PushSubscriptionRepoLive,
+          SyncRepoLive,
+        ),
       ),
-    ),
-    Layer.provide(d1),
-  )
+      Layer.provide(d1),
+    )
 
-  // The ledger repo as a test output, for the answered-mid-tick guard check.
-  const ledger = ReminderDispatchRepoLive.pipe(Layer.provide(d1))
+    // The ledger repo as a test output, for the answered-mid-tick guard check.
+    const ledger = ReminderDispatchRepoLive.pipe(Layer.provide(d1))
 
-  const run = <A, E>(
-    effect: Effect.Effect<
-      A,
-      E,
-      ReminderSweep | ReminderService | ReminderDispatchRepo
-    >,
-  ): Promise<A> =>
-    Effect.runPromise(Effect.provide(effect, Layer.merge(layer, ledger)))
+    return Layer.merge(layer, ledger)
+  }
+
+  const harness = makeHarnessCore(sweepLayer)
+  const { db, run } = harness
 
   const sweep = (now: string) =>
     run(
@@ -332,8 +294,7 @@ const makeHarness = () => {
     >
 
   return {
-    db,
-    fake,
+    ...harness,
     sends,
     setAnswer: (next: (input: PushSendInput) => PushSendResult) => {
       answer = next

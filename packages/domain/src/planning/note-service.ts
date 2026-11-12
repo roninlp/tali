@@ -1,6 +1,16 @@
 import { Predicate, Schema } from 'effect'
 import { TRASH_RETENTION_MS, Visibility } from '../common.js'
-import { NoteId, TagIds } from './common.js'
+import {
+  NoteId,
+  TagIds,
+  conflictFields,
+  createEnvelope,
+  forbiddenFields,
+  mutationEnvelope,
+  notFoundFields,
+  updateEnvelope,
+  validationFields,
+} from './common.js'
 
 /**
  * NoteService contract (ticket #40; FR-NOTE-01/03).
@@ -35,31 +45,19 @@ import { NoteId, TagIds } from './common.js'
 /** The note does not exist, or is not visible to this viewer. */
 export class NoteNotFound extends Schema.TaggedError<NoteNotFound>()(
   'NoteNotFound',
-  {
-    id: NoteId,
-  },
+  notFoundFields(NoteId),
 ) {}
 
 /** The row exists but this viewer may not read/write it. */
 export class NoteForbidden extends Schema.TaggedError<NoteForbidden>()(
   'NoteForbidden',
-  {
-    id: Schema.NullOr(Schema.String),
-    reason: Schema.Literals(['private', 'household', 'noHousehold']),
-  },
+  forbiddenFields,
 ) {}
 
 /** Field-level validation (foreign/private tag, malformed body, …). */
 export class NoteValidationError extends Schema.TaggedError<NoteValidationError>()(
   'NoteValidationError',
-  {
-    issues: Schema.Array(
-      Schema.Struct({
-        field: Schema.String,
-        message: Schema.String,
-      }),
-    ),
-  },
+  validationFields,
 ) {}
 
 /**
@@ -69,6 +67,8 @@ export class NoteValidationError extends Schema.TaggedError<NoteValidationError>
 export class NoteConflict extends Schema.TaggedError<NoteConflict>()(
   'NoteConflict',
   {
+    ...conflictFields,
+    /** The note's own brand: unlike the other CAS errors, the client re-reads it. */
     id: NoteId,
     version: Schema.Int,
   },
@@ -102,10 +102,7 @@ export const NOTE_TRASH_RETENTION_MS = TRASH_RETENTION_MS
  * Create is quick: the title is optional and every other field has a benign
  * default, so "new note" is one click and zero form fields.
  */
-export const NoteCreateInput = Schema.Struct({
-  /** A client may mint the UUID v7 offline; the server mints one otherwise. */
-  id: Schema.optional(NoteId),
-  clientMutationId: Schema.String,
+export const NoteCreateInput = createEnvelope(NoteId, {
   title: Schema.optional(Schema.String),
   body: Schema.optional(Schema.NullOr(Schema.Json)),
   plainText: Schema.optional(Schema.String),
@@ -130,13 +127,7 @@ export const NotePatch = Schema.Struct({
 })
 export type NotePatch = Schema.Schema.Type<typeof NotePatch>
 
-export const NoteUpdateInput = Schema.Struct({
-  id: NoteId,
-  clientMutationId: Schema.String,
-  /** Informational; the update re-reads and retries on a lost CAS. */
-  baseVersion: Schema.optional(Schema.Int),
-  patch: NotePatch,
-})
+export const NoteUpdateInput = updateEnvelope(NoteId, NotePatch)
 export type NoteUpdateInput = Schema.Schema.Type<typeof NoteUpdateInput>
 
 /**
@@ -153,10 +144,7 @@ export const NoteSaveInput = Schema.Struct({
 export type NoteSaveInput = Schema.Schema.Type<typeof NoteSaveInput>
 
 /** Only the row id plus the replay key (trash/restore). */
-export const NoteMutationInput = Schema.Struct({
-  id: NoteId,
-  clientMutationId: Schema.String,
-})
+export const NoteMutationInput = mutationEnvelope(NoteId)
 export type NoteMutationInput = Schema.Schema.Type<typeof NoteMutationInput>
 
 /** Idempotent pin/archive set: the target state, not a toggle. */

@@ -19,6 +19,7 @@ import { type ListId, type NoteId } from '@tali/domain'
 import * as Auth from './auth'
 import { GuardDecision, guardRoute, landingPath, landingRoute } from './guard'
 import { PushEnvironment } from './lib/push/service-worker'
+import { TimestampMillis } from './lib/schema-primitives'
 import * as Calendar from './page/calendar'
 import { todayIn } from './page/calendar-model'
 import * as Capture from './page/capture'
@@ -51,7 +52,9 @@ import * as Settings from './settings'
 import * as Shell from './shell'
 import * as Sync from './sync'
 import * as Theme from './theme'
+import { emptyStateView } from './ui/feedback'
 import { listsIcon, searchIcon } from './ui/icons'
+import { pageHeaderView } from './ui/page'
 
 // MODEL
 
@@ -89,7 +92,7 @@ export const Flags = Schema.Struct({
   pushEnvironment: PushEnvironment,
   isOnline: Schema.Boolean,
   isVisible: Schema.Boolean,
-  now: Schema.Number,
+  now: TimestampMillis,
 })
 
 export type Flags = typeof Flags.Type
@@ -1694,14 +1697,7 @@ const usesAppShell = AppRoute.isAnyOf([
 ])
 
 const placeholderNoteView = (h: HtmlBuilder<Message>): Html =>
-  h.p(
-    [
-      h.Class(
-        'm-0 grid justify-items-center gap-2 rounded-2xl border border-dashed border-base-300 px-6 py-10 text-center text-sm leading-7 text-base-content/70',
-      ),
-    ],
-    ['این صفحه در گام بعدی ساخته می‌شود.'],
-  )
+  emptyStateView('این صفحه در گام بعدی ساخته می‌شود.', h)
 
 const placeholderPageView = (heading: string, h: HtmlBuilder<Message>): Html =>
   h.section(
@@ -1796,18 +1792,13 @@ const remindersPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.section(
     [h.Class('page-wrap grid grid-cols-1 max-w-3xl gap-4')],
     [
-      h.header(
-        [h.Class('grid gap-1')],
-        [
-          h.h1(
-            [h.Class('m-0 text-2xl font-bold tracking-tight sm:text-3xl')],
-            ['یادآورها'],
-          ),
-          h.p(
-            [h.Class('m-0 text-sm leading-7 text-base-content/70')],
-            ['اعلان‌های این دستگاه و یادآورهایی که مرورگر آن‌ها را ندیده است.'],
-          ),
-        ],
+      pageHeaderView(
+        {
+          title: 'یادآورها',
+          subtitle:
+            'اعلان‌های این دستگاه و یادآورهایی که مرورگر آن‌ها را ندیده است.',
+        },
+        h,
       ),
       h.submodel({
         slotId: 'reminders-push-health',
@@ -1828,18 +1819,12 @@ const settingsPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.section(
     [h.Class('page-wrap grid grid-cols-1 max-w-2xl gap-4')],
     [
-      h.header(
-        [h.Class('grid gap-1')],
-        [
-          h.h1(
-            [h.Class('m-0 text-2xl font-bold tracking-tight sm:text-3xl')],
-            ['تنظیمات'],
-          ),
-          h.p(
-            [h.Class('m-0 text-sm leading-7 text-base-content/70')],
-            ['ظاهر برنامه، تقویم و منطقه‌ی زمانی، و امنیت حساب.'],
-          ),
-        ],
+      pageHeaderView(
+        {
+          title: 'تنظیمات',
+          subtitle: 'ظاهر برنامه، تقویم و منطقه‌ی زمانی، و امنیت حساب.',
+        },
+        h,
       ),
       h.submodel({
         slotId: 'settings-theme-picker',

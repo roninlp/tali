@@ -1,14 +1,4 @@
-import {
-  Array,
-  Clock,
-  Duration,
-  Effect,
-  Match,
-  Option,
-  Queue,
-  Schema,
-  Stream,
-} from 'effect'
+import { Array, Clock, Effect, Match, Option, Schema, Stream } from 'effect'
 import { Command, Dom, Submodel, Subscription, Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
@@ -22,12 +12,15 @@ import { AuthFailure } from '../lib/auth-api'
 import { authErrorMessage } from '../lib/auth-copy'
 import { habitEntryStatusOf, tapHabitEntry } from '../lib/habit-log'
 import { preferencesApi } from '../lib/preferences-api'
+import { TimestampMillis } from '../lib/schema-primitives'
 import { TodayReadModel, fetchToday } from '../lib/today-api'
 import { taskKey } from '../mirror'
 import type { MirrorSnapshot } from '../mirror'
 import { type DisplayFields, Preferences } from '../preferences-model'
 import { LocalStoreResource } from '../sync/local-store'
 import type { LocalStoreService } from '../sync/local-store'
+import { clockEvents, eventStream, onlineEvents } from '../ui/dom-stream'
+import { localWrite, storeFailureMessage } from './local-write'
 import {
   DashboardSection,
   DashboardSectionMove,
@@ -55,7 +48,7 @@ import { todayPageView } from './today-view'
 // MODEL
 
 export const Model = Schema.Struct({
-  now: Schema.Number,
+  now: TimestampMillis,
   fetchState: TodayFetchState,
   maybeServer: Schema.Option(TodayReadModel),
   maybeEtag: Schema.Option(Schema.String),
@@ -120,7 +113,7 @@ export type ViewInputs = Inputs
 
 export const Message = defineMessageUnion({
   EnteredToday: {},
-  TickedClock: { now: Schema.Number },
+  TickedClock: { now: TimestampMillis },
   SyncSettled: {},
   WentOnline: {},
   WentOffline: {},
@@ -189,13 +182,6 @@ export const OutMessage = defineMessageUnion({
 export type OutMessage = typeof OutMessage.Type
 
 // COMMAND
-
-const storeFailureMessage = (cause: unknown): string =>
-  cause instanceof Error ? cause.message : 'ذخیره در حافظه‌ی محلی ناموفق بود'
-
-const currentIso = Clock.currentTimeMillis.pipe(
-  Effect.map(millis => new Date(millis).toISOString()),
-)
 
 export const FetchToday = Command.define('FetchToday', {
   args: {
@@ -296,30 +282,18 @@ export const CompleteTask = Command.define('CompleteTask', {
   args: { taskId: Schema.String, title: Schema.String },
   messages: [Message.CompletedCompleteTask, Message.FailedCompleteTask],
   execute: ({ taskId, title }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () =>
-          store.writeLocal({
-            entityType: 'task',
-            entityId: taskId,
-            op: 'upsert',
-            patch: { status: 'done', completedAt: now },
-            now,
-          }),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedCompleteTask({ taskId, title })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedCompleteTask({ message: storeFailureMessage(error) }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: (store, now) =>
+        store.writeLocal({
+          entityType: 'task',
+          entityId: taskId,
+          op: 'upsert',
+          patch: { status: 'done', completedAt: now },
+          now,
+        }),
+      onSuccess: () => Message.CompletedCompleteTask({ taskId, title }),
+      onFailure: message => Message.FailedCompleteTask({ message }),
+    }),
 })
 
 export const MoveToTomorrow = Command.define('MoveToTomorrow', {
@@ -331,30 +305,18 @@ export const MoveToTomorrow = Command.define('MoveToTomorrow', {
   },
   messages: [Message.CompletedMoveToTomorrow, Message.FailedMoveToTomorrow],
   execute: ({ taskId, title, tomorrow, timeZone }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () =>
-          store.writeLocal({
-            entityType: 'task',
-            entityId: taskId,
-            op: 'upsert',
-            patch: { dueAt: null, dueDate: tomorrow, timeZone },
-            now,
-          }),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedMoveToTomorrow({ taskId, title })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedMoveToTomorrow({ message: storeFailureMessage(error) }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: (store, now) =>
+        store.writeLocal({
+          entityType: 'task',
+          entityId: taskId,
+          op: 'upsert',
+          patch: { dueAt: null, dueDate: tomorrow, timeZone },
+          now,
+        }),
+      onSuccess: () => Message.CompletedMoveToTomorrow({ taskId, title }),
+      onFailure: message => Message.FailedMoveToTomorrow({ message }),
+    }),
 })
 
 export const SaveSectionOrder = Command.define('SaveSectionOrder', {
@@ -842,52 +804,9 @@ export const syncSettled = (model: Model, inputs: Inputs): CommandReturn =>
 
 // SUBSCRIPTION
 
-const eventStream = <A>(
-  subscribe: (emit: (value: A) => void) => () => void,
-): Stream.Stream<A> =>
-  Stream.callback<A>(queue =>
-    Effect.acquireRelease(
-      Effect.sync(() =>
-        subscribe(value => {
-          Queue.offerUnsafe(queue, value)
-        }),
-      ),
-      unsubscribe => Effect.sync(unsubscribe),
-    ).pipe(Effect.flatMap(() => Effect.never)),
-  )
-
-const clockTick = Effect.gen(function* () {
-  const now = yield* Clock.currentTimeMillis
-
-  return Message.TickedClock({ now })
-})
-
-/**
- * Tick once on mount (so a return to the screen refreshes "now" immediately)
- * and then once a minute; the subscription only runs while Today is the route.
- */
-const clockEvents: Stream.Stream<Message> = Stream.concat(
-  Stream.fromEffect(clockTick),
-  Stream.fromEffectRepeat(
-    Effect.gen(function* () {
-      yield* Effect.sleep(Duration.seconds(60))
-
-      return yield* clockTick
-    }),
-  ),
-)
-
-const onlineEvents: Stream.Stream<Message> = eventStream(emit => {
-  const onOnline = () => emit(Message.WentOnline())
-  const onOffline = () => emit(Message.WentOffline())
-
-  window.addEventListener('online', onOnline)
-  window.addEventListener('offline', onOffline)
-
-  return () => {
-    window.removeEventListener('online', onOnline)
-    window.removeEventListener('offline', onOffline)
-  }
+const onlineStream = onlineEvents<Message>({
+  onOnline: () => Message.WentOnline(),
+  onOffline: () => Message.WentOffline(),
 })
 
 const isTypingTarget = (target: EventTarget | null): boolean =>
@@ -940,8 +859,10 @@ const keyboardEvents: Stream.Stream<Message> = eventStream(emit => {
 })
 
 export const subscriptions = Subscription.make<Model, Message>()(_entry => ({
-  todayClock: Subscription.persistentEntry(clockEvents),
-  todayOnline: Subscription.persistentEntry(onlineEvents),
+  todayClock: Subscription.persistentEntry(
+    clockEvents(now => Message.TickedClock({ now })),
+  ),
+  todayOnline: Subscription.persistentEntry(onlineStream),
   todayKeyboard: Subscription.persistentEntry(keyboardEvents),
 }))
 

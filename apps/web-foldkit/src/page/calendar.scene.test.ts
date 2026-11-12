@@ -22,6 +22,7 @@ import { describe, test } from 'vitest'
 import { Listbox } from '@foldkit/ui'
 
 import { CalendarRecurrenceEnd } from '../lib/calendar-data'
+import { mirrorSnapshot } from '../mirror-fixtures'
 import { USER_ID } from '../test-fixtures'
 import * as Calendar from './calendar'
 import type { Inputs, Model } from './calendar'
@@ -33,7 +34,6 @@ import {
   calendarModel,
   calendarTask,
   eventRow,
-  mirrorWith,
   occasionRow,
   timedEventRow,
   weeklyEventRow,
@@ -54,7 +54,7 @@ const WEEK_TITLE = '۲ آبان – ۸ آبان'
 
 const weekWithTasks = () =>
   setup({
-    mirror: mirrorWith({ tasks: [calendarTask()] }),
+    mirror: mirrorSnapshot({ tasks: [calendarTask()] }),
   })
 
 const tab = (name: string) => role('button', { name })
@@ -85,7 +85,7 @@ describe('Calendar week view', () => {
   test('shows a task with its completion and priority affordances', () => {
     scene(
       setup({
-        mirror: mirrorWith({
+        mirror: mirrorSnapshot({
           tasks: [calendarTask({ priority: 'high' })],
         }),
       }),
@@ -102,7 +102,7 @@ describe('Calendar week view', () => {
   test('keeps a projected recurrence read-only', () => {
     scene(
       setup({
-        mirror: mirrorWith({
+        mirror: mirrorSnapshot({
           tasks: [
             calendarTask({
               id: '0192f0a0-0000-7000-8000-000000000045',
@@ -129,7 +129,7 @@ describe('Calendar week view', () => {
   test('paints all-day events as chips and timed events on the time grid', () => {
     scene(
       setup({
-        mirror: mirrorWith({
+        mirror: mirrorSnapshot({
           events: [eventRow(), timedEventRow()],
         }),
       }),
@@ -204,7 +204,7 @@ describe('Calendar week view', () => {
   test('each planning row keeps its own priority picker', () => {
     scene(
       setup({
-        mirror: mirrorWith({
+        mirror: mirrorSnapshot({
           tasks: [
             calendarTask(),
             calendarTask({
@@ -291,7 +291,7 @@ describe('Calendar week view', () => {
   test('announces a completed task and removes it from the grid', () => {
     scene(
       setup({
-        mirror: mirrorWith({
+        mirror: mirrorSnapshot({
           tasks: [calendarTask({ status: 'done' })],
         }),
       }),
@@ -306,7 +306,7 @@ describe('Calendar month view', () => {
     scene(
       setup({
         isOnline: false,
-        mirror: mirrorWith({
+        mirror: mirrorSnapshot({
           tasks: [calendarTask()],
           events: [eventRow()],
           occasions: [occasionRow({ color: '#9f1239' })],
@@ -335,7 +335,7 @@ describe('Calendar month view', () => {
     scene(
       setup({
         isOnline: false,
-        mirror: mirrorWith({
+        mirror: mirrorSnapshot({
           tasks: [calendarTask()],
           events: [eventRow()],
           occasions: [occasionRow()],
@@ -377,7 +377,7 @@ describe('Calendar month view', () => {
 describe('Calendar occasions panel', () => {
   test('lists the occasions with both calendars and the actions', () => {
     scene(
-      setup({ mirror: mirrorWith({ occasions: [occasionRow()] }) }),
+      setup({ mirror: mirrorSnapshot({ occasions: [occasionRow()] }) }),
       given(calendarModel()),
       expect(role('region', { name: 'مناسبت‌ها' })).toExist(),
       expect(text('۱ مناسبت ثبت شده')).toExist(),
@@ -430,7 +430,7 @@ describe('Calendar occasions panel', () => {
 
   test('editing fills the one form and cancelling clears it', () => {
     scene(
-      setup({ mirror: mirrorWith({ occasions: [occasionRow()] }) }),
+      setup({ mirror: mirrorSnapshot({ occasions: [occasionRow()] }) }),
       given(calendarModel()),
       click(role('button', { name: 'ویرایش تولد مامان' })),
       expect(role('textbox', { name: 'عنوان مناسبت' })).toHaveValue(
@@ -460,7 +460,7 @@ describe('Calendar event editor', () => {
   test('opens an occurrence with its draft fields', () => {
     scene(
       setup({
-        mirror: mirrorWith({ events: [eventRow()] }),
+        mirror: mirrorSnapshot({ events: [eventRow()] }),
       }),
       given(calendarModel()),
       click(role('button', { name: 'سفر' })),
@@ -480,7 +480,7 @@ describe('Calendar event editor', () => {
 
   test('a recurring occurrence asks the scope question before writing', () => {
     scene(
-      setup({ mirror: mirrorWith({ events: [weeklyEventRow()] }) }),
+      setup({ mirror: mirrorSnapshot({ events: [weeklyEventRow()] }) }),
       given(calendarModel()),
       click(role('button', { name: 'جلسهٔ هفتگی' })),
       Command.expectExact(Calendar.FocusEventEditor()),
@@ -523,7 +523,7 @@ describe('Calendar event editor', () => {
   test('an offline recurring edit offers the split as unavailable', () => {
     scene(
       setup({
-        mirror: mirrorWith({ events: [weeklyEventRow()] }),
+        mirror: mirrorSnapshot({ events: [weeklyEventRow()] }),
         isOnline: false,
       }),
       given(calendarModel()),
@@ -578,7 +578,7 @@ describe('Calendar event editor', () => {
 describe('Calendar visibility controls', () => {
   test('the event owner sees the unshare action', () => {
     scene(
-      setup({ mirror: mirrorWith({ events: [eventRow()] }) }),
+      setup({ mirror: mirrorSnapshot({ events: [eventRow()] }) }),
       given(calendarModel()),
       click(role('button', { name: 'سفر' })),
       Command.resolve(
@@ -606,7 +606,9 @@ describe('Calendar visibility controls', () => {
   test('a partner does not see the event share action', () => {
     scene(
       setup({
-        mirror: mirrorWith({ events: [eventRow({ ownerId: 'another-user' })] }),
+        mirror: mirrorSnapshot({
+          events: [eventRow({ ownerId: 'another-user' })],
+        }),
       }),
       given(calendarModel()),
       click(role('button', { name: 'سفر' })),
@@ -621,7 +623,7 @@ describe('Calendar visibility controls', () => {
   test('the occasion owner sees the share action', () => {
     scene(
       setup({
-        mirror: mirrorWith({
+        mirror: mirrorSnapshot({
           occasions: [occasionRow({ ownerId: USER_ID, visibility: 'private' })],
         }),
       }),
@@ -633,7 +635,7 @@ describe('Calendar visibility controls', () => {
 
   test('a partner does not see the occasion share action', () => {
     scene(
-      setup({ mirror: mirrorWith({ occasions: [occasionRow()] }) }),
+      setup({ mirror: mirrorSnapshot({ occasions: [occasionRow()] }) }),
       given(calendarModel()),
       click(role('button', { name: 'ویرایش تولد مامان' })),
       expect(role('button', { name: 'اشتراک با خانه' })).toBeAbsent(),

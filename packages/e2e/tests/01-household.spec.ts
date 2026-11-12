@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { uniqueTag } from './support'
+import { API_URL, uniqueTag } from './support'
 
 /**
  * Gate flow 1 (#81/#84): register → create household → invite → second account
@@ -76,11 +76,11 @@ test('flow 1: two accounts meet in one household', async ({
 
     // ── Both sessions report the same household ───────────────────────────
     const aliceSession = await playwright.request.newContext({
-      baseURL: 'http://localhost:8787',
+      baseURL: API_URL,
       storageState: await alice.storageState(),
     })
     const bobSession = await playwright.request.newContext({
-      baseURL: 'http://localhost:8787',
+      baseURL: API_URL,
       storageState: await bob.storageState(),
     })
     try {

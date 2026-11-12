@@ -1,5 +1,6 @@
 import { Context, Effect, Layer, Option, Schema } from 'effect'
 import {
+  COMPLETED_TASK_RETENTION_MS,
   type HouseholdId,
   type LocalDate,
   type WeekStart,
@@ -10,7 +11,6 @@ import {
   ProjectRenameInput,
   type Priority,
   RecurrenceRule,
-  type SyncEntityType,
   Tag,
   type TagId,
   TagCreateInput,
@@ -32,6 +32,7 @@ import {
   type TaskPatch,
   type TaskRecurrenceMode,
   type TaskSort,
+  type TaskStatus,
   TaskUpdateInput,
   TaskValidationError,
   type UserId,
@@ -52,7 +53,11 @@ import {
   TaskRepoLive,
   type TaskQuery,
 } from '@tali/sql'
+import { readScoped } from './row-scope.js'
+import { casUpdate } from './cas.js'
+import { makeSyncKit, type CommitEntry } from './sync-write.js'
 import { loadAssignableTags } from './tag-guard.js'
+import { unchangedExcept } from './patch-compare.js'
 /**
  * `TaskService` — create, patch, organise, bucket, complete/undo (ticket #36;
  * FR-TASK-01/02/05/06).
@@ -99,10 +104,7 @@ import { loadAssignableTags } from './tag-guard.js'
  */
 
 /** FR-TASK-06: completed tasks stay visible/restorable for seven days. */
-export const COMPLETED_TASK_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
-
-/** How many CAS retries a service mutation makes before reporting contention. */
-const MAX_CAS_ATTEMPTS = 3
+export { COMPLETED_TASK_RETENTION_MS }
 
 export interface TaskViewer {
   readonly userId: UserId
@@ -247,60 +249,14 @@ const validLocalDate = (value: string): boolean => {
   }
 }
 
-const sameTaskFields = (a: Task, b: Task): boolean =>
-  a.title === b.title &&
-  a.description === b.description &&
-  a.status === b.status &&
-  a.priority === b.priority &&
-  a.dueAt === b.dueAt &&
-  a.dueDate === b.dueDate &&
-  a.timeZone === b.timeZone &&
-  a.projectId === b.projectId &&
-  a.visibility === b.visibility &&
-  a.color === b.color &&
-  a.recurrenceMode === b.recurrenceMode &&
-  sameRecurrence(a.recurrence, b.recurrence) &&
-  a.startedAt === b.startedAt &&
-  a.completedAt === b.completedAt &&
-  a.tagIds.length === b.tagIds.length &&
-  a.tagIds.every((tagId, index) => tagId === b.tagIds[index])
-
 const sameTags = (a: ReadonlyArray<TagId>, b: ReadonlyArray<TagId>): boolean =>
   a.length === b.length && a.every((tagId, index) => tagId === b[index])
-
-/**
- * Canonical comparison for a stored rule vs a patched one. Rules arrive as
- * plain structs, and object key order is not meaningful, so compare the fields
- * the engine actually reads.
- */
-const sameRecurrence = (
-  a: RecurrenceRule | null,
-  b: RecurrenceRule | null,
-): boolean => {
-  if (a === null || b === null) return a === b
-  const key = (rule: RecurrenceRule): string =>
-    JSON.stringify([
-      rule.frequency,
-      rule.interval,
-      rule.byDay ?? null,
-      rule.byMonthDay ?? null,
-      rule.nthWeekday === undefined
-        ? null
-        : [rule.nthWeekday.nth, rule.nthWeekday.day],
-      rule.end._tag === 'count'
-        ? ['count', rule.end.count]
-        : rule.end._tag === 'until'
-          ? ['until', rule.end.date]
-          : ['never'],
-    ])
-  return key(a) === key(b)
-}
 
 /** Decode + cross-field validate a rule against the one shared contract. */
 const decodeRule = (
   rule: RecurrenceRule,
 ): Effect.Effect<RecurrenceRule, TaskValidationError> => {
-  const decoded = Schema.decodeUnknownOption(RecurrenceRule)(rule)
+  const decoded = Schema.decodeOption(RecurrenceRule)(rule)
   return Option.isNone(decoded)
     ? invalid('recurrence', 'recurrence rule is not valid')
     : Effect.succeed(decoded.value)
@@ -313,13 +269,7 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
     const tags = yield* TagRepo
     const sync = yield* SyncRepo
 
-    const definition = (entityType: SyncEntityType) => {
-      const def = sync.definition(entityType)
-      if (def === undefined) {
-        throw new Error(`sync entity type is not registered: ${entityType}`)
-      }
-      return def
-    }
+    const kit = makeSyncKit<TaskServiceError>({ sync, invalid })
 
     /**
      * Turn a validated aggregate into the registry's trusted write state. The
@@ -327,109 +277,29 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
      * so a service write can never put a shape on the wire that a pull would
      * reject.
      */
-    const taskState = (task: Task): SyncEntityState => {
-      const def = definition('task')
-      return {
-        entityType: 'task',
-        entityId: task.id,
-        householdId: task.householdId,
-        ownerId: task.ownerId,
-        visibility: task.visibility,
-        version: task.version,
-        updatedAt: task.updatedAt,
-        deletedAt: task.deletedAt,
-        data: def.validate(
-          { ...task },
-          {
-            version: task.version,
-            updatedAt: task.updatedAt,
-            deletedAt: task.deletedAt,
-          },
-        ),
-      }
-    }
+    const taskState = (task: Task): SyncEntityState => kit.stateOf('task', task)
 
-    const projectState = (project: Project): SyncEntityState => {
-      const def = definition('project')
-      return {
-        entityType: 'project',
-        entityId: project.id,
-        householdId: project.householdId,
-        ownerId: project.ownerId,
-        visibility: project.visibility,
-        version: project.version,
-        updatedAt: project.updatedAt,
-        deletedAt: project.deletedAt,
-        data: def.validate(
-          { ...project },
-          {
-            version: project.version,
-            updatedAt: project.updatedAt,
-            deletedAt: project.deletedAt,
-          },
-        ),
-      }
-    }
+    const projectState = (project: Project): SyncEntityState =>
+      kit.stateOf('project', project)
 
-    const tagState = (tag: Tag): SyncEntityState => {
-      const def = definition('tag')
-      return {
-        entityType: 'tag',
-        entityId: tag.id,
-        householdId: tag.householdId,
-        ownerId: tag.ownerId,
-        visibility: tag.visibility,
-        version: tag.version,
-        updatedAt: tag.updatedAt,
-        deletedAt: tag.deletedAt,
-        data: def.validate(
-          { ...tag },
-          {
-            version: tag.version,
-            updatedAt: tag.updatedAt,
-            deletedAt: tag.deletedAt,
-          },
-        ),
-      }
-    }
+    const tagState = (tag: Tag): SyncEntityState => kit.stateOf('tag', tag)
 
     /**
      * The ledger row for one mutation id, if this household already applied it.
      * Household-scoped exactly like the sync push (`findApplied`).
      */
     const appliedMutation = (viewer: TaskViewer, clientMutationId: string) =>
-      Effect.gen(function* () {
-        const applied = yield* sync
-          .findApplied({
-            householdId: viewer.householdId,
-            clientMutationIds: [clientMutationId],
-          })
-          .pipe(Effect.orDie)
-        return Option.fromUndefinedOr(applied.get(clientMutationId))
-      })
-
-    /**
-     * Has this mutation id already been spent on a *different* change? Reusing
-     * an id across rows or aggregates silently disables the replay guard, so it
-     * is rejected as a validation error rather than written.
-     */
-    const reusedMutationId = (
-      row: { readonly entityType: SyncEntityType; readonly entityId: string },
-      expected: { readonly entityType: SyncEntityType; readonly id?: string },
-    ): boolean =>
-      row.entityType !== expected.entityType ||
-      (expected.id !== undefined && row.entityId !== expected.id)
-
-    const reusedMutationIdError = (_id: string) =>
-      invalid(
-        'clientMutationId',
-        'this mutation id was already applied to a different change',
-      )
+      kit.appliedMutation(viewer.householdId, clientMutationId)
 
     /**
      * One entity mutation: the CAS entity write, gated feed append, gated
-     * ledger row, then any tag-join statements — one D1 batch. Returns whether
-     * this `clientMutationId` is now recorded, i.e. the CAS won.
+     * ledger row, tag-join statements and the #38 recurrence successor — one D1
+     * batch. Returns whether this `clientMutationId` is now recorded, i.e. the
+     * CAS won.
+     *
+     * The batch failure stays typed here (rather than a defect) because the tag
+     * mutations map a `UNIQUE` violation onto a field error; every other caller
+     * goes through `commitPlanningEntity`, which dies on it.
      */
     const commitEntity = (input: {
       readonly viewer: TaskViewer
@@ -452,127 +322,76 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
         readonly task: Task
         readonly parentId: Task['id']
       }
-    }) =>
-      Effect.gen(function* () {
-        // A mutation id is one mutation for its whole retention window. If the
-        // ledger already maps it to a different row/aggregate, `recordApplied`
-        // below would be an `INSERT OR IGNORE` no-op: the write would land with
-        // no replay guard (so a retry applies it twice) and `applied` would
-        // report success even when the CAS lost. Refuse before writing.
-        const prior = yield* appliedMutation(
-          input.viewer,
-          input.clientMutationId,
-        )
-        if (
-          Option.isSome(prior) &&
-          reusedMutationId(prior.value, {
-            entityType: input.state.entityType,
-            id: input.state.entityId,
-          })
-        ) {
-          return yield* reusedMutationIdError(input.state.entityId)
-        }
-
-        const statements = [
-          sync.writeEntity({
-            state: input.state,
-            expectedVersion: input.expectedVersion,
-          }),
-          sync.appendFeed({
-            householdId: input.viewer.householdId,
-            entityType: input.state.entityType,
-            entityId: input.state.entityId,
-            op: input.op ?? 'upsert',
-            version: input.state.version,
-            updatedAt: input.state.updatedAt,
-            ownerId: input.state.ownerId,
-            visibility: input.state.visibility,
-          }),
-          sync.recordApplied({
-            clientMutationId: input.clientMutationId,
-            householdId: input.viewer.householdId,
-            entityType: input.state.entityType,
-            entityId: input.state.entityId,
-            version: input.state.version,
-            createdAt: input.now,
-          }),
-        ]
-
-        if (
-          input.tagChanges !== undefined &&
-          !sameTags(input.tagChanges.previous, input.tagChanges.next)
-        ) {
-          statements.push(
-            tasks.detachTagsIfVersion({
-              taskId: input.state.entityId,
-              version: input.state.version,
-              updatedAt: input.state.updatedAt,
-            }),
-            ...input.tagChanges.next.map(tagId =>
-              tasks.attachTagIfVersion({
-                taskId: input.state.entityId,
-                tagId,
-                householdId: input.viewer.householdId,
-                createdAt: input.now,
-                version: input.state.version,
-                updatedAt: input.state.updatedAt,
-              }),
-            ),
-          )
-        }
-
-        if (input.spawn !== undefined) {
-          const child = input.spawn.task
-          const parentId = input.spawn.parentId
+    }) => {
+      const tagChanges = input.tagChanges
+      const spawn = input.spawn
+      const entries: Array<CommitEntry> = [
+        {
+          state: input.state,
+          expectedVersion: input.expectedVersion,
+          clientMutationId: input.clientMutationId,
+          op: input.op,
+          extra:
+            tagChanges === undefined ||
+            sameTags(tagChanges.previous, tagChanges.next)
+              ? undefined
+              : state => [
+                  tasks.detachTagsIfVersion({
+                    taskId: state.entityId,
+                    version: state.version,
+                    updatedAt: state.updatedAt,
+                  }),
+                  ...tagChanges.next.map(tagId =>
+                    tasks.attachTagIfVersion({
+                      taskId: state.entityId,
+                      tagId,
+                      householdId: input.viewer.householdId,
+                      createdAt: input.now,
+                      version: state.version,
+                      updatedAt: state.updatedAt,
+                    }),
+                  ),
+                ],
+        },
+      ]
+      if (spawn !== undefined) {
+        const child = kit.stateOf('task', spawn.task)
+        entries.push({
+          state: child,
+          expectedVersion: null,
           // Insert is gated on the parent's new version + done status; the
           // feed/ledger rows are gated on that insert (`changes()`), and the
           // partial unique index on recurrence_parent_id makes it exactly-once.
-          statements.push(
+          insert: () =>
             tasks.insertRecurrenceChildStatement({
-              task: child,
-              parentId,
+              task: spawn.task,
+              parentId: spawn.parentId,
               parentVersion: input.state.version,
             }),
-            sync.appendFeed({
-              householdId: input.viewer.householdId,
-              entityType: 'task',
-              entityId: child.id,
-              op: 'upsert',
-              version: child.version,
-              updatedAt: child.updatedAt,
-              ownerId: child.ownerId,
-              visibility: child.visibility,
-            }),
-            sync.recordApplied({
-              clientMutationId: `recurrence:${parentId}`,
-              householdId: input.viewer.householdId,
-              entityType: 'task',
-              entityId: child.id,
-              version: child.version,
-              createdAt: input.now,
-            }),
-            ...child.tagIds.map(tagId =>
+          clientMutationId: `recurrence:${spawn.parentId}`,
+          ledger: 'derived',
+          extra: () =>
+            spawn.task.tagIds.map(tagId =>
               tasks.attachTagIfVersion({
-                taskId: child.id,
+                taskId: spawn.task.id,
                 tagId,
                 householdId: input.viewer.householdId,
                 createdAt: input.now,
-                version: child.version,
-                updatedAt: child.updatedAt,
+                version: spawn.task.version,
+                updatedAt: spawn.task.updatedAt,
               }),
             ),
-          )
-        }
-
-        yield* sync.commit(statements)
-        const applied = yield* sync
-          .findApplied({
-            householdId: input.viewer.householdId,
-            clientMutationIds: [input.clientMutationId],
-          })
-          .pipe(Effect.orDie)
-        return applied.has(input.clientMutationId)
-      })
+        })
+      }
+      return Effect.map(
+        kit.tryCommitEntries({
+          householdId: input.viewer.householdId,
+          entries,
+          now: input.now,
+        }),
+        applied => applied.has(input.clientMutationId),
+      )
+    }
 
     /**
      * Task/project commits: repository failures are unexpected defects, while
@@ -595,9 +414,14 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
         const row = yield* appliedMutation(viewer, clientMutationId)
         if (Option.isNone(row)) return Option.none()
         if (
-          reusedMutationId(row.value, { entityType: 'task', id: expectedId })
+          kit.reusedMutationId(row.value, {
+            entityType: 'task',
+            id: expectedId,
+          })
         ) {
-          return yield* reusedMutationIdError(expectedId ?? row.value.entityId)
+          return yield* kit.reusedMutationIdError(
+            expectedId ?? row.value.entityId,
+          )
         }
         // Same household/owner rules as any other read: a mutation id must
         // never hand back another member's private row.
@@ -612,23 +436,17 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
       viewer: TaskViewer,
       id: Task['id'],
     ): Effect.Effect<Task, TaskServiceError> =>
-      Effect.gen(function* () {
-        const found = yield* tasks.findById(id).pipe(Effect.orDie)
-        if (Option.isNone(found) || found.value.deletedAt !== null) {
-          return yield* Effect.fail(new TaskNotFound({ id }))
-        }
-        const task = found.value
-        if (task.householdId !== viewer.householdId) {
-          return yield* Effect.fail(
-            new TaskForbidden({ id, reason: 'household' }),
-          )
-        }
-        if (task.visibility === 'private' && task.ownerId !== viewer.userId) {
-          return yield* Effect.fail(
-            new TaskForbidden({ id, reason: 'private' }),
-          )
-        }
-        return task
+      readScoped({
+        viewer,
+        id,
+        find: tasks.findById,
+        // A tombstone reads as missing before the household/owner checks: the
+        // replay guard never asks for a trashed task.
+        trash: 'first',
+        onViolation: violation =>
+          violation === 'notFound' || violation === 'trashed'
+            ? new TaskNotFound({ id })
+            : new TaskForbidden({ id, reason: violation }),
       })
 
     /**
@@ -645,28 +463,29 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
         const row = yield* appliedMutation(viewer, clientMutationId)
         if (Option.isNone(row)) return Option.none()
         if (
-          reusedMutationId(row.value, { entityType: 'project', id: expectedId })
+          kit.reusedMutationId(row.value, {
+            entityType: 'project',
+            id: expectedId,
+          })
         ) {
-          return yield* reusedMutationIdError(expectedId ?? row.value.entityId)
+          return yield* kit.reusedMutationIdError(
+            expectedId ?? row.value.entityId,
+          )
         }
         const id = row.value.entityId as Project['id']
         const found = yield* projects.findById(id).pipe(Effect.orDie)
         if (Option.isNone(found) || found.value.deletedAt !== null) {
-          return yield* Effect.fail(new ProjectNotFound({ id }))
+          return yield* new ProjectNotFound({ id })
         }
         const project = found.value
         if (project.householdId !== viewer.householdId) {
-          return yield* Effect.fail(
-            new TaskForbidden({ id, reason: 'household' }),
-          )
+          return yield* new TaskForbidden({ id, reason: 'household' })
         }
         if (
           project.visibility === 'private' &&
           project.ownerId !== viewer.userId
         ) {
-          return yield* Effect.fail(
-            new TaskForbidden({ id, reason: 'private' }),
-          )
+          return yield* new TaskForbidden({ id, reason: 'private' })
         }
         return Option.some(project)
       })
@@ -680,25 +499,23 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
         const row = yield* appliedMutation(viewer, clientMutationId)
         if (Option.isNone(row)) return Option.none()
         if (
-          reusedMutationId(row.value, { entityType: 'tag', id: expectedId })
+          kit.reusedMutationId(row.value, { entityType: 'tag', id: expectedId })
         ) {
-          return yield* reusedMutationIdError(expectedId ?? row.value.entityId)
+          return yield* kit.reusedMutationIdError(
+            expectedId ?? row.value.entityId,
+          )
         }
         const id = row.value.entityId as Tag['id']
         const found = yield* tags.findById(id).pipe(Effect.orDie)
         if (Option.isNone(found) || found.value.deletedAt !== null) {
-          return yield* Effect.fail(new TagNotFound({ id }))
+          return yield* new TagNotFound({ id })
         }
         const tag = found.value
         if (tag.householdId !== viewer.householdId) {
-          return yield* Effect.fail(
-            new TaskForbidden({ id, reason: 'household' }),
-          )
+          return yield* new TaskForbidden({ id, reason: 'household' })
         }
         if (tag.visibility === 'private' && tag.ownerId !== viewer.userId) {
-          return yield* Effect.fail(
-            new TaskForbidden({ id, reason: 'private' }),
-          )
+          return yield* new TaskForbidden({ id, reason: 'private' })
         }
         return Option.some(tag)
       })
@@ -868,13 +685,11 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
             status = 'done'
             completedAt = now
           } else {
-            return yield* Effect.fail(
-              new TaskInvalidTransition({
-                id: current.id,
-                from: current.status,
-                to: patch.status,
-              }),
-            )
+            return yield* new TaskInvalidTransition({
+              id: current.id,
+              from: current.status,
+              to: patch.status,
+            })
           }
         }
 
@@ -983,7 +798,7 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
           tagChanges: { previous: [], next: task.tagIds },
         })
         if (!applied) {
-          return yield* Effect.fail(new TaskConflict({ id: task.id }))
+          return yield* new TaskConflict({ id: task.id })
         }
         return task
       })
@@ -1006,31 +821,39 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
         )
         if (Option.isSome(replayed)) return replayed.value
 
-        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-          const current = yield* loadTask(viewer, input.id)
-          const next = yield* patchTask(viewer, current, input.patch, now)
-          if (sameTaskFields(current, next)) return current
-          // `update({ status: "done" })` is a completion too, so it must spawn
-          // the same single successor as `complete()`.
-          const spawnTask =
-            current.status !== 'done' && next.status === 'done'
-              ? successorOf(next, now)
-              : null
-          const applied = yield* commitPlanningEntity({
-            viewer,
-            state: taskState(next),
-            expectedVersion: current.version,
-            clientMutationId: input.clientMutationId,
-            now,
-            tagChanges: { previous: current.tagIds, next: next.tagIds },
-            spawn:
-              spawnTask === null
-                ? undefined
-                : { task: spawnTask, parentId: current.id },
-          })
-          if (applied) return next
-        }
-        return yield* Effect.fail(new TaskConflict({ id: input.id }))
+        return yield* casUpdate({
+          read: loadTask(viewer, input.id),
+          plan: current =>
+            Effect.gen(function* () {
+              const next = yield* patchTask(viewer, current, input.patch, now)
+              // `patchTask` only writes patch fields (status stamps the two
+              // transition timestamps, due fields are normalized, recurrence
+              // implies its mode), so the patch is the complete no-op test.
+              return unchangedExcept(current, next, input.patch) ? null : next
+            }),
+          write: (current, next) =>
+            Effect.gen(function* () {
+              // `update({ status: "done" })` is a completion too, so it must
+              // spawn the same single successor as `complete()`.
+              const spawnTask =
+                current.status !== 'done' && next.status === 'done'
+                  ? successorOf(next, now)
+                  : null
+              return yield* commitPlanningEntity({
+                viewer,
+                state: taskState(next),
+                expectedVersion: current.version,
+                clientMutationId: input.clientMutationId,
+                now,
+                tagChanges: { previous: current.tagIds, next: next.tagIds },
+                spawn:
+                  spawnTask === null
+                    ? undefined
+                    : { task: spawnTask, parentId: current.id },
+              })
+            }),
+          conflict: () => new TaskConflict({ id: input.id }),
+        })
       })
 
     const move = (
@@ -1052,29 +875,108 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
           )
         }
 
-        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-          const current = yield* loadTask(viewer, input.id)
-          if (current.dueDate === input.dueDate && current.dueAt === null)
-            return current
-          const next = new Task({
-            ...current,
-            dueAt: null,
-            dueDate: input.dueDate,
-            timeZone: input.timeZone ?? viewer.timeZone,
-            version: current.version + 1,
-            updatedAt: now,
-          })
-          const applied = yield* commitPlanningEntity({
-            viewer,
-            state: taskState(next),
-            expectedVersion: current.version,
-            clientMutationId: input.clientMutationId,
-            now,
-            tagChanges: { previous: current.tagIds, next: next.tagIds },
-          })
-          if (applied) return next
-        }
-        return yield* Effect.fail(new TaskConflict({ id: input.id }))
+        return yield* casUpdate({
+          read: loadTask(viewer, input.id),
+          plan: current =>
+            Effect.succeed(
+              current.dueDate === input.dueDate && current.dueAt === null
+                ? null
+                : new Task({
+                    ...current,
+                    dueAt: null,
+                    dueDate: input.dueDate,
+                    timeZone: input.timeZone ?? viewer.timeZone,
+                    version: current.version + 1,
+                    updatedAt: now,
+                  }),
+            ),
+          write: (current, next) =>
+            commitPlanningEntity({
+              viewer,
+              state: taskState(next),
+              expectedVersion: current.version,
+              clientMutationId: input.clientMutationId,
+              now,
+              tagChanges: { previous: current.tagIds, next: next.tagIds },
+            }),
+          conflict: () => new TaskConflict({ id: input.id }),
+        })
+      })
+
+    /**
+     * The shell the three status transitions share: replay guard, re-read,
+     * one status move under CAS, and the planning commit with its tag ceiling.
+     * They differ only in what counts as an idempotent no-op, which rows they
+     * refuse, the fields they stamp, and whether completion owns a recurrence
+     * successor.
+     */
+    const transitionTask = (
+      viewer: TaskViewer,
+      input: Schema.Schema.Type<typeof TaskMutationInput>,
+      now: string,
+      transition: {
+        /** The status the request moves the row to, named in a refusal. */
+        readonly to: TaskStatus
+        /** Statuses the row must be in; omitted when any row may move. */
+        readonly from?: ReadonlyArray<TaskStatus>
+        /** A row that already satisfies the request is the answer, not a write. */
+        readonly settled?: (current: Task) => boolean
+        /** Further refusals, checked against the same fresh row. */
+        readonly refuse?: (
+          current: Task,
+        ) => Effect.Effect<void, TaskServiceError>
+        /** The row to write; the version bump and `updatedAt` belong here. */
+        readonly stamp: (current: Task) => Task
+        /** The recurrence successor to insert in the same batch, if any. */
+        readonly successor?: (next: Task) => Task | null
+      },
+    ): Effect.Effect<Task, TaskServiceError> =>
+      Effect.gen(function* () {
+        const replayed = yield* replayOf(
+          viewer,
+          input.clientMutationId,
+          input.id,
+        )
+        if (Option.isSome(replayed)) return replayed.value
+
+        return yield* casUpdate({
+          read: loadTask(viewer, input.id),
+          plan: current =>
+            Effect.gen(function* () {
+              if (transition.settled?.(current) === true) return null
+              if (
+                transition.from !== undefined &&
+                !transition.from.includes(current.status)
+              ) {
+                return yield* new TaskInvalidTransition({
+                  id: current.id,
+                  from: current.status,
+                  to: transition.to,
+                })
+              }
+              if (transition.refuse !== undefined) {
+                yield* transition.refuse(current)
+              }
+              return transition.stamp(current)
+            }),
+          write: (current, next) =>
+            Effect.gen(function* () {
+              const spawn = transition.successor?.(next) ?? null
+              return yield* commitPlanningEntity({
+                viewer,
+                state: taskState(next),
+                expectedVersion: current.version,
+                clientMutationId: input.clientMutationId,
+                now,
+                tagChanges: { previous: current.tagIds, next: next.tagIds },
+                spawn:
+                  spawn === null
+                    ? undefined
+                    : { task: spawn, parentId: current.id },
+              })
+            }),
+          conflict: () => new TaskConflict({ id: input.id }),
+        })
       })
 
     const start = (
@@ -1082,45 +984,19 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
       input: Schema.Schema.Type<typeof TaskMutationInput>,
       now: string = new Date().toISOString(),
     ): Effect.Effect<Task, TaskServiceError> =>
-      Effect.gen(function* () {
-        const replayed = yield* replayOf(
-          viewer,
-          input.clientMutationId,
-          input.id,
-        )
-        if (Option.isSome(replayed)) return replayed.value
-
-        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-          const current = yield* loadTask(viewer, input.id)
-          if (current.status === 'doing') return current
-          if (current.status !== 'todo') {
-            return yield* Effect.fail(
-              new TaskInvalidTransition({
-                id: current.id,
-                from: current.status,
-                to: 'doing',
-              }),
-            )
-          }
-          const next = new Task({
+      transitionTask(viewer, input, now, {
+        to: 'doing',
+        from: ['todo'],
+        settled: current => current.status === 'doing',
+        stamp: current =>
+          new Task({
             ...current,
             status: 'doing',
             startedAt: current.startedAt ?? now,
             completedAt: null,
             version: current.version + 1,
             updatedAt: now,
-          })
-          const applied = yield* commitPlanningEntity({
-            viewer,
-            state: taskState(next),
-            expectedVersion: current.version,
-            clientMutationId: input.clientMutationId,
-            now,
-            tagChanges: { previous: current.tagIds, next: next.tagIds },
-          })
-          if (applied) return next
-        }
-        return yield* Effect.fail(new TaskConflict({ id: input.id }))
+          }),
       })
 
     const complete = (
@@ -1128,44 +1004,22 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
       input: Schema.Schema.Type<typeof TaskMutationInput>,
       now: string = new Date().toISOString(),
     ): Effect.Effect<Task, TaskServiceError> =>
-      Effect.gen(function* () {
-        const replayed = yield* replayOf(
-          viewer,
-          input.clientMutationId,
-          input.id,
-        )
-        if (Option.isSome(replayed)) return replayed.value
-
-        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-          const current = yield* loadTask(viewer, input.id)
-          // Idempotent: completing an already-done task writes nothing.
-          if (isDone(current)) return current
-          const next = new Task({
+      transitionTask(viewer, input, now, {
+        to: 'done',
+        // Idempotent: completing an already-done task writes nothing.
+        settled: isDone,
+        stamp: current =>
+          new Task({
             ...current,
             status: 'done',
             completedAt: now,
             version: current.version + 1,
             updatedAt: now,
-          })
-          // The successor is computed from the instance being completed (its
-          // rule and due anchor), never from the client. A bounded rule that
-          // has run out produces no successor.
-          const spawnTask = successorOf(next, now)
-          const applied = yield* commitPlanningEntity({
-            viewer,
-            state: taskState(next),
-            expectedVersion: current.version,
-            clientMutationId: input.clientMutationId,
-            now,
-            tagChanges: { previous: current.tagIds, next: next.tagIds },
-            spawn:
-              spawnTask === null
-                ? undefined
-                : { task: spawnTask, parentId: current.id },
-          })
-          if (applied) return next
-        }
-        return yield* Effect.fail(new TaskConflict({ id: input.id }))
+          }),
+        // The successor is computed from the instance being completed (its
+        // rule and due anchor), never from the client. A bounded rule that has
+        // run out produces no successor.
+        successor: next => successorOf(next, now),
       })
 
     const undo = (
@@ -1173,58 +1027,30 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
       input: Schema.Schema.Type<typeof TaskMutationInput>,
       now: string = new Date().toISOString(),
     ): Effect.Effect<Task, TaskServiceError> =>
-      Effect.gen(function* () {
-        const replayed = yield* replayOf(
-          viewer,
-          input.clientMutationId,
-          input.id,
-        )
-        if (Option.isSome(replayed)) return replayed.value
-
-        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-          const current = yield* loadTask(viewer, input.id)
-          if (!isDone(current)) {
-            return yield* Effect.fail(
-              new TaskInvalidTransition({
-                id: current.id,
-                from: current.status,
-                to: 'todo',
-              }),
-            )
-          }
-          if (
-            current.completedAt !== null &&
-            Date.parse(current.completedAt) < Date.parse(completionCutoff(now))
-          ) {
-            return yield* Effect.fail(
-              new TaskNotRestorable({
-                id: current.id,
-                completedAt: current.completedAt,
-              }),
-            )
-          }
-          // No completion snapshot is needed: completion never moves the due
-          // fields, and `startedAt` tells us whether the prior state was
-          // `doing` or `todo`. The original due date is therefore intact.
-          const priorStatus = current.startedAt !== null ? 'doing' : 'todo'
-          const next = new Task({
+      transitionTask(viewer, input, now, {
+        to: 'todo',
+        from: ['done'],
+        refuse: current =>
+          current.completedAt !== null &&
+          Date.parse(current.completedAt) < Date.parse(completionCutoff(now))
+            ? Effect.fail(
+                new TaskNotRestorable({
+                  id: current.id,
+                  completedAt: current.completedAt,
+                }),
+              )
+            : Effect.void,
+        // No completion snapshot is needed: completion never moves the due
+        // fields, and `startedAt` tells us whether the prior state was `doing`
+        // or `todo`. The original due date is therefore intact.
+        stamp: current =>
+          new Task({
             ...current,
-            status: priorStatus,
+            status: current.startedAt !== null ? 'doing' : 'todo',
             completedAt: null,
             version: current.version + 1,
             updatedAt: now,
-          })
-          const applied = yield* commitPlanningEntity({
-            viewer,
-            state: taskState(next),
-            expectedVersion: current.version,
-            clientMutationId: input.clientMutationId,
-            now,
-            tagChanges: { previous: current.tagIds, next: next.tagIds },
-          })
-          if (applied) return next
-        }
-        return yield* Effect.fail(new TaskConflict({ id: input.id }))
+          }),
       })
 
     const list = (
@@ -1414,8 +1240,7 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
           clientMutationId: input.clientMutationId,
           now,
         })
-        if (!applied)
-          return yield* Effect.fail(new TaskConflict({ id: project.id }))
+        if (!applied) return yield* new TaskConflict({ id: project.id })
         return project
       })
 
@@ -1432,42 +1257,53 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
         )
         if (Option.isSome(replayed)) return replayed.value
 
-        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-          const found = yield* projects.findById(input.id).pipe(Effect.orDie)
-          if (Option.isNone(found) || found.value.deletedAt !== null) {
-            return yield* Effect.fail(new ProjectNotFound({ id: input.id }))
-          }
-          const current = found.value
-          if (current.householdId !== viewer.householdId) {
-            return yield* Effect.fail(
-              new TaskForbidden({ id: input.id, reason: 'household' }),
-            )
-          }
-          if (
-            current.visibility === 'private' &&
-            current.ownerId !== viewer.userId
-          ) {
-            return yield* Effect.fail(
-              new TaskForbidden({ id: input.id, reason: 'private' }),
-            )
-          }
-          if (current.title === input.title) return current
-          const next = new Project({
-            ...current,
-            title: input.title,
-            version: current.version + 1,
-            updatedAt: now,
-          })
-          const applied = yield* commitPlanningEntity({
-            viewer,
-            state: projectState(next),
-            expectedVersion: current.version,
-            clientMutationId: input.clientMutationId,
-            now,
-          })
-          if (applied) return next
-        }
-        return yield* Effect.fail(new TaskConflict({ id: input.id }))
+        return yield* casUpdate<Project, TaskServiceError>({
+          // Scope is part of the read: a row this viewer may not rename never
+          // becomes a CAS candidate.
+          read: Effect.gen(function* () {
+            const found = yield* projects.findById(input.id).pipe(Effect.orDie)
+            if (Option.isNone(found) || found.value.deletedAt !== null) {
+              return yield* new ProjectNotFound({ id: input.id })
+            }
+            const current = found.value
+            if (current.householdId !== viewer.householdId) {
+              return yield* new TaskForbidden({
+                id: input.id,
+                reason: 'household',
+              })
+            }
+            if (
+              current.visibility === 'private' &&
+              current.ownerId !== viewer.userId
+            ) {
+              return yield* new TaskForbidden({
+                id: input.id,
+                reason: 'private',
+              })
+            }
+            return current
+          }),
+          plan: current =>
+            Effect.succeed(
+              current.title === input.title
+                ? null
+                : new Project({
+                    ...current,
+                    title: input.title,
+                    version: current.version + 1,
+                    updatedAt: now,
+                  }),
+            ),
+          write: (current, next) =>
+            commitPlanningEntity({
+              viewer,
+              state: projectState(next),
+              expectedVersion: current.version,
+              clientMutationId: input.clientMutationId,
+              now,
+            }),
+          conflict: () => new TaskConflict({ id: input.id }),
+        })
       })
 
     const listProjects = (
@@ -1538,7 +1374,7 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
           if (Option.isSome(raced)) {
             return yield* invalid('name', 'a tag with this name already exists')
           }
-          return yield* Effect.fail(new TaskConflict({ id: tag.id }))
+          return yield* new TaskConflict({ id: tag.id })
         }
         return tag
       })
@@ -1556,60 +1392,73 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
         )
         if (Option.isSome(replayed)) return replayed.value
 
-        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-          const found = yield* tags.findById(input.id).pipe(Effect.orDie)
-          if (Option.isNone(found) || found.value.deletedAt !== null) {
-            return yield* Effect.fail(new TagNotFound({ id: input.id }))
-          }
-          const current = found.value
-          if (current.householdId !== viewer.householdId) {
-            return yield* Effect.fail(
-              new TaskForbidden({ id: input.id, reason: 'household' }),
-            )
-          }
-          if (
-            current.visibility === 'private' &&
-            current.ownerId !== viewer.userId
-          ) {
-            return yield* Effect.fail(
-              new TaskForbidden({ id: input.id, reason: 'private' }),
-            )
-          }
-          if (current.name === input.name) return current
-          const conflicting = yield* tags
-            .findLiveByName({
-              householdId: viewer.householdId,
-              name: input.name,
-            })
-            .pipe(Effect.orDie)
-          if (
-            Option.isSome(conflicting) &&
-            conflicting.value.id !== current.id
-          ) {
-            return yield* invalid('name', 'a tag with this name already exists')
-          }
-          const next = new Tag({
-            ...current,
-            name: input.name,
-            version: current.version + 1,
-            updatedAt: now,
-          })
-          const applied = yield* commitEntity({
-            viewer,
-            state: tagState(next),
-            expectedVersion: current.version,
-            clientMutationId: input.clientMutationId,
-            now,
-          }).pipe(
-            Effect.catchTag('SqlError', error =>
-              String(error).includes('UNIQUE constraint failed')
-                ? invalid('name', 'a tag with this name already exists')
-                : Effect.die(error),
+        return yield* casUpdate<Tag, TaskServiceError>({
+          // Scope is part of the read: a row this viewer may not rename never
+          // becomes a CAS candidate.
+          read: Effect.gen(function* () {
+            const found = yield* tags.findById(input.id).pipe(Effect.orDie)
+            if (Option.isNone(found) || found.value.deletedAt !== null) {
+              return yield* new TagNotFound({ id: input.id })
+            }
+            const current = found.value
+            if (current.householdId !== viewer.householdId) {
+              return yield* new TaskForbidden({
+                id: input.id,
+                reason: 'household',
+              })
+            }
+            if (
+              current.visibility === 'private' &&
+              current.ownerId !== viewer.userId
+            ) {
+              return yield* new TaskForbidden({
+                id: input.id,
+                reason: 'private',
+              })
+            }
+            return current
+          }),
+          plan: current =>
+            Effect.gen(function* () {
+              if (current.name === input.name) return null
+              const conflicting = yield* tags
+                .findLiveByName({
+                  householdId: viewer.householdId,
+                  name: input.name,
+                })
+                .pipe(Effect.orDie)
+              if (
+                Option.isSome(conflicting) &&
+                conflicting.value.id !== current.id
+              ) {
+                return yield* invalid(
+                  'name',
+                  'a tag with this name already exists',
+                )
+              }
+              return new Tag({
+                ...current,
+                name: input.name,
+                version: current.version + 1,
+                updatedAt: now,
+              })
+            }),
+          write: (current, next) =>
+            commitEntity({
+              viewer,
+              state: tagState(next),
+              expectedVersion: current.version,
+              clientMutationId: input.clientMutationId,
+              now,
+            }).pipe(
+              Effect.catchTag('SqlError', error =>
+                String(error).includes('UNIQUE constraint failed')
+                  ? invalid('name', 'a tag with this name already exists')
+                  : Effect.die(error),
+              ),
             ),
-          )
-          if (applied) return next
-        }
-        return yield* Effect.fail(new TaskConflict({ id: input.id }))
+          conflict: () => new TaskConflict({ id: input.id }),
+        })
       })
 
     const listTags = (

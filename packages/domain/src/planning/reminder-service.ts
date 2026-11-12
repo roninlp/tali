@@ -1,10 +1,18 @@
 import { Schema } from 'effect'
 import { Visibility } from '../common.js'
 import {
+  NonEmptyString,
   ReminderDispatchId,
   ReminderId,
   TimeZone,
   TimestampUtc,
+  conflictFields,
+  createEnvelope,
+  forbiddenFields,
+  mutationEnvelope,
+  notFoundFields,
+  updateEnvelope,
+  validationFields,
 } from './common.js'
 import {
   ClockTime,
@@ -45,11 +53,8 @@ const reminderFields = {
   visibility: Visibility,
 }
 
-export const ReminderCreateInput = Schema.Struct({
-  /** A client may mint the UUID v7 offline; the server mints one otherwise. */
-  id: Schema.optional(ReminderId),
-  clientMutationId: Schema.String,
-  title: Schema.String.check(Schema.isMinLength(1)),
+export const ReminderCreateInput = createEnvelope(ReminderId, {
+  title: NonEmptyString,
   kind: reminderFields.kind,
   repeat: reminderFields.repeat,
   note: Schema.optional(reminderFields.note),
@@ -81,20 +86,11 @@ export const ReminderPatch = Schema.Struct({
 })
 export type ReminderPatch = Schema.Schema.Type<typeof ReminderPatch>
 
-export const ReminderUpdateInput = Schema.Struct({
-  id: ReminderId,
-  clientMutationId: Schema.String,
-  /** Informational; the update re-reads and retries on a lost CAS. */
-  baseVersion: Schema.optional(Schema.Int),
-  patch: ReminderPatch,
-})
+export const ReminderUpdateInput = updateEnvelope(ReminderId, ReminderPatch)
 export type ReminderUpdateInput = Schema.Schema.Type<typeof ReminderUpdateInput>
 
 /** Delete carries only the row id plus the replay key. */
-export const ReminderMutationInput = Schema.Struct({
-  id: ReminderId,
-  clientMutationId: Schema.String,
-})
+export const ReminderMutationInput = mutationEnvelope(ReminderId)
 export type ReminderMutationInput = Schema.Schema.Type<
   typeof ReminderMutationInput
 >
@@ -193,57 +189,41 @@ export const REMINDER_REPEAT_PRESETS: ReadonlyArray<{
 ]
 
 /** A clock time is a valid local pattern input for the presets/pickers. */
-export const isClockTime = (value: string): value is ClockTime =>
-  /^([01]\d|2[0-3]):[0-5]\d$/.test(value)
+export const isClockTime = Schema.is(ClockTime)
 
 /** A weekday is in the 1..7 ISO range. */
-export const isIsoWeekday = (value: number): value is IsoWeekday =>
-  Number.isInteger(value) && value >= 1 && value <= 7
+export const isIsoWeekday = Schema.is(IsoWeekday)
 
 // ── Typed errors (`docs/error-model-draft.md` §2) ────────────────────────
 
 /** The reminder does not exist, or is not visible to this viewer. */
 export class ReminderNotFound extends Schema.TaggedError<ReminderNotFound>()(
   'ReminderNotFound',
-  {
-    id: ReminderId,
-  },
+  notFoundFields(ReminderId),
 ) {}
 
 /** The dispatch does not exist, or is not this viewer's to answer. */
 export class ReminderDispatchNotFound extends Schema.TaggedError<ReminderDispatchNotFound>()(
   'ReminderDispatchNotFound',
-  { id: ReminderDispatchId },
+  notFoundFields(ReminderDispatchId),
 ) {}
 
 /** The row exists but this viewer may not read/write it. */
 export class ReminderForbidden extends Schema.TaggedError<ReminderForbidden>()(
   'ReminderForbidden',
-  {
-    id: Schema.NullOr(Schema.String),
-    reason: Schema.Literals(['private', 'household', 'noHousehold']),
-  },
+  forbiddenFields,
 ) {}
 
 /** Field-level validation (empty title, missing fire time, bad snooze preset, …). */
 export class ReminderValidationError extends Schema.TaggedError<ReminderValidationError>()(
   'ReminderValidationError',
-  {
-    issues: Schema.Array(
-      Schema.Struct({
-        field: Schema.String,
-        message: Schema.String,
-      }),
-    ),
-  },
+  validationFields,
 ) {}
 
 /** A concurrent writer won the version CAS; the caller may retry. */
 export class ReminderConflict extends Schema.TaggedError<ReminderConflict>()(
   'ReminderConflict',
-  {
-    id: Schema.String,
-  },
+  conflictFields,
 ) {}
 
 export const ReminderServiceError = Schema.Union([

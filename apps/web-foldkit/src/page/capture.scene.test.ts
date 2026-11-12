@@ -15,7 +15,7 @@ import {
   timedEventTiming,
 } from '@tali/domain'
 
-import { USER_ID } from '../test-fixtures'
+import { DISPLAY, USER_ID } from '../test-fixtures'
 import * as CapturePage from './capture'
 import type { Inputs, Model } from './capture'
 
@@ -28,11 +28,7 @@ import type { Inputs, Model } from './capture'
  */
 
 const inputs = (overrides: Partial<Inputs> = {}): Inputs => ({
-  display: {
-    timeZone: 'Asia/Tehran',
-    weekStart: 'saturday',
-    digits: 'persian',
-  },
+  display: DISPLAY,
   isOnline: true,
   maybeUserId: Option.some(USER_ID),
   today: '2026-11-09',

@@ -18,48 +18,22 @@
  * See docs/web-push-local.md.
  */
 
-import { createECDH } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import webpush from 'web-push'
+import { loadEnvFiles, repoRoot } from './lib/env.mjs'
+import { publicKeyOf } from './lib/vapid.mjs'
 
-const root = resolve(import.meta.dirname, '..')
-
-const parseEnvFile = path => {
-  if (!existsSync(path)) return {}
-  const values = {}
-  for (const raw of readFileSync(path, 'utf8').split(/\r?\n/)) {
-    const line = raw.trim()
-    if (line === '' || line.startsWith('#')) continue
-    const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(
-      line,
-    )
-    if (match === null) continue
-    let value = match[2].trim()
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1)
-    }
-    values[match[1]] = value
-  }
-  return values
+// The dev vars and the app's local env first, then the shell overrides them.
+const env = {
+  ...loadEnvFiles([
+    resolve(repoRoot, 'apps/api/.dev.vars'),
+    resolve(repoRoot, 'apps/web-foldkit/.env.local'),
+  ]),
+  ...process.env,
 }
-
-const fileEnv = {
-  ...parseEnvFile(resolve(root, 'apps/api/.dev.vars')),
-  ...parseEnvFile(resolve(root, 'apps/web-foldkit/.env.local')),
-}
-const env = { ...fileEnv, ...process.env }
 
 const privateKey = env.VAPID_PRIVATE_KEY
-/** Same derivation as `infra/alchemy.run.ts`: only the private half is required. */
-const publicKeyOf = scalar => {
-  const ecdh = createECDH('prime256v1')
-  ecdh.setPrivateKey(Buffer.from(scalar, 'base64url'))
-  return ecdh.getPublicKey().toString('base64url')
-}
 const publicKey =
   env.VAPID_PUBLIC_KEY ?? (privateKey ? publicKeyOf(privateKey) : undefined)
 const subject = env.VAPID_SUBJECT ?? 'mailto:tali@example.com'
@@ -88,8 +62,8 @@ const subscriptionJson = (() => {
   const path =
     process.argv[2] ??
     env.PUSH_SUBSCRIPTION_FILE ??
-    resolve(root, '.push-subscription.json')
-  const resolved = resolve(root, path)
+    resolve(repoRoot, '.push-subscription.json')
+  const resolved = resolve(repoRoot, path)
   if (!existsSync(resolved)) {
     fail(
       `Subscription file not found: ${resolved}. In the app open /settings, enable notifications, ` +

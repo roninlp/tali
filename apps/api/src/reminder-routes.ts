@@ -1,15 +1,15 @@
 import { Effect, Option, Predicate, Schema } from 'effect'
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from 'effect/http'
+import { HttpRouter, HttpServerRequest } from 'effect/http'
 import {
   DispatchResponse,
   ReminderDispatchId,
   Unauthorized,
 } from '@tali/domain'
 import { AuthService } from './auth-service.js'
-import { SESSION_COOKIE } from './auth-routes.js'
+import { fail, json, requestUrl, unexpectedFailure } from './http-envelope.js'
 import { PreferencesService } from './preferences-service.js'
+import { principalResolver } from './principal.js'
 import { ReminderService, type ReminderViewer } from './reminder-service.js'
-import { fail, json, requestUrl } from './read-model-http.js'
 
 /**
  * The two plain-HTTP reminder routes (ticket #60; ADR-0005 §7, §Consequences).
@@ -34,7 +34,7 @@ const RespondBody = Schema.Struct({
 
 const dispatchIdOf = (value: string | undefined): ReminderDispatchId | null => {
   if (value === undefined) return null
-  const decoded = Schema.decodeUnknownOption(ReminderDispatchId)(value)
+  const decoded = Schema.decodeOption(ReminderDispatchId)(value)
   return Option.isNone(decoded) ? null : decoded.value
 }
 
@@ -43,36 +43,29 @@ export const ReminderRoutes = HttpRouter.use(router =>
     const auth = yield* AuthService
     const preferences = yield* PreferencesService
     const reminders = yield* ReminderService
+    const resolvePrincipal = principalResolver(auth, preferences)
 
-    /** Resolve the cookie principal into the viewer + saved zone. */
+    /** The reminder viewer still 401s on a missing household (unchanged here). */
     const principal = (
       request: HttpServerRequest.HttpServerRequest,
     ): Effect.Effect<ReminderViewer, Unauthorized> =>
       Effect.gen(function* () {
-        const token = request.cookies[SESSION_COOKIE]
-        if (token === undefined) {
-          return yield* Effect.fail(new Unauthorized())
+        const resolved = yield* resolvePrincipal(request)
+        if (resolved.context.householdId === null) {
+          return yield* new Unauthorized()
         }
-        const context = yield* auth.me(token)
-        if (context.householdId === null) {
-          return yield* Effect.fail(new Unauthorized())
-        }
-        const prefs = yield* preferences.get(context.user.id, {
-          timeZone: context.user.timeZone,
-          weekStart: context.user.weekStart,
-          digits: context.user.digits,
-        })
         return {
-          userId: context.user.id,
-          householdId: context.householdId,
-          timeZone: prefs.timeZone,
+          userId: resolved.context.user.id,
+          householdId: resolved.context.householdId,
+          timeZone: resolved.preferences.timeZone,
         } as const
       })
 
-    /** Map the typed service outcomes onto the shared `{status,code}` envelope. */
-    const unexpectedFailure = (
-      error: unknown,
-    ): Effect.Effect<HttpServerResponse.HttpServerResponse> => {
+    /**
+     * Map the typed service outcomes onto the shared `{status,code}` envelope;
+     * anything unrecognised falls through to the generic schema/500 mapping.
+     */
+    const reminderFailure = (error: unknown) => {
       const tag =
         Predicate.isObject(error) && typeof error._tag === 'string'
           ? error._tag
@@ -90,9 +83,7 @@ export const ReminderRoutes = HttpRouter.use(router =>
         case 'Unauthorized':
           return fail(401, 'Unauthorized', 'No active session')
         default:
-          return Schema.isSchemaError(error)
-            ? fail(400, 'BadRequest', 'Malformed request')
-            : fail(500, 'InternalError', 'Unexpected server error', true)
+          return unexpectedFailure()(error)
       }
     }
 
@@ -121,7 +112,7 @@ export const ReminderRoutes = HttpRouter.use(router =>
           limit,
         })
         return yield* json(200, { items })
-      }).pipe(Effect.catch(unexpectedFailure)),
+      }).pipe(Effect.catch(reminderFailure)),
     )
 
     yield* router.add(
@@ -142,7 +133,7 @@ export const ReminderRoutes = HttpRouter.use(router =>
           snoozeMinutes: body.snoozeMinutes,
         })
         return yield* json(200, result)
-      }).pipe(Effect.catch(unexpectedFailure)),
+      }).pipe(Effect.catch(reminderFailure)),
     )
   }),
 )

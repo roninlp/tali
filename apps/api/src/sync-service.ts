@@ -421,15 +421,13 @@ export class SyncService extends Context.Service<SyncService>()('SyncService', {
     }): Effect.Effect<SyncPushResponse, SyncServiceError> =>
       Effect.gen(function* () {
         if (input.entries.length > MAX_PUSH_ENTRIES) {
-          return yield* Effect.fail(
-            new SyncPayloadTooLarge({ count: input.entries.length }),
-          )
+          return yield* new SyncPayloadTooLarge({ count: input.entries.length })
         }
         for (const entry of input.entries) {
           if (entityTypeOf(entry.entityType) === undefined) {
-            return yield* Effect.fail(
-              new UnsupportedSyncEntity({ entityType: entry.entityType }),
-            )
+            return yield* new UnsupportedSyncEntity({
+              entityType: entry.entityType,
+            })
           }
         }
 
@@ -577,10 +575,8 @@ export class SyncService extends Context.Service<SyncService>()('SyncService', {
           entry: PushEntry,
         ) =>
           validate(definition, data, meta, entry).pipe(
-            Effect.map(Option.some),
-            Effect.catchTag('SyncInvalidPatch', () =>
-              Effect.succeed(Option.none()),
-            ),
+            Effect.asSome,
+            Effect.catchTag('SyncInvalidPatch', () => Effect.succeedNone),
           )
 
         const write = (
@@ -713,9 +709,7 @@ export class SyncService extends Context.Service<SyncService>()('SyncService', {
             current !== undefined &&
             current.householdId !== input.householdId
           ) {
-            return yield* Effect.fail(
-              new SyncEntityForbidden({ entityId: entry.entityId }),
-            )
+            return yield* new SyncEntityForbidden({ entityId: entry.entityId })
           }
           // Private rows are owner-only; shared rows are household-wide.
           if (
@@ -724,9 +718,7 @@ export class SyncService extends Context.Service<SyncService>()('SyncService', {
             current.ownerId !== input.userId &&
             current.visibility === 'private'
           ) {
-            return yield* Effect.fail(
-              new SyncEntityForbidden({ entityId: entry.entityId }),
-            )
+            return yield* new SyncEntityForbidden({ entityId: entry.entityId })
           }
 
           const patch = sanitizePatch(definition, entry.patch, {
@@ -1263,9 +1255,7 @@ export class SyncService extends Context.Service<SyncService>()('SyncService', {
           }
         }
         if (contended.length > 0) {
-          return yield* Effect.fail(
-            new SyncContended({ count: contended.length }),
-          )
+          return yield* new SyncContended({ count: contended.length })
         }
 
         const authoritative = yield* repo
@@ -1362,7 +1352,7 @@ export class SyncService extends Context.Service<SyncService>()('SyncService', {
         // purge can remove the last row's feed entry at ~30 days, and a client
         // that still holds that row must be told to re-bootstrap rather than
         // keep a purged mirror forever.
-        const min = yield* repo.minSeq.pipe(Effect.orDie)
+        const min = yield* repo.minSeq
         const resetRequired =
           (Option.isSome(min) && input.cursor < min.value - 1) ||
           (Option.isNone(min) && input.cursor > 0)
@@ -1377,13 +1367,11 @@ export class SyncService extends Context.Service<SyncService>()('SyncService', {
           }
         }
 
-        const rows = yield* repo
-          .pullFeed({
-            householdId: input.householdId,
-            cursor: input.cursor,
-            limit,
-          })
-          .pipe(Effect.orDie)
+        const rows = yield* repo.pullFeed({
+          householdId: input.householdId,
+          cursor: input.cursor,
+          limit,
+        })
         const hasMore = rows.length > limit
         const page: ReadonlyArray<FeedRow> = hasMore
           ? rows.slice(0, limit)
@@ -1391,14 +1379,12 @@ export class SyncService extends Context.Service<SyncService>()('SyncService', {
         const nextCursor =
           page.length > 0 ? page[page.length - 1]!.seq : input.cursor
 
-        const states = yield* repo
-          .findEntities(
-            page.map(row => ({
-              entityType: row.entityType,
-              entityId: row.entityId,
-            })),
-          )
-          .pipe(Effect.orDie)
+        const states = yield* repo.findEntities(
+          page.map(row => ({
+            entityType: row.entityType,
+            entityId: row.entityId,
+          })),
+        )
 
         // The child rows in this page may name a parent that is not itself on
         // the page. Read those parents now so the child's *current* visibility
@@ -1412,7 +1398,7 @@ export class SyncService extends Context.Service<SyncService>()('SyncService', {
         const inheritedParentStates =
           inheritedParentRefs.length === 0
             ? new Map<string, SyncEntityState>()
-            : yield* repo.findEntities(inheritedParentRefs).pipe(Effect.orDie)
+            : yield* repo.findEntities(inheritedParentRefs)
 
         const entries: Array<ChangeFeedEntry> = []
         const items: Array<SyncEntityRow> = []
@@ -1499,9 +1485,7 @@ export class SyncService extends Context.Service<SyncService>()('SyncService', {
         }
 
         if (parentsToCascade.length > 0) {
-          const children = yield* repo
-            .findChildIds(parentsToCascade)
-            .pipe(Effect.orDie)
+          const children = yield* repo.findChildIds(parentsToCascade)
           for (const child of children) addRemoved(child)
         }
 
@@ -1513,7 +1497,7 @@ export class SyncService extends Context.Service<SyncService>()('SyncService', {
           hasMore,
           resetRequired: false,
         }
-      })
+      }).pipe(Effect.orDie)
 
     const bootstrap = (input: {
       readonly userId: string
@@ -1531,18 +1515,16 @@ export class SyncService extends Context.Service<SyncService>()('SyncService', {
         // lands during paging then has a `seq` above the cursor and is delivered
         // by the next incremental pull; reading it afterwards could skip a row
         // that the page did not include.
-        const cursor = yield* repo.maxSeq.pipe(Effect.orDie)
-        const refs = yield* repo
-          .bootstrapPage({
-            householdId: input.householdId,
-            userId: input.userId,
-            offset,
-            limit,
-          })
-          .pipe(Effect.orDie)
+        const cursor = yield* repo.maxSeq
+        const refs = yield* repo.bootstrapPage({
+          householdId: input.householdId,
+          userId: input.userId,
+          offset,
+          limit,
+        })
         const hasMore = refs.length > limit
         const page = hasMore ? refs.slice(0, limit) : refs
-        const hydrated = yield* repo.bootstrapEntities(page).pipe(Effect.orDie)
+        const hydrated = yield* repo.bootstrapEntities(page)
 
         // Parent-gate inherited children exactly like `/sync/pull`: a fresh
         // mirror must not be seeded with a shared item/entry whose list/habit
@@ -1554,7 +1536,7 @@ export class SyncService extends Context.Service<SyncService>()('SyncService', {
         const inheritedParentStates =
           inheritedParentRefs.length === 0
             ? new Map<string, SyncEntityState>()
-            : yield* repo.findEntities(inheritedParentRefs).pipe(Effect.orDie)
+            : yield* repo.findEntities(inheritedParentRefs)
         const items = hydrated.filter(item => {
           if (!isInheritedChild(item.entityType)) return true
           const parentRef = inheritedParentRef(item)
@@ -1572,7 +1554,7 @@ export class SyncService extends Context.Service<SyncService>()('SyncService', {
         // `nextOffset` advances over the refs consumed, not the visible rows,
         // so a filtered page can never make the client re-read or skip a ref.
         return { items, nextOffset: offset + page.length, hasMore, cursor }
-      })
+      }).pipe(Effect.orDie)
 
     return { pull, bootstrap, push } as const
   }),

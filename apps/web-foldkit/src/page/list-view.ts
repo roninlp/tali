@@ -17,6 +17,7 @@ import {
 import { listsRouter } from '../route'
 import { buttonView } from '../ui/button'
 import { confirmDialogView } from '../ui/confirm'
+import { emptyStateView } from '../ui/feedback'
 import { inputControlView } from '../ui/field'
 import { formErrorView } from '../ui/field'
 import { listboxViewInputs } from '../ui/listbox'
@@ -68,9 +69,6 @@ const DANGER_BUTTON_CLASS =
 const MINI_BUTTON_CLASS =
   'inline-flex min-h-10 min-w-10 flex-none items-center justify-center rounded-full border border-base-300 bg-base-100 px-2 py-0.5 text-[0.78rem] text-base-content/70 transition-colors hover:border-secondary hover:text-secondary sm:min-h-8 sm:min-w-8'
 
-const EMPTY_STATE_CLASS =
-  'm-0 rounded-2xl border border-dashed border-base-300 px-6 py-10 text-center text-sm leading-7 text-base-content/70'
-
 const backLinkView = (h: HtmlBuilder<Message>): Html =>
   h.a(
     [
@@ -83,16 +81,14 @@ const backLinkView = (h: HtmlBuilder<Message>): Html =>
   )
 
 const loadingView = (h: HtmlBuilder<Message>): Html =>
-  h.p(
-    [h.Class(EMPTY_STATE_CLASS), h.Role('status')],
-    ['در حال آماده‌سازی فهرست…'],
-  )
+  emptyStateView('در حال آماده‌سازی فهرست…', h, {
+    attributes: [h.Role('status')],
+  })
 
 const missingView = (h: HtmlBuilder<Message>): Html =>
-  h.p(
-    [h.Class(EMPTY_STATE_CLASS), h.Role('status')],
-    ['این فهرست پیدا نشد یا حذف شده است.'],
-  )
+  emptyStateView('این فهرست پیدا نشد یا حذف شده است.', h, {
+    attributes: [h.Role('status')],
+  })
 
 const headerView = (
   model: Model,
@@ -513,9 +509,9 @@ const itemsView = (
 
   return Array.match(view.visible, {
     onEmpty: () =>
-      h.p(
-        [h.Class(EMPTY_STATE_CLASS)],
-        ['هنوز موردی ندارد. اولین مورد را از کادر بالا اضافه کنید.'],
+      emptyStateView(
+        'هنوز موردی ندارد. اولین مورد را از کادر بالا اضافه کنید.',
+        h,
       ),
     onNonEmpty: rows =>
       h.div(

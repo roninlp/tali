@@ -1,4 +1,5 @@
 import { Temporal } from 'temporal-polyfill/full'
+import { addLocalDays, localDateOfInstant, plainDateOf } from '../local-date.js'
 import type {
   DispatchResponse,
   ReminderRepeat,
@@ -107,11 +108,10 @@ export const quietHoursEndAfter = (
     return null
   }
   // Before 07:00 the flush is today; at/after 23:00 it is tomorrow.
+  const today = localDateOfInstant(instant, timeZone)
   const date =
-    minutes >= QUIET_HOURS_START_MINUTES
-      ? zoned.toPlainDate().add({ days: 1 })
-      : zoned.toPlainDate()
-  const flush = date
+    minutes >= QUIET_HOURS_START_MINUTES ? addLocalDays(today, 1) : today
+  const flush = plainDateOf(date)
     .toPlainDateTime({ hour: 7, minute: 0 })
     .toZonedDateTime(timeZone)
   return iso(flush.toInstant())
@@ -189,8 +189,7 @@ const nextOccurrence = (
     return iso(afterInstant.add({ hours: repeat.hours }))
   }
 
-  const zoned = afterInstant.toZonedDateTimeISO(timeZone)
-  const today = zoned.toPlainDate()
+  const today = plainDateOf(localDateOfInstant(after, timeZone))
   const clock = clockOf(repeat.time)
   const days = repeat._tag === 'weekly' ? repeat.days : null
   // A week is enough to find the next matching weekday (8 days of headroom).
@@ -259,7 +258,7 @@ export const reminderFirstFireAt = (
 /** `YYYY-MM-DD` + 09:00 local — the default instant of an all-day linked item. */
 export const allDayReminderInstant = (date: string, timeZone: string): string =>
   iso(
-    Temporal.PlainDate.from(date)
+    plainDateOf(date)
       .toPlainDateTime({ hour: ALL_DAY_REMINDER_HOUR, minute: 0 })
       .toZonedDateTime(timeZone)
       .toInstant(),

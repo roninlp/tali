@@ -11,6 +11,7 @@ import {
   localizeDigits,
   moveDashboardSection,
   normalizeDashboardSectionOrder,
+  resolveTimeZone,
   taskBucketBounds,
   taskBucketOf,
   toIsoDate,
@@ -115,15 +116,8 @@ export const moveSection = (
 ): ReadonlyArray<DashboardSection> =>
   moveDashboardSection(order, section, direction)
 
-export const validTimeZone = (timeZone: string): string => {
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone })
-
-    return timeZone
-  } catch {
-    return DEFAULT_TIME_ZONE
-  }
-}
+/** The dashboard's name for the shared zone resolver (domain `resolveTimeZone`). */
+export const validTimeZone = resolveTimeZone
 
 export const boundsFor = (timeZone: string, now: number): TaskBucketBounds =>
   taskBucketBounds(validTimeZone(timeZone), new Date(now))

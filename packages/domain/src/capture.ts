@@ -1,13 +1,18 @@
 import { Effect, Option, Result, Schema, SchemaIssue } from 'effect'
 import { Temporal } from 'temporal-polyfill/full'
+import { localDateOfInstant } from './local-date.js'
 import type { HabitFrequency } from './planning/habit.js'
 import type { ReminderRepeat } from './planning/reminder.js'
 import type { EventTiming } from './planning/event.js'
 import type { WeekStart } from './common.js'
-import { UserId } from './common.js'
+import { NonEmptyString, UserId } from './common.js'
 import { toLatinDigits } from './digits.js'
 import { normalizePersian } from './persian.js'
-import { TimestampUtc } from './planning/common.js'
+import {
+  ForbiddenReason,
+  TimestampUtc,
+  notFoundFields,
+} from './planning/common.js'
 import { EventCreateInput } from './planning/event-service.js'
 import { HabitCreateInput } from './planning/habit-service.js'
 import {
@@ -110,9 +115,9 @@ export type NeedsInputShape = Schema.Schema.Type<typeof NeedsInputShape>
  * into the names the review cards implement.
  */
 export const NeedsInput = Schema.Struct({
-  field: Schema.String.check(Schema.isMinLength(1)),
+  field: NonEmptyString,
   shape: NeedsInputShape,
-  question: Schema.String.check(Schema.isMinLength(1)),
+  question: NonEmptyString,
 })
 export type NeedsInput = Schema.Schema.Type<typeof NeedsInput>
 
@@ -124,7 +129,7 @@ export const needsInput = (
 ): NeedsInput => ({ field, shape, question })
 
 /** The verbatim slice of the Capture text a draft was built from. */
-export const SourceQuote = Schema.String.check(Schema.isMinLength(1))
+export const SourceQuote = NonEmptyString
 export type SourceQuote = Schema.Schema.Type<typeof SourceQuote>
 
 // ── Drafts (ADR-0012 §3) ──────────────────────────────────────────────────
@@ -139,8 +144,7 @@ const draftEnvelope = {
  * A proposed task. Fields come from `TaskCreateInput`; `title` and the due
  * shape are the card-editable structural fields.
  */
-export const TaskDraft = Schema.Struct({
-  _tag: Schema.Literal('task'),
+export const TaskDraft = Schema.TaggedStruct('task', {
   title: Schema.optional(TaskCreateInput.fields.title),
   description: Schema.optional(TaskCreateInput.fields.description),
   status: Schema.optional(TaskCreateInput.fields.status),
@@ -156,8 +160,7 @@ export const TaskDraft = Schema.Struct({
 export type TaskDraft = Schema.Schema.Type<typeof TaskDraft>
 
 /** A proposed event. `timing` is the structural field the card edits. */
-export const EventDraft = Schema.Struct({
-  _tag: Schema.Literal('event'),
+export const EventDraft = Schema.TaggedStruct('event', {
   title: Schema.optional(EventCreateInput.fields.title),
   description: Schema.optional(EventCreateInput.fields.description),
   location: Schema.optional(EventCreateInput.fields.location),
@@ -175,8 +178,7 @@ export type EventDraft = Schema.Schema.Type<typeof EventDraft>
  * A proposed note. `body` is plain text — the model never authors a
  * ProseMirror tree; the commit wraps it.
  */
-export const NoteDraft = Schema.Struct({
-  _tag: Schema.Literal('note'),
+export const NoteDraft = Schema.TaggedStruct('note', {
   title: Schema.optional(NoteCreateInput.fields.title),
   body: Schema.optional(Schema.String),
   isPinned: Schema.optional(NoteCreateInput.fields.isPinned),
@@ -187,8 +189,7 @@ export const NoteDraft = Schema.Struct({
 export type NoteDraft = Schema.Schema.Type<typeof NoteDraft>
 
 /** A proposed habit. `frequency` is the structural field the card edits. */
-export const HabitDraft = Schema.Struct({
-  _tag: Schema.Literal('habit'),
+export const HabitDraft = Schema.TaggedStruct('habit', {
   title: Schema.optional(HabitCreateInput.fields.title),
   description: Schema.optional(HabitCreateInput.fields.description),
   color: Schema.optional(HabitCreateInput.fields.color),
@@ -201,8 +202,7 @@ export const HabitDraft = Schema.Struct({
 export type HabitDraft = Schema.Schema.Type<typeof HabitDraft>
 
 /** A proposed reminder. `repeat` is the structural field the card edits. */
-export const ReminderDraft = Schema.Struct({
-  _tag: Schema.Literal('reminder'),
+export const ReminderDraft = Schema.TaggedStruct('reminder', {
   title: Schema.optional(ReminderCreateInput.fields.title),
   note: Schema.optional(ReminderCreateInput.fields.note),
   kind: Schema.optional(ReminderCreateInput.fields.kind),
@@ -405,13 +405,14 @@ export class DraftIncomplete extends Schema.TaggedError<DraftIncomplete>()(
 /** The Capture row does not exist or belongs to another owner. */
 export class CaptureNotFound extends Schema.TaggedError<CaptureNotFound>()(
   'CaptureNotFound',
-  { id: CaptureId },
+  notFoundFields(CaptureId),
 ) {}
 
 /** The viewer cannot use Capture (no household yet). */
 export class CaptureForbidden extends Schema.TaggedError<CaptureForbidden>()(
   'CaptureForbidden',
-  { reason: Schema.Literals(['private', 'household', 'noHousehold']) },
+  /** No `id`: the refusal happens before any row is addressed. */
+  { reason: ForbiddenReason },
 ) {}
 
 export const CaptureServiceError = Schema.Union([
@@ -655,14 +656,11 @@ export interface CaptureCommitContext {
 
 /** The create input a draft becomes, tagged by aggregate. */
 export const CaptureCreateInput = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal('task'), input: TaskCreateInput }),
-  Schema.Struct({ _tag: Schema.Literal('event'), input: EventCreateInput }),
-  Schema.Struct({ _tag: Schema.Literal('note'), input: NoteCreateInput }),
-  Schema.Struct({ _tag: Schema.Literal('habit'), input: HabitCreateInput }),
-  Schema.Struct({
-    _tag: Schema.Literal('reminder'),
-    input: ReminderCreateInput,
-  }),
+  Schema.TaggedStruct('task', { input: TaskCreateInput }),
+  Schema.TaggedStruct('event', { input: EventCreateInput }),
+  Schema.TaggedStruct('note', { input: NoteCreateInput }),
+  Schema.TaggedStruct('habit', { input: HabitCreateInput }),
+  Schema.TaggedStruct('reminder', { input: ReminderCreateInput }),
 ])
 export type CaptureCreateInput = Schema.Schema.Type<typeof CaptureCreateInput>
 
@@ -925,7 +923,7 @@ export const instantToLocalParts = (
 ): { readonly date: string; readonly time: string } => {
   const zoned = Temporal.Instant.from(instant).toZonedDateTimeISO(timeZone)
   return {
-    date: zoned.toPlainDate().toString(),
+    date: localDateOfInstant(instant, timeZone),
     time: zoned.toPlainTime().toString({ smallestUnit: 'minute' }),
   }
 }

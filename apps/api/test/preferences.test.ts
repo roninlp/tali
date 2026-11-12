@@ -1,11 +1,9 @@
-import { createHash } from 'node:crypto'
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { Layer, Schema, String as Str } from 'effect'
+import { Layer, Schema } from 'effect'
 import { HttpRouter } from 'effect/http'
-import { D1Client } from '@effect/sql-d1'
 import {
   DEFAULT_DASHBOARD_SECTION_ORDER,
   PreferencesResponse,
@@ -14,7 +12,19 @@ import {
 import { AuthServiceLive } from '../src/auth-service.js'
 import { PreferencesRoutes } from '../src/preferences-routes.js'
 import { PreferencesServiceLive } from '../src/preferences-service.js'
-import { FakeD1 } from './fake-d1.js'
+import { seedSession, seedUser } from './fixtures/seed.js'
+/**
+ * Every migration, in the same numeric/lexicographic order D1 and Alchemy
+ * apply them (the two `0003_*` files sort by their suffix). Reading the
+ * directory instead of hard-coding a list is what makes the migration test
+ * prove the *current* chain applies, not a snapshot of it.
+ */
+import {
+  MIGRATIONS_DIR,
+  makeHarnessCore,
+  migrationFiles,
+  type HarnessEnv,
+} from './harness.js'
 
 /**
  * Ticket #35, at the HTTP seam: real routes, real auth middleware, real D1
@@ -23,73 +33,42 @@ import { FakeD1 } from './fake-d1.js'
  * validation, and per-user isolation — plus the migration-order guarantee.
  */
 
-const MIGRATIONS_DIR = new URL(
-  '../../../packages/sql/migrations/',
-  import.meta.url,
-)
-
-/**
- * Every migration, in the same numeric/lexicographic order D1 and Alchemy
- * apply them (the two `0003_*` files sort by their suffix). Reading the
- * directory instead of hard-coding a list is what makes this test prove the
- * *current* chain applies, not a snapshot of it.
- */
-const migrationFiles = (): ReadonlyArray<string> =>
-  readdirSync(fileURLToPath(MIGRATIONS_DIR))
-    .filter(file => file.endsWith('.sql'))
-    .sort()
-
 const NOW = new Date().toISOString()
 const FUTURE = new Date(Date.now() + 60 * 60 * 1000).toISOString()
-
-const sha256 = (value: string): string =>
-  createHash('sha256').update(value).digest('hex')
 
 const USER_A = uuidV7() as string
 const USER_B = uuidV7() as string
 const TOKEN_A = 'token-for-user-a'
 const TOKEN_B = 'token-for-user-b'
 
-const makeHarness = async () => {
-  const db = new DatabaseSync(':memory:')
-  for (const file of migrationFiles()) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), 'utf8'))
-  }
-
-  const d1 = D1Client.layer({
-    db: new FakeD1(db).asD1Database(),
-    transformQueryNames: Str.camelToSnake,
-    transformResultNames: Str.snakeToCamel,
-  })
-  const layer = PreferencesRoutes.pipe(
+const routesLayer = ({ d1 }: HarnessEnv) =>
+  PreferencesRoutes.pipe(
     Layer.provide(PreferencesServiceLive),
     Layer.provide(AuthServiceLive),
     Layer.provide(d1),
   )
-  const { handler, dispose } = HttpRouter.toWebHandler(layer, {
+
+const makeHarness = async () => {
+  const harness = makeHarnessCore(routesLayer)
+  const { db } = harness
+  const { handler, dispose } = HttpRouter.toWebHandler(harness.layer, {
     disableLogger: true,
   })
 
-  const seedUser = (id: string, email: string, timeZone: string): void => {
-    db.prepare(
-      `INSERT INTO users
-        (id, email, credential_verifier, credential_salt, kdf_version,
-         display_name, time_zone, week_start, digits, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 1, ?, ?, 'saturday', 'persian', ?, ?)`,
-    ).run(id, email, '0'.repeat(64), '0'.repeat(32), email, timeZone, NOW, NOW)
-  }
-
-  const seedSession = (userId: string, token: string): void => {
-    db.prepare(
-      `INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
-    ).run(uuidV7(), userId, sha256(token), FUTURE, NOW)
-  }
-
-  seedUser(USER_A, 'a@example.com', 'Europe/Berlin')
-  seedUser(USER_B, 'b@example.com', 'Asia/Tehran')
-  seedSession(USER_A, TOKEN_A)
-  seedSession(USER_B, TOKEN_B)
+  seedUser(db, {
+    id: USER_A,
+    email: 'a@example.com',
+    timeZone: 'Europe/Berlin',
+    now: NOW,
+  })
+  seedUser(db, {
+    id: USER_B,
+    email: 'b@example.com',
+    timeZone: 'Asia/Tehran',
+    now: NOW,
+  })
+  seedSession(db, USER_A, TOKEN_A, { now: NOW, expiresAt: FUTURE })
+  seedSession(db, USER_B, TOKEN_B, { now: NOW, expiresAt: FUTURE })
 
   const request = async (
     method: 'GET' | 'PATCH',

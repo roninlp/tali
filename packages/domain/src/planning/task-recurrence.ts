@@ -1,5 +1,6 @@
 import { Temporal } from 'temporal-polyfill/full'
 import { uuidV7 } from '../ids.js'
+import { localDateOfInstant, plainDateOf } from '../local-date.js'
 import {
   nextOccurrence,
   type RecurrenceRule,
@@ -64,9 +65,6 @@ export interface NextRecurrenceDue {
   readonly dueAt: string | null
 }
 
-const localDateOf = (instant: string, timeZone: string): Temporal.PlainDate =>
-  Temporal.Instant.from(instant).toZonedDateTimeISO(timeZone).toPlainDate()
-
 const later = (
   one: Temporal.PlainDate,
   two: Temporal.PlainDate,
@@ -79,12 +77,14 @@ const later = (
 export const nextRecurrenceDue = (
   input: NextRecurrenceDueInput,
 ): NextRecurrenceDue | null => {
-  const completedLocal = localDateOf(input.completedAt, input.timeZone)
+  const completedLocal = plainDateOf(
+    localDateOfInstant(input.completedAt, input.timeZone),
+  )
   const dueLocal =
     input.dueDate !== null
-      ? Temporal.PlainDate.from(input.dueDate)
+      ? plainDateOf(input.dueDate)
       : input.dueAt !== null
-        ? localDateOf(input.dueAt, input.timeZone)
+        ? plainDateOf(localDateOfInstant(input.dueAt, input.timeZone))
         : null
   // `onCompletion` restarts the rule grid on the completion day (never earlier
   // than the current due day, so completing early cannot move work backwards).

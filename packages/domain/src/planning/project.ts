@@ -1,7 +1,6 @@
-import { Schema } from 'effect'
 import { Model } from 'effect/schema'
 import { Visibility } from '../common.js'
-import { commonItemFields, ProjectId } from './common.js'
+import { commonItemFields, NonEmptyString, ProjectId } from './common.js'
 
 /**
  * `Project` aggregate (FR-TASK-02, docs/domain-model-draft.md §3.9).
@@ -15,10 +14,5 @@ import { commonItemFields, ProjectId } from './common.js'
 export class Project extends Model.Class<Project>('Project')({
   ...commonItemFields('project', ProjectId),
   visibility: Visibility,
-  title: Schema.String.check(Schema.isMinLength(1)),
+  title: NonEmptyString,
 }) {}
-
-export const ProjectCreate = Schema.Struct({
-  title: Schema.String.check(Schema.isMinLength(1)),
-})
-export type ProjectCreate = Schema.Schema.Type<typeof ProjectCreate>

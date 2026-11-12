@@ -1,6 +1,7 @@
 import { Context, Effect, Layer, Option } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { type ItemType, Tag, type TagId, type UserId } from '@tali/domain'
+import { visibleScopeSql } from './scope'
 
 /**
  * D1-backed repository for `Tag` and the `item_tags` join (ticket #33;
@@ -37,9 +38,7 @@ export class TagRepo extends Context.Service<TagRepo>()('TagRepo', {
       Effect.map(
         sql<Tag>`
           SELECT ${sql.literal(TAG_COLUMNS)} FROM tags
-          WHERE household_id = ${input.householdId}
-            AND deleted_at IS NULL
-            AND (owner_id = ${input.userId} OR visibility = 'shared')
+          WHERE ${visibleScopeSql(sql, input)}
           ORDER BY name ASC, id ASC
         `,
         rows => rows,

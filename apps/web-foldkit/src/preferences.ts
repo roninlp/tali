@@ -15,6 +15,7 @@ import {
 } from './lib/preferences-cache'
 import {
   CheckedItemPlacement,
+  DEFAULT_CHECKED_ITEM_PLACEMENT,
   DEFAULT_DASHBOARD_ORDER,
   DEFAULT_DIGITS,
   DEFAULT_TIME_ZONE,
@@ -31,6 +32,7 @@ import {
 import type { Session } from './session'
 import { buttonView } from './ui/button'
 import { formErrorView, textInputView } from './ui/field'
+import { listboxOutMessageFold } from './ui/fold'
 import { listboxViewInputs } from './ui/listbox'
 
 /**
@@ -173,7 +175,7 @@ export const currentCheckedItemPlacement = (
   model: Model,
 ): CheckedItemPlacement =>
   Option.match(model.maybePreferences, {
-    onNone: () => 'bottom',
+    onNone: () => DEFAULT_CHECKED_ITEM_PLACEMENT,
     onSome: preferences => preferences.checkedItemPlacement,
   })
 
@@ -370,27 +372,16 @@ const isIanaTimeZone = (value: string): boolean => {
 const invalidTimeZoneMessage =
   'منطقه‌ی زمانی معتبر نیست؛ مثل Asia/Tehran وارد کنید.'
 
-const foldWeekStartListboxOutMessage = Listbox.OutMessage.match<
-  Update.Step<Model, Message>,
-  Listbox.OutMessage<string>
->({
-  Selected:
-    ({ value }) =>
-    stepModel =>
-      update(
-        stepModel,
-        Message.UpdatedWeekStartDraft({ value: weekStartOf(value) }),
-      ),
+const foldWeekStartListboxOutMessage = listboxOutMessageFold<Model, Message>({
+  handleUpdate: (model, message) => update(model, message),
+  toMessage: (_model, value) =>
+    Message.UpdatedWeekStartDraft({ value: weekStartOf(value) }),
 })
 
-const foldDigitsListboxOutMessage = Listbox.OutMessage.match<
-  Update.Step<Model, Message>,
-  Listbox.OutMessage<string>
->({
-  Selected:
-    ({ value }) =>
-    stepModel =>
-      update(stepModel, Message.UpdatedDigitsDraft({ value: digitsOf(value) })),
+const foldDigitsListboxOutMessage = listboxOutMessageFold<Model, Message>({
+  handleUpdate: (model, message) => update(model, message),
+  toMessage: (_model, value) =>
+    Message.UpdatedDigitsDraft({ value: digitsOf(value) }),
 })
 
 const foldWeekStartListbox = Update.foldChild({

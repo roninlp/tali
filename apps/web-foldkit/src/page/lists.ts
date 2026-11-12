@@ -38,9 +38,12 @@ import type { CheckedItemPlacement, DisplayFields } from '../preferences-model'
 import { LocalStoreResource } from '../sync/local-store'
 import type { LocalStoreService } from '../sync/local-store'
 import type { ConfirmSpec } from '../ui/confirm'
-import { Toast, ToastUndo } from '../ui/toast'
+import { confirmDialogFolds } from '../ui/confirm'
+import { optionalListboxOutMessageFold } from '../ui/fold'
+import { Toast, ToastUndo, toastFolds } from '../ui/toast'
 import { listDetailView } from './list-view'
 import { listsIndexView } from './lists-view'
+import { localWrite, storeFailureMessage } from './local-write'
 
 /**
  * The `/lists` index and `/lists/[id]` detail Submodel, ported from
@@ -161,79 +164,37 @@ export const initialModel = (): Model =>
 
 // LISTBOX FOLDS
 
-type ListUpdate = (
-  model: Model,
-  message: Message,
-  inputs: Inputs,
-) => UpdateReturn
-
-const sortListboxOutMessage = (inputs: Inputs, handleUpdate: ListUpdate) =>
-  Listbox.OutMessage.match<
-    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
-    Listbox.OutMessage<string>
-  >({
-    Selected:
-      ({ value }) =>
-      stepModel =>
-        Option.match(stepModel.maybeListId, {
-          onNone: () => ({ model: stepModel }),
-          onSome: listId =>
-            handleUpdate(
-              stepModel,
-              Message.SelectedListSort({
-                listId,
-                sort: sortOfValue(value),
-              }),
-              inputs,
-            ),
-        }),
+const sortListboxOutMessage = (inputs: Inputs) =>
+  optionalListboxOutMessageFold<Model, Message, OutMessage, LocalStoreService>({
+    handleUpdate: (model, message) => update(model, message, inputs),
+    toMessage: (model, value) =>
+      Option.map(model.maybeListId, listId =>
+        Message.SelectedListSort({ listId, sort: sortOfValue(value) }),
+      ),
   })
 
-const placementListboxOutMessage = (inputs: Inputs, handleUpdate: ListUpdate) =>
-  Listbox.OutMessage.match<
-    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
-    Listbox.OutMessage<string>
-  >({
-    Selected:
-      ({ value }) =>
-      stepModel =>
-        Option.match(stepModel.maybeListId, {
-          onNone: () => ({ model: stepModel }),
-          onSome: listId =>
-            handleUpdate(
-              stepModel,
-              Message.SelectedCheckedPlacement({
-                listId,
-                placement: placementOfValue(value),
-              }),
-              inputs,
-            ),
+const placementListboxOutMessage = (inputs: Inputs) =>
+  optionalListboxOutMessageFold<Model, Message, OutMessage, LocalStoreService>({
+    handleUpdate: (model, message) => update(model, message, inputs),
+    toMessage: (model, value) =>
+      Option.map(model.maybeListId, listId =>
+        Message.SelectedCheckedPlacement({
+          listId,
+          placement: placementOfValue(value),
         }),
+      ),
   })
 
-const visibilityListboxOutMessage = (
-  inputs: Inputs,
-  handleUpdate: ListUpdate,
-) =>
-  Listbox.OutMessage.match<
-    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
-    Listbox.OutMessage<string>
-  >({
-    Selected:
-      ({ value }) =>
-      stepModel =>
-        Option.match(stepModel.maybeListId, {
-          onNone: () => ({ model: stepModel }),
-          onSome: listId =>
-            handleUpdate(
-              stepModel,
-              Message.SelectedListVisibility({
-                listId,
-                visibility: visibilityOfValue(value),
-              }),
-              inputs,
-            ),
+const visibilityListboxOutMessage = (inputs: Inputs) =>
+  optionalListboxOutMessageFold<Model, Message, OutMessage, LocalStoreService>({
+    handleUpdate: (model, message) => update(model, message, inputs),
+    toMessage: (model, value) =>
+      Option.map(model.maybeListId, listId =>
+        Message.SelectedListVisibility({
+          listId,
+          visibility: visibilityOfValue(value),
         }),
+      ),
   })
 
 /** Everything the screens read from their siblings on each dispatch. */
@@ -337,13 +298,6 @@ export type OutMessage = typeof OutMessage.Type
 
 // COMMAND
 
-const storeFailureMessage = (cause: unknown): string =>
-  cause instanceof Error ? cause.message : 'ذخیره در حافظه‌ی محلی ناموفق بود'
-
-const currentIso = Clock.currentTimeMillis.pipe(
-  Effect.map(millis => new Date(millis).toISOString()),
-)
-
 const deleteQuestion = (scope: DeleteScope, title: string): string =>
   scope === 'index'
     ? `فهرست «${title}» حذف شود؟ موارد آن هم از نمای شما پنهان می‌شوند.`
@@ -385,54 +339,30 @@ export const RenameList = Command.define('RenameList', {
   args: { listId: Schema.String, title: Schema.String },
   messages: [Message.CompletedRenameList, Message.FailedRenameList],
   execute: ({ listId, title }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () => updateListInMirror(store, listId, { title }, now),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedRenameList({ listId, title })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedRenameList({ message: storeFailureMessage(error) }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: (store, now) => updateListInMirror(store, listId, { title }, now),
+      onSuccess: () => Message.CompletedRenameList({ listId, title }),
+      onFailure: message => Message.FailedRenameList({ message }),
+    }),
 })
 
 export const SetListSort = Command.define('SetListSort', {
   args: { listId: Schema.String, sort: ListSort, revision: Schema.Int },
   messages: [Message.CompletedSetListSort, Message.FailedSetListSort],
   execute: ({ listId, sort, revision }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () =>
-          writeListSettingIfLatest(
-            store,
-            'sort',
-            listId,
-            revision,
-            { sort },
-            now,
-          ),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedSetListSort({ listId })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedSetListSort({ message: storeFailureMessage(error) }),
+    localWrite({
+      run: (store, now) =>
+        writeListSettingIfLatest(
+          store,
+          'sort',
+          listId,
+          revision,
+          { sort },
+          now,
         ),
-      ),
-    ),
+      onSuccess: () => Message.CompletedSetListSort({ listId }),
+      onFailure: message => Message.FailedSetListSort({ message }),
+    }),
 })
 
 export const SetCheckedPlacement = Command.define('SetCheckedPlacement', {
@@ -446,33 +376,19 @@ export const SetCheckedPlacement = Command.define('SetCheckedPlacement', {
     Message.FailedSetCheckedPlacement,
   ],
   execute: ({ listId, placement, revision }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () =>
-          writeListSettingIfLatest(
-            store,
-            'placement',
-            listId,
-            revision,
-            { checkedPlacement: placement },
-            now,
-          ),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedSetCheckedPlacement({ listId })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedSetCheckedPlacement({
-            message: storeFailureMessage(error),
-          }),
+    localWrite({
+      run: (store, now) =>
+        writeListSettingIfLatest(
+          store,
+          'placement',
+          listId,
+          revision,
+          { checkedPlacement: placement },
+          now,
         ),
-      ),
-    ),
+      onSuccess: () => Message.CompletedSetCheckedPlacement({ listId }),
+      onFailure: message => Message.FailedSetCheckedPlacement({ message }),
+    }),
 })
 
 export const SetListVisibility = Command.define('SetListVisibility', {
@@ -486,33 +402,19 @@ export const SetListVisibility = Command.define('SetListVisibility', {
     Message.FailedSetListVisibility,
   ],
   execute: ({ listId, visibility, revision }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () =>
-          writeListSettingIfLatest(
-            store,
-            'visibility',
-            listId,
-            revision,
-            { visibility },
-            now,
-          ),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedSetListVisibility({ listId })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedSetListVisibility({
-            message: storeFailureMessage(error),
-          }),
+    localWrite({
+      run: (store, now) =>
+        writeListSettingIfLatest(
+          store,
+          'visibility',
+          listId,
+          revision,
+          { visibility },
+          now,
         ),
-      ),
-    ),
+      onSuccess: () => Message.CompletedSetListVisibility({ listId }),
+      onFailure: message => Message.FailedSetListVisibility({ message }),
+    }),
 })
 
 export const CreateListItem = Command.define('CreateListItem', {
@@ -566,115 +468,59 @@ export const SetListItemChecked = Command.define('SetListItemChecked', {
     Message.FailedSetListItemChecked,
   ],
   execute: ({ itemId, name, checked, wasDone, maybeCheckedAt }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () =>
-          setListItemCheckedInMirror(
-            store,
-            {
-              id: itemId,
-              done: wasDone,
-              checkedAt: Option.getOrNull(maybeCheckedAt),
-            },
-            checked,
-            now,
-          ),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedSetListItemChecked({ itemId, name, checked })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedSetListItemChecked({
-            message: storeFailureMessage(error),
-          }),
+    localWrite({
+      run: (store, now) =>
+        setListItemCheckedInMirror(
+          store,
+          {
+            id: itemId,
+            done: wasDone,
+            checkedAt: Option.getOrNull(maybeCheckedAt),
+          },
+          checked,
+          now,
         ),
-      ),
-    ),
+      onSuccess: () =>
+        Message.CompletedSetListItemChecked({ itemId, name, checked }),
+      onFailure: message => Message.FailedSetListItemChecked({ message }),
+    }),
 })
 
 export const UncheckListItem = Command.define('UncheckListItem', {
   args: { itemId: Schema.String, name: Schema.String },
   messages: [Message.CompletedUncheckListItem, Message.FailedUncheckListItem],
   execute: ({ itemId, name }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () => uncheckListItemInMirror(store, itemId, now),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedUncheckListItem({ itemId, name })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedUncheckListItem({
-            message: storeFailureMessage(error),
-          }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: (store, now) => uncheckListItemInMirror(store, itemId, now),
+      onSuccess: () => Message.CompletedUncheckListItem({ itemId, name }),
+      onFailure: message => Message.FailedUncheckListItem({ message }),
+    }),
 })
 
 export const DeleteListItem = Command.define('DeleteListItem', {
   args: { itemId: Schema.String, name: Schema.String },
   messages: [Message.CompletedDeleteListItem, Message.FailedDeleteListItem],
   execute: ({ itemId, name }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () => deleteListItemInMirror(store, itemId, now),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedDeleteListItem({ itemId, name })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedDeleteListItem({
-            message: storeFailureMessage(error),
-          }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: (store, now) => deleteListItemInMirror(store, itemId, now),
+      onSuccess: () => Message.CompletedDeleteListItem({ itemId, name }),
+      onFailure: message => Message.FailedDeleteListItem({ message }),
+    }),
 })
 
 export const ReorderListItems = Command.define('ReorderListItems', {
   args: { listId: Schema.String, orderedIds: Schema.Array(Schema.String) },
   messages: [Message.CompletedReorderListItems, Message.FailedReorderListItems],
   execute: ({ orderedIds }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
+    localWrite({
+      run: async (store, now) => {
+        const items = await readListItems(store)
 
-      const items = yield* Effect.tryPromise({
-        try: () => readListItems(store),
-        catch: storeFailureMessage,
-      })
-
-      yield* Effect.tryPromise({
-        try: () => reorderListItemsInMirror(store, items, orderedIds, now),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedReorderListItems()
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedReorderListItems({
-            message: storeFailureMessage(error),
-          }),
-        ),
-      ),
-    ),
+        return reorderListItemsInMirror(store, items, orderedIds, now)
+      },
+      onSuccess: () => Message.CompletedReorderListItems(),
+      onFailure: message => Message.FailedReorderListItems({ message }),
+    }),
 })
 
 export const DeleteList = Command.define('DeleteList', {
@@ -684,23 +530,11 @@ export const DeleteList = Command.define('DeleteList', {
   },
   messages: [Message.CompletedDeleteList, Message.FailedDeleteList],
   execute: ({ listId, itemIds }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () => deleteListInMirror(store, listId, itemIds, now),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedDeleteList({ listId })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedDeleteList({ message: storeFailureMessage(error) }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: (store, now) => deleteListInMirror(store, listId, itemIds, now),
+      onSuccess: () => Message.CompletedDeleteList({ listId }),
+      onFailure: message => Message.FailedDeleteList({ message }),
+    }),
 })
 
 // INIT
@@ -718,85 +552,44 @@ type UpdateReturn = Update.ReturnWithOutMessage<
   LocalStoreService
 >
 
-const foldConfirmDialogOutMessage = Dialog.OutMessage.match<
-  Update.Step<Model, Message>
->({
-  Opened: () => model => ({ model }),
-  Closed: () => stepModel => ({
-    model: modifyFields(stepModel, {
-      maybePendingDelete: () => Option.none(),
-    }),
-  }),
-})
-
-const foldConfirmDialog = Update.foldChild({
-  update: Dialog.update,
-  read: (model: Model) => Option.some(model.confirmDialog),
-  write: (model, nextDialog) =>
+const confirmDialog = confirmDialogFolds<Model, Message>({
+  field: model => model.confirmDialog,
+  setField: (model, nextDialog) =>
     modifyFields(model, { confirmDialog: () => nextDialog }),
   toParentMessage: message => Message.GotConfirmDialogMessage({ message }),
-  foldOutMessage: foldConfirmDialogOutMessage,
+  whenClosed: model =>
+    modifyFields(model, { maybePendingDelete: () => Option.none() }),
 })
 
-const foldConfirmDialogOpen = Update.foldChildStep({
-  update: Dialog.open,
-  read: (model: Model) => Option.some(model.confirmDialog),
-  write: (model, nextDialog) =>
-    modifyFields(model, { confirmDialog: () => nextDialog }),
-  toParentMessage: message => Message.GotConfirmDialogMessage({ message }),
-  foldOutMessage: foldConfirmDialogOutMessage,
+const foldConfirmDialog = confirmDialog.fold
+const foldConfirmDialogOpen = confirmDialog.openStep
+const foldConfirmDialogClose = confirmDialog.closeStep
+
+const toast = toastFolds<Model, Message>({
+  field: model => model.toast,
+  setField: (model, nextToast) =>
+    modifyFields(model, { toast: () => nextToast }),
+  toParentMessage: message => Message.GotToastMessage({ message }),
 })
 
-const foldConfirmDialogClose = Update.foldChildStep({
-  update: Dialog.close,
-  read: (model: Model) => Option.some(model.confirmDialog),
-  write: (model, nextDialog) =>
-    modifyFields(model, { confirmDialog: () => nextDialog }),
-  toParentMessage: message => Message.GotConfirmDialogMessage({ message }),
-  foldOutMessage: foldConfirmDialogOutMessage,
-})
+const foldToast = toast.fold
+const dismissedToastStep = toast.dismissedStep
 
 const shownCheckedToastStep = (
   itemId: string,
   name: string,
 ): Update.Step<Model, Message> =>
-  Update.foldChildStep({
-    update: toast =>
-      Toast.show(toast, {
-        payload: {
-          text: `تیک خورد: ${name}`,
-          maybeUndo: {
-            kind: 'uncheckItem',
-            id: itemId,
-            title: name,
-          },
-        },
-        variant: 'Success',
-      }),
-    read: (model: Model) => Option.some(model.toast),
-    write: (model, nextToast) =>
-      modifyFields(model, { toast: () => nextToast }),
-    toParentMessage: message => Message.GotToastMessage({ message }),
-    foldOutMessage: () => stepModel => ({ model: stepModel }),
-  })
-
-const dismissedToastStep = (entryId: string): Update.Step<Model, Message> =>
-  Update.foldChildStep({
-    update: toast => Toast.dismiss(toast, entryId),
-    read: (model: Model) => Option.some(model.toast),
-    write: (model, nextToast) =>
-      modifyFields(model, { toast: () => nextToast }),
-    toParentMessage: message => Message.GotToastMessage({ message }),
-    foldOutMessage: () => stepModel => ({ model: stepModel }),
-  })
-
-const foldToast = Update.foldChild({
-  update: Toast.update,
-  read: (model: Model) => Option.some(model.toast),
-  write: (model, nextToast) => modifyFields(model, { toast: () => nextToast }),
-  toParentMessage: message => Message.GotToastMessage({ message }),
-  foldOutMessage: () => stepModel => ({ model: stepModel }),
-})
+  toast.shownStep(
+    {
+      text: `تیک خورد: ${name}`,
+      maybeUndo: {
+        kind: 'uncheckItem',
+        id: itemId,
+        title: name,
+      },
+    },
+    'Success',
+  )
 
 const currentList = (model: Model, inputs: Inputs): Option.Option<ListRow> =>
   Option.flatMap(model.maybeListId, listId =>
@@ -900,7 +693,7 @@ export const update = (
     write: (listModel: Model, nextListbox: Listbox.Model) =>
       modifyFields(listModel, { sortListbox: () => nextListbox }),
     toParentMessage: message => Message.GotSortListboxMessage({ message }),
-    foldOutMessage: sortListboxOutMessage(inputs, update),
+    foldOutMessage: sortListboxOutMessage(inputs),
   })
 
   const foldPlacementListbox = Update.foldChild({
@@ -909,7 +702,7 @@ export const update = (
     write: (listModel: Model, nextListbox: Listbox.Model) =>
       modifyFields(listModel, { placementListbox: () => nextListbox }),
     toParentMessage: message => Message.GotPlacementListboxMessage({ message }),
-    foldOutMessage: placementListboxOutMessage(inputs, update),
+    foldOutMessage: placementListboxOutMessage(inputs),
   })
 
   const foldVisibilityListbox = Update.foldChild({
@@ -919,7 +712,7 @@ export const update = (
       modifyFields(listModel, { visibilityListbox: () => nextListbox }),
     toParentMessage: message =>
       Message.GotVisibilityListboxMessage({ message }),
-    foldOutMessage: visibilityListboxOutMessage(inputs, update),
+    foldOutMessage: visibilityListboxOutMessage(inputs),
   })
 
   return Message.match<UpdateReturn>(message, {

@@ -3,6 +3,20 @@ import { Model } from 'effect/schema'
 import { HouseholdId, UserId } from '../common.js'
 
 /**
+ * Re-exported so the planning aggregates read every shared scalar from this
+ * module. The definition lives in `../common.ts` because the auth/push/capture
+ * contracts need the same check and must not depend on the planning layer.
+ */
+export { NonEmptyString } from '../common.js'
+
+/**
+ * Re-exported for the same reason as `NonEmptyString`: the definition lives in
+ * `../common.ts` so `auth.ts` can validate a profile zone without importing the
+ * planning layer, and every planning aggregate keeps importing it from here.
+ */
+export { TimeZone } from '../common.js'
+
+/**
  * Shared building blocks for the core-planning aggregates (Slice 2).
  *
  * Source of truth: `docs/domain-model-draft.md` §2–§3 and ticket #33. Every
@@ -26,40 +40,34 @@ import { HouseholdId, UserId } from '../common.js'
 // UUID v7 is time-ordered and client-mintable, which is what makes offline
 // inserts possible. Branding forbids accidental cross-aggregate assignment.
 
-export const TaskId = Schema.String.check(Schema.isUUID(7)).pipe(
-  Schema.brand('TaskId'),
-)
+/** A client-mintable UUID v7, branded to one aggregate. */
+export const uuid7Id = <const Brand extends string>(brand: Brand) =>
+  Schema.String.check(Schema.isUUID(7)).pipe(
+    // `Schema.brand`'s single-key guard is a conditional type that cannot be
+    // reduced for a generic key, so pass the key at the guard's own type.
+    Schema.brand<Brand>(brand as Parameters<typeof Schema.brand<Brand>>[0]),
+  )
+
+export const TaskId = uuid7Id('TaskId')
 export type TaskId = Schema.Schema.Type<typeof TaskId>
 
-export const ProjectId = Schema.String.check(Schema.isUUID(7)).pipe(
-  Schema.brand('ProjectId'),
-)
+export const ProjectId = uuid7Id('ProjectId')
 export type ProjectId = Schema.Schema.Type<typeof ProjectId>
 
-export const TagId = Schema.String.check(Schema.isUUID(7)).pipe(
-  Schema.brand('TagId'),
-)
+export const TagId = uuid7Id('TagId')
 export type TagId = Schema.Schema.Type<typeof TagId>
 
-export const ListId = Schema.String.check(Schema.isUUID(7)).pipe(
-  Schema.brand('ListId'),
-)
+export const ListId = uuid7Id('ListId')
 export type ListId = Schema.Schema.Type<typeof ListId>
 
-export const ListItemId = Schema.String.check(Schema.isUUID(7)).pipe(
-  Schema.brand('ListItemId'),
-)
+export const ListItemId = uuid7Id('ListItemId')
 export type ListItemId = Schema.Schema.Type<typeof ListItemId>
 
-export const NoteId = Schema.String.check(Schema.isUUID(7)).pipe(
-  Schema.brand('NoteId'),
-)
+export const NoteId = uuid7Id('NoteId')
 export type NoteId = Schema.Schema.Type<typeof NoteId>
 
 /** `Event` aggregate id (Slice 3 / ticket #57). */
-export const EventId = Schema.String.check(Schema.isUUID(7)).pipe(
-  Schema.brand('EventId'),
-)
+export const EventId = uuid7Id('EventId')
 export type EventId = Schema.Schema.Type<typeof EventId>
 
 /**
@@ -69,9 +77,7 @@ export type EventId = Schema.Schema.Type<typeof EventId>
  * row), so the id is the stable handle a client uses to address a single
  * occurrence ("this occurrence only") without addressing the series.
  */
-export const EventExceptionId = Schema.String.check(Schema.isUUID(7)).pipe(
-  Schema.brand('EventExceptionId'),
-)
+export const EventExceptionId = uuid7Id('EventExceptionId')
 export type EventExceptionId = Schema.Schema.Type<typeof EventExceptionId>
 
 /**
@@ -81,9 +87,7 @@ export type EventExceptionId = Schema.Schema.Type<typeof EventExceptionId>
  * event and the annual date it comes from) is part of the event shape, so the
  * occasions slice lands without touching the events table.
  */
-export const OccasionId = Schema.String.check(Schema.isUUID(7)).pipe(
-  Schema.brand('OccasionId'),
-)
+export const OccasionId = uuid7Id('OccasionId')
 export type OccasionId = Schema.Schema.Type<typeof OccasionId>
 
 /**
@@ -92,9 +96,7 @@ export type OccasionId = Schema.Schema.Type<typeof OccasionId>
  * The brand existed before the aggregate (the `ReminderLink` union's habit
  * variant) so the reminder slice needs no redefinition.
  */
-export const HabitId = Schema.String.check(Schema.isUUID(7)).pipe(
-  Schema.brand('HabitId'),
-)
+export const HabitId = uuid7Id('HabitId')
 export type HabitId = Schema.Schema.Type<typeof HabitId>
 
 /**
@@ -105,21 +107,15 @@ export type HabitId = Schema.Schema.Type<typeof HabitId>
  * keyed by `(habitId, localDate)`. The id is client-mintable like every other
  * row so an offline tap can write immediately.
  */
-export const HabitEntryId = Schema.String.check(Schema.isUUID(7)).pipe(
-  Schema.brand('HabitEntryId'),
-)
+export const HabitEntryId = uuid7Id('HabitEntryId')
 export type HabitEntryId = Schema.Schema.Type<typeof HabitEntryId>
 
 /** `Reminder` aggregate id (Slice 3 / ticket #60). */
-export const ReminderId = Schema.String.check(Schema.isUUID(7)).pipe(
-  Schema.brand('ReminderId'),
-)
+export const ReminderId = uuid7Id('ReminderId')
 export type ReminderId = Schema.Schema.Type<typeof ReminderId>
 
 /** One dispatch-ledger row (ADR-0005); also the address of a notification action. */
-export const ReminderDispatchId = Schema.String.check(Schema.isUUID(7)).pipe(
-  Schema.brand('ReminderDispatchId'),
-)
+export const ReminderDispatchId = uuid7Id('ReminderDispatchId')
 export type ReminderDispatchId = Schema.Schema.Type<typeof ReminderDispatchId>
 
 // ── Enums (docs/domain-model-draft.md §2.3) ───────────────────────────────
@@ -177,19 +173,6 @@ export const LocalDate = Schema.String.check(
 )
 export type LocalDate = Schema.Schema.Type<typeof LocalDate>
 
-const isIanaTimeZone = Schema.makeFilter<string>(value => {
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: value })
-    return true
-  } catch {
-    return 'must be a valid IANA time zone identifier'
-  }
-})
-
-/** IANA time-zone identifier; stored per item so all-day dates stay unambiguous. */
-export const TimeZone = Schema.String.check(isIanaTimeZone)
-export type TimeZone = Schema.Schema.Type<typeof TimeZone>
-
 /** Household-scoped tag ids carried denormalized on an item (join is canonical). */
 export const TagIds = Schema.Array(TagId)
 export type TagIds = Schema.Schema.Type<typeof TagIds>
@@ -220,4 +203,98 @@ export const commonItemFields = <
   updatedAt: TimestampUtc,
   version: Schema.Int,
   deletedAt: Schema.NullOr(TimestampUtc),
+})
+
+// ── Service contract building blocks ──────────────────────────────────────
+//
+// Every aggregate's service contract (tickets #36, #39, #40, #57, #59, #60,
+// #63, #64) is the same three envelopes plus the same four typed-error shapes.
+// They are declared once here so a wire shape cannot drift between aggregates:
+// the fields, their order and their optionality are fixed in one place.
+
+/**
+ * The replay/idempotency key every mutation carries: the write path dedupes on
+ * it (`applied_mutations`), so an RPC retry after a lost response is
+ * exactly-once.
+ */
+export const ClientMutationId = Schema.String
+export type ClientMutationId = Schema.Schema.Type<typeof ClientMutationId>
+
+/** `{ id, clientMutationId }` — delete / start / complete / undo / restore. */
+export const mutationEnvelope = <const Id extends Schema.Top>(id: Id) =>
+  Schema.Struct({ id, clientMutationId: ClientMutationId })
+
+/**
+ * `{ id, clientMutationId, baseVersion?, patch }` — every update.
+ *
+ * `baseVersion` is the version the client last saw; it is informational for the
+ * service's compare-and-set, which re-reads and retries on a lost race.
+ */
+export const updateEnvelope = <
+  const Id extends Schema.Top,
+  const Patch extends Schema.Top,
+>(
+  id: Id,
+  patch: Patch,
+) =>
+  Schema.Struct({
+    id,
+    clientMutationId: ClientMutationId,
+    baseVersion: Schema.optional(Schema.Int),
+    patch,
+  })
+
+/**
+ * `{ id?, clientMutationId, ...fields }` — every create.
+ *
+ * `id` is optional because a client may mint the UUID v7 offline; the server
+ * mints one otherwise. `fields` never contains `id`/`clientMutationId`.
+ */
+export const createEnvelope = <
+  const Id extends Schema.Top,
+  const Fields extends Schema.Struct.Fields,
+>(
+  id: Id,
+  fields: Fields,
+) =>
+  Schema.Struct({
+    id: Schema.optional(id),
+    clientMutationId: ClientMutationId,
+    ...fields,
+  })
+
+/** One field-level validation complaint. */
+export const ValidationIssue = Schema.Struct({
+  field: Schema.String,
+  message: Schema.String,
+})
+
+/** `{ issues }` — the shape of every `*ValidationError`. */
+export const validationFields = {
+  issues: Schema.Array(ValidationIssue),
+}
+
+/** Why a row is invisible to the viewer (`docs/error-model-draft.md` §2). */
+export const ForbiddenReason = Schema.Literals([
+  'private',
+  'household',
+  'noHousehold',
+])
+export type ForbiddenReason = Schema.Schema.Type<typeof ForbiddenReason>
+
+/**
+ * `{ id, reason }` — the shape of every `*Forbidden`. `id` is nullable because
+ * a refusal can happen before an id is known (a forbidden household, say).
+ */
+export const forbiddenFields = {
+  id: Schema.NullOr(Schema.String),
+  reason: ForbiddenReason,
+}
+
+/** `{ id }` — the shape of every version-CAS `*Conflict`. */
+export const conflictFields = { id: Schema.String }
+
+/** `{ id }` — the shape of every `*NotFound`, keeping the caller's id brand. */
+export const notFoundFields = <const Id extends Schema.Top>(id: Id) => ({
+  id,
 })

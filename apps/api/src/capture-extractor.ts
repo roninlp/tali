@@ -11,6 +11,11 @@ import {
 import { chat as aiChat } from '@tanstack/ai-effect'
 import { openaiCompatibleText } from '@tanstack/ai-openai/compatible'
 import {
+  DEFAULT_CAPTURE_BASE_URL,
+  DEFAULT_CAPTURE_MODEL,
+  DEFAULT_CAPTURE_USER_AGENT,
+} from '@tali/config'
+import {
   CAPTURE_MAX_DRAFTS,
   type CaptureDraft,
   type CaptureId,
@@ -45,12 +50,14 @@ import { makeDraftTools } from './capture-tools.js'
 
 // ── Config ────────────────────────────────────────────────────────────────
 
-/** The OpenCode Go gateway root. The pay-as-you-go root is different. */
-export const DEFAULT_CAPTURE_BASE_URL =
-  'https://opencode.ai/inference/go/openai/v1'
-export const DEFAULT_CAPTURE_MODEL = 'deepseek-v4.1-flash'
-/** A non-generic UA; the gateway rejects the SDK default. */
-export const DEFAULT_CAPTURE_USER_AGENT = 'tali-capture/0.1'
+// Defaults live in `@tali/config` so the deploy stack reads the same endpoint
+// and model as the Worker; re-exported for the extractor's tests and eval.
+export {
+  DEFAULT_CAPTURE_BASE_URL,
+  DEFAULT_CAPTURE_MODEL,
+  DEFAULT_CAPTURE_USER_AGENT,
+}
+
 /**
  * The whole Dissect budget, retry included (ADR-0012 §9).
  *
@@ -227,12 +234,10 @@ export const ExtractorLive = Layer.effect(
     ): Effect.Effect<ReadonlyArray<CaptureDraft>, CaptureServiceError> =>
       Effect.gen(function* () {
         if (config.apiKey === undefined) {
-          return yield* Effect.fail(
-            new ModelUnavailable({
-              message:
-                'OPENCODE_API_KEY is not configured; Capture is inert until it is set',
-            }),
-          )
+          return yield* new ModelUnavailable({
+            message:
+              'OPENCODE_API_KEY is not configured; Capture is inert until it is set',
+          })
         }
 
         const apiKey = config.apiKey
@@ -288,7 +293,7 @@ export const ExtractorLive = Layer.effect(
         })
 
         if (Result.isFailure(modelOutcome)) {
-          return yield* Effect.fail(modelOutcome.failure)
+          return yield* modelOutcome.failure
         }
         return drafts
       }).pipe(

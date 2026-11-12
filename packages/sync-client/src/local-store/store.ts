@@ -1,4 +1,4 @@
-import { uuidV7 } from '@tali/domain'
+import { entityKey, uuidV7 } from '@tali/domain'
 
 import {
   coalesceOutboxEntry,
@@ -261,7 +261,7 @@ export const openLocalStore = async (
               return
             }
             const entry = position.value as OutboxRecord
-            const key = `${entry.entityType}\u0000${entry.entityId}`
+            const key = entityKey(entry)
             if (!seen.has(key)) {
               seen.add(key)
               batch.push(entry)

@@ -1,24 +1,20 @@
-import { readFileSync, readdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { Effect, Layer, String as Str } from 'effect'
-import { D1Client } from '@effect/sql-d1'
-import {
-  uuidV7,
-  type HouseholdId,
-  type RecurrenceRule,
-  type TaskId,
-  type UserId,
-} from '@tali/domain'
-import { SyncService, SyncServiceLive } from '../src/sync-service.js'
+import { Layer } from 'effect'
+import { uuidV7, type RecurrenceRule, type TaskId } from '@tali/domain'
+import { SyncServiceLive } from '../src/sync-service.js'
 import {
   TaskService,
   TaskServiceLive,
-  type TaskServiceApi,
   type TaskViewer,
 } from '../src/task-service.js'
-import { FakeD1 } from './fake-d1.js'
+import {
+  HOUSEHOLD,
+  NOW,
+  TZ,
+  USER_A,
+  makeViewer,
+} from './fixtures/identities.js'
+import { makeServiceHarness, type HarnessEnv } from './harness.js'
 
 /**
  * Ticket #38, at the service seam: a completed recurring task spawns exactly
@@ -26,27 +22,7 @@ import { FakeD1 } from './fake-d1.js'
  * every other task mutation, in both recurrence modes, with replay as a no-op.
  */
 
-const MIGRATIONS_DIR = new URL(
-  '../../../packages/sql/migrations/',
-  import.meta.url,
-)
-
-const migrationFiles = (): ReadonlyArray<string> =>
-  readdirSync(fileURLToPath(MIGRATIONS_DIR))
-    .filter(file => file.endsWith('.sql'))
-    .sort()
-
-const USER_A = 'user-a' as UserId
-const HOUSEHOLD = 'household-a' as HouseholdId
-const TZ = 'Asia/Tehran'
-const NOW = '2026-10-20T09:30:00.000Z'
-
-const viewer = (overrides: Partial<TaskViewer> = {}): TaskViewer => ({
-  userId: USER_A,
-  householdId: HOUSEHOLD,
-  timeZone: TZ,
-  ...overrides,
-})
+const viewer = makeViewer<TaskViewer>({ timeZone: TZ })
 
 const daily = (overrides: Partial<RecurrenceRule> = {}): RecurrenceRule => ({
   frequency: 'daily',
@@ -55,63 +31,29 @@ const daily = (overrides: Partial<RecurrenceRule> = {}): RecurrenceRule => ({
   ...overrides,
 })
 
+const serviceLayer = ({ d1 }: HarnessEnv) =>
+  Layer.mergeAll(TaskServiceLive, SyncServiceLive).pipe(Layer.provide(d1))
+
 const makeHarness = () => {
-  const db = new DatabaseSync(':memory:')
-  for (const file of migrationFiles()) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), 'utf8'))
-  }
-
-  const fake = new FakeD1(db)
-  const d1 = D1Client.layer({
-    db: fake.asD1Database(),
-    transformQueryNames: Str.camelToSnake,
-    transformResultNames: Str.snakeToCamel,
-  })
-  const layer = Layer.mergeAll(TaskServiceLive, SyncServiceLive).pipe(
-    Layer.provide(d1),
-  )
-
-  const run = <A, E>(
-    effect: Effect.Effect<A, E, TaskService | SyncService>,
-  ): Promise<A> => Effect.runPromise(Effect.provide(effect, layer))
-
-  const svc = <A, E>(
-    f: (service: TaskServiceApi) => Effect.Effect<A, E, never>,
-  ): Promise<A> =>
-    run(
-      Effect.gen(function* () {
-        const service = yield* TaskService
-        return yield* f(service)
-      }),
-    )
-
-  const sync = <A, E>(
-    f: (service: SyncService) => Effect.Effect<A, E, never>,
-  ): Promise<A> =>
-    run(
-      Effect.gen(function* () {
-        const service = yield* SyncService
-        return yield* f(service)
-      }),
-    )
+  const harness = makeServiceHarness(serviceLayer, TaskService)
 
   const feedCount = (): number =>
     (
-      db.prepare('SELECT COUNT(*) AS n FROM change_feed').get() as {
+      harness.db.prepare('SELECT COUNT(*) AS n FROM change_feed').get() as {
         readonly n: number
       }
     ).n
 
   const taskCount = (): number =>
     (
-      db.prepare('SELECT COUNT(*) AS n FROM tasks').get() as {
+      harness.db.prepare('SELECT COUNT(*) AS n FROM tasks').get() as {
         readonly n: number
       }
     ).n
 
   const childCount = (parentId: string): number =>
     (
-      db
+      harness.db
         .prepare(
           'SELECT COUNT(*) AS n FROM tasks WHERE recurrence_parent_id = ?',
         )
@@ -121,18 +63,14 @@ const makeHarness = () => {
   const childrenOf = (
     parentId: string,
   ): ReadonlyArray<Record<string, unknown>> =>
-    db
+    harness.db
       .prepare(
         'SELECT * FROM tasks WHERE recurrence_parent_id = ? ORDER BY created_at',
       )
       .all(parentId) as ReadonlyArray<Record<string, unknown>>
 
   return {
-    db,
-    fake,
-    run,
-    svc,
-    sync,
+    ...harness,
     feedCount,
     taskCount,
     childCount,

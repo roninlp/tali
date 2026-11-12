@@ -1,7 +1,6 @@
-import { Schema } from 'effect'
 import { Model } from 'effect/schema'
 import { Visibility } from '../common.js'
-import { commonItemFields, TagId } from './common.js'
+import { commonItemFields, NonEmptyString, TagId } from './common.js'
 
 /**
  * `Tag` aggregate (FR-TASK-02 / FR-NOTE-03, docs/domain-model-draft.md §3.7).
@@ -18,11 +17,5 @@ import { commonItemFields, TagId } from './common.js'
 export class Tag extends Model.Class<Tag>('Tag')({
   ...commonItemFields('tag', TagId),
   visibility: Visibility,
-  name: Schema.String.check(Schema.isMinLength(1)),
+  name: NonEmptyString,
 }) {}
-
-export const TagCreate = Schema.Struct({
-  name: Schema.String.check(Schema.isMinLength(1)),
-  color: Schema.optional(Schema.NullOr(Schema.String)),
-})
-export type TagCreate = Schema.Schema.Type<typeof TagCreate>

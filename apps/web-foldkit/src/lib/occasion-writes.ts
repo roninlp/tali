@@ -17,6 +17,15 @@ import {
 import type { LocalStore, MirrorRecord } from '@tali/sync-client'
 
 import type { CalendarOccasionSource } from './calendar-data'
+import {
+  mirrorCreatedAt,
+  mirrorId,
+  mirrorMeta,
+  mirrorNullableString,
+  mirrorText,
+  mirrorTimeZone,
+  mirrorVisibility,
+} from './mirror-field'
 
 /**
  * The calendar's occasion lane and panel, ported from
@@ -62,47 +71,25 @@ export type OccasionDraft = typeof OccasionDraft.Type
 
 // PROJECTION
 
-const asNullableString = Schema.decodeUnknownOption(Schema.String)
-
-const asNonEmptyString = Schema.decodeUnknownOption(
-  Schema.String.check(Schema.isMinLength(1)),
-)
-
 const asNullableInt = Schema.decodeUnknownOption(Schema.Finite)
 
 export const toOccasionRow = (record: MirrorRecord): OccasionRow =>
   OccasionRow.make({
-    id: record.entityId,
-    title: Option.getOrElse(asNullableString(record.data.title), () => ''),
-    originDate: Option.getOrElse(asNullableString(record.data.originDate), () =>
-      record.updatedAt.slice(0, 10),
-    ),
-    timeZone: Option.getOrElse(
-      asNonEmptyString(record.data.timeZone),
-      () => 'UTC',
-    ),
+    id: mirrorId(record),
+    title: mirrorText(record, 'title'),
+    originDate: mirrorText(record, 'originDate', record.updatedAt.slice(0, 10)),
+    timeZone: mirrorTimeZone(record),
     yearly: record.data.yearly !== false,
     advanceReminderDays: Option.match(
       asNullableInt(record.data.advanceReminderDays),
       { onNone: () => null, onSome: value => Math.trunc(value) },
     ),
-    preparationTaskId: Option.getOrNull(
-      asNullableString(record.data.preparationTaskId),
-    ),
-    color: Option.getOrNull(asNullableString(record.data.color)),
-    ownerId: Option.getOrNull(asNullableString(record.data.ownerId)),
-    visibility:
-      record.data.visibility === 'private' ||
-      record.data.visibility === 'shared'
-        ? record.data.visibility
-        : defaultVisibilityFor('occasion'),
-    createdAt: Option.getOrElse(
-      asNullableString(record.data.createdAt),
-      () => record.updatedAt,
-    ),
-    updatedAt: record.updatedAt,
-    version: record.version,
-    hasSyncError: record.syncError !== undefined,
+    preparationTaskId: mirrorNullableString(record, 'preparationTaskId'),
+    color: mirrorNullableString(record, 'color'),
+    ownerId: mirrorNullableString(record, 'ownerId'),
+    visibility: mirrorVisibility(record, 'occasion'),
+    createdAt: mirrorCreatedAt(record),
+    ...mirrorMeta(record),
   })
 
 export const occasionRowsFromMirror = (

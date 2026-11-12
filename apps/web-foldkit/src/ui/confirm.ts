@@ -1,9 +1,11 @@
 import { Option } from 'effect'
+import { Update } from 'foldkit'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
 import { Dialog } from '@foldkit/ui'
 
 import { classNames } from './class-names'
+import { type ChildField, foldFieldChild, foldFieldChildStep } from './fold'
 
 /**
  * The shared confirm dialog, built on the Foldkit UI `Dialog` submodel.
@@ -30,6 +32,60 @@ const DEFAULT_SPEC: ConfirmSpec = {
   confirmLabel: 'تایید',
   cancelLabel: 'انصراف',
 }
+
+// UPDATE
+
+export type ConfirmDialogFolds<ParentModel, ParentMessage> = Readonly<{
+  fold: Update.Fold<ParentModel, ParentMessage, Dialog.Message>
+  openStep: Update.Step<ParentModel, ParentMessage>
+  closeStep: Update.Step<ParentModel, ParentMessage>
+}>
+
+/** The update half of a screen's confirm dialog: the `Dialog.update` fold
+ *  plus its `open` and `close` entry points. `whenClosed` clears whatever the
+ *  screen staged for the pending action, since the dialog reports `Closed` for
+ *  a cancel and for an accepted confirm alike. */
+export const confirmDialogFolds = <ParentModel, ParentMessage>(
+  config: Readonly<
+    ChildField<ParentModel, Dialog.Model> & {
+      toParentMessage: (message: Dialog.Message) => ParentMessage
+      whenClosed: (model: ParentModel) => ParentModel
+    }
+  >,
+): ConfirmDialogFolds<ParentModel, ParentMessage> => {
+  const foldOutMessage = Dialog.OutMessage.match<
+    Update.Step<ParentModel, ParentMessage>
+  >({
+    Opened: () => stepModel => ({ model: stepModel }),
+    Closed: () => stepModel => ({ model: config.whenClosed(stepModel) }),
+  })
+
+  return {
+    fold: foldFieldChild({
+      update: Dialog.update,
+      field: config.field,
+      setField: config.setField,
+      toParentMessage: config.toParentMessage,
+      foldOutMessage,
+    }),
+    openStep: foldFieldChildStep({
+      update: Dialog.open,
+      field: config.field,
+      setField: config.setField,
+      toParentMessage: config.toParentMessage,
+      foldOutMessage,
+    }),
+    closeStep: foldFieldChildStep({
+      update: Dialog.close,
+      field: config.field,
+      setField: config.setField,
+      toParentMessage: config.toParentMessage,
+      foldOutMessage,
+    }),
+  }
+}
+
+// VIEW
 
 const confirmPanelView = <Message>(
   render: Dialog.RenderInfo,

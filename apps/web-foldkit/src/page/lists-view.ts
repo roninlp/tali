@@ -15,7 +15,9 @@ import {
 import { listPath } from '../route'
 import { buttonView } from '../ui/button'
 import { confirmDialogView } from '../ui/confirm'
+import { emptyStateView, pendingBadgeView } from '../ui/feedback'
 import { formErrorView, inputControlView } from '../ui/field'
+import { offlineNoticeView, pageHeaderView, pendingCountView } from '../ui/page'
 import { toastStackView } from '../ui/toast'
 import { Message, confirmSpec } from './lists'
 import type { Model, ViewInputs } from './lists'
@@ -37,9 +39,6 @@ const ICON_CHOICE_CLASS =
 
 const DANGER_BUTTON_CLASS =
   'inline-flex min-h-10 flex-none items-center rounded-full border border-error/35 bg-error/8 px-3 py-0.5 text-[0.78rem] font-medium text-error transition-colors hover:bg-error/12 disabled:opacity-55 sm:min-h-8'
-
-const EMPTY_STATE_CLASS =
-  'm-0 rounded-2xl border border-dashed border-base-300 px-6 py-10 text-center text-sm leading-7 text-base-content/70'
 
 const listCardView = (
   entry: ListSummary,
@@ -113,18 +112,8 @@ const listCardView = (
       h.div(
         [h.Class('flex flex-wrap items-center justify-end gap-1.5')],
         [
-          isPending
-            ? h.span(
-                [h.Class('badge badge-warning badge-sm')],
-                ['در انتظار ارسال'],
-              )
-            : h.empty,
-          hasSyncError
-            ? h.span(
-                [h.Class('badge badge-error badge-sm')],
-                ['خطا در همگام‌سازی'],
-              )
-            : h.empty,
+          isPending ? pendingBadgeView('pending', h) : h.empty,
+          hasSyncError ? pendingBadgeView('error', h) : h.empty,
           h.button(
             [
               h.Type('button'),
@@ -329,11 +318,9 @@ const allListsSectionView = (
       ),
       Array.match(summaries, {
         onEmpty: () =>
-          h.p(
-            [h.Class(EMPTY_STATE_CLASS)],
-            [
-              'هنوز فهرستی نساخته‌اید. یک عنوان بگذارید و «ساختن فهرست» را بزنید.',
-            ],
+          emptyStateView(
+            'هنوز فهرستی نساخته‌اید. یک عنوان بگذارید و «ساختن فهرست» را بزنید.',
+            h,
           ),
         onNonEmpty: entries =>
           h.div(
@@ -366,43 +353,21 @@ export const listsIndexView = (
       h.div(
         [h.Class('page-wrap grid w-full max-w-5xl min-w-0 grid-cols-1 gap-4')],
         [
-          h.header(
-            [h.Class('grid gap-1.5')],
-            [
-              h.h1(
-                [h.Class('m-0 text-2xl font-bold tracking-tight sm:text-3xl')],
-                ['فهرست‌ها'],
-              ),
-              h.p(
-                [h.Class('m-0 text-sm leading-7 text-base-content/70')],
-                [
-                  'فهرست خرید، کارهای خانه یا هر چک‌لیست مشترک. هر تغییر اول روی همین دستگاه ذخیره می‌شود.',
-                ],
-              ),
-              inputs.isOnline
-                ? h.empty
-                : h.p(
-                    [h.Class('notice notice-warning m-0'), h.Role('status')],
-                    [
-                      'آفلاین هستید: ساخت فهرست و افزودن مورد کار می‌کند و بعداً همگام می‌شود.',
-                    ],
-                  ),
-              inputs.pending > 0
-                ? h.p(
-                    [
-                      h.Role('status'),
-                      h.AriaLive('polite'),
-                      h.Class('m-0 text-[0.78rem] text-base-content/70'),
-                    ],
-                    [
-                      `${localizeDigits(
-                        inputs.pending,
-                        digits,
-                      )} تغییر در صف همگام‌سازی است.`,
-                    ],
-                  )
-                : h.empty,
-            ],
+          pageHeaderView(
+            {
+              title: 'فهرست‌ها',
+              subtitle:
+                'فهرست خرید، کارهای خانه یا هر چک‌لیست مشترک. هر تغییر اول روی همین دستگاه ذخیره می‌شود.',
+              details: [
+                offlineNoticeView(
+                  inputs.isOnline,
+                  'آفلاین هستید: ساخت فهرست و افزودن مورد کار می‌کند و بعداً همگام می‌شود.',
+                  h,
+                ),
+                pendingCountView(inputs.pending, digits, h),
+              ],
+            },
+            h,
           ),
           createSectionView(model, h),
           allListsSectionView(inputs, h),

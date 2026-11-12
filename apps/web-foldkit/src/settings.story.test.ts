@@ -1,10 +1,11 @@
-import { Effect, Option, Schema } from 'effect'
+import { Effect, Option } from 'effect'
 import { Command, given, message, model, story } from 'foldkit/story'
 import { modifyFields } from 'foldkit/struct'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import type { AuthFailure } from './lib/auth-api'
 import * as Settings from './settings'
+import { jsonResponse, stubFetch } from './test-http'
 
 const EMAIL = 'owner@example.com'
 
@@ -29,12 +30,6 @@ const invalidCredentials: AuthFailure = {
   code: 'InvalidCredentials',
   retryable: false,
 }
-
-const jsonResponse = (status: number, body: Schema.Json): Response =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  })
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -214,12 +209,7 @@ describe('password submission', () => {
 
 describe('password command', () => {
   test('derives both login keys in the browser and posts no password', async () => {
-    const fetchMock = vi.fn(
-      async (_input: RequestInfo | URL, _init?: RequestInit) =>
-        jsonResponse(200, { ok: true }),
-    )
-
-    vi.stubGlobal('fetch', fetchMock)
+    const fetchMock = stubFetch(jsonResponse(200, { ok: true }))
 
     const result = await Effect.runPromise(
       Settings.ChangePassword({

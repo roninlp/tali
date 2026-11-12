@@ -1,8 +1,5 @@
-import { readFileSync, readdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { Effect, Layer, String as Str } from 'effect'
+import { Effect, Layer } from 'effect'
 import { D1Client } from '@effect/sql-d1'
 import {
   splitEventSeries,
@@ -20,8 +17,9 @@ import {
   type EventServiceApi,
   type EventViewer,
 } from '../src/event-service.js'
-import { SyncService, SyncServiceLive } from '../src/sync-service.js'
-import { FakeD1 } from './fake-d1.js'
+import { SyncServiceLive } from '../src/sync-service.js'
+import { NOW, TZ, makeViewer } from './fixtures/identities.js'
+import { makeServiceHarness, type HarnessEnv } from './harness.js'
 
 /**
  * Ticket #58 at the service seam: the real service, repository and sync SQL on
@@ -33,27 +31,7 @@ import { FakeD1 } from './fake-d1.js'
  * series — all of it on the #34 one-batch version/change_feed path.
  */
 
-const MIGRATIONS_DIR = new URL(
-  '../../../packages/sql/migrations/',
-  import.meta.url,
-)
-
-const migrationFiles = (): ReadonlyArray<string> =>
-  readdirSync(fileURLToPath(MIGRATIONS_DIR))
-    .filter(file => file.endsWith('.sql'))
-    .sort()
-
-const USER_A = 'user-a' as UserId
-const HOUSEHOLD = 'household-a' as HouseholdId
-const TZ = 'Asia/Tehran'
-const NOW = '2026-10-20T09:30:00.000Z'
-
-const viewer = (overrides: Partial<EventViewer> = {}): EventViewer => ({
-  userId: USER_A,
-  householdId: HOUSEHOLD,
-  timeZone: TZ,
-  ...overrides,
-})
+const viewer = makeViewer<EventViewer>({ timeZone: TZ })
 
 /** Wednesdays at 10:00 Tehran, ten occurrences from 2026-10-21. */
 const weekly: RecurrenceRule = {
@@ -69,64 +47,38 @@ const timed = {
   end: '2026-10-21T07:30:00.000Z',
 }
 
+// The D1 client is part of the output, so a test can drive a repo batch.
+const serviceLayer = ({ d1 }: HarnessEnv) =>
+  Layer.merge(
+    Layer.mergeAll(EventServiceLive, SyncServiceLive, EventRepoLive).pipe(
+      Layer.provide(d1),
+    ),
+    d1,
+  )
+
 const makeHarness = () => {
-  const db = new DatabaseSync(':memory:')
-  for (const file of migrationFiles()) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), 'utf8'))
-  }
-
-  const fake = new FakeD1(db)
-  const d1 = D1Client.layer({
-    db: fake.asD1Database(),
-    transformQueryNames: Str.camelToSnake,
-    transformResultNames: Str.snakeToCamel,
-  })
-  const services = Layer.mergeAll(
-    EventServiceLive,
-    SyncServiceLive,
-    EventRepoLive,
-  ).pipe(Layer.provide(d1))
-  // Expose the D1 client as well, so a test can drive a repo statement batch.
-  const layer = Layer.merge(services, d1)
-
-  const run = <A, E>(
-    effect: Effect.Effect<
-      A,
-      E,
-      EventService | SyncService | EventRepo | D1Client.D1Client
-    >,
-  ): Promise<A> => Effect.runPromise(Effect.provide(effect, layer))
-
-  const svc = <A, E>(
-    f: (service: EventServiceApi) => Effect.Effect<A, E, never>,
-  ): Promise<A> =>
-    run(
-      Effect.gen(function* () {
-        const service = yield* EventService
-        return yield* f(service)
-      }),
-    )
+  const harness = makeServiceHarness(serviceLayer, EventService)
 
   const feed = (id: string): ReadonlyArray<Record<string, unknown>> =>
-    db
+    harness.db
       .prepare(
         'SELECT entity_type AS entityType, entity_id AS entityId, op, version FROM change_feed WHERE entity_id = ? ORDER BY seq',
       )
       .all(id) as ReadonlyArray<Record<string, unknown>>
 
   const ledger = (): ReadonlyArray<Record<string, unknown>> =>
-    db
+    harness.db
       .prepare(
         'SELECT client_mutation_id AS clientMutationId, entity_type AS entityType, entity_id AS entityId FROM applied_mutations ORDER BY client_mutation_id',
       )
       .all() as ReadonlyArray<Record<string, unknown>>
 
   const rowOf = (id: string): Record<string, unknown> | undefined =>
-    db.prepare('SELECT * FROM events WHERE id = ?').get(id) as
+    harness.db.prepare('SELECT * FROM events WHERE id = ?').get(id) as
       | Record<string, unknown>
       | undefined
 
-  return { db, fake, run, svc, feed, ledger, rowOf }
+  return { ...harness, feed, ledger, rowOf }
 }
 
 type Harness = ReturnType<typeof makeHarness>

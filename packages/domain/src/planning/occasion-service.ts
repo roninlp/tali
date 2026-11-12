@@ -1,6 +1,17 @@
 import { Schema } from 'effect'
 import { Visibility } from '../common.js'
-import { LocalDate, OccasionId, TimeZone } from './common.js'
+import {
+  LocalDate,
+  OccasionId,
+  TimeZone,
+  conflictFields,
+  createEnvelope,
+  forbiddenFields,
+  mutationEnvelope,
+  notFoundFields,
+  updateEnvelope,
+  validationFields,
+} from './common.js'
 import { Occasion } from './occasion.js'
 import {
   OccasionAdvanceReminder,
@@ -27,35 +38,25 @@ import { Task } from './task.js'
 /** The occasion does not exist, or is not visible to this viewer. */
 export class OccasionNotFound extends Schema.TaggedError<OccasionNotFound>()(
   'OccasionNotFound',
-  { id: OccasionId },
+  notFoundFields(OccasionId),
 ) {}
 
 /** The row exists but this viewer may not read/write it. */
 export class OccasionForbidden extends Schema.TaggedError<OccasionForbidden>()(
   'OccasionForbidden',
-  {
-    id: Schema.NullOr(Schema.String),
-    reason: Schema.Literals(['private', 'household', 'noHousehold']),
-  },
+  forbiddenFields,
 ) {}
 
 /** Field-level validation (empty title, impossible date, bad offset, …). */
 export class OccasionValidationError extends Schema.TaggedError<OccasionValidationError>()(
   'OccasionValidationError',
-  {
-    issues: Schema.Array(
-      Schema.Struct({
-        field: Schema.String,
-        message: Schema.String,
-      }),
-    ),
-  },
+  validationFields,
 ) {}
 
 /** A concurrent writer won the version CAS; the caller may retry. */
 export class OccasionConflict extends Schema.TaggedError<OccasionConflict>()(
   'OccasionConflict',
-  { id: Schema.String },
+  conflictFields,
 ) {}
 
 export const OccasionServiceError = Schema.Union([
@@ -83,10 +84,7 @@ const occasionFields = {
   color: Schema.NullOr(Schema.String),
 }
 
-export const OccasionCreateInput = Schema.Struct({
-  /** A client may mint the UUID v7 offline; the server mints one otherwise. */
-  id: Schema.optional(OccasionId),
-  clientMutationId: Schema.String,
+export const OccasionCreateInput = createEnvelope(OccasionId, {
   title: occasionFields.title,
   originDate: occasionFields.originDate,
   timeZone: Schema.optional(occasionFields.timeZone),
@@ -109,19 +107,10 @@ export const OccasionPatch = Schema.Struct({
 })
 export type OccasionPatch = Schema.Schema.Type<typeof OccasionPatch>
 
-export const OccasionUpdateInput = Schema.Struct({
-  id: OccasionId,
-  clientMutationId: Schema.String,
-  /** Informational; the update re-reads and retries on a lost CAS. */
-  baseVersion: Schema.optional(Schema.Int),
-  patch: OccasionPatch,
-})
+export const OccasionUpdateInput = updateEnvelope(OccasionId, OccasionPatch)
 export type OccasionUpdateInput = Schema.Schema.Type<typeof OccasionUpdateInput>
 
-export const OccasionMutationInput = Schema.Struct({
-  id: OccasionId,
-  clientMutationId: Schema.String,
-})
+export const OccasionMutationInput = mutationEnvelope(OccasionId)
 export type OccasionMutationInput = Schema.Schema.Type<
   typeof OccasionMutationInput
 >

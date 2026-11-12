@@ -1,17 +1,9 @@
-import { Effect, Option, Schema } from 'effect'
-import {
-  HttpRouter,
-  HttpServerError,
-  HttpServerRequest,
-  HttpServerResponse,
-} from 'effect/http'
-import {
-  SyncPushRequest,
-  Unauthorized,
-  type SessionContext,
-  type SyncErrorCode,
-} from '@tali/domain'
+import { Effect } from 'effect'
+import { HttpRouter, HttpServerRequest } from 'effect/http'
+import { SyncPushRequest } from '@tali/domain'
 import { AuthService } from './auth-service.js'
+import { fail, json, requestUrl, unexpectedFailure } from './http-envelope.js'
+import { sessionResolver } from './principal.js'
 import {
   SyncContended,
   SyncEntityForbidden,
@@ -31,45 +23,6 @@ import {
  * `/sync/pull` answers `resetRequired: true`, and the client re-bootstraps.
  */
 
-const SESSION_COOKIE = 'tali_session'
-
-const json = (
-  status: number,
-  body: unknown,
-): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
-  HttpServerResponse.json(body, { status }).pipe(
-    Effect.map(HttpServerResponse.setHeader('cache-control', 'no-store')),
-    Effect.orDie,
-  )
-
-const fail = (
-  status: number,
-  code: SyncErrorCode,
-  message: string,
-  retryable = false,
-  details: Record<string, unknown> = {},
-): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
-  json(status, { error: { code, message, retryable, details } })
-
-const unexpectedFailure = (
-  error: unknown,
-): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
-  Schema.isSchemaError(error) || HttpServerError.isHttpServerError(error)
-    ? fail(400, 'BadRequest', 'Malformed request')
-    : fail(500, 'InternalError', 'Unexpected server error', true)
-
-/**
- * Effect v4 keeps `HttpServerRequest.url` path-only (`/sync/pull?cursor=0`);
- * the absolute URL is derived from the `host`/`x-forwarded-proto` headers.
- * `new URL(request.url)` therefore throws on every sync request — ask the
- * request for its absolute URL instead.
- */
-const requestUrl = (request: HttpServerRequest.HttpServerRequest): URL =>
-  Option.getOrElse(
-    HttpServerRequest.toURL(request),
-    () => new URL(request.url, 'http://localhost'),
-  )
-
 /** Cursor/limit are query params; the wire schema validates the body, not the URL. */
 const queryInt = (
   url: URL,
@@ -87,25 +40,14 @@ export const SyncRoutes = HttpRouter.use(router =>
   Effect.gen(function* () {
     const auth = yield* AuthService
     const sync = yield* SyncService
-
-    /** Resolve the session cookie and the household the feed is scoped to. */
-    const principal = (
-      request: HttpServerRequest.HttpServerRequest,
-    ): Effect.Effect<SessionContext, Unauthorized> =>
-      Effect.gen(function* () {
-        const token = request.cookies[SESSION_COOKIE]
-        if (token === undefined) {
-          return yield* Effect.fail(new Unauthorized())
-        }
-        return yield* auth.me(token)
-      })
+    const session = sessionResolver(auth)
 
     yield* router.add(
       'GET',
       '/sync/pull',
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
-        const context = yield* principal(request)
+        const context = yield* session(request)
         if (context.householdId === null) {
           return yield* fail(
             409,
@@ -135,7 +77,7 @@ export const SyncRoutes = HttpRouter.use(router =>
           {
             Unauthorized: () => fail(401, 'Unauthorized', 'No active session'),
           },
-          unexpectedFailure,
+          unexpectedFailure(),
         ),
       ),
     )
@@ -145,7 +87,7 @@ export const SyncRoutes = HttpRouter.use(router =>
       '/sync/bootstrap',
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
-        const context = yield* principal(request)
+        const context = yield* session(request)
         if (context.householdId === null) {
           return yield* fail(
             409,
@@ -175,7 +117,7 @@ export const SyncRoutes = HttpRouter.use(router =>
           {
             Unauthorized: () => fail(401, 'Unauthorized', 'No active session'),
           },
-          unexpectedFailure,
+          unexpectedFailure(),
         ),
       ),
     )
@@ -185,7 +127,7 @@ export const SyncRoutes = HttpRouter.use(router =>
       '/sync/push',
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
-        const context = yield* principal(request)
+        const context = yield* session(request)
         if (context.householdId === null) {
           return yield* fail(
             409,
@@ -250,7 +192,7 @@ export const SyncRoutes = HttpRouter.use(router =>
                 },
               ),
           },
-          unexpectedFailure,
+          unexpectedFailure(),
         ),
       ),
     )

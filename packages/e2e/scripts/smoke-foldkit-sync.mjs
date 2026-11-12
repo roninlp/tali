@@ -1,4 +1,14 @@
-import { expect, chromium } from '@playwright/test'
+import { expect } from '@playwright/test'
+import {
+  BASE,
+  PASSWORD,
+  isExpectedNetworkNoise,
+  launchApp,
+  log,
+  preflight,
+  register,
+  waitForHeading,
+} from './smoke-support.mjs'
 
 /**
  * The P2.4 sync smoke check against the Foldkit app on :3001.
@@ -15,70 +25,19 @@ import { expect, chromium } from '@playwright/test'
  * - a second signed-in device pulls both rows.
  */
 
-const BASE = 'http://localhost:3001'
-const password = 'correct horse battery'
 const stamp = Date.now()
 const email = `sync+${stamp}@example.com`
 const onlineTitle = `نان ${stamp}`
 const offlineTitle = `شیر ${stamp}`
 
-const preflight = async () => {
-  let response
-  try {
-    response = await fetch(`${BASE}/health`)
-  } catch {
-    throw new Error(
-      `The Foldkit app is not reachable on ${BASE}. Start the local stack with \`pnpm dev\`.`,
-    )
-  }
+const { browser, context, page, consoleErrors, pageErrors, close } =
+  await launchApp(isExpectedNetworkNoise)
 
-  if (!response.ok) {
-    throw new Error(
-      `The api Worker is not reachable through ${BASE}/health (HTTP ${response.status}). Start the local stack with \`pnpm dev\`.`,
-    )
-  }
-}
-
-const browser = await chromium.launch({ headless: true })
-const context = await browser.newContext({
-  locale: 'fa-IR',
-  timezoneId: 'Asia/Tehran',
-  viewport: { width: 1280, height: 800 },
-})
-const page = await context.newPage()
-const consoleErrors = []
-const pageErrors = []
-
-const isExpectedNetworkNoise = message =>
-  message.includes('401 (Unauthorized)') ||
-  message.includes('ERR_CONNECTION_REFUSED')
-
-page.on('console', message => {
-  if (message.type() === 'error' && !isExpectedNetworkNoise(message.text())) {
-    consoleErrors.push(message.text())
-  }
-})
-page.on('pageerror', error => {
-  pageErrors.push(error.message)
-})
-
-const log = message => console.log(`PASS ${message}`)
 const status = () => page.locator("header span[role='status']")
 const taskList = () => page.locator('.today-list')
 const quickAdd = () => page.getByLabel('کار تازه برای امروز')
-const waitForHeading = name =>
-  page.getByRole('heading', { name, exact: true }).waitFor({ timeout: 15_000 })
 const waitForStatus = async text => {
   await status().filter({ hasText: text }).waitFor({ timeout: 30_000 })
-}
-
-const register = async (displayName, accountEmail) => {
-  await page.goto(`${BASE}/register`)
-  await waitForHeading('ساخت حساب')
-  await page.getByLabel('نام نمایشی').fill(displayName)
-  await page.getByLabel('ایمیل').fill(accountEmail)
-  await page.getByLabel('گذرواژه').fill(password)
-  await page.getByRole('button', { name: 'ساخت حساب' }).click()
 }
 
 const addTask = async title => {
@@ -194,7 +153,7 @@ try {
   try {
     await secondPage.goto(`${BASE}/login`)
     await secondPage.getByLabel('ایمیل').fill(email)
-    await secondPage.getByLabel('گذرواژه').fill(password)
+    await secondPage.getByLabel('گذرواژه').fill(PASSWORD)
     await secondPage.getByRole('button', { name: 'ورود' }).click()
     await secondPage.waitForURL(`${BASE}/today`, { timeout: 20_000 })
     await secondPage
@@ -231,5 +190,5 @@ try {
 
   console.log('SYNC SMOKE PASS')
 } finally {
-  await browser.close()
+  await close()
 }

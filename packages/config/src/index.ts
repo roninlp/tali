@@ -1,21 +1,23 @@
-import { Config } from 'effect'
+/**
+ * Product-wide config shared by the Worker and the Alchemy deploy stack.
+ *
+ * One declaration per value means the API and the deploy stack cannot drift
+ * apart on an endpoint, a model id, or a cron schedule.
+ */
 
 /**
- * Typed environment config (Effect `Config`).
+ * Capture model defaults (ticket #101; ADR-0012 §7).
  *
- * On Cloudflare Workers these are resolved from bindings/vars at deploy time;
- * Alchemy binds `Config.Redacted(...)` as `secret_text`. Locally they fall back
- * to process env + defaults.
+ * The base URL is the **Go** gateway root, not the pay-as-you-go `/inference`
+ * root. The key is a Workers Secret supplied out of band; these three are
+ * ordinary values, so the Worker and the deploy stack cannot disagree about
+ * the endpoint, model, or User-Agent.
  */
-export const AppConfig = Config.all({
-  apiBaseUrl: Config.String('API_BASE_URL').pipe(
-    Config.withDefault('http://localhost:8787'),
-  ),
-  d1DatabaseName: Config.String('D1_DATABASE_NAME').pipe(
-    Config.withDefault('tali-db'),
-  ),
-  logLevel: Config.String('LOG_LEVEL').pipe(Config.withDefault('info')),
-})
+export const DEFAULT_CAPTURE_BASE_URL =
+  'https://opencode.ai/inference/go/openai/v1'
+export const DEFAULT_CAPTURE_MODEL = 'deepseek-v4.1-flash'
+/** A non-generic UA; the gateway rejects the SDK default. */
+export const DEFAULT_CAPTURE_USER_AGENT = 'tali-capture/0.1'
 
 /**
  * The Worker's cron expressions, shared by the Alchemy stack and the Worker's

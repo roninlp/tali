@@ -53,7 +53,11 @@ import {
   TaskRepo,
   TaskRepoLive,
 } from '@tali/sql'
+import { readScoped } from './row-scope.js'
+import { casUpdate, MAX_CAS_ATTEMPTS } from './cas.js'
+import { makeSyncKit } from './sync-write.js'
 import { ReminderService, ReminderServiceLive } from './reminder-service.js'
+import { unchangedExcept } from './patch-compare.js'
 
 /**
  * `OccasionService` — annual important dates (ticket #59; FR-CAL-02).
@@ -88,9 +92,6 @@ import { ReminderService, ReminderServiceLive } from './reminder-service.js'
  * can poll this read (or expand the same pure builder in its cron sweep) once it
  * lands, with no schema change here.
  */
-
-/** How many CAS retries a service mutation makes before reporting contention. */
-const MAX_CAS_ATTEMPTS = 3
 
 /**
  * Creates per sweep tick (#61). A household has a handful of occasions and each
@@ -240,7 +241,7 @@ const validLocalDate = (value: string): boolean => {
 const decodeTimeZone = (
   timeZone: string,
 ): Effect.Effect<string, OccasionValidationError> => {
-  const decoded = Schema.decodeUnknownOption(TimeZone)(timeZone)
+  const decoded = Schema.decodeOption(TimeZone)(timeZone)
   return Option.isNone(decoded)
     ? invalid('timeZone', 'the time zone must be a valid IANA identifier')
     : Effect.succeed(decoded.value)
@@ -257,152 +258,32 @@ export class OccasionService extends Context.Service<OccasionService>()(
       const reminderRepo = yield* ReminderRepo
       const sql = yield* SqlClient.SqlClient
 
-      const definition = (entityType: 'occasion' | 'task') => {
-        const def = sync.definition(entityType)
-        if (def === undefined) {
-          throw new Error(`sync entity type is not registered: ${entityType}`)
-        }
-        return def
-      }
+      const kit = makeSyncKit<OccasionServiceError>({ sync, invalid })
 
       /** The registry's strict shape, shared with the sync push. */
-      const occasionState = (occasion: Occasion): SyncEntityState => ({
-        entityType: 'occasion',
-        entityId: occasion.id,
-        householdId: occasion.householdId,
-        ownerId: occasion.ownerId,
-        visibility: occasion.visibility,
-        version: occasion.version,
-        updatedAt: occasion.updatedAt,
-        deletedAt: occasion.deletedAt,
-        data: definition('occasion').validate(
-          { ...occasion },
-          {
-            version: occasion.version,
-            updatedAt: occasion.updatedAt,
-            deletedAt: occasion.deletedAt,
-          },
-        ),
-      })
+      const occasionState = (occasion: Occasion): SyncEntityState =>
+        kit.stateOf('occasion', occasion)
 
       const appliedMutation = (
         viewer: OccasionViewer,
         clientMutationId: string,
-      ) =>
-        Effect.gen(function* () {
-          const applied = yield* sync
-            .findApplied({
-              householdId: viewer.householdId,
-              clientMutationIds: [clientMutationId],
-            })
-            .pipe(Effect.orDie)
-          return Option.fromUndefinedOr(applied.get(clientMutationId))
-        })
-
-      const reusedMutationId = (
-        row: { readonly entityType: string; readonly entityId: string },
-        expected: { readonly entityType: string; readonly id?: string },
-      ): boolean =>
-        row.entityType !== expected.entityType ||
-        (expected.id !== undefined && row.entityId !== expected.id)
-
-      const reusedMutationIdError = (_id: string) =>
-        invalid(
-          'clientMutationId',
-          'this mutation id was already applied to a different change',
-        )
-
-      /**
-       * One occasion mutation: the CAS entity write, its gated feed append and
-       * its gated ledger row, in one D1 batch. Returns whether the ledger recorded
-       * the mutation, i.e. the CAS won.
-       */
-      const commitOccasion = (input: {
-        readonly viewer: OccasionViewer
-        readonly state: SyncEntityState
-        readonly expectedVersion: number | null
-        readonly clientMutationId: string
-        readonly now: string
-        readonly op?: 'upsert' | 'delete'
-      }): Effect.Effect<boolean, OccasionServiceError> =>
-        Effect.gen(function* () {
-          const prior = yield* appliedMutation(
-            input.viewer,
-            input.clientMutationId,
-          )
-          if (Option.isSome(prior)) {
-            if (
-              reusedMutationId(prior.value, {
-                entityType: 'occasion',
-                id: input.state.entityId,
-              })
-            ) {
-              return yield* reusedMutationIdError(input.state.entityId)
-            }
-            return true
-          }
-
-          const statements = [
-            sync.writeEntity({
-              state: input.state,
-              expectedVersion: input.expectedVersion,
-            }),
-            sync.appendFeed({
-              householdId: input.viewer.householdId,
-              entityType: 'occasion',
-              entityId: input.state.entityId,
-              op: input.op ?? 'upsert',
-              version: input.state.version,
-              updatedAt: input.state.updatedAt,
-              ownerId: input.state.ownerId,
-              visibility: input.state.visibility,
-            }),
-            sync.recordApplied({
-              clientMutationId: input.clientMutationId,
-              householdId: input.viewer.householdId,
-              entityType: 'occasion',
-              entityId: input.state.entityId,
-              version: input.state.version,
-              createdAt: input.now,
-            }),
-          ]
-          yield* sync.commit(statements).pipe(Effect.orDie)
-
-          const applied = yield* appliedMutation(
-            input.viewer,
-            input.clientMutationId,
-          )
-          return Option.isSome(applied)
-        })
+      ) => kit.appliedMutation(viewer.householdId, clientMutationId)
 
       const readOccasion = (
         viewer: OccasionViewer,
         id: OccasionId,
         includeTrashed: boolean,
       ): Effect.Effect<Occasion, OccasionServiceError> =>
-        Effect.gen(function* () {
-          const found = yield* occasions.findById(id).pipe(Effect.orDie)
-          if (Option.isNone(found)) {
-            return yield* Effect.fail(new OccasionNotFound({ id }))
-          }
-          const occasion = found.value
-          if (occasion.householdId !== viewer.householdId) {
-            return yield* Effect.fail(
-              new OccasionForbidden({ id, reason: 'household' }),
-            )
-          }
-          if (
-            occasion.visibility === 'private' &&
-            occasion.ownerId !== viewer.userId
-          ) {
-            return yield* Effect.fail(
-              new OccasionForbidden({ id, reason: 'private' }),
-            )
-          }
-          if (!includeTrashed && occasion.deletedAt !== null) {
-            return yield* Effect.fail(new OccasionNotFound({ id }))
-          }
-          return occasion
+        readScoped({
+          viewer,
+          id,
+          find: occasions.findById,
+          includeTrashed,
+          trash: 'last',
+          onViolation: violation =>
+            violation === 'notFound' || violation === 'trashed'
+              ? new OccasionNotFound({ id })
+              : new OccasionForbidden({ id, reason: violation }),
         })
 
       /** Today in the viewer's zone, as a local date. */
@@ -455,12 +336,12 @@ export class OccasionService extends Context.Service<OccasionService>()(
           )
           if (Option.isSome(replayed)) {
             if (
-              reusedMutationId(replayed.value, {
+              kit.reusedMutationId(replayed.value, {
                 entityType: 'occasion',
                 id: input.id,
               })
             ) {
-              return yield* reusedMutationIdError(
+              return yield* kit.reusedMutationIdError(
                 input.id ?? replayed.value.entityId,
               )
             }
@@ -503,15 +384,15 @@ export class OccasionService extends Context.Service<OccasionService>()(
             deletedAt: null,
           })
 
-          const applied = yield* commitOccasion({
-            viewer,
+          const applied = yield* kit.commitOne({
+            householdId: viewer.householdId,
             state: occasionState(occasion),
             expectedVersion: null,
             clientMutationId: input.clientMutationId,
             now,
           })
           if (!applied) {
-            return yield* Effect.fail(new OccasionConflict({ id: occasion.id }))
+            return yield* new OccasionConflict({ id: occasion.id })
           }
           return occasion
         })
@@ -583,16 +464,6 @@ export class OccasionService extends Context.Service<OccasionService>()(
           })
         })
 
-      const sameOccasion = (a: Occasion, b: Occasion): boolean =>
-        a.title === b.title &&
-        a.originDate === b.originDate &&
-        a.timeZone === b.timeZone &&
-        a.yearly === b.yearly &&
-        a.advanceReminderDays === b.advanceReminderDays &&
-        a.color === b.color &&
-        a.visibility === b.visibility &&
-        a.preparationTaskId === b.preparationTaskId
-
       const update = (
         viewer: OccasionViewer,
         input: Schema.Schema.Type<typeof OccasionUpdateInput>,
@@ -605,30 +476,41 @@ export class OccasionService extends Context.Service<OccasionService>()(
           )
           if (Option.isSome(replayed)) {
             if (
-              reusedMutationId(replayed.value, {
+              kit.reusedMutationId(replayed.value, {
                 entityType: 'occasion',
                 id: input.id,
               })
             ) {
-              return yield* reusedMutationIdError(input.id)
+              return yield* kit.reusedMutationIdError(input.id)
             }
             return yield* readOccasion(viewer, input.id, true)
           }
 
-          for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-            const current = yield* readOccasion(viewer, input.id, false)
-            const next = yield* patchOccasion(viewer, current, input.patch, now)
-            if (sameOccasion(current, next)) return current
-            const applied = yield* commitOccasion({
-              viewer,
-              state: occasionState(next),
-              expectedVersion: current.version,
-              clientMutationId: input.clientMutationId,
-              now,
-            })
-            if (applied) return next
-          }
-          return yield* Effect.fail(new OccasionConflict({ id: input.id }))
+          return yield* casUpdate({
+            read: readOccasion(viewer, input.id, false),
+            plan: current =>
+              Effect.gen(function* () {
+                const next = yield* patchOccasion(
+                  viewer,
+                  current,
+                  input.patch,
+                  now,
+                )
+                // `patchOccasion` writes patch fields only, so the patch is
+                // the complete no-op test. (`preparationTaskId` is not a patch
+                // field and the plan never touches it.)
+                return unchangedExcept(current, next, input.patch) ? null : next
+              }),
+            write: (current, next) =>
+              kit.commitOne({
+                householdId: viewer.householdId,
+                state: occasionState(next),
+                expectedVersion: current.version,
+                clientMutationId: input.clientMutationId,
+                now,
+              }),
+            conflict: () => new OccasionConflict({ id: input.id }),
+          })
         })
 
       const deleteOccasion = (
@@ -643,35 +525,38 @@ export class OccasionService extends Context.Service<OccasionService>()(
           )
           if (Option.isSome(replayed)) {
             if (
-              reusedMutationId(replayed.value, {
+              kit.reusedMutationId(replayed.value, {
                 entityType: 'occasion',
                 id: input.id,
               })
             ) {
-              return yield* reusedMutationIdError(input.id)
+              return yield* kit.reusedMutationIdError(input.id)
             }
             return yield* readOccasion(viewer, input.id, true)
           }
 
-          for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-            const current = yield* readOccasion(viewer, input.id, false)
-            const next = new Occasion({
-              ...current,
-              deletedAt: now,
-              version: current.version + 1,
-              updatedAt: now,
-            })
-            const applied = yield* commitOccasion({
-              viewer,
-              state: occasionState(next),
-              expectedVersion: current.version,
-              clientMutationId: input.clientMutationId,
-              now,
-              op: 'delete',
-            })
-            if (applied) return next
-          }
-          return yield* Effect.fail(new OccasionConflict({ id: input.id }))
+          return yield* casUpdate({
+            read: readOccasion(viewer, input.id, false),
+            plan: current =>
+              Effect.succeed(
+                new Occasion({
+                  ...current,
+                  deletedAt: now,
+                  version: current.version + 1,
+                  updatedAt: now,
+                }),
+              ),
+            write: (current, next) =>
+              kit.commitOne({
+                householdId: viewer.householdId,
+                state: occasionState(next),
+                expectedVersion: current.version,
+                clientMutationId: input.clientMutationId,
+                now,
+                op: 'delete',
+              }),
+            conflict: () => new OccasionConflict({ id: input.id }),
+          })
         })
 
       const list = (
@@ -968,8 +853,8 @@ export class OccasionService extends Context.Service<OccasionService>()(
         Effect.gen(function* () {
           const row = yield* appliedMutation(viewer, input.clientMutationId)
           if (Option.isNone(row)) return Option.none()
-          if (reusedMutationId(row.value, { entityType: 'task' })) {
-            return yield* reusedMutationIdError(row.value.entityId)
+          if (kit.reusedMutationId(row.value, { entityType: 'task' })) {
+            return yield* kit.reusedMutationIdError(row.value.entityId)
           }
           const occasion = yield* readOccasion(viewer, input.id, true)
           const taskId = (occasion.preparationTaskId ??
@@ -1086,8 +971,8 @@ export class OccasionService extends Context.Service<OccasionService>()(
             // refuse rather than replacing a recorded mutation with a new row.
             const prior = yield* appliedMutation(viewer, input.clientMutationId)
             if (Option.isSome(prior)) {
-              if (reusedMutationId(prior.value, { entityType: 'task' })) {
-                return yield* reusedMutationIdError(prior.value.entityId)
+              if (kit.reusedMutationId(prior.value, { entityType: 'task' })) {
+                return yield* kit.reusedMutationIdError(prior.value.entityId)
               }
               return yield* invalid(
                 'clientMutationId',
@@ -1095,65 +980,44 @@ export class OccasionService extends Context.Service<OccasionService>()(
               )
             }
 
-            const statements = [
-              // 1. The occasion CAS that links the new task.
-              sync.writeEntity({
-                state: occasionState(next),
-                expectedVersion: current.version,
-              }),
-              sync.appendFeed({
-                householdId: viewer.householdId,
-                entityType: 'occasion',
-                entityId: next.id,
-                op: 'upsert',
-                version: next.version,
-                updatedAt: next.updatedAt,
-                ownerId: next.ownerId,
-                visibility: next.visibility,
-              }),
-              // 2. The task insert, gated on the occasion reaching exactly the
-              //    version/link this batch wrote. A lost CAS inserts nothing.
-              tasks.insertStatementGated(
-                task,
-                sql`EXISTS (
+            // One batch: the occasion CAS that links the new task, then the
+            // task insert gated on the occasion reaching exactly the
+            // version/link this batch wrote. A lost CAS inserts nothing. The
+            // mutation's ledger row names the task, not the linking occasion.
+            const applied = yield* kit.commitEntries({
+              householdId: viewer.householdId,
+              now,
+              entries: [
+                {
+                  state: occasionState(next),
+                  expectedVersion: current.version,
+                  clientMutationId: `${input.clientMutationId}:occasion`,
+                  ledger: 'none',
+                },
+                {
+                  state: kit.stateOf('task', task),
+                  expectedVersion: null,
+                  clientMutationId: input.clientMutationId,
+                  insert: () =>
+                    tasks.insertStatementGated(
+                      task,
+                      sql`EXISTS (
                 SELECT 1 FROM occasions
                 WHERE id = ${next.id}
                   AND version = ${next.version}
                   AND preparation_task_id = ${task.id}
                   AND deleted_at IS NULL
               )`,
-              ),
-              sync.appendFeed({
-                householdId: viewer.householdId,
-                entityType: 'task',
-                entityId: task.id,
-                op: 'upsert',
-                version: task.version,
-                updatedAt: task.updatedAt,
-                ownerId: task.ownerId,
-                visibility: task.visibility,
-              }),
-              sync.recordApplied({
-                clientMutationId: input.clientMutationId,
-                householdId: viewer.householdId,
-                entityType: 'task',
-                entityId: task.id,
-                version: task.version,
-                createdAt: now,
-              }),
-            ]
-            yield* sync.commit(statements).pipe(Effect.orDie)
-
-            const applied = yield* appliedMutation(
-              viewer,
-              input.clientMutationId,
-            )
-            if (Option.isSome(applied)) {
+                    ),
+                },
+              ],
+            })
+            if (applied.has(input.clientMutationId)) {
               return { occasion: next, task, created: true }
             }
             // The CAS lost: re-read and try again with a fresh occurrence/task.
           }
-          return yield* Effect.fail(new OccasionConflict({ id: input.id }))
+          return yield* new OccasionConflict({ id: input.id })
         })
 
       return {

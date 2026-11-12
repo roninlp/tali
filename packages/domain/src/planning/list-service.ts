@@ -5,7 +5,15 @@ import {
   ListId,
   ListItemId,
   ListItemSort,
+  NonEmptyString,
   TagIds,
+  conflictFields,
+  createEnvelope,
+  forbiddenFields,
+  mutationEnvelope,
+  notFoundFields,
+  updateEnvelope,
+  validationFields,
 } from './common.js'
 import { List } from './list.js'
 import { ListItem as PlanningListItem } from './list-item.js'
@@ -27,9 +35,7 @@ import { ListItem as PlanningListItem } from './list-item.js'
 
 export class ListNotFound extends Schema.TaggedError<ListNotFound>()(
   'ListNotFound',
-  {
-    id: Schema.String,
-  },
+  notFoundFields(Schema.String),
 ) {}
 
 /**
@@ -38,39 +44,25 @@ export class ListNotFound extends Schema.TaggedError<ListNotFound>()(
  */
 export class ListEntryNotFound extends Schema.TaggedError<ListEntryNotFound>()(
   'ListItemNotFound',
-  {
-    id: Schema.String,
-  },
+  notFoundFields(Schema.String),
 ) {}
 
 /** The row exists but this viewer may not read/write it (private/shared). */
 export class ListForbidden extends Schema.TaggedError<ListForbidden>()(
   'ListForbidden',
-  {
-    id: Schema.NullOr(Schema.String),
-    reason: Schema.Literals(['private', 'household', 'noHousehold']),
-  },
+  forbiddenFields,
 ) {}
 
 /** Field-level validation (empty title, order item from another list, …). */
 export class ListValidationError extends Schema.TaggedError<ListValidationError>()(
   'ListValidationError',
-  {
-    issues: Schema.Array(
-      Schema.Struct({
-        field: Schema.String,
-        message: Schema.String,
-      }),
-    ),
-  },
+  validationFields,
 ) {}
 
 /** Another writer won the version CAS; the caller may retry. */
 export class ListConflict extends Schema.TaggedError<ListConflict>()(
   'ListConflict',
-  {
-    id: Schema.String,
-  },
+  conflictFields,
 ) {}
 
 export const ListServiceError = Schema.Union([
@@ -84,11 +76,8 @@ export type ListServiceError = Schema.Schema.Type<typeof ListServiceError>
 
 // ── List inputs ──────────────────────────────────────────────────────────
 
-export const ListCreateInput = Schema.Struct({
-  /** A client may mint the UUID v7 offline; the server mints one otherwise. */
-  id: Schema.optional(ListId),
-  clientMutationId: Schema.String,
-  title: Schema.String.check(Schema.isMinLength(1)),
+export const ListCreateInput = createEnvelope(ListId, {
+  title: NonEmptyString,
   description: Schema.optional(Schema.NullOr(Schema.String)),
   color: Schema.optional(Schema.NullOr(Schema.String)),
   icon: Schema.optional(Schema.NullOr(Schema.String)),
@@ -99,7 +88,7 @@ export const ListCreateInput = Schema.Struct({
 export type ListCreateInput = Schema.Schema.Type<typeof ListCreateInput>
 
 export const ListPatch = Schema.Struct({
-  title: Schema.optional(Schema.String.check(Schema.isMinLength(1))),
+  title: Schema.optional(NonEmptyString),
   description: Schema.optional(Schema.NullOr(Schema.String)),
   color: Schema.optional(Schema.NullOr(Schema.String)),
   icon: Schema.optional(Schema.NullOr(Schema.String)),
@@ -109,30 +98,19 @@ export const ListPatch = Schema.Struct({
 })
 export type ListPatch = Schema.Schema.Type<typeof ListPatch>
 
-export const ListUpdateInput = Schema.Struct({
-  id: ListId,
-  clientMutationId: Schema.String,
-  /** The version the client last saw; informational for the service CAS. */
-  baseVersion: Schema.optional(Schema.Int),
-  patch: ListPatch,
-})
+export const ListUpdateInput = updateEnvelope(ListId, ListPatch)
 export type ListUpdateInput = Schema.Schema.Type<typeof ListUpdateInput>
 
 /** Delete/archive is the common soft delete (`deletedAt` + a delete feed op). */
-export const ListMutationInput = Schema.Struct({
-  id: ListId,
-  clientMutationId: Schema.String,
-})
+export const ListMutationInput = mutationEnvelope(ListId)
 export type ListMutationInput = Schema.Schema.Type<typeof ListMutationInput>
 
 // ── ListItem inputs ──────────────────────────────────────────────────────
 
-export const ListItemCreateInput = Schema.Struct({
-  id: Schema.optional(ListItemId),
-  clientMutationId: Schema.String,
+export const ListItemCreateInput = createEnvelope(ListItemId, {
   listId: ListId,
   /** The real aggregate calls it `name`; the legacy wire mirrors it as `title`. */
-  name: Schema.String.check(Schema.isMinLength(1)),
+  name: NonEmptyString,
   order: Schema.optional(Schema.Int),
   color: Schema.optional(Schema.NullOr(Schema.String)),
   tagIds: Schema.optional(TagIds),
@@ -151,7 +129,7 @@ export const ListItemsAppendInput = Schema.Struct({
   items: Schema.Array(
     Schema.Struct({
       id: Schema.optional(ListItemId),
-      name: Schema.String.check(Schema.isMinLength(1)),
+      name: NonEmptyString,
       color: Schema.optional(Schema.NullOr(Schema.String)),
       tagIds: Schema.optional(TagIds),
     }),
@@ -162,7 +140,7 @@ export type ListItemsAppendInput = Schema.Schema.Type<
 >
 
 export const ListItemPatch = Schema.Struct({
-  name: Schema.optional(Schema.String.check(Schema.isMinLength(1))),
+  name: Schema.optional(NonEmptyString),
   order: Schema.optional(Schema.Int),
   color: Schema.optional(Schema.NullOr(Schema.String)),
   tagIds: Schema.optional(TagIds),
@@ -170,12 +148,7 @@ export const ListItemPatch = Schema.Struct({
 })
 export type ListItemPatch = Schema.Schema.Type<typeof ListItemPatch>
 
-export const ListItemUpdateInput = Schema.Struct({
-  id: ListItemId,
-  clientMutationId: Schema.String,
-  baseVersion: Schema.optional(Schema.Int),
-  patch: ListItemPatch,
-})
+export const ListItemUpdateInput = updateEnvelope(ListItemId, ListItemPatch)
 export type ListItemUpdateInput = Schema.Schema.Type<typeof ListItemUpdateInput>
 
 /** Idempotent check/uncheck; `checkedAt` is server-stamped audit. */
@@ -186,10 +159,7 @@ export const ListItemCheckInput = Schema.Struct({
 })
 export type ListItemCheckInput = Schema.Schema.Type<typeof ListItemCheckInput>
 
-export const ListItemMutationInput = Schema.Struct({
-  id: ListItemId,
-  clientMutationId: Schema.String,
-})
+export const ListItemMutationInput = mutationEnvelope(ListItemId)
 export type ListItemMutationInput = Schema.Schema.Type<
   typeof ListItemMutationInput
 >

@@ -1,13 +1,12 @@
-import { readFileSync, readdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { Layer, String as Str } from 'effect'
+import { Layer } from 'effect'
 import { HttpRouter } from 'effect/http'
-import { D1Client } from '@effect/sql-d1'
 import { uuidV7 } from '@tali/domain'
 import { makeAppLayer } from '../src/http-layer.js'
 import { FakeD1 } from './fake-d1.js'
+import { seedHousehold, seedUser } from './fixtures/seed.js'
+import { d1Layer, openMigratedDatabase } from './harness.js'
 import { makeTestVapidKeys } from './vapid-fixture.js'
 
 /**
@@ -18,16 +17,6 @@ import { makeTestVapidKeys } from './vapid-fixture.js'
  * trigger's whole value is that it is *not registered* in a deployed Worker,
  * and that is a property of the layer, not of a service call.
  */
-
-const MIGRATIONS_DIR = new URL(
-  '../../../packages/sql/migrations/',
-  import.meta.url,
-)
-
-const migrationFiles = (): ReadonlyArray<string> =>
-  readdirSync(fileURLToPath(MIGRATIONS_DIR))
-    .filter(file => file.endsWith('.sql'))
-    .sort()
 
 /** Generated per run: no private key material is committed to the repository. */
 const VAPID = {
@@ -40,28 +29,21 @@ const USER = 'user-route' as const
 const HOUSEHOLD = 'household-route' as const
 
 const makeDatabase = () => {
-  const db = new DatabaseSync(':memory:')
-  for (const file of migrationFiles()) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), 'utf8'))
-  }
-  db.prepare(
-    `INSERT INTO users
-      (id, email, credential_verifier, credential_salt, kdf_version,
-       display_name, time_zone, week_start, digits, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 1, ?, 'UTC', 'saturday', 'persian', ?, ?)`,
-  ).run(
-    USER,
-    'route@example.com',
-    '0'.repeat(64),
-    '0'.repeat(32),
-    'route',
-    FIRE_AT,
-    FIRE_AT,
-  )
-  db.prepare(
-    `INSERT INTO households (id, name, invite_code, created_by, created_at)
-     VALUES (?, 'خانه', 'route-invite', ?, ?)`,
-  ).run(HOUSEHOLD, USER, FIRE_AT)
+  const db = openMigratedDatabase()
+  seedUser(db, {
+    id: USER,
+    email: 'route@example.com',
+    displayName: 'route',
+    timeZone: 'UTC',
+    now: FIRE_AT,
+  })
+  seedHousehold(db, {
+    id: HOUSEHOLD,
+    creator: USER,
+    inviteCode: 'route-invite',
+    name: 'خانه',
+    now: FIRE_AT,
+  })
 
   const id = uuidV7()
   db.prepare(
@@ -87,11 +69,7 @@ const handlerFor = (
   db: DatabaseSync,
   options: Parameters<typeof makeAppLayer>[0],
 ) => {
-  const d1 = D1Client.layer({
-    db: new FakeD1(db).asD1Database(),
-    transformQueryNames: Str.camelToSnake,
-    transformResultNames: Str.snakeToCamel,
-  })
+  const d1 = d1Layer(new FakeD1(db))
   return HttpRouter.toWebHandler(
     makeAppLayer(options).pipe(Layer.provide(d1)),
     { disableLogger: true },

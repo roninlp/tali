@@ -125,7 +125,7 @@ export const readQueuedReminderActions: Effect.Effect<
   const rows = yield* withDatabase(readRows)
 
   return Array.getSomes(Array.map(rows, row => decodeQueuedAction(row)))
-}).pipe(Effect.catch(() => Effect.succeed([])))
+}).pipe(Effect.orElseSucceed(() => []))
 
 const deleteQueuedReminderAction = (seq: number): Effect.Effect<boolean> =>
   withDatabase(
@@ -137,7 +137,7 @@ const deleteQueuedReminderAction = (seq: number): Effect.Effect<boolean> =>
         transaction.onerror = () =>
           reject(transaction.error ?? new Error('Could not drain the queue'))
       }),
-  ).pipe(Effect.catch(() => Effect.succeed(false)))
+  ).pipe(Effect.orElseSucceed(() => false))
 
 export interface FlushResult {
   /** Records the caller's `send` accepted (and that are now deleted). */

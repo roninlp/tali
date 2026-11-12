@@ -1,5 +1,7 @@
 import { Schema } from 'effect'
 import { Temporal } from 'temporal-polyfill/full'
+import { IsoWeekday } from './common.js'
+import { plainDateOf } from './local-date.js'
 import { LocalDate } from './planning/common.js'
 
 /**
@@ -59,12 +61,11 @@ export type RecurrenceFrequency = Schema.Schema.Type<typeof RecurrenceFrequency>
 
 /** Inclusive end bound: `never`, an occurrence `count`, or an ISO date. */
 export const RecurrenceEnd = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal('never') }),
-  Schema.Struct({
-    _tag: Schema.Literal('count'),
+  Schema.TaggedStruct('never', {}),
+  Schema.TaggedStruct('count', {
     count: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
   }),
-  Schema.Struct({ _tag: Schema.Literal('until'), date: LocalDate }),
+  Schema.TaggedStruct('until', { date: LocalDate }),
 ])
 export type RecurrenceEnd = Schema.Schema.Type<typeof RecurrenceEnd>
 
@@ -89,9 +90,6 @@ export const untilRecurrenceEnd = (date: LocalDate): RecurrenceEnd => ({
   date,
 })
 
-const IsoWeekday = Schema.Int.check(
-  Schema.isBetween({ minimum: 1, maximum: 7 }),
-)
 const MonthDay = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 31 }))
 /** `nth` is 1..5 or -1 for "last". */
 const Nth = Schema.Int.check(
@@ -171,7 +169,7 @@ const ISO = 'iso8601'
 type DateInput = string | Temporal.PlainDate
 
 const asPlainDate = (input: DateInput): Temporal.PlainDate =>
-  typeof input === 'string' ? Temporal.PlainDate.from(input) : input
+  typeof input === 'string' ? plainDateOf(input) : input
 
 const toIso = (date: Temporal.PlainDate): Temporal.PlainDate =>
   date.withCalendar(ISO)

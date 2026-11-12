@@ -7,6 +7,7 @@ import type {
   CaptureId,
 } from '@tali/domain'
 
+import type { HttpResult } from './http'
 import { withRpcClient } from './rpc'
 
 /**
@@ -25,14 +26,12 @@ export const CaptureFailure = Schema.Struct({
 
 export type CaptureFailure = typeof CaptureFailure.Type
 
-export type CaptureApiResult<A> =
-  | { readonly ok: true; readonly value: A }
-  | { readonly ok: false; readonly error: CaptureFailure }
+export type CaptureApiResult<A> = HttpResult<A, CaptureFailure>
 
 /** The tagged shape an RPC failure carries across the wire. */
 const CaptureErrorEnvelope = Schema.Struct({
   _tag: Schema.optional(Schema.String),
-  retryAfterSeconds: Schema.optional(Schema.Number),
+  retryAfterSeconds: Schema.optional(Schema.Int),
 })
 
 type CaptureErrorEnvelope = typeof CaptureErrorEnvelope.Type

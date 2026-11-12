@@ -30,11 +30,11 @@ import { EventId, HabitId, OccasionId, TaskId } from './common.js'
  * materialises the reminder row; it never needs a second link type.
  */
 export const ReminderLink = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal('none') }),
-  Schema.Struct({ _tag: Schema.Literal('habit'), habitId: HabitId }),
-  Schema.Struct({ _tag: Schema.Literal('task'), taskId: TaskId }),
-  Schema.Struct({ _tag: Schema.Literal('event'), eventId: EventId }),
-  Schema.Struct({ _tag: Schema.Literal('occasion'), occasionId: OccasionId }),
+  Schema.TaggedStruct('none', {}),
+  Schema.TaggedStruct('habit', { habitId: HabitId }),
+  Schema.TaggedStruct('task', { taskId: TaskId }),
+  Schema.TaggedStruct('event', { eventId: EventId }),
+  Schema.TaggedStruct('occasion', { occasionId: OccasionId }),
 ])
 export type ReminderLink = Schema.Schema.Type<typeof ReminderLink>
 
@@ -64,3 +64,72 @@ export const occasionReminderLink = (occasionId: OccasionId): ReminderLink => ({
   _tag: 'occasion',
   occasionId,
 })
+
+/**
+ * The flattened `(link_type, link_id)` column pair.
+ *
+ * Storage is two columns rather than nullable foreign keys so "linked to two
+ * things" is not representable (see the union's note above). `linkId` is null
+ * exactly when `linkType` is `none`.
+ */
+export interface ReminderLinkColumns {
+  readonly linkType: 'none' | 'task' | 'event' | 'habit' | 'occasion'
+  readonly linkId: string | null
+}
+
+/**
+ * Flatten the union for the `(link_type, link_id)` columns.
+ *
+ * The `switch` is deliberately exhaustive with no `default`: adding a sixth
+ * variant is a compile error here, so no persistence path can silently store a
+ * new link as `none`.
+ */
+export const encodeReminderLink = (link: ReminderLink): ReminderLinkColumns => {
+  switch (link._tag) {
+    case 'none':
+      return { linkType: 'none', linkId: null }
+    case 'habit':
+      return { linkType: 'habit', linkId: link.habitId }
+    case 'task':
+      return { linkType: 'task', linkId: link.taskId }
+    case 'event':
+      return { linkType: 'event', linkId: link.eventId }
+    case 'occasion':
+      return { linkType: 'occasion', linkId: link.occasionId }
+  }
+}
+
+/**
+ * Rebuild the union from stored columns.
+ *
+ * An unknown type or a known type with a null id is `none`: the malformed-row
+ * fallback every SQL reader needs, because a row can outlive a variant or be
+ * written by an older build. The id is branded with `.make` like every other
+ * persistence read, so a non-UUID cell still fails loudly; a `none` row never
+ * touches the brand.
+ */
+export const decodeReminderLink = (
+  linkType: string,
+  linkId: string | null,
+): ReminderLink => {
+  switch (linkType) {
+    case 'habit':
+      return linkId === null
+        ? noReminderLink()
+        : habitReminderLink(HabitId.make(linkId))
+    case 'task':
+      return linkId === null
+        ? noReminderLink()
+        : taskReminderLink(TaskId.make(linkId))
+    case 'event':
+      return linkId === null
+        ? noReminderLink()
+        : eventReminderLink(EventId.make(linkId))
+    case 'occasion':
+      return linkId === null
+        ? noReminderLink()
+        : occasionReminderLink(OccasionId.make(linkId))
+    default:
+      return noReminderLink()
+  }
+}

@@ -6,11 +6,16 @@ import {
   CalendarTiming,
   CalendarWeekPayload,
 } from '../lib/calendar-data'
-import { EventRow } from '../lib/event-writes'
-import { OccasionRow } from '../lib/occasion-writes'
-import { emptyMirrorSnapshot } from '../mirror'
-import type { MirrorSnapshot, TaskRow } from '../mirror'
-import { HOUSEHOLD_ID, TODAY_NOW, USER_ID } from '../test-fixtures'
+import type { EventRow } from '../lib/event-writes'
+import type { OccasionRow } from '../lib/occasion-writes'
+import type { TaskRow } from '../mirror'
+import {
+  mirrorEvent,
+  mirrorOccasion,
+  mirrorSnapshot,
+  mirrorTask,
+} from '../mirror-fixtures'
+import { DISPLAY, HOUSEHOLD_ID, TODAY_NOW, USER_ID } from '../test-fixtures'
 import * as Calendar from './calendar'
 import type { Inputs, Model } from './calendar'
 
@@ -31,50 +36,11 @@ export const WEEK_START = '2026-10-24'
 export const WEEK_END = '2026-10-30'
 export const TODAY = '2026-10-30'
 
-export const calendarTask = (overrides: Partial<TaskRow> = {}): TaskRow => ({
-  id: CALENDAR_TASK_ID,
-  title: 'خرید نان',
-  description: null,
-  status: 'todo',
-  priority: 'medium',
-  dueDate: TODAY,
-  dueAt: null,
-  timeZone: 'Asia/Tehran',
-  projectId: null,
-  tagIds: [],
-  startedAt: null,
-  completedAt: null,
-  createdAt: '2026-10-28T08:00:00.000Z',
-  updatedAt: '2026-10-28T08:00:00.000Z',
-  version: 1,
-  hasSyncError: false,
-  ...overrides,
-})
+export const calendarTask = (overrides: Partial<TaskRow> = {}): TaskRow =>
+  mirrorTask({ id: CALENDAR_TASK_ID, ...overrides })
 
 export const eventRow = (overrides: Partial<EventRow> = {}): EventRow =>
-  EventRow.make({
-    id: EVENT_ID,
-    title: 'سفر',
-    description: null,
-    location: null,
-    category: null,
-    color: null,
-    people: [],
-    timing: CalendarTiming.allDay({ date: TODAY }),
-    timeZone: 'Asia/Tehran',
-    recurrence: null,
-    exceptions: [],
-    occasionId: null,
-    ownerId: USER_ID,
-    householdId: HOUSEHOLD_ID,
-    visibility: 'shared',
-    createdAt: '2026-10-28T08:00:00.000Z',
-    updatedAt: '2026-10-28T08:00:00.000Z',
-    version: 1,
-    deletedAt: null,
-    hasSyncError: false,
-    ...overrides,
-  })
+  mirrorEvent({ id: EVENT_ID, ...overrides })
 
 export const timedEventRow = (overrides: Partial<EventRow> = {}): EventRow =>
   eventRow({
@@ -103,24 +69,7 @@ export const weeklyEventRow = (overrides: Partial<EventRow> = {}): EventRow =>
 
 export const occasionRow = (
   overrides: Partial<OccasionRow> = {},
-): OccasionRow =>
-  OccasionRow.make({
-    id: OCCASION_ID,
-    title: 'تولد مامان',
-    originDate: TODAY,
-    timeZone: 'Asia/Tehran',
-    yearly: true,
-    advanceReminderDays: 7,
-    preparationTaskId: null,
-    color: null,
-    ownerId: null,
-    visibility: 'shared',
-    createdAt: '2026-10-01T08:00:00.000Z',
-    updatedAt: '2026-10-01T08:00:00.000Z',
-    version: 1,
-    hasSyncError: false,
-    ...overrides,
-  })
+): OccasionRow => mirrorOccasion({ id: OCCASION_ID, ...overrides })
 
 export const weekPayload = (
   overrides: Partial<CalendarWeekPayload> = {},
@@ -152,31 +101,12 @@ export const monthPayload = (
     ...overrides,
   })
 
-export const mirrorWith = (input: {
-  readonly tasks?: ReadonlyArray<TaskRow>
-  readonly events?: ReadonlyArray<EventRow>
-  readonly occasions?: ReadonlyArray<OccasionRow>
-  readonly trashedEvents?: ReadonlyArray<EventRow>
-  readonly trashedOccasions?: ReadonlyArray<OccasionRow>
-}): MirrorSnapshot => ({
-  ...emptyMirrorSnapshot(),
-  tasks: input.tasks ?? [],
-  events: input.events ?? [],
-  occasions: input.occasions ?? [],
-  trashedEvents: input.trashedEvents ?? [],
-  trashedOccasions: input.trashedOccasions ?? [],
-})
-
 export const calendarInputs = (overrides: Partial<Inputs> = {}): Inputs => ({
-  display: {
-    timeZone: 'Asia/Tehran',
-    weekStart: 'saturday',
-    digits: 'persian',
-  },
+  display: DISPLAY,
   isStoreReady: true,
   isOnline: true,
   pending: 0,
-  mirror: mirrorWith({}),
+  mirror: mirrorSnapshot(),
   pendingKeys: [],
   maybeUserId: Option.some(USER_ID),
   maybeHouseholdId: Option.some(HOUSEHOLD_ID),

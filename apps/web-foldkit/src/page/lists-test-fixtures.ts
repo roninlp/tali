@@ -7,11 +7,10 @@ import {
   type ListItemRow,
   ListItemRow as ListItemRowSchema,
   type ListRow,
-  ListRow as ListRowSchema,
 } from '../lists-model'
-import { emptyMirrorSnapshot } from '../mirror'
 import type { MirrorSnapshot } from '../mirror'
-import { USER_ID } from '../test-fixtures'
+import { mirrorList, mirrorSnapshot } from '../mirror-fixtures'
+import { DISPLAY, USER_ID } from '../test-fixtures'
 import * as Lists from './lists'
 import { initialModel } from './lists'
 import type { Inputs, Model } from './lists'
@@ -29,23 +28,7 @@ export const CHECKED_ITEM_ID = '0192f0a0-0000-7000-8000-000000000051'
 export const THIRD_ITEM_ID = '0192f0a0-0000-7000-8000-000000000052'
 
 export const listRow = (overrides: Partial<ListRow> = {}): ListRow =>
-  ListRowSchema.make({
-    id: LIST_ID,
-    ownerId: USER_ID,
-    title: 'خرید هفتگی',
-    description: null,
-    color: '#0f9d8f',
-    icon: '🛒',
-    sort: 'manual',
-    checkedPlacement: 'bottom',
-    visibility: 'shared',
-    lastWriterId: USER_ID,
-    createdAt: '2026-10-20T09:00:00.000Z',
-    updatedAt: '2026-10-20T09:00:00.000Z',
-    version: 1,
-    hasSyncError: false,
-    ...overrides,
-  })
+  mirrorList({ id: LIST_ID, ...overrides })
 
 export const checkedListRow = (overrides: Partial<ListRow> = {}): ListRow =>
   listRow({
@@ -103,18 +86,10 @@ export const thirdItemRow = (
 export const mirrorWith = (
   lists: ReadonlyArray<ListRow> = [listRow()],
   listItems: ReadonlyArray<ListItemRow> = [listItemRow()],
-): MirrorSnapshot => ({
-  ...emptyMirrorSnapshot(),
-  lists,
-  listItems,
-})
+): MirrorSnapshot => mirrorSnapshot({ lists, listItems })
 
 export const listInputs = (overrides: Partial<Inputs> = {}): Inputs => ({
-  display: {
-    timeZone: 'Asia/Tehran',
-    weekStart: 'saturday',
-    digits: 'persian',
-  },
+  display: DISPLAY,
   checkedItemPlacement: 'bottom',
   isStoreReady: true,
   isOnline: true,

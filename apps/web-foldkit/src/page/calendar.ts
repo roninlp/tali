@@ -1,14 +1,4 @@
-import {
-  Array,
-  Clock,
-  Duration,
-  Effect,
-  Match,
-  Option,
-  Queue,
-  Schema,
-  Stream,
-} from 'effect'
+import { Array, Clock, Effect, Match, Option, Schema, Stream } from 'effect'
 import { Command, Dom, Submodel, Subscription, Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
@@ -58,6 +48,7 @@ import {
   updateOccasionInMirror,
 } from '../lib/occasion-writes'
 import { withRpcClient } from '../lib/rpc'
+import { TimestampMillis } from '../lib/schema-primitives'
 import {
   completeTaskInMirror,
   moveTaskInMirror,
@@ -66,6 +57,11 @@ import {
 import { setVisibilityInMirror } from '../lib/visibility-writes'
 import { LocalStoreResource } from '../sync/local-store'
 import type { LocalStoreService } from '../sync/local-store'
+import { clockEvents, eventStream, onlineEvents } from '../ui/dom-stream'
+import {
+  listboxOutMessageFold,
+  optionalListboxOutMessageFold,
+} from '../ui/fold'
 import * as Picker from '../ui/picker'
 import {
   CalendarFetchState,
@@ -79,6 +75,7 @@ import {
   todayIn,
 } from './calendar-model'
 import { calendarPageView } from './calendar-view'
+import { localWrite, storeFailureMessage } from './local-write'
 
 /**
  * The `/calendar` screen Submodel, ported from
@@ -171,7 +168,7 @@ export const PlanningPriorityListbox = Listbox.create<
 >()
 
 export const Model = Schema.Struct({
-  now: Schema.Number,
+  now: TimestampMillis,
   view: Schema.Literals(['week', 'month']),
   anchor: Schema.String,
   maybeSelectedDay: Schema.Option(Schema.String),
@@ -222,7 +219,7 @@ export type ViewInputs = Inputs
 // MESSAGE
 
 export const Message = defineMessageUnion({
-  TickedCalendar: { now: Schema.Number },
+  TickedCalendar: { now: TimestampMillis },
   WentOnline: {},
   WentOffline: {},
   SucceededFetchWeek: {
@@ -395,20 +392,10 @@ export type OutMessage = typeof OutMessage.Type
 
 // COMMAND
 
-const storeFailureMessage = (cause: unknown): string =>
-  cause instanceof Error ? cause.message : 'ذخیره در حافظه‌ی محلی ناموفق بود'
-
 const eventFailureMessage = (cause: unknown): string =>
   cause instanceof Error
     ? cause.message
     : 'ذخیرهٔ رویداد در حافظهٔ محلی ناموفق بود'
-
-const occasionFailureMessage = (cause: unknown): string =>
-  cause instanceof Error ? cause.message : 'ذخیره در حافظه‌ی محلی ناموفق بود'
-
-const currentIso = Clock.currentTimeMillis.pipe(
-  Effect.map(millis => new Date(millis).toISOString()),
-)
 
 export const ReadCalendarClock = Command.define('ReadCalendarClock', {
   messages: [Message.TickedCalendar],
@@ -561,25 +548,11 @@ export const CompleteCalendarTask = Command.define('CompleteCalendarTask', {
     Message.FailedCompleteCalendarTask,
   ],
   execute: ({ taskId, title }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () => completeTaskInMirror(store, taskId, now),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedCompleteCalendarTask({ taskId, title })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedCompleteCalendarTask({
-            message: storeFailureMessage(error),
-          }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: (store, now) => completeTaskInMirror(store, taskId, now),
+      onSuccess: () => Message.CompletedCompleteCalendarTask({ taskId, title }),
+      onFailure: message => Message.FailedCompleteCalendarTask({ message }),
+    }),
 })
 
 export const PrioritizeCalendarTask = Command.define('PrioritizeCalendarTask', {
@@ -593,29 +566,12 @@ export const PrioritizeCalendarTask = Command.define('PrioritizeCalendarTask', {
     Message.FailedPrioritizeCalendarTask,
   ],
   execute: ({ taskId, title, priority }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () => updateTaskInMirror(store, taskId, { priority }, now),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedPrioritizeCalendarTask({
-        taskId,
-        title,
-        priority,
-      })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedPrioritizeCalendarTask({
-            message: storeFailureMessage(error),
-          }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: (store, now) => updateTaskInMirror(store, taskId, { priority }, now),
+      onSuccess: () =>
+        Message.CompletedPrioritizeCalendarTask({ taskId, title, priority }),
+      onFailure: message => Message.FailedPrioritizeCalendarTask({ message }),
+    }),
 })
 
 export const MoveCalendarTask = Command.define('MoveCalendarTask', {
@@ -627,25 +583,13 @@ export const MoveCalendarTask = Command.define('MoveCalendarTask', {
   },
   messages: [Message.CompletedMoveCalendarTask, Message.FailedMoveCalendarTask],
   execute: ({ taskId, title, target, timeZone }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () => moveTaskInMirror(store, taskId, target, timeZone, now),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedMoveCalendarTask({ taskId, title, target })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedMoveCalendarTask({
-            message: storeFailureMessage(error),
-          }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: (store, now) =>
+        moveTaskInMirror(store, taskId, target, timeZone, now),
+      onSuccess: () =>
+        Message.CompletedMoveCalendarTask({ taskId, title, target }),
+      onFailure: message => Message.FailedMoveCalendarTask({ message }),
+    }),
 })
 
 export const CreateCalendarEvent = Command.define('CreateCalendarEvent', {
@@ -702,32 +646,13 @@ export const SetCalendarEventVisibility = Command.define(
       Message.FailedSetEventVisibility,
     ],
     execute: ({ eventId, visibility }) =>
-      Effect.gen(function* () {
-        const store = yield* LocalStoreResource.get
-        const now = yield* Clock.currentTimeMillis
-
-        yield* Effect.tryPromise({
-          try: () =>
-            setVisibilityInMirror(
-              store,
-              'event',
-              eventId,
-              visibility,
-              new Date(now).toISOString(),
-            ),
-          catch: storeFailureMessage,
-        })
-
-        return Message.CompletedSetEventVisibility({ eventId, visibility })
-      }).pipe(
-        Effect.catch(error =>
-          Effect.succeed(
-            Message.FailedSetEventVisibility({
-              message: storeFailureMessage(error),
-            }),
-          ),
-        ),
-      ),
+      localWrite({
+        run: (store, now) =>
+          setVisibilityInMirror(store, 'event', eventId, visibility, now),
+        onSuccess: () =>
+          Message.CompletedSetEventVisibility({ eventId, visibility }),
+        onFailure: message => Message.FailedSetEventVisibility({ message }),
+      }),
   },
 )
 
@@ -743,35 +668,13 @@ export const SetCalendarOccasionVisibility = Command.define(
       Message.FailedSetOccasionVisibility,
     ],
     execute: ({ occasionId, visibility }) =>
-      Effect.gen(function* () {
-        const store = yield* LocalStoreResource.get
-        const now = yield* Clock.currentTimeMillis
-
-        yield* Effect.tryPromise({
-          try: () =>
-            setVisibilityInMirror(
-              store,
-              'occasion',
-              occasionId,
-              visibility,
-              new Date(now).toISOString(),
-            ),
-          catch: storeFailureMessage,
-        })
-
-        return Message.CompletedSetOccasionVisibility({
-          occasionId,
-          visibility,
-        })
-      }).pipe(
-        Effect.catch(error =>
-          Effect.succeed(
-            Message.FailedSetOccasionVisibility({
-              message: storeFailureMessage(error),
-            }),
-          ),
-        ),
-      ),
+      localWrite({
+        run: (store, now) =>
+          setVisibilityInMirror(store, 'occasion', occasionId, visibility, now),
+        onSuccess: () =>
+          Message.CompletedSetOccasionVisibility({ occasionId, visibility }),
+        onFailure: message => Message.FailedSetOccasionVisibility({ message }),
+      }),
   },
 )
 
@@ -1050,7 +953,7 @@ export const SaveCalendarOccasion = Command.define('SaveCalendarOccasion', {
               return occasionId
             },
           }),
-        catch: occasionFailureMessage,
+        catch: storeFailureMessage,
       })
 
       return Message.CompletedSaveOccasion({
@@ -1062,7 +965,7 @@ export const SaveCalendarOccasion = Command.define('SaveCalendarOccasion', {
       Effect.catch(error =>
         Effect.succeed(
           Message.FailedSaveOccasion({
-            message: occasionFailureMessage(error),
+            message: storeFailureMessage(error),
           }),
         ),
       ),
@@ -1073,26 +976,12 @@ export const DeleteCalendarOccasion = Command.define('DeleteCalendarOccasion', {
   args: { occasionId: Schema.String, title: Schema.String },
   messages: [Message.CompletedDeleteOccasion, Message.FailedDeleteOccasion],
   execute: ({ occasionId, title }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () => deleteOccasionInMirror(store, occasionId, now),
-        catch: occasionFailureMessage,
-      })
-
-      return Message.CompletedDeleteOccasion({ occasionId, title })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedDeleteOccasion({
-            message:
-              error instanceof Error ? error.message : 'حذف مناسبت ناموفق بود',
-          }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: (store, now) => deleteOccasionInMirror(store, occasionId, now),
+      onSuccess: () => Message.CompletedDeleteOccasion({ occasionId, title }),
+      onFailure: message => Message.FailedDeleteOccasion({ message }),
+      fallbackMessage: 'حذف مناسبت ناموفق بود',
+    }),
 })
 
 export const PrepareCalendarOccasionTask = Command.define(
@@ -1117,7 +1006,7 @@ export const PrepareCalendarOccasionTask = Command.define(
               uuidV7(now),
               new Date(now).toISOString(),
             ),
-          catch: occasionFailureMessage,
+          catch: storeFailureMessage,
         })
 
         return Message.CompletedPrepareOccasion({
@@ -1126,7 +1015,7 @@ export const PrepareCalendarOccasionTask = Command.define(
         })
       }).pipe(
         Effect.catch(error => {
-          const message = occasionFailureMessage(error)
+          const message = storeFailureMessage(error)
 
           return Effect.succeed(
             Message.FailedPrepareOccasion({
@@ -1199,26 +1088,10 @@ type UpdateReturn = Update.ReturnWithOutMessage<
 
 type CommandReturn = Update.Return<Model, Message, LocalStoreService>
 
-const occasionAdvanceListboxOutMessage = (
-  inputs: Inputs,
-  handleUpdate: (
-    model: Model,
-    message: Message,
-    inputs: Inputs,
-  ) => UpdateReturn,
-) =>
-  Listbox.OutMessage.match<
-    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
-    Listbox.OutMessage<string>
-  >({
-    Selected:
-      ({ value }) =>
-      stepModel =>
-        handleUpdate(
-          stepModel,
-          Message.SelectedOccasionAdvance({ value }),
-          inputs,
-        ),
+const occasionAdvanceListboxOutMessage = (inputs: Inputs) =>
+  listboxOutMessageFold<Model, Message, OutMessage, LocalStoreService>({
+    handleUpdate: (model, message) => update(model, message, inputs),
+    toMessage: (_model, value) => Message.SelectedOccasionAdvance({ value }),
   })
 
 const calendarView = (model: Model, inputs: Inputs): CalendarView =>
@@ -1296,37 +1169,24 @@ const planningPriorityRowOf = (
   )
 
 const planningPriorityListboxOutMessage =
-  (
-    inputs: Inputs,
-    handleUpdate: (
-      model: Model,
-      message: Message,
-      inputs: Inputs,
-    ) => UpdateReturn,
-  ) =>
-  (taskId: string) =>
-    Listbox.OutMessage.match<
-      Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
-      Listbox.OutMessage<string>
+  (inputs: Inputs) => (taskId: string) =>
+    optionalListboxOutMessageFold<
+      Model,
+      Message,
+      OutMessage,
+      LocalStoreService
     >({
-      Selected:
-        ({ value }) =>
-        stepModel =>
-          Option.match(planningPriorityRowOf(stepModel, inputs, taskId), {
-            onNone: () => ({ model: stepModel }),
-            onSome: row =>
-              handleUpdate(
-                stepModel,
-                Message.ClickedPrioritizeCalendarTask({
-                  taskId,
-                  title: row.title,
-                  priority: planningPriorityOf(value),
-                  currentPriority: row.priority,
-                  projected: row.projected,
-                }),
-                inputs,
-              ),
+      handleUpdate: (model, message) => update(model, message, inputs),
+      toMessage: (model, value) =>
+        Option.map(planningPriorityRowOf(model, inputs, taskId), row =>
+          Message.ClickedPrioritizeCalendarTask({
+            taskId,
+            title: row.title,
+            priority: planningPriorityOf(value),
+            currentPriority: row.priority,
+            projected: row.projected,
           }),
+        ),
     })
 
 const startFetch = (model: Model): CommandReturn => {
@@ -1556,24 +1416,12 @@ const applyPickerValue = (
   return model
 }
 
-const foldPickerOutMessage = Picker.OutMessage.match<
-  Update.Step<Model, Message>
->({
-  PickedValue:
-    ({ target, value }) =>
-    stepModel => ({ model: applyPickerValue(stepModel, target, value) }),
-  ClearedValue:
-    ({ target }) =>
-    stepModel => ({ model: applyPickerValue(stepModel, target, '') }),
-})
-
-const foldPicker = Update.foldChild({
-  update: Picker.update,
-  read: (model: Model) => Option.some(model.picker),
-  write: (model, nextPicker) =>
+const foldPicker = Picker.pickerFieldFold<Model, Message>({
+  field: model => model.picker,
+  setField: (model, nextPicker) =>
     modifyFields(model, { picker: () => nextPicker }),
   toParentMessage: message => Message.GotPickerMessage({ message }),
-  foldOutMessage: foldPickerOutMessage,
+  applyValue: applyPickerValue,
 })
 
 export const update = (
@@ -1588,7 +1436,7 @@ export const update = (
       modifyFields(model, { occasionAdvanceListbox: () => nextListbox }),
     toParentMessage: message =>
       Message.GotOccasionAdvanceListboxMessage({ message }),
-    foldOutMessage: occasionAdvanceListboxOutMessage(inputs, update),
+    foldOutMessage: occasionAdvanceListboxOutMessage(inputs),
   })
 
   const foldPlanningPriorityListbox = Update.foldChildAt({
@@ -1598,7 +1446,7 @@ export const update = (
     writeAt: writePlanningPriorityListbox,
     toParentMessage: (taskId, message) =>
       Message.GotPlanningPriorityListboxMessage({ taskId, message }),
-    foldOutMessage: planningPriorityListboxOutMessage(inputs, update),
+    foldOutMessage: planningPriorityListboxOutMessage(inputs),
   })
 
   return Message.match<UpdateReturn>(message, {
@@ -2725,40 +2573,9 @@ export const syncSettled = (model: Model, inputs: Inputs): CommandReturn =>
 
 // SUBSCRIPTION
 
-const eventStream = <A>(
-  subscribe: (emit: (value: A) => void) => () => void,
-): Stream.Stream<A> =>
-  Stream.callback<A>(queue =>
-    Effect.acquireRelease(
-      Effect.sync(() =>
-        subscribe(value => {
-          Queue.offerUnsafe(queue, value)
-        }),
-      ),
-      unsubscribe => Effect.sync(unsubscribe),
-    ).pipe(Effect.flatMap(() => Effect.never)),
-  )
-
-const clockEvents: Stream.Stream<Message> = Stream.fromEffectRepeat(
-  Effect.gen(function* () {
-    yield* Effect.sleep(Duration.seconds(60))
-    const now = yield* Clock.currentTimeMillis
-
-    return Message.TickedCalendar({ now })
-  }),
-)
-
-const onlineEvents: Stream.Stream<Message> = eventStream(emit => {
-  const onOnline = () => emit(Message.WentOnline())
-  const onOffline = () => emit(Message.WentOffline())
-
-  window.addEventListener('online', onOnline)
-  window.addEventListener('offline', onOffline)
-
-  return () => {
-    window.removeEventListener('online', onOnline)
-    window.removeEventListener('offline', onOffline)
-  }
+const onlineStream = onlineEvents<Message>({
+  onOnline: () => Message.WentOnline(),
+  onOffline: () => Message.WentOffline(),
 })
 
 const keyboardEvents: Stream.Stream<Message> = eventStream(emit => {
@@ -2776,8 +2593,10 @@ const keyboardEvents: Stream.Stream<Message> = eventStream(emit => {
 })
 
 export const subscriptions = Subscription.make<Model, Message>()(_entry => ({
-  calendarClock: Subscription.persistentEntry(clockEvents),
-  calendarOnline: Subscription.persistentEntry(onlineEvents),
+  calendarClock: Subscription.persistentEntry(
+    clockEvents(now => Message.TickedCalendar({ now })),
+  ),
+  calendarOnline: Subscription.persistentEntry(onlineStream),
   calendarKeyboard: Subscription.persistentEntry(keyboardEvents),
 }))
 

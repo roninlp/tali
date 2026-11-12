@@ -119,7 +119,7 @@ export const CopyInviteCode = Command.define('CopyInviteCode', {
       try: () => navigator.clipboard.writeText(inviteCode).then(() => true),
       catch: () => false,
     }).pipe(
-      Effect.catch(() => Effect.succeed(false)),
+      Effect.orElseSucceed(() => false),
       Effect.map(isCopied => Message.CompletedCopyInviteCode({ isCopied })),
     ),
 })

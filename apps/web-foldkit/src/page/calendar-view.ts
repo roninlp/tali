@@ -24,6 +24,7 @@ import { shareActionOf } from '../lib/visibility-writes'
 import { entityKey } from '../mirror'
 import { taskAnchorPath } from '../route'
 import { classNames } from '../ui/class-names'
+import { inlineAlertView } from '../ui/feedback'
 import { inputControlView } from '../ui/field'
 import { listboxViewInputs } from '../ui/listbox'
 import { pickerDialogView, pickerTriggerView } from '../ui/picker'
@@ -2054,12 +2055,7 @@ const occasionsPanel = (
               ),
             ),
           ]),
-      ...Option.match(model.maybeOccasionError, {
-        onNone: () => [],
-        onSome: message => [
-          h.p([h.Role('alert'), h.Class('notice notice-error m-0')], [message]),
-        ],
-      }),
+      inlineAlertView(model.maybeOccasionError, h),
       h.p(
         [h.Role('status'), h.AriaLive('polite'), h.Class(META_CLASS)],
         [model.occasionAnnouncement],
@@ -2250,15 +2246,7 @@ const eventEditorView = (
                           ],
                         ),
                       ]),
-                  ...Option.match(model.maybeEditorError, {
-                    onNone: () => [],
-                    onSome: message => [
-                      h.p(
-                        [h.Role('alert'), h.Class('notice notice-error m-0')],
-                        [message],
-                      ),
-                    ],
-                  }),
+                  inlineAlertView(model.maybeEditorError, h),
                   h.div(
                     [h.Class(DIALOG_ACTIONS_CLASS)],
                     [
@@ -2469,15 +2457,7 @@ const scopePromptView = (
                   ),
                 ],
               ),
-              ...Option.match(model.maybeEditorError, {
-                onNone: () => [],
-                onSome: message => [
-                  h.p(
-                    [h.Role('alert'), h.Class('notice notice-error m-0')],
-                    [message],
-                  ),
-                ],
-              }),
+              inlineAlertView(model.maybeEditorError, h),
               h.div(
                 [h.Class(DIALOG_ACTIONS_CLASS)],
                 [
@@ -2689,12 +2669,7 @@ export const calendarPageView = (
             habitTrendReserve(h),
           ]),
       occasionsPanel(model, inputs, view, h),
-      ...Option.match(model.maybePageError, {
-        onNone: () => [],
-        onSome: message => [
-          h.p([h.Role('alert'), h.Class('notice notice-error m-0')], [message]),
-        ],
-      }),
+      inlineAlertView(model.maybePageError, h),
       eventEditorView(model, inputs, h),
       scopePromptView(model, inputs, h),
       pickerDialogView(

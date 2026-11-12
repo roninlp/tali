@@ -2,7 +2,6 @@ import { Array, Option, Schema } from 'effect'
 import { defineTaggedUnion } from 'foldkit/schema'
 
 import {
-  DEFAULT_TIME_ZONE,
   type Digits,
   type CalendarOccasionSource as DomainOccasionSource,
   type CalendarTaskSource as DomainTaskSource,
@@ -27,6 +26,7 @@ import {
   toJalaliDate,
   toJalaliDateInZone,
   toJalaliFields,
+  resolveTimeZone as validTimeZone,
 } from '@tali/domain'
 
 import type {
@@ -96,16 +96,6 @@ export type CalendarReadInputs = Readonly<{
   mirror: MirrorSnapshot
   pendingKeys: ReadonlyArray<string>
 }>
-
-const validTimeZone = (timeZone: string): string => {
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone })
-
-    return timeZone
-  } catch {
-    return DEFAULT_TIME_ZONE
-  }
-}
 
 const recurrenceOf = (
   recurrence: TaskRow['recurrence'],

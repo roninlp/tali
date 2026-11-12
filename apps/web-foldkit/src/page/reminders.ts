@@ -1,4 +1,4 @@
-import { Array, Clock, Effect, Option, Queue, Schema, Stream } from 'effect'
+import { Array, Effect, Option, Schema, Stream } from 'effect'
 import { Command, Submodel, Subscription, Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
@@ -18,7 +18,10 @@ import {
   respondToReminder,
 } from '../lib/reminders/api'
 import { setVisibilityInMirror } from '../lib/visibility-writes'
-import { LocalStoreResource, type LocalStoreService } from '../sync/local-store'
+import type { LocalStoreService } from '../sync/local-store'
+import { eventStream, visibilityEvents } from '../ui/dom-stream'
+import { listboxOutMessageFold } from '../ui/fold'
+import { localWrite } from './local-write'
 import {
   DEFAULT_SNOOZE_MINUTES,
   isSnoozePreset,
@@ -181,41 +184,13 @@ export const SetReminderVisibility = Command.define('SetReminderVisibility', {
     Message.FailedSetReminderVisibility,
   ],
   execute: ({ reminderId, visibility }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* Clock.currentTimeMillis
-
-      yield* Effect.tryPromise({
-        try: () =>
-          setVisibilityInMirror(
-            store,
-            'reminder',
-            reminderId,
-            visibility,
-            new Date(now).toISOString(),
-          ),
-        catch: cause =>
-          cause instanceof Error
-            ? cause.message
-            : 'ذخیره در حافظه‌ی محلی ناموفق بود',
-      })
-
-      return Message.CompletedSetReminderVisibility({
-        reminderId,
-        visibility,
-      })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedSetReminderVisibility({
-            message: Option.getOrElse(
-              Schema.decodeUnknownOption(Schema.String)(error),
-              () => 'ذخیره در حافظه‌ی محلی ناموفق بود',
-            ),
-          }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: (store, now) =>
+        setVisibilityInMirror(store, 'reminder', reminderId, visibility, now),
+      onSuccess: () =>
+        Message.CompletedSetReminderVisibility({ reminderId, visibility }),
+      onFailure: message => Message.FailedSetReminderVisibility({ message }),
+    }),
 })
 
 export const RespondToReminder = Command.define('RespondToReminder', {
@@ -312,20 +287,16 @@ const writeSnoozeListbox = (
   })
 }
 
-const snoozeListboxOutMessage = (
-  handleUpdate: (model: Model, message: Message) => UpdateReturn,
-) =>
-  Listbox.OutMessage.match<
-    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>
-  >({
-    Selected:
-      ({ value }) =>
-      stepModel =>
-        handleUpdate(
-          stepModel,
-          Message.ChangedSnoozeMinutes({ minutes: Number(value) }),
-        ),
-  })
+const snoozeListboxOutMessage = listboxOutMessageFold<
+  Model,
+  Message,
+  OutMessage,
+  LocalStoreService
+>({
+  handleUpdate: (model, message) => update(model, message),
+  toMessage: (_model, value) =>
+    Message.ChangedSnoozeMinutes({ minutes: Number(value) }),
+})
 
 const startRead = (model: Model, shouldDrain: boolean): UpdateReturn => {
   const generation = model.fetchGeneration + 1
@@ -393,7 +364,7 @@ export const update = (model: Model, message: Message): UpdateReturn => {
     writeAt: writeSnoozeListbox,
     toParentMessage: (dispatchId, message) =>
       Message.GotSnoozeListboxMessage({ dispatchId, message }),
-    foldOutMessage: () => snoozeListboxOutMessage(update),
+    foldOutMessage: () => snoozeListboxOutMessage,
   })
 
   return Message.match<UpdateReturn>(message, {
@@ -508,35 +479,6 @@ export const entered = (model: Model): UpdateReturn =>
 
 // SUBSCRIPTION
 
-const eventStream = <A>(
-  subscribe: (emit: (value: A) => void) => () => void,
-): Stream.Stream<A> =>
-  Stream.callback<A>(queue =>
-    Effect.acquireRelease(
-      Effect.sync(() =>
-        subscribe(value => {
-          Queue.offerUnsafe(queue, value)
-        }),
-      ),
-      unsubscribe => Effect.sync(unsubscribe),
-    ).pipe(Effect.flatMap(() => Effect.never)),
-  )
-
-const visibilityEvents: Stream.Stream<Message> = eventStream(emit => {
-  const onVisibilityChange = () =>
-    emit(
-      Message.ChangedVisibility({
-        isVisible: document.visibilityState !== 'hidden',
-      }),
-    )
-
-  document.addEventListener('visibilitychange', onVisibilityChange)
-
-  return () => {
-    document.removeEventListener('visibilitychange', onVisibilityChange)
-  }
-})
-
 const serviceWorkerEvents: Stream.Stream<Message> = eventStream(emit => {
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
     return () => {}
@@ -560,7 +502,9 @@ const serviceWorkerEvents: Stream.Stream<Message> = eventStream(emit => {
 })
 
 export const subscriptions = Subscription.make<Model, Message>()(_entry => ({
-  remindersVisibility: Subscription.persistentEntry(visibilityEvents),
+  remindersVisibility: Subscription.persistentEntry(
+    visibilityEvents(isVisible => Message.ChangedVisibility({ isVisible })),
+  ),
   remindersServiceWorker: Subscription.persistentEntry(serviceWorkerEvents),
 }))
 

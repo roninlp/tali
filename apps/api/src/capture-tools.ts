@@ -43,6 +43,20 @@ const issueField = (
 }
 
 /**
+ * A draft the model can repair inside the run. TanStack AI hands the message
+ * back as a tool error, so it names the failing field first.
+ */
+class DraftToolRejected extends Schema.TaggedError<DraftToolRejected>()(
+  'DraftToolRejected',
+  {
+    /** The draft field whose value failed validation. */
+    field: Schema.String,
+    /** The model-facing sentence, which leads with the field name. */
+    message: Schema.String,
+  },
+) {}
+
+/**
  * Validate one raw tool call against its draft schema.
  *
  * `sourceQuote` is checked against the Capture text first: it must be an exact
@@ -69,7 +83,7 @@ const decodeDraft =
       )
     }
 
-    const result = Schema.decodeUnknownResult(schema)({
+    const result = Schema.decodeResult(schema)({
       ...raw,
       _tag: tag,
       sourceQuote,
@@ -112,7 +126,11 @@ const makeDraftTool = <D extends CaptureDraft>(
           // The model reads this message; name the field so its next call can
           // repair exactly the malformed value.
           Effect.mapError(
-            error => new Error(`invalid ${error.field}: ${error.message}`),
+            error =>
+              new DraftToolRejected({
+                field: error.field,
+                message: `invalid ${error.field}: ${error.message}`,
+              }),
           ),
         )
         yield* Ref.update(collector, drafts => [...drafts, draft])

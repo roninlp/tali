@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   type Habit,
   type HabitEntry,
@@ -15,6 +15,7 @@ import { openLocalStore } from '../src/local-store/store'
 import type { LocalStore } from '../src/local-store/types'
 import {
   createSyncEngine,
+  httpSyncTransport,
   SyncRejected,
   type SyncTransport,
 } from '../src/sync-engine'
@@ -1384,5 +1385,53 @@ describe('client sync engine', () => {
       data: { status: 'partial' },
     })
     store.close()
+  })
+})
+
+describe('the HTTP transport error envelope', () => {
+  const respondWith = (status: number, body: unknown): void => {
+    vi.stubGlobal('fetch', () =>
+      Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    )
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('carries the server retryable verdict on SyncRejected', async () => {
+    respondWith(403, {
+      error: {
+        code: 'Forbidden',
+        message: 'This row belongs to another household',
+        retryable: false,
+        details: { entityId: 'task-1' },
+      },
+    })
+
+    await expect(
+      httpSyncTransport({ baseUrl: '' }).pull(0, 10),
+    ).rejects.toMatchObject({
+      code: 'Forbidden',
+      retryable: false,
+      details: { entityId: 'task-1' },
+    })
+  })
+
+  it('falls back to a synthetic code when the envelope is malformed', async () => {
+    // A partial envelope (`retryable` missing) is not the canonical body, so
+    // the client must not attribute a retryable verdict the server never sent.
+    respondWith(500, {
+      error: { code: 'InternalError', message: 'boom' },
+    })
+
+    await expect(
+      httpSyncTransport({ baseUrl: '' }).pull(0, 10),
+    ).rejects.toMatchObject({ code: 'sync-failed', retryable: true })
   })
 })

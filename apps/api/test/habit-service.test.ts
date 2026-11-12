@@ -1,24 +1,21 @@
-import { readFileSync, readdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { Effect, Layer, String as Str } from 'effect'
-import { D1Client } from '@effect/sql-d1'
-import {
-  type HabitFrequency,
-  type HabitId,
-  type HouseholdId,
-  type UserId,
-  uuidV7,
-} from '@tali/domain'
+import { Layer } from 'effect'
+import { type HabitFrequency, type HabitId, uuidV7 } from '@tali/domain'
 import {
   HabitService,
   HabitServiceLive,
-  type HabitServiceApi,
   type HabitViewer,
 } from '../src/habit-service.js'
-import { SyncService, SyncServiceLive } from '../src/sync-service.js'
-import { FakeD1 } from './fake-d1.js'
+import { SyncServiceLive } from '../src/sync-service.js'
+import {
+  HOUSEHOLD,
+  NOW,
+  OTHER_HOUSEHOLD,
+  TZ,
+  USER_B,
+  makeViewer,
+} from './fixtures/identities.js'
+import { makeServiceHarness, type HarnessEnv } from './harness.js'
 
 /**
  * Ticket #63, at the service seam. These run the real service + repository +
@@ -27,73 +24,27 @@ import { FakeD1 } from './fake-d1.js'
  * production.
  */
 
-const MIGRATIONS_DIR = new URL(
-  '../../../packages/sql/migrations/',
-  import.meta.url,
-)
+const viewer = makeViewer<HabitViewer>({ timeZone: TZ })
 
-const migrationFiles = (): ReadonlyArray<string> =>
-  readdirSync(fileURLToPath(MIGRATIONS_DIR))
-    .filter(file => file.endsWith('.sql'))
-    .sort()
-
-const USER_A = 'user-a' as UserId
-const USER_B = 'user-b' as UserId
-const HOUSEHOLD = 'household-a' as HouseholdId
-const OTHER_HOUSEHOLD = 'household-b' as HouseholdId
-const TZ = 'Asia/Tehran'
-const NOW = '2026-10-20T09:30:00.000Z'
-
-const viewer = (overrides: Partial<HabitViewer> = {}): HabitViewer => ({
-  userId: USER_A,
-  householdId: HOUSEHOLD,
-  timeZone: TZ,
-  ...overrides,
-})
+const serviceLayer = ({ d1 }: HarnessEnv) =>
+  Layer.mergeAll(HabitServiceLive, SyncServiceLive).pipe(Layer.provide(d1))
 
 const makeHarness = () => {
-  const db = new DatabaseSync(':memory:')
-  for (const file of migrationFiles()) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), 'utf8'))
-  }
-
-  const fake = new FakeD1(db)
-  const d1 = D1Client.layer({
-    db: fake.asD1Database(),
-    transformQueryNames: Str.camelToSnake,
-    transformResultNames: Str.snakeToCamel,
-  })
-  const layer = Layer.mergeAll(HabitServiceLive, SyncServiceLive).pipe(
-    Layer.provide(d1),
-  )
-
-  const run = <A, E>(
-    effect: Effect.Effect<A, E, HabitService | SyncService>,
-  ): Promise<A> => Effect.runPromise(Effect.provide(effect, layer))
-
-  const svc = <A, E>(
-    f: (service: HabitServiceApi) => Effect.Effect<A, E, never>,
-  ): Promise<A> =>
-    run(
-      Effect.gen(function* () {
-        const service = yield* HabitService
-        return yield* f(service)
-      }),
-    )
+  const harness = makeServiceHarness(serviceLayer, HabitService)
 
   const feedCount = (): number =>
     (
-      db.prepare('SELECT COUNT(*) AS n FROM change_feed').get() as {
+      harness.db.prepare('SELECT COUNT(*) AS n FROM change_feed').get() as {
         readonly n: number
       }
     ).n
 
   const rowOf = (id: string): Record<string, unknown> | undefined =>
-    db.prepare('SELECT * FROM habits WHERE id = ?').get(id) as
+    harness.db.prepare('SELECT * FROM habits WHERE id = ?').get(id) as
       | Record<string, unknown>
       | undefined
 
-  return { db, fake, run, svc, feedCount, rowOf }
+  return { ...harness, feedCount, rowOf }
 }
 
 const daily = { _tag: 'daily' as const }
@@ -162,6 +113,51 @@ describe('HabitService', () => {
       readonly entityId: string
     }>
     expect(ledger).toEqual([{ entityType: 'habit', entityId: id }])
+  })
+
+  it('commits an update as one batch: entity write, feed row, ledger row', async () => {
+    const h = makeHarness()
+    const id = uuidV7() as HabitId
+    await h.svc(svc =>
+      svc.create(
+        viewer(),
+        {
+          clientMutationId: 'm-batch-create',
+          id,
+          title: 'کتاب',
+          frequency: daily,
+        },
+        NOW,
+      ),
+    )
+    const feedBefore = h.feedCount()
+    h.fake.batchStatementCounts.length = 0
+
+    await h.svc(svc =>
+      svc.update(
+        viewer(),
+        {
+          id,
+          clientMutationId: 'm-batch-update',
+          patch: { title: 'کتاب خواندن' },
+        },
+        NOW,
+      ),
+    )
+
+    // The kit asks the registry for index statements on every commit path, but
+    // `habit` has no `index` hook today (only `note` and `reminder` do), so the
+    // batch is byte-for-byte the pre-kit shape: the CAS entity write, the gated
+    // feed append and the gated ledger row. A future hook can no longer be
+    // skipped here — `apps/api/test/sync-write.test.ts` pins that contract.
+    expect(h.fake.batchStatementCounts).toEqual([3])
+    expect(h.feedCount()).toBe(feedBefore + 1)
+    const ledger = h.db
+      .prepare(
+        'SELECT entity_id AS entityId FROM applied_mutations WHERE client_mutation_id = ?',
+      )
+      .all('m-batch-update')
+    expect(ledger).toEqual([{ entityId: id }])
   })
 
   it("defaults the zone to the viewer's and the visibility to private", async () => {

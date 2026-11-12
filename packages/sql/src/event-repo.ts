@@ -15,6 +15,7 @@ import {
   allDayEventTiming,
   timedEventTiming,
 } from '@tali/domain'
+import { visibleScopeSql } from './scope'
 
 /**
  * D1-backed repository for `Event` (ticket #57; FR-CAL-01).
@@ -167,16 +168,11 @@ export class EventRepo extends Context.Service<EventRepo>()('EventRepo', {
   make: Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
 
-    /** The visibility filter every event read shares (private owner-only). */
+    /** ADR-0011: the visibility filter every event read shares. */
     const visibleScope = (input: {
       readonly householdId: string
       readonly userId: UserId
-    }): Statement.Fragment =>
-      sql`
-        household_id = ${input.householdId}
-        AND deleted_at IS NULL
-        AND (owner_id = ${input.userId} OR visibility = 'shared')
-      `
+    }): Statement.Fragment => visibleScopeSql(sql, input)
 
     const findById = (id: EventId) =>
       Effect.map(

@@ -1,4 +1,5 @@
 import { Schema } from 'effect'
+import { uuid7Id } from './planning/common.js'
 
 /**
  * The scaffold `ListItem` shape the sync `listItem` entity speaks.
@@ -13,8 +14,8 @@ import { Schema } from 'effect'
  * `apps/web-foldkit` and `apps/api` are allowed to depend on.
  */
 
-/** A `List` item id (FR-LIST-01). UUID string, validated at decode. */
-export const ListItemId = Schema.String.check(Schema.isUUID())
+/** A `List` item id (FR-LIST-01). Client-mintable UUID v7, validated at decode. */
+export const ListItemId = uuid7Id('ListItemId')
 export type ListItemId = Schema.Schema.Type<typeof ListItemId>
 
 /** A `List` item (FR-LIST-01/02). Timestamps are ISO-8601 UTC strings. */
@@ -22,8 +23,8 @@ export class ListItem extends Schema.Class<ListItem>('ListItem')({
   id: ListItemId,
   title: Schema.String,
   checked: Schema.Boolean,
-  sortOrder: Schema.Number,
-  version: Schema.Number,
+  sortOrder: Schema.Int,
+  version: Schema.Int,
   createdAt: Schema.String,
   updatedAt: Schema.String,
   deletedAt: Schema.OptionFromNullOr(Schema.String),
@@ -32,7 +33,7 @@ export class ListItem extends Schema.Class<ListItem>('ListItem')({
 /** Input for creating a `ListItem` (title-only is enough). */
 export const ListItemInsert = Schema.Struct({
   title: Schema.String,
-  sortOrder: Schema.Number,
+  sortOrder: Schema.Int,
 })
 export type ListItemInsert = Schema.Schema.Type<typeof ListItemInsert>
 

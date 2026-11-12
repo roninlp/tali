@@ -1,4 +1,4 @@
-import { Array, Clock, Duration, Effect, Option, Schema, Stream } from 'effect'
+import { Array, Clock, Effect, Option, Schema } from 'effect'
 import { Command, Dom, Submodel, Subscription, Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
@@ -36,15 +36,19 @@ import {
   restoreHabitInMirror,
   updateHabitInMirror,
 } from '../lib/habit-writes'
+import { TimestampMillis } from '../lib/schema-primitives'
 import { setVisibilityInMirror } from '../lib/visibility-writes'
 import type { MirrorSnapshot } from '../mirror'
 import type { DisplayFields } from '../preferences-model'
 import { LocalStoreResource } from '../sync/local-store'
 import type { LocalStoreService } from '../sync/local-store'
 import type { ConfirmSpec } from '../ui/confirm'
+import { confirmDialogFolds } from '../ui/confirm'
+import { clockEvents } from '../ui/dom-stream'
 import * as Picker from '../ui/picker'
-import { Toast, ToastUndo } from '../ui/toast'
+import { Toast, ToastUndo, toastFolds } from '../ui/toast'
 import { habitsPageView } from './habits-view'
+import { localWrite, storeFailureMessage } from './local-write'
 
 /**
  * The `/habits` screen Submodel, ported from
@@ -83,7 +87,7 @@ export const PendingHabitDelete = Schema.Struct({
 export type PendingHabitDelete = typeof PendingHabitDelete.Type
 
 export const Model = Schema.Struct({
-  now: Schema.Number,
+  now: TimestampMillis,
   windowDays: HabitWindowDays,
   maybeEditingId: Schema.Option(Schema.String),
   title: Schema.String,
@@ -150,7 +154,7 @@ export type ViewInputs = Inputs
 // MESSAGE
 
 export const Message = defineMessageUnion({
-  TickedClock: { now: Schema.Number },
+  TickedClock: { now: TimestampMillis },
   UpdatedHabitTitle: { value: Schema.String },
   UpdatedHabitDescription: { value: Schema.String },
   UpdatedHabitReminderTime: { value: Schema.String },
@@ -208,13 +212,6 @@ export const OutMessage = defineMessageUnion({
 export type OutMessage = typeof OutMessage.Type
 
 // COMMAND
-
-const storeFailureMessage = (cause: unknown): string =>
-  cause instanceof Error ? cause.message : 'ذخیره در حافظه‌ی محلی ناموفق بود'
-
-const currentIso = Clock.currentTimeMillis.pipe(
-  Effect.map(millis => new Date(millis).toISOString()),
-)
 
 export const FocusHabitTitle = Command.define('FocusHabitTitle', {
   messages: [Message.CompletedFocusHabitTitle],
@@ -299,59 +296,36 @@ export const UpdateHabit = Command.define('UpdateHabit', {
     icon,
     color,
   }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () =>
-          updateHabitInMirror(
-            store,
-            habit,
-            {
-              title,
-              description: Option.getOrNull(description),
-              reminderTime: Option.getOrNull(reminderTime),
-              frequency,
-              icon,
-              color,
-            },
-            now,
-          ),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedUpdateHabit({ habitId: habit.id, title })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedUpdateHabit({ message: storeFailureMessage(error) }),
+    localWrite({
+      run: (store, now) =>
+        updateHabitInMirror(
+          store,
+          habit,
+          {
+            title,
+            description: Option.getOrNull(description),
+            reminderTime: Option.getOrNull(reminderTime),
+            frequency,
+            icon,
+            color,
+          },
+          now,
         ),
-      ),
-    ),
+      onSuccess: () =>
+        Message.CompletedUpdateHabit({ habitId: habit.id, title }),
+      onFailure: message => Message.FailedUpdateHabit({ message }),
+    }),
 })
 
 export const DeleteHabit = Command.define('DeleteHabit', {
   args: { habitId: Schema.String, title: Schema.String },
   messages: [Message.CompletedDeleteHabit, Message.FailedDeleteHabit],
   execute: ({ habitId, title }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () => deleteHabitInMirror(store, habitId, now),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedDeleteHabit({ habitId, title })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedDeleteHabit({ message: storeFailureMessage(error) }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: (store, now) => deleteHabitInMirror(store, habitId, now),
+      onSuccess: () => Message.CompletedDeleteHabit({ habitId, title }),
+      onFailure: message => Message.FailedDeleteHabit({ message }),
+    }),
 })
 
 export const SetHabitVisibility = Command.define('SetHabitVisibility', {
@@ -364,49 +338,24 @@ export const SetHabitVisibility = Command.define('SetHabitVisibility', {
     Message.FailedSetHabitVisibility,
   ],
   execute: ({ habitId, visibility }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () =>
-          setVisibilityInMirror(store, 'habit', habitId, visibility, now),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedSetHabitVisibility({ habitId, visibility })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedSetHabitVisibility({
-            message: storeFailureMessage(error),
-          }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: (store, now) =>
+        setVisibilityInMirror(store, 'habit', habitId, visibility, now),
+      onSuccess: () =>
+        Message.CompletedSetHabitVisibility({ habitId, visibility }),
+      onFailure: message => Message.FailedSetHabitVisibility({ message }),
+    }),
 })
 
 export const RestoreHabit = Command.define('RestoreHabit', {
   args: { habitId: Schema.String, title: Schema.String },
   messages: [Message.CompletedRestoreHabit, Message.FailedRestoreHabit],
   execute: ({ habitId, title }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () => restoreHabitInMirror(store, habitId, now),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedRestoreHabit({ habitId, title })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedRestoreHabit({ message: storeFailureMessage(error) }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: (store, now) => restoreHabitInMirror(store, habitId, now),
+      onSuccess: () => Message.CompletedRestoreHabit({ habitId, title }),
+      onFailure: message => Message.FailedRestoreHabit({ message }),
+    }),
 })
 
 export const TapHabit = Command.define('TapHabit', {
@@ -553,110 +502,50 @@ const optionalText = (value: string): Option.Option<string> => {
 
 // DIALOG AND TOAST FOLDS
 
-const foldConfirmDialogOutMessage = Dialog.OutMessage.match<
-  Update.Step<Model, Message>
->({
-  Opened: () => model => ({ model }),
-  Closed: () => stepModel => ({
-    model: modifyFields(stepModel, {
-      maybePendingDelete: () => Option.none(),
-    }),
-  }),
-})
-
-const foldConfirmDialog = Update.foldChild({
-  update: Dialog.update,
-  read: (model: Model) => Option.some(model.confirmDialog),
-  write: (model, nextDialog) =>
+const confirmDialog = confirmDialogFolds<Model, Message>({
+  field: model => model.confirmDialog,
+  setField: (model, nextDialog) =>
     modifyFields(model, { confirmDialog: () => nextDialog }),
   toParentMessage: message => Message.GotConfirmDialogMessage({ message }),
-  foldOutMessage: foldConfirmDialogOutMessage,
+  whenClosed: model =>
+    modifyFields(model, { maybePendingDelete: () => Option.none() }),
 })
 
-const foldConfirmDialogOpen = Update.foldChildStep({
-  update: Dialog.open,
-  read: (model: Model) => Option.some(model.confirmDialog),
-  write: (model, nextDialog) =>
-    modifyFields(model, { confirmDialog: () => nextDialog }),
-  toParentMessage: message => Message.GotConfirmDialogMessage({ message }),
-  foldOutMessage: foldConfirmDialogOutMessage,
+const foldConfirmDialog = confirmDialog.fold
+const foldConfirmDialogOpen = confirmDialog.openStep
+const foldConfirmDialogClose = confirmDialog.closeStep
+
+const toast = toastFolds<Model, Message>({
+  field: model => model.toast,
+  setField: (model, nextToast) =>
+    modifyFields(model, { toast: () => nextToast }),
+  toParentMessage: message => Message.GotToastMessage({ message }),
 })
 
-const foldConfirmDialogClose = Update.foldChildStep({
-  update: Dialog.close,
-  read: (model: Model) => Option.some(model.confirmDialog),
-  write: (model, nextDialog) =>
-    modifyFields(model, { confirmDialog: () => nextDialog }),
-  toParentMessage: message => Message.GotConfirmDialogMessage({ message }),
-  foldOutMessage: foldConfirmDialogOutMessage,
-})
+const foldToast = toast.fold
+const dismissedToastStep = toast.dismissedStep
 
 const shownDeletedToastStep = (
   habitId: string,
   title: string,
 ): Update.Step<Model, Message> =>
-  Update.foldChildStep({
-    update: toast =>
-      Toast.show(toast, {
-        payload: {
-          text: `«${title}» حذف شد.`,
-          maybeUndo: { kind: 'restoreHabit', id: habitId, title },
-        },
-        variant: 'Info',
-      }),
-    read: (model: Model) => Option.some(model.toast),
-    write: (model, nextToast) =>
-      modifyFields(model, { toast: () => nextToast }),
-    toParentMessage: message => Message.GotToastMessage({ message }),
-    foldOutMessage: () => stepModel => ({ model: stepModel }),
-  })
+  toast.shownStep(
+    {
+      text: `«${title}» حذف شد.`,
+      maybeUndo: { kind: 'restoreHabit', id: habitId, title },
+    },
+    'Info',
+  )
 
-const dismissedToastStep = (entryId: string): Update.Step<Model, Message> =>
-  Update.foldChildStep({
-    update: toast => Toast.dismiss(toast, entryId),
-    read: (model: Model) => Option.some(model.toast),
-    write: (model, nextToast) =>
-      modifyFields(model, { toast: () => nextToast }),
-    toParentMessage: message => Message.GotToastMessage({ message }),
-    foldOutMessage: () => stepModel => ({ model: stepModel }),
-  })
-
-const foldToast = Update.foldChild({
-  update: Toast.update,
-  read: (model: Model) => Option.some(model.toast),
-  write: (model, nextToast) => modifyFields(model, { toast: () => nextToast }),
-  toParentMessage: message => Message.GotToastMessage({ message }),
-  foldOutMessage: () => stepModel => ({ model: stepModel }),
-})
-
-const foldPickerOutMessage = Picker.OutMessage.match<
-  Update.Step<Model, Message>
->({
-  PickedValue:
-    ({ target, value }) =>
-    stepModel => ({
-      model:
-        target === 'habit:reminderTime'
-          ? modifyFields(stepModel, { reminderTime: () => value })
-          : stepModel,
-    }),
-  ClearedValue:
-    ({ target }) =>
-    stepModel => ({
-      model:
-        target === 'habit:reminderTime'
-          ? modifyFields(stepModel, { reminderTime: () => '' })
-          : stepModel,
-    }),
-})
-
-const foldPicker = Update.foldChild({
-  update: Picker.update,
-  read: (model: Model) => Option.some(model.picker),
-  write: (model, nextPicker) =>
+const foldPicker = Picker.pickerFieldFold<Model, Message>({
+  field: model => model.picker,
+  setField: (model, nextPicker) =>
     modifyFields(model, { picker: () => nextPicker }),
   toParentMessage: message => Message.GotPickerMessage({ message }),
-  foldOutMessage: foldPickerOutMessage,
+  applyValue: (model, target, value) =>
+    target === 'habit:reminderTime'
+      ? modifyFields(model, { reminderTime: () => value })
+      : model,
 })
 
 export const update = (
@@ -1061,29 +950,10 @@ export const confirmSpec = (model: Model): Option.Option<ConfirmSpec> =>
 
 // SUBSCRIPTION
 
-const clockTick = Effect.gen(function* () {
-  const now = yield* Clock.currentTimeMillis
-
-  return Message.TickedClock({ now })
-})
-
-/**
- * Tick once on mount so a return to the screen recomputes "today"
- * immediately, then once a minute while the route stays open.
- */
-const clockEvents: Stream.Stream<Message> = Stream.concat(
-  Stream.fromEffect(clockTick),
-  Stream.fromEffectRepeat(
-    Effect.gen(function* () {
-      yield* Effect.sleep(Duration.seconds(60))
-
-      return yield* clockTick
-    }),
-  ),
-)
-
 export const subscriptions = Subscription.make<Model, Message>()(_entry => ({
-  habitsClock: Subscription.persistentEntry(clockEvents),
+  habitsClock: Subscription.persistentEntry(
+    clockEvents(now => Message.TickedClock({ now })),
+  ),
 }))
 
 // VIEW

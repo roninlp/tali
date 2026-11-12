@@ -1,8 +1,8 @@
-import { Effect, Option, Schema } from 'effect'
+import { Effect, Schema } from 'effect'
 
 import { Preferences, type PreferencesPatch } from '../preferences-model'
 import { type ApiResult, AuthFailure, classifyApiFailure } from './auth-api'
-import { API_URL } from './config'
+import { requestJson } from './http'
 
 /**
  * The plain-HTTP preferences client, ported from
@@ -19,68 +19,31 @@ import { API_URL } from './config'
  * value on the next device for no benefit.
  */
 
-const REQUEST_TIMEOUT_MS = 15_000
-
 const PreferencesResponse = Schema.Struct({ preferences: Preferences })
+
+type PreferencesResponse = typeof PreferencesResponse.Type
+
+const unwrapPreferences = (
+  result: ApiResult<PreferencesResponse>,
+): ApiResult<Preferences> =>
+  result.ok ? { ok: true, value: result.value.preferences } : result
 
 const send = (
   method: 'GET' | 'PATCH',
   body?: PreferencesPatch,
 ): Effect.Effect<ApiResult<Preferences>> =>
-  Effect.gen(function* () {
-    const init: RequestInit = {
-      method,
-      credentials: 'include',
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    }
-
-    if (body !== undefined) {
-      init.headers = { 'content-type': 'application/json' }
-      init.body = JSON.stringify(body)
-    }
-
-    const maybeResponse = yield* Effect.option(
-      Effect.tryPromise({
-        try: () => fetch(`${API_URL}/preferences`, init),
-        catch: () => undefined,
-      }),
-    )
-
-    if (Option.isNone(maybeResponse)) {
-      return {
-        ok: false,
-        error: AuthFailure.make({ code: 'Network', retryable: true }),
-      }
-    }
-
-    const response = maybeResponse.value
-
-    const maybeJson = yield* Effect.option(
-      Effect.tryPromise({
-        try: () => response.json(),
-        catch: () => undefined,
-      }),
-    )
-
-    const json = Option.getOrUndefined(
-      Option.flatMap(maybeJson, value =>
-        Schema.decodeUnknownOption(Schema.Json)(value),
-      ),
-    )
-
-    if (!response.ok) {
-      return { ok: false, error: classifyApiFailure(response.status, json) }
-    }
-
-    const decoded = Schema.decodeUnknownOption(PreferencesResponse)(json)
-
-    return Option.isSome(decoded)
-      ? { ok: true, value: decoded.value.preferences }
-      : {
-          ok: false,
-          error: { code: 'InternalError', retryable: false },
-        }
-  })
+  requestJson({
+    method,
+    path: '/preferences',
+    schema: PreferencesResponse,
+    body,
+    classify: classifyApiFailure,
+    networkFailure: AuthFailure.make({ code: 'Network', retryable: true }),
+    decodeFailure: AuthFailure.make({
+      code: 'InternalError',
+      retryable: false,
+    }),
+  }).pipe(Effect.map(unwrapPreferences))
 
 export const preferencesApi = {
   get: (): Effect.Effect<ApiResult<Preferences>> => send('GET'),

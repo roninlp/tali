@@ -1,13 +1,4 @@
-import {
-  Array,
-  Clock,
-  Duration,
-  Effect,
-  Option,
-  Queue,
-  Schema,
-  Stream,
-} from 'effect'
+import { Array, Clock, Duration, Effect, Option, Schema, Stream } from 'effect'
 import { Command, Dom, Submodel, Subscription, Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
@@ -37,6 +28,8 @@ import type { MirrorSnapshot } from '../mirror'
 import type { DisplayFields } from '../preferences-model'
 import { LocalStoreResource } from '../sync/local-store'
 import type { LocalStoreService } from '../sync/local-store'
+import { eventStream } from '../ui/dom-stream'
+import { localWrite, storeFailureMessage } from './local-write'
 import { noteEditorView } from './note-view'
 import { notesTrashView } from './notes-trash-view'
 import { notesIndexView } from './notes-view'
@@ -301,9 +294,6 @@ export type OutMessage = typeof OutMessage.Type
 
 // COMMAND
 
-const storeFailureMessage = (cause: unknown): string =>
-  cause instanceof Error ? cause.message : 'ذخیره در حافظه‌ی محلی ناموفق بود'
-
 /**
  * Restore is the one note write that cannot be queued: the sync protocol's
  * tombstone-wins rule means an offline upsert can never resurrect a row, so
@@ -320,10 +310,6 @@ const restoreFailureMessage = (source: RestoreSource): string =>
   source === 'trash'
     ? 'بازگردانی انجام نشد. اتصال را بررسی کنید و دوباره تلاش کنید.'
     : 'بازگردانی انجام نشد. اتصال را بررسی کنید.'
-
-const currentIso = Clock.currentTimeMillis.pipe(
-  Effect.map(millis => new Date(millis).toISOString()),
-)
 
 /** Read the mirror row and crash draft, then reconcile them. */
 export const LoadNoteEditor = Command.define('LoadNoteEditor', {
@@ -456,52 +442,23 @@ export const SetNotePinned = Command.define('SetNotePinned', {
   args: { noteId: Schema.String, isPinned: Schema.Boolean },
   messages: [Message.CompletedSetPinned, Message.FailedSetPinned],
   execute: ({ noteId, isPinned }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () => setNotePinnedInMirror(store, noteId, isPinned, now),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedSetPinned({ noteId, isPinned })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedSetPinned({
-            noteId,
-            message: storeFailureMessage(error),
-          }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: (store, now) => setNotePinnedInMirror(store, noteId, isPinned, now),
+      onSuccess: () => Message.CompletedSetPinned({ noteId, isPinned }),
+      onFailure: message => Message.FailedSetPinned({ noteId, message }),
+    }),
 })
 
 export const SetNoteArchived = Command.define('SetNoteArchived', {
   args: { noteId: Schema.String, isArchived: Schema.Boolean },
   messages: [Message.CompletedSetArchived, Message.FailedSetArchived],
   execute: ({ noteId, isArchived }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () => setNoteArchivedInMirror(store, noteId, isArchived, now),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedSetArchived({ noteId, isArchived })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedSetArchived({
-            noteId,
-            message: storeFailureMessage(error),
-          }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: (store, now) =>
+        setNoteArchivedInMirror(store, noteId, isArchived, now),
+      onSuccess: () => Message.CompletedSetArchived({ noteId, isArchived }),
+      onFailure: message => Message.FailedSetArchived({ noteId, message }),
+    }),
 })
 
 export const SetNoteVisibility = Command.define('SetNoteVisibility', {
@@ -514,78 +471,35 @@ export const SetNoteVisibility = Command.define('SetNoteVisibility', {
     Message.FailedSetNoteVisibility,
   ],
   execute: ({ noteId, visibility }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () =>
-          setVisibilityInMirror(store, 'note', noteId, visibility, now),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedSetNoteVisibility({ noteId, visibility })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedSetNoteVisibility({
-            message: storeFailureMessage(error),
-          }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: (store, now) =>
+        setVisibilityInMirror(store, 'note', noteId, visibility, now),
+      onSuccess: () =>
+        Message.CompletedSetNoteVisibility({ noteId, visibility }),
+      onFailure: message => Message.FailedSetNoteVisibility({ message }),
+    }),
 })
 
 export const SetNoteTags = Command.define('SetNoteTags', {
   args: { noteId: Schema.String, tagIds: Schema.Array(Schema.String) },
   messages: [Message.CompletedSetTags, Message.FailedSetTags],
   execute: ({ noteId, tagIds }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () => setNoteTagsInMirror(store, noteId, tagIds, now),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedSetTags({ noteId, tagIds })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedSetTags({
-            noteId,
-            message: storeFailureMessage(error),
-          }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: (store, now) => setNoteTagsInMirror(store, noteId, tagIds, now),
+      onSuccess: () => Message.CompletedSetTags({ noteId, tagIds }),
+      onFailure: message => Message.FailedSetTags({ noteId, message }),
+    }),
 })
 
 export const DeleteNote = Command.define('DeleteNote', {
   args: { noteId: Schema.String },
   messages: [Message.CompletedTrashNote, Message.FailedTrashNote],
   execute: ({ noteId }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () => trashNoteInMirror(store, noteId, now),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedTrashNote({ noteId })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedTrashNote({
-            noteId,
-            message: storeFailureMessage(error),
-          }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: (store, now) => trashNoteInMirror(store, noteId, now),
+      onSuccess: () => Message.CompletedTrashNote({ noteId }),
+      onFailure: message => Message.FailedTrashNote({ noteId, message }),
+    }),
 })
 
 export const SaveNoteContent = Command.define('SaveNoteContent', {
@@ -597,27 +511,14 @@ export const SaveNoteContent = Command.define('SaveNoteContent', {
   },
   messages: [Message.CompletedSaveNote, Message.FailedSaveNote],
   execute: ({ noteId, title, text, generation }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () => saveNoteContentInMirror(store, noteId, { title, text }, now),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedSaveNote({ noteId, title, text, generation })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedSaveNote({
-            noteId,
-            generation,
-            message: storeFailureMessage(error),
-          }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: (store, now) =>
+        saveNoteContentInMirror(store, noteId, { title, text }, now),
+      onSuccess: () =>
+        Message.CompletedSaveNote({ noteId, title, text, generation }),
+      onFailure: message =>
+        Message.FailedSaveNote({ noteId, generation, message }),
+    }),
 })
 
 export const SaveNoteDraft = Command.define('SaveNoteDraft', {
@@ -630,59 +531,35 @@ export const SaveNoteDraft = Command.define('SaveNoteDraft', {
   },
   messages: [Message.CompletedSaveNoteDraft, Message.FailedSaveNoteDraft],
   execute: ({ noteId, text, savedText, version, revision }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* Clock.currentTimeMillis
+    localWrite({
+      run: async (store, now) => {
+        if (text === savedText) {
+          return clearNoteDraft(store, noteId)
+        }
 
-      if (text === savedText) {
-        yield* Effect.tryPromise({
-          try: () => clearNoteDraft(store, noteId),
-          catch: storeFailureMessage,
-        })
-      } else {
         const draft: NoteDraft = {
           version,
           text,
           baseText: savedText,
-          savedAt: new Date(now).toISOString(),
+          savedAt: now,
         }
 
-        yield* Effect.tryPromise({
-          try: () => saveNoteDraft(store, noteId, draft),
-          catch: storeFailureMessage,
-        })
-      }
-
-      return Message.CompletedSaveNoteDraft({ noteId, revision })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedSaveNoteDraft({ message: storeFailureMessage(error) }),
-        ),
-      ),
-    ),
+        return saveNoteDraft(store, noteId, draft)
+      },
+      onSuccess: () => Message.CompletedSaveNoteDraft({ noteId, revision }),
+      onFailure: message => Message.FailedSaveNoteDraft({ message }),
+    }),
 })
 
 export const ClearNoteDraft = Command.define('ClearNoteDraft', {
   args: { noteId: Schema.String },
   messages: [Message.CompletedClearNoteDraft, Message.FailedClearNoteDraft],
   execute: ({ noteId }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-
-      yield* Effect.tryPromise({
-        try: () => clearNoteDraft(store, noteId),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedClearNoteDraft({ noteId })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedClearNoteDraft({ message: storeFailureMessage(error) }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: store => clearNoteDraft(store, noteId),
+      onSuccess: () => Message.CompletedClearNoteDraft({ noteId }),
+      onFailure: message => Message.FailedClearNoteDraft({ message }),
+    }),
 })
 
 /** Save the buffered text, then archive. Ordered in one Command. */
@@ -694,27 +571,15 @@ export const ArchiveEditedNote = Command.define('ArchiveEditedNote', {
   },
   messages: [Message.CompletedArchiveNote, Message.FailedArchiveNote],
   execute: ({ noteId, title, text }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
+    localWrite({
+      run: async (store, now) => {
+        await saveNoteContentInMirror(store, noteId, { title, text }, now)
 
-      yield* Effect.tryPromise({
-        try: () => saveNoteContentInMirror(store, noteId, { title, text }, now),
-        catch: storeFailureMessage,
-      })
-      yield* Effect.tryPromise({
-        try: () => setNoteArchivedInMirror(store, noteId, true, now),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedArchiveNote({ noteId, title, text })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedArchiveNote({ message: storeFailureMessage(error) }),
-        ),
-      ),
-    ),
+        return setNoteArchivedInMirror(store, noteId, true, now)
+      },
+      onSuccess: () => Message.CompletedArchiveNote({ noteId, title, text }),
+      onFailure: message => Message.FailedArchiveNote({ message }),
+    }),
 })
 
 /** Save the buffered text, then soft-delete. Ordered in one Command. */
@@ -726,30 +591,15 @@ export const TrashEditedNote = Command.define('TrashEditedNote', {
   },
   messages: [Message.CompletedTrashNote, Message.FailedTrashNote],
   execute: ({ noteId, title, text }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
+    localWrite({
+      run: async (store, now) => {
+        await saveNoteContentInMirror(store, noteId, { title, text }, now)
 
-      yield* Effect.tryPromise({
-        try: () => saveNoteContentInMirror(store, noteId, { title, text }, now),
-        catch: storeFailureMessage,
-      })
-      yield* Effect.tryPromise({
-        try: () => trashNoteInMirror(store, noteId, now),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedTrashNote({ noteId })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedTrashNote({
-            noteId,
-            message: storeFailureMessage(error),
-          }),
-        ),
-      ),
-    ),
+        return trashNoteInMirror(store, noteId, now)
+      },
+      onSuccess: () => Message.CompletedTrashNote({ noteId }),
+      onFailure: message => Message.FailedTrashNote({ noteId, message }),
+    }),
 })
 
 export const RestoreNote = Command.define('RestoreNote', {
@@ -787,13 +637,11 @@ export const RestoreNote = Command.define('RestoreNote', {
 
       return Message.CompletedRestoreNote({ noteId, source })
     }).pipe(
-      Effect.catch(() =>
-        Effect.succeed(
-          Message.FailedRestoreNote({
-            source,
-            message: restoreFailureMessage(source),
-          }),
-        ),
+      Effect.orElseSucceed(() =>
+        Message.FailedRestoreNote({
+          source,
+          message: restoreFailureMessage(source),
+        }),
       ),
     ),
 })
@@ -1839,20 +1687,6 @@ export const mirrorSettled = (model: Model, inputs: Inputs): CommandReturn => {
 }
 
 // SUBSCRIPTION
-
-const eventStream = <A>(
-  subscribe: (emit: (value: A) => void) => () => void,
-): Stream.Stream<A> =>
-  Stream.callback<A>(queue =>
-    Effect.acquireRelease(
-      Effect.sync(() =>
-        subscribe(value => {
-          Queue.offerUnsafe(queue, value)
-        }),
-      ),
-      unsubscribe => Effect.sync(unsubscribe),
-    ).pipe(Effect.flatMap(() => Effect.never)),
-  )
 
 const pageHideEvents: Stream.Stream<Message> = eventStream(emit => {
   const onPageHide = () => emit(Message.FlushedNoteOnHide())

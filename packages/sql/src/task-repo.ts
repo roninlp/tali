@@ -10,6 +10,7 @@ import {
   type TaskStatus,
   type UserId,
 } from '@tali/domain'
+import { visibleScopeSql } from './scope'
 
 /**
  * D1-backed repository for `Task` (ticket #33; FR-TASK-01/02/05).
@@ -133,16 +134,11 @@ export class TaskRepo extends Context.Service<TaskRepo>()('TaskRepo', {
   make: Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
 
-    /** The visibility filter every task read shares (private owner-only, else shared). */
+    /** ADR-0011: the visibility filter every task read shares. */
     const visibleScope = (input: {
       readonly householdId: string
       readonly userId: UserId
-    }): Statement.Fragment =>
-      sql`
-        household_id = ${input.householdId}
-        AND deleted_at IS NULL
-        AND (owner_id = ${input.userId} OR visibility = 'shared')
-      `
+    }): Statement.Fragment => visibleScopeSql(sql, input)
 
     const findById = (id: TaskId) =>
       Effect.map(

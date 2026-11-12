@@ -1,6 +1,11 @@
 import { Schema } from 'effect'
 import { Temporal } from 'temporal-polyfill/full'
 import {
+  addLocalDays,
+  isReadableLocalDate,
+  plainDateOf,
+} from '../local-date.js'
+import {
   daysInJalaliMonth,
   jalaliDate,
   toIsoDate,
@@ -143,19 +148,6 @@ export const OCCASION_REMINDER_HOUR = 9
 export const occasionPreparationTaskTitle = (occasionTitle: string): string =>
   `آماده‌سازی برای ${occasionTitle}`
 
-const plainDate = (date: string): Temporal.PlainDate =>
-  Temporal.PlainDate.from(date)
-
-/** A local date the calendar can actually read (`2026-02-30` cannot). */
-const isReadableDate = (date: string): boolean => {
-  try {
-    plainDate(date)
-    return true
-  } catch {
-    return false
-  }
-}
-
 const jalaliYearOf = (date: string): number => toJalaliDate(date).year
 
 /** The Jalali month/day an occasion repeats on. */
@@ -176,7 +168,7 @@ export const occasionDateInJalaliYear = (
   occasion: OccasionSource,
   year: number,
 ): LocalDate | null => {
-  if (!isReadableDate(occasion.originDate)) return null
+  if (!isReadableLocalDate(occasion.originDate)) return null
   const originJalali = toJalaliDate(occasion.originDate)
   if (year < originJalali.year) return null
   if (!occasion.yearly && year !== originJalali.year) return null
@@ -192,7 +184,7 @@ export const occasionReminderInstant = (
   dueDate: string,
   timeZone: string,
 ): TimestampUtc => {
-  const date = plainDate(dueDate)
+  const date = plainDateOf(dueDate)
   return Temporal.ZonedDateTime.from({
     timeZone,
     year: date.year,
@@ -216,11 +208,7 @@ export const occasionAdvanceReminderDate = (
 ): LocalDate | null =>
   occasion.advanceReminderDays === null
     ? null
-    : (plainDate(occurrenceDate)
-        .subtract({
-          days: occasion.advanceReminderDays,
-        })
-        .toString() as LocalDate)
+    : addLocalDays(occurrenceDate, -occasion.advanceReminderDays)
 
 /**
  * The reminder draft for one occurrence, or `null` when the occasion has no
@@ -252,7 +240,7 @@ const occurrenceOf = (
   date: LocalDate,
 ): OccasionOccurrence => {
   const jalali = toJalaliFields(toJalaliDate(date))
-  const gregorian = plainDate(date).withCalendar('iso8601')
+  const gregorian = plainDateOf(date).withCalendar('iso8601')
   const reminderDate = occasionAdvanceReminderDate(occasion, date)
   return {
     key: `${occasion.id}@${date}`,
@@ -289,7 +277,8 @@ export const occasionOccurrences = (input: {
   readonly range: OccasionRange
 }): ReadonlyArray<OccasionOccurrence> => {
   const { from, to } = input.range
-  if (!isReadableDate(from) || !isReadableDate(to) || to < from) return []
+  if (!isReadableLocalDate(from) || !isReadableLocalDate(to) || to < from)
+    return []
 
   const firstYear = jalaliYearOf(from)
   const lastYear = jalaliYearOf(to)
@@ -299,7 +288,7 @@ export const occasionOccurrences = (input: {
   for (const occasion of input.occasions) byId.set(occasion.id, occasion)
 
   for (const occasion of byId.values()) {
-    if (!isReadableDate(occasion.originDate)) continue
+    if (!isReadableLocalDate(occasion.originDate)) continue
     for (let year = firstYear; year <= lastYear; year += 1) {
       const date = occasionDateInJalaliYear(occasion, year)
       if (date === null || date < from || date > to) continue
@@ -327,8 +316,8 @@ export const nextOccasionOccurrence = (
   occasion: OccasionSource,
   from: string,
 ): OccasionOccurrence | null => {
-  if (!isReadableDate(from)) return null
-  const to = plainDate(from).add({ days: 400 }).toString() as LocalDate
+  if (!isReadableLocalDate(from)) return null
+  const to = addLocalDays(from, 400)
   const window = occasionOccurrences({
     occasions: [occasion],
     range: { from: from as LocalDate, to },
@@ -341,7 +330,7 @@ export const isOccasionOccurrence = (
   occasion: OccasionSource,
   date: string,
 ): boolean =>
-  isReadableDate(date) &&
+  isReadableLocalDate(date) &&
   occasionOccurrences({
     occasions: [occasion],
     range: { from: date as LocalDate, to: date as LocalDate },
@@ -359,7 +348,8 @@ export const occasionAdvanceReminders = (input: {
   readonly range: OccasionRange
 }): ReadonlyArray<OccasionAdvanceReminder> => {
   const { from, to } = input.range
-  if (!isReadableDate(from) || !isReadableDate(to) || to < from) return []
+  if (!isReadableLocalDate(from) || !isReadableLocalDate(to) || to < from)
+    return []
 
   const reminders: Array<OccasionAdvanceReminder> = []
   const seen = new Set<string>()
@@ -368,10 +358,8 @@ export const occasionAdvanceReminders = (input: {
 
   for (const occasion of byId.values()) {
     const advance = occasion.advanceReminderDays
-    if (advance === null || !isReadableDate(occasion.originDate)) continue
-    const occurrenceTo = plainDate(to)
-      .add({ days: advance })
-      .toString() as LocalDate
+    if (advance === null || !isReadableLocalDate(occasion.originDate)) continue
+    const occurrenceTo = addLocalDays(to, advance)
     const occurrences = occasionOccurrences({
       occasions: [occasion],
       range: { from: from as LocalDate, to: occurrenceTo },

@@ -1,9 +1,5 @@
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { Effect, Layer, String as Str } from 'effect'
-import { D1Client } from '@effect/sql-d1'
+import { Effect, Layer } from 'effect'
 import {
   PlanningListItem,
   Task,
@@ -21,6 +17,7 @@ import {
   TaskRepoLive,
 } from '@tali/sql'
 import { FakeD1 } from './fake-d1.js'
+import { d1Layer, openMigratedDatabase } from './harness.js'
 
 /**
  * Guards the two query-level rules ticket #33's repos must honor
@@ -32,6 +29,7 @@ import { FakeD1 } from './fake-d1.js'
  *    alphabetical order (`done` < `todo`, `low` < `medium`).
  */
 
+/** The subset these repos were introduced with; later aggregates are irrelevant. */
 const MIGRATIONS = [
   '0001_list_items.sql',
   '0002_auth.sql',
@@ -49,17 +47,9 @@ const USER_B = 'user-b' as UserId
 const HOUSEHOLD = 'household-1' as HouseholdId
 
 const makeHarness = () => {
-  const db = new DatabaseSync(':memory:')
-  const dir = new URL('../../../packages/sql/migrations/', import.meta.url)
-  for (const file of MIGRATIONS) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, dir)), 'utf8'))
-  }
+  const db = openMigratedDatabase(MIGRATIONS)
 
-  const d1 = D1Client.layer({
-    db: new FakeD1(db).asD1Database(),
-    transformQueryNames: Str.camelToSnake,
-    transformResultNames: Str.snakeToCamel,
-  })
+  const d1 = d1Layer(new FakeD1(db))
   const layer = Layer.mergeAll(TaskRepoLive, PlanningListItemRepoLive).pipe(
     Layer.provide(d1),
   )

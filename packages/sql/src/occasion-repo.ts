@@ -8,6 +8,7 @@ import {
   type UserId,
   type Visibility,
 } from '@tali/domain'
+import { visibleScopeSql } from './scope'
 
 /**
  * D1-backed repository for `Occasion` (ticket #59; FR-CAL-02).
@@ -85,16 +86,11 @@ export class OccasionRepo extends Context.Service<OccasionRepo>()(
     make: Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient
 
-      /** The visibility filter every occasion read shares (private owner-only). */
+      /** ADR-0011: the visibility filter every occasion read shares. */
       const visibleScope = (input: {
         readonly householdId: string
         readonly userId: UserId
-      }): Statement.Fragment =>
-        sql`
-        household_id = ${input.householdId}
-        AND deleted_at IS NULL
-        AND (owner_id = ${input.userId} OR visibility = 'shared')
-      `
+      }): Statement.Fragment => visibleScopeSql(sql, input)
 
       const findById = (id: OccasionId) =>
         Effect.map(
@@ -131,6 +127,7 @@ export class OccasionRepo extends Context.Service<OccasionRepo>()(
        */
       const listByHousehold = (householdId: string) =>
         Effect.map(
+          // No viewer, so deliberately not `visibleScopeSql` — see the doc above.
           sql<OccasionRow>`
           SELECT ${sql.literal(OCCASION_SELECT)} FROM occasions
           WHERE household_id = ${householdId} AND deleted_at IS NULL
@@ -149,6 +146,7 @@ export class OccasionRepo extends Context.Service<OccasionRepo>()(
        */
       const listAdvanceReminderSources = (limit: number) =>
         Effect.map(
+          // No viewer, so deliberately not `visibleScopeSql` — see the doc above.
           sql<OccasionRow>`
           SELECT ${sql.literal(OCCASION_SELECT)} FROM occasions
           WHERE deleted_at IS NULL AND advance_reminder_days IS NOT NULL

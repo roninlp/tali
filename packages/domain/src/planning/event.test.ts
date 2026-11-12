@@ -65,14 +65,14 @@ const allDayEvent = {
 
 describe('Event model', () => {
   it('round-trips a timed event', () => {
-    const decoded = Schema.decodeUnknownSync(Event)(timedEvent)
+    const decoded = Schema.decodeSync(Event)(timedEvent)
     expect(decoded.timing).toEqual(timedEvent.timing)
     expect(decoded.people).toEqual(['سارا'])
     expect(decoded.title).toBe('جلسهٔ هم‌اندیشی')
   })
 
   it('round-trips an all-day event', () => {
-    const decoded = Schema.decodeUnknownSync(Event)(allDayEvent)
+    const decoded = Schema.decodeSync(Event)(allDayEvent)
     expect(decoded.timing).toEqual({ _tag: 'allDay', date: '2026-10-21' })
   })
 
@@ -81,13 +81,13 @@ describe('Event model', () => {
       Schema.decodeUnknownSync(EventTiming)({ _tag: 'timed', start: NOW }),
     ).toThrow()
     expect(() =>
-      Schema.decodeUnknownSync(EventTiming)({
+      Schema.decodeSync(EventTiming)({
         _tag: 'allDay',
         date: '1403/07/28',
       }),
     ).toThrow()
     expect(() =>
-      Schema.decodeUnknownSync(EventTiming)({
+      Schema.decodeSync(EventTiming)({
         _tag: 'allDay',
         date: '2026-10-21',
       }),
@@ -99,16 +99,16 @@ describe('Event model', () => {
       Schema.decodeUnknownSync(Event)({ ...timedEvent, type: 'task' }),
     ).toThrow()
     expect(() =>
-      Schema.decodeUnknownSync(Event)({ ...timedEvent, id: 'not-a-uuid' }),
+      Schema.decodeSync(Event)({ ...timedEvent, id: 'not-a-uuid' }),
     ).toThrow()
     expect(() =>
-      Schema.decodeUnknownSync(Event)({
+      Schema.decodeSync(Event)({
         ...timedEvent,
         timeZone: 'Mars/Olympus',
       }),
     ).toThrow()
     expect(() =>
-      Schema.decodeUnknownSync(Event)({ ...timedEvent, people: [''] }),
+      Schema.decodeSync(Event)({ ...timedEvent, people: [''] }),
     ).toThrow()
   })
 
@@ -128,7 +128,7 @@ describe('Event model', () => {
         createdAt: NOW,
       },
     ]
-    const decoded = Schema.decodeUnknownSync(Event)({
+    const decoded = Schema.decodeSync(Event)({
       ...timedEvent,
       recurrence,
       exceptions,
@@ -139,19 +139,19 @@ describe('Event model', () => {
 
   it('keeps the reserved relations', () => {
     const occasionId = uuidV7(1_700_000_000_023) as OccasionId
-    const decoded = Schema.decodeUnknownSync(Event)({
+    const decoded = Schema.decodeSync(Event)({
       ...timedEvent,
       occasionId,
     })
     expect(decoded.occasionId).toBe(occasionId)
 
-    const link = Schema.decodeUnknownSync(ReminderLink)({
+    const link = Schema.decodeSync(ReminderLink)({
       _tag: 'event',
       eventId: timedEvent.id,
     })
     expect(link).toEqual({ _tag: 'event', eventId: timedEvent.id })
     expect(() =>
-      Schema.decodeUnknownSync(ReminderLink)({
+      Schema.decodeSync(ReminderLink)({
         _tag: 'event',
         eventId: 'not-a-uuid',
       }),
@@ -159,7 +159,7 @@ describe('Event model', () => {
   })
 
   it('decodes a minimal create input and a one-field patch', () => {
-    const created = Schema.decodeUnknownSync(EventCreateInput)({
+    const created = Schema.decodeSync(EventCreateInput)({
       clientMutationId: 'm-1',
       title: 'قرار',
       timing: { _tag: 'allDay', date: '2026-10-21' },
@@ -170,7 +170,7 @@ describe('Event model', () => {
       timing: { _tag: 'allDay', date: '2026-10-21' },
     })
 
-    const patched = Schema.decodeUnknownSync(EventPatch)({ title: 'قرار تازه' })
+    const patched = Schema.decodeSync(EventPatch)({ title: 'قرار تازه' })
     expect(patched).toEqual({ title: 'قرار تازه' })
 
     // A create without a time is not an event.

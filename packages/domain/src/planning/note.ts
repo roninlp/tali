@@ -24,15 +24,3 @@ export class Note extends Model.Class<Note>('Note')({
   /** Denormalized tag ids; `item_tags` remains the source of truth. */
   tagIds: TagIds,
 }) {}
-
-export const NoteCreate = Schema.Struct({
-  title: Schema.optional(Schema.String),
-  body: Schema.optional(Schema.NullOr(Schema.Json)),
-  plainText: Schema.optional(Schema.String),
-  isPinned: Schema.optional(Schema.Boolean),
-  isArchived: Schema.optional(Schema.Boolean),
-  tagIds: Schema.optional(TagIds),
-  color: Schema.optional(Schema.NullOr(Schema.String)),
-  visibility: Schema.optional(Visibility),
-})
-export type NoteCreate = Schema.Schema.Type<typeof NoteCreate>

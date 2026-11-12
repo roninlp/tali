@@ -29,6 +29,8 @@ export class ListItemRepo extends Context.Service<ListItemRepo>()(
       const findAll = SqlSchema.findAll({
         Request: Schema.Void,
         Result: ListItem,
+        // Legacy scaffold reader: `list_items` predates ADR-0011 and has no
+        // `owner_id`/`visibility`, so there is no `visibleScopeSql` to apply.
         execute: () =>
           sql`SELECT ${columns} FROM list_items WHERE deleted_at IS NULL ORDER BY sort_order ASC`,
       })
@@ -55,7 +57,7 @@ export class ListItemRepo extends Context.Service<ListItemRepo>()(
         Request: Schema.Struct({
           id: ListItemId,
           checked: Schema.Boolean,
-          version: Schema.Number,
+          version: Schema.Int,
           updatedAt: Schema.String,
         }),
         Result: ListItem,

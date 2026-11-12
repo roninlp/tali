@@ -44,7 +44,7 @@ export const loadVapidPublicKey: Effect.Effect<string> = Effect.tryPromise({
     })
   },
   catch: () => '',
-}).pipe(Effect.catch(() => Effect.succeed('')))
+}).pipe(Effect.orElseSucceed(() => ''))
 
 /** Decode a base64url VAPID key into the BufferSource `subscribe()` expects. */
 export const urlBase64ToUint8Array = (

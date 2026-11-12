@@ -27,11 +27,11 @@ import {
   LocalDate,
   localDateIn,
   sameHabitFrequency,
-  type SyncEntityType,
   TimeZone,
   type UserId,
   resolveCreateVisibility,
   uuidV7,
+  visibilityDenial,
 } from '@tali/domain'
 import {
   HabitEntryRepo,
@@ -42,6 +42,20 @@ import {
   SyncRepo,
   SyncRepoLive,
 } from '@tali/sql'
+import { readScoped } from './row-scope.js'
+import { casUpdate } from './cas.js'
+import { makeSyncKit } from './sync-write.js'
+import { unchangedExcept } from './patch-compare.js'
+
+/**
+ * One day of a habit as the log loop sees it: the row to write, and the version
+ * to commit it against — `null` when the day has never been logged, which makes
+ * the write a gated insert instead of a CAS update.
+ */
+interface DaySlot {
+  readonly row: HabitEntry
+  readonly expectedVersion: number | null
+}
 
 /**
  * `HabitService` — create, edit, delete and restore (ticket #63; FR-HAB-01).
@@ -97,9 +111,6 @@ import {
  * `entries` is the range read (`[from, before)`, own-or-shared visibility) that
  * Today and the statistics (#66) consume.
  */
-
-/** How many CAS retries a service mutation makes before reporting contention. */
-const MAX_CAS_ATTEMPTS = 3
 
 export interface HabitViewer {
   readonly userId: UserId
@@ -163,13 +174,7 @@ export class HabitService extends Context.Service<HabitService>()(
       const entries = yield* HabitEntryRepo
       const sync = yield* SyncRepo
 
-      const definition = (entityType: SyncEntityType) => {
-        const def = sync.definition(entityType)
-        if (def === undefined) {
-          throw new Error(`sync entity type is not registered: ${entityType}`)
-        }
-        return def
-      }
+      const kit = makeSyncKit<HabitServiceError>({ sync, invalid })
 
       /**
        * Turn a validated aggregate into the registry's trusted write state. The
@@ -177,164 +182,33 @@ export class HabitService extends Context.Service<HabitService>()(
        * so a service write can never put a shape on the wire that a pull would
        * reject.
        */
-      const habitState = (habit: Habit): SyncEntityState => {
-        const def = definition('habit')
-        return {
-          entityType: 'habit',
-          entityId: habit.id,
-          householdId: habit.householdId,
-          ownerId: habit.ownerId,
-          visibility: habit.visibility,
-          version: habit.version,
-          updatedAt: habit.updatedAt,
-          deletedAt: habit.deletedAt,
-          data: def.validate(
-            { ...habit },
-            {
-              version: habit.version,
-              updatedAt: habit.updatedAt,
-              deletedAt: habit.deletedAt,
-            },
-          ),
-        }
-      }
+      const habitState = (habit: Habit): SyncEntityState =>
+        kit.stateOf('habit', habit)
 
       /**
        * The entry's trusted write state, validated by the same registry boundary
        * the sync push uses. An entry has no `type` field and no common-item
        * payload: just the day, the status and the scope columns.
        */
-      const entryState = (entry: HabitEntry): SyncEntityState => {
-        const def = definition('habitEntry')
-        return {
-          entityType: 'habitEntry',
-          entityId: entry.id,
-          householdId: entry.householdId,
-          ownerId: entry.ownerId,
-          visibility: entry.visibility,
-          version: entry.version,
-          updatedAt: entry.updatedAt,
-          deletedAt: entry.deletedAt,
-          data: def.validate(
-            { ...entry },
-            {
-              version: entry.version,
-              updatedAt: entry.updatedAt,
-              deletedAt: entry.deletedAt,
-            },
-          ),
-        }
-      }
+      const entryState = (entry: HabitEntry): SyncEntityState =>
+        kit.stateOf('habitEntry', entry)
 
       /** The same row-level scope rules habits use, applied to an entry. */
       const ensureEntryVisible = (
         viewer: HabitViewer,
         entry: HabitEntry,
       ): Effect.Effect<void, HabitForbidden> => {
-        if (entry.householdId !== viewer.householdId) {
-          return Effect.fail(
-            new HabitForbidden({ id: entry.habitId, reason: 'household' }),
-          )
-        }
-        if (entry.visibility === 'private' && entry.ownerId !== viewer.userId) {
-          return Effect.fail(
-            new HabitForbidden({ id: entry.habitId, reason: 'private' }),
-          )
-        }
-        return Effect.void
+        const denial = visibilityDenial(entry, viewer)
+        if (denial === null) return Effect.void
+        // An entry inherits the habit's visibility, so the error names the
+        // habit rather than the entry row.
+        return Effect.fail(
+          new HabitForbidden({ id: entry.habitId, reason: denial }),
+        )
       }
 
       const appliedMutation = (viewer: HabitViewer, clientMutationId: string) =>
-        Effect.gen(function* () {
-          const applied = yield* sync
-            .findApplied({
-              householdId: viewer.householdId,
-              clientMutationIds: [clientMutationId],
-            })
-            .pipe(Effect.orDie)
-          return Option.fromUndefinedOr(applied.get(clientMutationId))
-        })
-
-      /** A mutation id may not be reused for a different row or aggregate. */
-      const reusedMutationId = (
-        row: { readonly entityType: SyncEntityType; readonly entityId: string },
-        expected: { readonly entityType: SyncEntityType; readonly id?: string },
-      ): boolean =>
-        row.entityType !== expected.entityType ||
-        (expected.id !== undefined && row.entityId !== expected.id)
-
-      const reusedMutationIdError = (_id: string) =>
-        invalid(
-          'clientMutationId',
-          'this mutation id was already applied to a different change',
-        )
-
-      /** One CAS entity write with its gated feed append and gated ledger row. */
-      const commitHabit = (input: {
-        readonly viewer: HabitViewer
-        readonly state: SyncEntityState
-        readonly expectedVersion: number | null
-        readonly clientMutationId: string
-        readonly now: string
-        readonly op?: 'upsert' | 'delete'
-      }): Effect.Effect<boolean, HabitServiceError> =>
-        Effect.gen(function* () {
-          // A mutation id is one mutation for its whole retention window. If the
-          // ledger already maps it to a different row/aggregate, `recordApplied`
-          // would be an `INSERT OR IGNORE` no-op: the write would land with no
-          // replay guard. Refuse before writing.
-          const prior = yield* sync
-            .findApplied({
-              householdId: input.viewer.householdId,
-              clientMutationIds: [input.clientMutationId],
-            })
-            .pipe(Effect.orDie)
-          const row = Option.fromUndefinedOr(prior.get(input.clientMutationId))
-          if (
-            Option.isSome(row) &&
-            reusedMutationId(row.value, {
-              entityType: input.state.entityType,
-              id: input.state.entityId,
-            })
-          ) {
-            return yield* reusedMutationIdError(input.state.entityId)
-          }
-
-          yield* sync
-            .commit([
-              sync.writeEntity({
-                state: input.state,
-                expectedVersion: input.expectedVersion,
-              }),
-              sync.appendFeed({
-                householdId: input.viewer.householdId,
-                entityType: input.state.entityType,
-                entityId: input.state.entityId,
-                op: input.op ?? 'upsert',
-                version: input.state.version,
-                updatedAt: input.state.updatedAt,
-                ownerId: input.state.ownerId,
-                visibility: input.state.visibility,
-              }),
-              sync.recordApplied({
-                clientMutationId: input.clientMutationId,
-                householdId: input.viewer.householdId,
-                entityType: input.state.entityType,
-                entityId: input.state.entityId,
-                version: input.state.version,
-                createdAt: input.now,
-              }),
-            ])
-            .pipe(Effect.orDie)
-
-          const applied = yield* sync
-            .findApplied({
-              householdId: input.viewer.householdId,
-              clientMutationIds: [input.clientMutationId],
-            })
-            .pipe(Effect.orDie)
-          return applied.has(input.clientMutationId)
-        })
+        kit.appliedMutation(viewer.householdId, clientMutationId)
 
       /**
        * Read one habit with the standard scope rules. A tombstone reads as
@@ -345,29 +219,16 @@ export class HabitService extends Context.Service<HabitService>()(
         id: HabitId,
         includeTrashed: boolean,
       ): Effect.Effect<Habit, HabitServiceError> =>
-        Effect.gen(function* () {
-          const found = yield* habits.findById(id).pipe(Effect.orDie)
-          if (Option.isNone(found)) {
-            return yield* Effect.fail(new HabitNotFound({ id }))
-          }
-          const habit = found.value
-          if (habit.householdId !== viewer.householdId) {
-            return yield* Effect.fail(
-              new HabitForbidden({ id, reason: 'household' }),
-            )
-          }
-          if (
-            habit.visibility === 'private' &&
-            habit.ownerId !== viewer.userId
-          ) {
-            return yield* Effect.fail(
-              new HabitForbidden({ id, reason: 'private' }),
-            )
-          }
-          if (!includeTrashed && habit.deletedAt !== null) {
-            return yield* Effect.fail(new HabitNotFound({ id }))
-          }
-          return habit
+        readScoped({
+          viewer,
+          id,
+          find: habits.findById,
+          includeTrashed,
+          trash: 'last',
+          onViolation: violation =>
+            violation === 'notFound' || violation === 'trashed'
+              ? new HabitNotFound({ id })
+              : new HabitForbidden({ id, reason: violation }),
         })
 
       /** Replay guard: the same mutation id already committed (lost response). */
@@ -380,9 +241,12 @@ export class HabitService extends Context.Service<HabitService>()(
           const row = yield* appliedMutation(viewer, clientMutationId)
           if (Option.isNone(row)) return Option.none()
           if (
-            reusedMutationId(row.value, { entityType: 'habit', id: expectedId })
+            kit.reusedMutationId(row.value, {
+              entityType: 'habit',
+              id: expectedId,
+            })
           ) {
-            return yield* reusedMutationIdError(
+            return yield* kit.reusedMutationIdError(
               expectedId ?? row.value.entityId,
             )
           }
@@ -407,7 +271,7 @@ export class HabitService extends Context.Service<HabitService>()(
       const decodeFrequency = (
         frequency: HabitFrequency,
       ): Effect.Effect<HabitFrequency, HabitValidationError> => {
-        const decoded = Schema.decodeUnknownOption(HabitFrequency)(frequency)
+        const decoded = Schema.decodeOption(HabitFrequency)(frequency)
         return decoded._tag === 'Some'
           ? Effect.succeed(decoded.value)
           : invalid('frequency', 'the frequency is not a valid habit rhythm')
@@ -423,7 +287,7 @@ export class HabitService extends Context.Service<HabitService>()(
       const decodeTimeZone = (
         timeZone: string,
       ): Effect.Effect<string, HabitValidationError> => {
-        const decoded = Schema.decodeUnknownOption(TimeZone)(timeZone)
+        const decoded = Schema.decodeOption(TimeZone)(timeZone)
         return decoded._tag === 'Some'
           ? Effect.succeed(decoded.value)
           : invalid('timeZone', 'the time zone must be a valid IANA identifier')
@@ -433,7 +297,7 @@ export class HabitService extends Context.Service<HabitService>()(
         value: string | null,
       ): Effect.Effect<string | null, HabitValidationError> => {
         if (value === null) return Effect.succeed(null)
-        const decoded = Schema.decodeUnknownOption(HabitReminderTime)(value)
+        const decoded = Schema.decodeOption(HabitReminderTime)(value)
         return decoded._tag === 'Some'
           ? Effect.succeed(decoded.value)
           : invalid('reminderTime', 'the reminder time must be a local HH:mm')
@@ -489,15 +353,15 @@ export class HabitService extends Context.Service<HabitService>()(
             deletedAt: null,
           })
 
-          const applied = yield* commitHabit({
-            viewer,
+          const applied = yield* kit.commitOne({
+            householdId: viewer.householdId,
             state: habitState(habit),
             expectedVersion: null,
             clientMutationId: input.clientMutationId,
             now,
           })
           if (!applied) {
-            return yield* Effect.fail(new HabitConflict({ id: habit.id }))
+            return yield* new HabitConflict({ id: habit.id })
           }
           return habit
         })
@@ -578,19 +442,6 @@ export class HabitService extends Context.Service<HabitService>()(
           })
         })
 
-      /** Are two habits equal in every field the service owns? */
-      const sameHabit = (a: Habit, b: Habit): boolean =>
-        a.title === b.title &&
-        a.description === b.description &&
-        a.icon === b.icon &&
-        a.color === b.color &&
-        a.timeZone === b.timeZone &&
-        a.visibility === b.visibility &&
-        a.reminderTime === b.reminderTime &&
-        sameHabitFrequency(a.frequency, b.frequency) &&
-        JSON.stringify(a.frequencyHistory) ===
-          JSON.stringify(b.frequencyHistory)
-
       const update = (
         viewer: HabitViewer,
         input: Schema.Schema.Type<typeof HabitUpdateInput>,
@@ -604,20 +455,41 @@ export class HabitService extends Context.Service<HabitService>()(
           )
           if (Option.isSome(replayed)) return replayed.value
 
-          for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-            const current = yield* readHabit(viewer, input.id, false)
-            const next = yield* patchHabit(viewer, current, input.patch, now)
-            if (sameHabit(current, next)) return current
-            const applied = yield* commitHabit({
-              viewer,
-              state: habitState(next),
-              expectedVersion: current.version,
-              clientMutationId: input.clientMutationId,
-              now,
-            })
-            if (applied) return next
-          }
-          return yield* Effect.fail(new HabitConflict({ id: input.id }))
+          return yield* casUpdate({
+            read: readHabit(viewer, input.id, false),
+            plan: current =>
+              Effect.gen(function* () {
+                const next = yield* patchHabit(
+                  viewer,
+                  current,
+                  input.patch,
+                  now,
+                )
+                // `patchHabit` writes patch fields only (`frequencyHistory` is
+                // derived from `frequency`), so the patch is the no-op test —
+                // except `frequency`, whose weekdays are a *set*: the domain's
+                // canonical comparison keeps a reordered selection from
+                // minting a phantom version. Nothing is dropped by that split:
+                // an omitted `frequency` leaves the history untouched, and a
+                // different one always writes.
+                const { frequency, ...rest } = input.patch
+                const frequencySame =
+                  frequency === undefined ||
+                  sameHabitFrequency(current.frequency, next.frequency)
+                return frequencySame && unchangedExcept(current, next, rest)
+                  ? null
+                  : next
+              }),
+            write: (current, next) =>
+              kit.commitOne({
+                householdId: viewer.householdId,
+                state: habitState(next),
+                expectedVersion: current.version,
+                clientMutationId: input.clientMutationId,
+                now,
+              }),
+            conflict: () => new HabitConflict({ id: input.id }),
+          })
         })
 
       /**
@@ -638,27 +510,31 @@ export class HabitService extends Context.Service<HabitService>()(
           )
           if (Option.isSome(replayed)) return replayed.value
 
-          for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-            const current = yield* readHabit(viewer, input.id, true)
+          return yield* casUpdate({
+            read: readHabit(viewer, input.id, true),
             // Idempotent: deleting an already-deleted habit writes nothing.
-            if (current.deletedAt !== null) return current
-            const next = new Habit({
-              ...current,
-              deletedAt: now,
-              version: current.version + 1,
-              updatedAt: now,
-            })
-            const applied = yield* commitHabit({
-              viewer,
-              state: habitState(next),
-              expectedVersion: current.version,
-              clientMutationId: input.clientMutationId,
-              now,
-              op: 'delete',
-            })
-            if (applied) return next
-          }
-          return yield* Effect.fail(new HabitConflict({ id: input.id }))
+            plan: current =>
+              Effect.succeed(
+                current.deletedAt !== null
+                  ? null
+                  : new Habit({
+                      ...current,
+                      deletedAt: now,
+                      version: current.version + 1,
+                      updatedAt: now,
+                    }),
+              ),
+            write: (current, next) =>
+              kit.commitOne({
+                householdId: viewer.householdId,
+                state: habitState(next),
+                expectedVersion: current.version,
+                clientMutationId: input.clientMutationId,
+                now,
+                op: 'delete',
+              }),
+            conflict: () => new HabitConflict({ id: input.id }),
+          })
         })
 
       /**
@@ -679,26 +555,30 @@ export class HabitService extends Context.Service<HabitService>()(
           )
           if (Option.isSome(replayed)) return replayed.value
 
-          for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-            const current = yield* readHabit(viewer, input.id, true)
+          return yield* casUpdate({
+            read: readHabit(viewer, input.id, true),
             // Idempotent: restoring a live habit writes nothing.
-            if (current.deletedAt === null) return current
-            const next = new Habit({
-              ...current,
-              deletedAt: null,
-              version: current.version + 1,
-              updatedAt: now,
-            })
-            const applied = yield* commitHabit({
-              viewer,
-              state: habitState(next),
-              expectedVersion: current.version,
-              clientMutationId: input.clientMutationId,
-              now,
-            })
-            if (applied) return next
-          }
-          return yield* Effect.fail(new HabitConflict({ id: input.id }))
+            plan: current =>
+              Effect.succeed(
+                current.deletedAt === null
+                  ? null
+                  : new Habit({
+                      ...current,
+                      deletedAt: null,
+                      version: current.version + 1,
+                      updatedAt: now,
+                    }),
+              ),
+            write: (current, next) =>
+              kit.commitOne({
+                householdId: viewer.householdId,
+                state: habitState(next),
+                expectedVersion: current.version,
+                clientMutationId: input.clientMutationId,
+                now,
+              }),
+            conflict: () => new HabitConflict({ id: input.id }),
+          })
         })
 
       const list = (
@@ -735,12 +615,12 @@ export class HabitService extends Context.Service<HabitService>()(
           )
           if (Option.isSome(replayed)) {
             if (
-              reusedMutationId(replayed.value, {
+              kit.reusedMutationId(replayed.value, {
                 entityType: 'habitEntry',
                 id: input.id,
               })
             ) {
-              return yield* reusedMutationIdError(
+              return yield* kit.reusedMutationIdError(
                 input.id ?? replayed.value.entityId,
               )
             }
@@ -748,11 +628,9 @@ export class HabitService extends Context.Service<HabitService>()(
               .findById(replayed.value.entityId as HabitEntryId)
               .pipe(Effect.orDie)
             if (Option.isNone(found)) {
-              return yield* Effect.fail(
-                new HabitEntryNotFound({
-                  id: replayed.value.entityId as HabitEntryId,
-                }),
-              )
+              return yield* new HabitEntryNotFound({
+                id: replayed.value.entityId as HabitEntryId,
+              })
             }
             // A mutation id is one day's log. When the caller minted no id (the
             // usual service path), the id guard above cannot tell a reused id
@@ -763,24 +641,20 @@ export class HabitService extends Context.Service<HabitService>()(
               found.value.habitId !== input.habitId ||
               found.value.localDate !== input.localDate
             ) {
-              return yield* reusedMutationIdError(found.value.id)
+              return yield* kit.reusedMutationIdError(found.value.id)
             }
             yield* ensureEntryVisible(viewer, found.value)
             return found.value
           }
 
-          const status = Schema.decodeUnknownOption(HabitEntryStatus)(
-            input.status,
-          )
+          const status = Schema.decodeOption(HabitEntryStatus)(input.status)
           if (status._tag === 'None') {
             return yield* invalid(
               'status',
               'a logged day is done, partial or missed',
             )
           }
-          const localDate = Schema.decodeUnknownOption(LocalDate)(
-            input.localDate,
-          )
+          const localDate = Schema.decodeOption(LocalDate)(input.localDate)
           if (localDate._tag === 'None') {
             return yield* invalid(
               'localDate',
@@ -799,13 +673,11 @@ export class HabitService extends Context.Service<HabitService>()(
           const today = localDateIn(now, viewer.timeZone)
           if (!isHabitLogDateInWindow(localDate.value, today)) {
             const window = habitLogWindow(today)
-            return yield* Effect.fail(
-              new HabitEntryOutOfWindow({
-                localDate: localDate.value,
-                earliest: window.earliest,
-                latest: window.latest,
-              }),
-            )
+            return yield* new HabitEntryOutOfWindow({
+              localDate: localDate.value,
+              earliest: window.earliest,
+              latest: window.latest,
+            })
           }
 
           // Scope: the habit must exist, be visible and not be in the trash. A
@@ -813,77 +685,83 @@ export class HabitService extends Context.Service<HabitService>()(
           // private habit.
           const habit = yield* readHabit(viewer, input.habitId, false)
 
-          for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-            const found = yield* entries
+          // A day that was never logged has no row to CAS yet, so the read
+          // yields the draft this attempt would insert (`expectedVersion: null`)
+          // and the gated insert shares the loop with the revive-in-place. A
+          // racing insert loses the unique `(habitId, localDate)` index, which
+          // surfaces as a no-op and makes the next attempt update the winner.
+          const logged = yield* casUpdate<DaySlot, HabitServiceError>({
+            read: entries
               .findForDate({ habitId: habit.id, localDate: localDate.value })
-              .pipe(Effect.orDie)
-
-            if (Option.isSome(found)) {
-              const current = found.value
-              // Authorisation comes from the habit (`readHabit` above), not from
-              // the entry's denormalised visibility: if a habit was flipped to
-              // shared, the partner may log its days even when an older row was
-              // written while it was private. The write below re-inherits the
-              // habit's visibility, so the row converges.
-              // An identical tap changes nothing: return the stored row rather
-              // than growing the feed with a no-op version.
-              if (
-                current.deletedAt === null &&
-                current.status === status.value &&
-                current.timeZone === timeZone &&
-                current.visibility === habit.visibility
-              ) {
-                return current
-              }
-              const next = new HabitEntry({
-                // Revive in place: the day's identity never changes, so the
-                // other device's mirror/queue still points at the same row.
-                ...current,
-                visibility: habit.visibility,
-                timeZone,
-                status: status.value,
-                version: current.version + 1,
-                updatedAt: now,
-                deletedAt: null,
-              })
-              const applied = yield* commitHabit({
-                viewer,
-                state: entryState(next),
-                expectedVersion: current.version,
+              .pipe(
+                Effect.orDie,
+                Effect.map((found): DaySlot =>
+                  Option.isSome(found)
+                    ? { row: found.value, expectedVersion: found.value.version }
+                    : {
+                        row: new HabitEntry({
+                          id: (input.id ?? uuidV7()) as HabitEntry['id'],
+                          habitId: habit.id,
+                          ownerId: viewer.userId,
+                          householdId: viewer.householdId,
+                          visibility: habit.visibility,
+                          localDate: localDate.value,
+                          timeZone,
+                          status: status.value,
+                          createdAt: now,
+                          updatedAt: now,
+                          version: 1,
+                          deletedAt: null,
+                        }),
+                        expectedVersion: null,
+                      },
+                ),
+              ),
+            plan: current =>
+              Effect.sync((): DaySlot | null => {
+                // Authorisation comes from the habit (`readHabit` above), not
+                // from the entry's denormalised visibility: if a habit was
+                // flipped to shared, the partner may log its days even when an
+                // older row was written while it was private. The write below
+                // re-inherits the habit's visibility, so the row converges.
+                if (current.expectedVersion === null) return current
+                // An identical tap changes nothing: return the stored row
+                // rather than growing the feed with a no-op version.
+                if (
+                  current.row.deletedAt === null &&
+                  current.row.status === status.value &&
+                  current.row.timeZone === timeZone &&
+                  current.row.visibility === habit.visibility
+                ) {
+                  return null
+                }
+                return {
+                  // Revive in place: the day's identity never changes, so the
+                  // other device's mirror/queue still points at the same row.
+                  row: new HabitEntry({
+                    ...current.row,
+                    visibility: habit.visibility,
+                    timeZone,
+                    status: status.value,
+                    version: current.row.version + 1,
+                    updatedAt: now,
+                    deletedAt: null,
+                  }),
+                  expectedVersion: current.expectedVersion,
+                }
+              }),
+            write: (current, next) =>
+              kit.commitOne({
+                householdId: viewer.householdId,
+                state: entryState(next.row),
+                expectedVersion: next.expectedVersion,
                 clientMutationId: input.clientMutationId,
                 now,
-              })
-              if (applied) return next
-              continue
-            }
+              }),
+            conflict: () => new HabitConflict({ id: habit.id }),
+          })
 
-            const created = new HabitEntry({
-              id: (input.id ?? uuidV7()) as HabitEntry['id'],
-              habitId: habit.id,
-              ownerId: viewer.userId,
-              householdId: viewer.householdId,
-              visibility: habit.visibility,
-              localDate: localDate.value,
-              timeZone,
-              status: status.value,
-              createdAt: now,
-              updatedAt: now,
-              version: 1,
-              deletedAt: null,
-            })
-            const applied = yield* commitHabit({
-              viewer,
-              state: entryState(created),
-              expectedVersion: null,
-              clientMutationId: input.clientMutationId,
-              now,
-            })
-            if (applied) return created
-            // A racing writer inserted the same day first: re-read and update
-            // their row instead of inserting a duplicate.
-          }
-
-          return yield* Effect.fail(new HabitConflict({ id: habit.id }))
+          return logged.row
         })
 
       /**
@@ -899,14 +777,14 @@ export class HabitService extends Context.Service<HabitService>()(
         input: Schema.Schema.Type<typeof HabitEntryRangeInput>,
       ): Effect.Effect<ReadonlyArray<HabitEntry>, HabitServiceError> =>
         Effect.gen(function* () {
-          const from = Schema.decodeUnknownOption(LocalDate)(input.from)
+          const from = Schema.decodeOption(LocalDate)(input.from)
           if (from._tag === 'None') {
             return yield* invalid(
               'from',
               'the range must start on a calendar date',
             )
           }
-          const before = Schema.decodeUnknownOption(LocalDate)(input.before)
+          const before = Schema.decodeOption(LocalDate)(input.before)
           if (before._tag === 'None') {
             return yield* invalid(
               'before',

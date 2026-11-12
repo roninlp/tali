@@ -5,6 +5,7 @@ import { addJalaliMonths, toIsoDate, toJalaliDate } from '@tali/domain'
 
 import { occasionSourceOf } from '../lib/occasion-writes'
 import { entityKey } from '../mirror'
+import { mirrorSnapshot } from '../mirror-fixtures'
 import {
   calendarViewOf,
   dayLabel,
@@ -29,7 +30,6 @@ import {
   calendarInputs,
   calendarTask,
   eventRow,
-  mirrorWith,
   occasionRow,
   timedEventRow,
   weekPayload,
@@ -47,7 +47,7 @@ const weekView = (
   overrides: Readonly<{
     maybeServerWeek?: ReturnType<typeof weekPayload>
     pendingKeys?: ReadonlyArray<string>
-    mirror?: ReturnType<typeof mirrorWith>
+    mirror?: ReturnType<typeof mirrorSnapshot>
     isOnline?: boolean
   }> = {},
 ) =>
@@ -62,7 +62,7 @@ const weekView = (
     now: Date.parse('2026-10-30T09:30:00.000Z'),
     inputs: calendarInputs({
       display,
-      mirror: overrides.mirror ?? mirrorWith({}),
+      mirror: overrides.mirror ?? mirrorSnapshot({}),
       pendingKeys: overrides.pendingKeys ?? [],
       isOnline: overrides.isOnline ?? true,
     }),
@@ -153,7 +153,7 @@ it('projects an annual occasion onto this year’s Jalali date', () => {
 describe('source selection and overlays', () => {
   it('falls back to the mirror when no server snapshot exists', () => {
     const view = weekView({
-      mirror: mirrorWith({ tasks: [calendarTask()] }),
+      mirror: mirrorSnapshot({ tasks: [calendarTask()] }),
     })
 
     expect(view.source).toBe('mirror')
@@ -203,7 +203,7 @@ describe('source selection and overlays', () => {
           },
         ],
       }),
-      mirror: mirrorWith({ tasks: [task] }),
+      mirror: mirrorSnapshot({ tasks: [task] }),
       pendingKeys: [entityKey('task', task.id)],
     })
 
@@ -236,7 +236,7 @@ describe('source selection and overlays', () => {
           },
         ],
       }),
-      mirror: mirrorWith({ trashedEvents: [row] }),
+      mirror: mirrorSnapshot({ trashedEvents: [row] }),
       pendingKeys: [entityKey('event', row.id)],
     })
 
@@ -261,7 +261,7 @@ describe('source selection and overlays', () => {
           },
         ],
       }),
-      mirror: mirrorWith({ tasks: [calendarTask()] }),
+      mirror: mirrorSnapshot({ tasks: [calendarTask()] }),
       isOnline: false,
     })
 
@@ -324,7 +324,7 @@ describe('month drill-down', () => {
       dirtyEventIds: [],
       now: Date.parse('2026-10-30T09:30:00.000Z'),
       inputs: calendarInputs({
-        mirror: mirrorWith({
+        mirror: mirrorSnapshot({
           tasks: [calendarTask()],
           events: [eventRow()],
           occasions: [occasionRow()],

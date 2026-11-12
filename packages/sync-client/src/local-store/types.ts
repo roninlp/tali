@@ -1,4 +1,10 @@
-import type { SyncEntityType, SyncOp, SyncPushEntry } from '@tali/domain'
+import type {
+  EntityRef as SyncEntityRef,
+  SyncEntityRow,
+  SyncEntityType,
+  SyncOp,
+  SyncPushEntry,
+} from '@tali/domain'
 
 /**
  * The local-first client store types.
@@ -21,18 +27,12 @@ export interface SyncFailure {
   readonly clientMutationId: string
 }
 
-/** One entity row as this client currently knows it. */
-export interface MirrorRecord {
-  readonly entityType: SyncEntityType
-  readonly entityId: string
-  /** Last **server** version this client saw; `0` until the first ack. */
-  readonly version: number
-  /** Last local or server mutation time (ISO-8601 UTC). */
-  readonly updatedAt: string
-  /** Soft-delete tombstone; `null` for a live row. */
-  readonly deletedAt: string | null
-  /** The entity's own fields — no sync metadata duplicated in here. */
-  readonly data: Readonly<Record<string, unknown>>
+/**
+ * One entity row as this client currently knows it: the shared wire row
+ * (`SyncEntityRow`, the same shape the store accepts from the server) plus the
+ * last rejected push.
+ */
+export interface MirrorRecord extends SyncEntityRow {
   /**
    * The last rejected push for this row, absent once it lands or is retried.
    *
@@ -43,11 +43,11 @@ export interface MirrorRecord {
   readonly syncError?: SyncFailure
 }
 
-/** An entity addressed without its payload, for clearing a stale marker. */
-export interface EntityRef {
-  readonly entityType: SyncEntityType
-  readonly entityId: string
-}
+/**
+ * An entity addressed without its payload, for clearing a stale marker. The
+ * identity is the domain's `EntityRef`: the API keys rows by the same pair.
+ */
+export type EntityRef = SyncEntityRef
 
 /** A queued mutation plus the local FIFO key. */
 export interface OutboxRecord extends SyncPushEntry {
@@ -83,15 +83,8 @@ export interface LocalWrite {
   readonly now?: string
 }
 
-/** An authoritative row arriving from the server. */
-export interface ServerRow {
-  readonly entityType: SyncEntityType
-  readonly entityId: string
-  readonly version: number
-  readonly updatedAt: string
-  readonly deletedAt: string | null
-  readonly data: Readonly<Record<string, unknown>>
-}
+/** An authoritative row arriving from the server (the shared wire shape). */
+export type ServerRow = SyncEntityRow
 
 export interface DraftRecord {
   readonly key: string

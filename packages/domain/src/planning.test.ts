@@ -9,7 +9,9 @@ import {
   Project,
   Tag,
   Task,
-  TaskCreate,
+  TaskCreateInput,
+  TaskMutationInput,
+  TaskUpdateInput,
 } from './planning/index.js'
 import type {
   ListId,
@@ -124,7 +126,7 @@ const roundTrip = <
   schema: A,
   payload: Schema.Schema.Type<A>,
 ): Schema.Schema.Type<A> => {
-  const decoded = Schema.decodeUnknownSync(schema)(payload)
+  const decoded = Schema.decodeSync(schema)(payload)
   expect(Schema.encodeSync(schema)(decoded)).toEqual(payload)
   return decoded as Schema.Schema.Type<A>
 }
@@ -163,8 +165,12 @@ describe('core-planning aggregate schemas', () => {
   })
 
   it('accepts a task created with title only', () => {
-    const input = Schema.decodeUnknownSync(TaskCreate)({ title: 'تنها عنوان' })
-    expect(input).toEqual({ title: 'تنها عنوان' })
+    const input = Schema.decodeSync(TaskCreateInput)({
+      title: 'تنها عنوان',
+      clientMutationId: 'mutation-1',
+    })
+    expect(input.title).toBe('تنها عنوان')
+    expect(input.clientMutationId).toBe('mutation-1')
   })
 
   it('keeps the sync discriminator aligned with ItemType', () => {
@@ -188,9 +194,7 @@ describe('core-planning schema validation', () => {
   })
 
   it('rejects an empty Task title', () => {
-    expect(() =>
-      Schema.decodeUnknownSync(Task)({ ...task, title: '' }),
-    ).toThrow()
+    expect(() => Schema.decodeSync(Task)({ ...task, title: '' })).toThrow()
   })
 
   it('rejects an unknown Task status', () => {
@@ -206,17 +210,15 @@ describe('core-planning schema validation', () => {
   })
 
   it('rejects a non-integer version', () => {
-    expect(() =>
-      Schema.decodeUnknownSync(Task)({ ...task, version: 1.5 }),
-    ).toThrow()
+    expect(() => Schema.decodeSync(Task)({ ...task, version: 1.5 })).toThrow()
   })
 
   it('rejects a malformed or non-v7 id', () => {
     expect(() =>
-      Schema.decodeUnknownSync(Task)({ ...task, id: 'not-a-uuid' }),
+      Schema.decodeSync(Task)({ ...task, id: 'not-a-uuid' }),
     ).toThrow()
     expect(() =>
-      Schema.decodeUnknownSync(Task)({
+      Schema.decodeSync(Task)({
         ...task,
         id: '00000000-0000-4000-8000-000000000000',
       }),
@@ -234,13 +236,13 @@ describe('core-planning schema validation', () => {
 
   it('rejects an invalid all-day date', () => {
     expect(() =>
-      Schema.decodeUnknownSync(Task)({ ...task, dueDate: '1403/07/28' }),
+      Schema.decodeSync(Task)({ ...task, dueDate: '1403/07/28' }),
     ).toThrow()
   })
 
   it('rejects an unknown IANA time zone', () => {
     expect(() =>
-      Schema.decodeUnknownSync(Task)({ ...task, timeZone: 'Mars/Olympus' }),
+      Schema.decodeSync(Task)({ ...task, timeZone: 'Mars/Olympus' }),
     ).toThrow()
   })
 
@@ -258,6 +260,85 @@ describe('core-planning schema validation', () => {
   it('rejects too many tags-worth of wrong type', () => {
     expect(() =>
       Schema.decodeUnknownSync(Task)({ ...task, tagIds: [123] }),
+    ).toThrow()
+  })
+})
+
+describe('service mutation envelopes', () => {
+  // The enrichments are shared now (`planning/common.ts`), so one aggregate's
+  // spot-check pins the shape every other aggregate inherits. The rest of the
+  // contract (patches, brands, extra fields) is covered by the service tests.
+  const envelopeTaskId = uuidV7(1_700_000_000_030) as TaskId
+
+  it('accepts the documented update shape', () => {
+    const input = Schema.decodeSync(TaskUpdateInput)({
+      id: envelopeTaskId,
+      clientMutationId: 'mutation-1',
+      baseVersion: 2,
+      patch: { title: 'عنوان تازه' },
+    })
+    expect(input.id).toBe(envelopeTaskId)
+    expect(input.baseVersion).toBe(2)
+    expect(input.patch).toEqual({ title: 'عنوان تازه' })
+  })
+
+  it('rejects an update without a clientMutationId', () => {
+    expect(() =>
+      Schema.decodeUnknownSync(TaskUpdateInput)({
+        id: envelopeTaskId,
+        patch: { title: 'عنوان تازه' },
+      }),
+    ).toThrow()
+  })
+
+  it('accepts the documented delete/start/complete shape', () => {
+    expect(
+      Schema.decodeSync(TaskMutationInput)({
+        id: envelopeTaskId,
+        clientMutationId: 'mutation-2',
+      }),
+    ).toEqual({ id: envelopeTaskId, clientMutationId: 'mutation-2' })
+  })
+
+  it('rejects a mutation without a clientMutationId', () => {
+    expect(() =>
+      Schema.decodeUnknownSync(TaskMutationInput)({ id: envelopeTaskId }),
+    ).toThrow()
+  })
+
+  it('keeps the replay key a plain string, exactly as before the refactor', () => {
+    // A blank key is *not* rejected today; tightening it to `NonEmptyString`
+    // would be a validation change, so the envelopes preserve the plain string.
+    expect(
+      Schema.decodeSync(TaskMutationInput)({
+        id: envelopeTaskId,
+        clientMutationId: '',
+      }).clientMutationId,
+    ).toBe('')
+  })
+
+  it('still rejects a blank title inside the patch', () => {
+    expect(() =>
+      Schema.decodeSync(TaskUpdateInput)({
+        id: envelopeTaskId,
+        clientMutationId: 'mutation-3',
+        patch: { title: '' },
+      }),
+    ).toThrow()
+  })
+
+  it('keeps the create id optional and the update id required', () => {
+    expect(
+      Schema.decodeSync(TaskCreateInput)({
+        clientMutationId: 'mutation-4',
+        title: 'فقط عنوان',
+      }).id,
+    ).toBeUndefined()
+    expect(() =>
+      Schema.decodeUnknownSync(TaskUpdateInput)({
+        clientMutationId: 'mutation-5',
+        patch: {},
+      }),
     ).toThrow()
   })
 })

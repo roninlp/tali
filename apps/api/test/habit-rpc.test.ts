@@ -1,10 +1,5 @@
-import { createHash } from 'node:crypto'
-import { readFileSync, readdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { Effect, Layer, String as Str } from 'effect'
-import { D1Client } from '@effect/sql-d1'
+import { Effect, Layer } from 'effect'
 import { RpcClient, RpcGroup } from 'effect/rpc'
 import * as RpcTest from 'effect/rpc/RpcTest'
 import { ApiRpcs } from '@tali/rpc'
@@ -13,7 +8,13 @@ import { AuthServiceLive } from '../src/auth-service.js'
 import { HabitServiceLive } from '../src/habit-service.js'
 import { PreferencesServiceLive } from '../src/preferences-service.js'
 import { RpcHandlers } from '../src/rpc-handlers.js'
-import { FakeD1 } from './fake-d1.js'
+import {
+  seedHousehold,
+  seedMembership,
+  seedSession,
+  seedUser,
+} from './fixtures/seed.js'
+import { makeHarnessCore, type HarnessEnv } from './harness.js'
 
 /**
  * Ticket #63 at the RPC seam: the derived client drives the habit aggregate
@@ -22,10 +23,6 @@ import { FakeD1 } from './fake-d1.js'
  * shape the habits screen (#66) will call.
  */
 
-const MIGRATIONS_DIR = new URL(
-  '../../../packages/sql/migrations/',
-  import.meta.url,
-)
 const NOW = new Date().toISOString()
 const FUTURE = new Date(Date.now() + 60 * 60 * 1000).toISOString()
 
@@ -35,62 +32,32 @@ const USER_A = uuidV7()
 const USER_C = uuidV7()
 const HOUSEHOLD = uuidV7()
 
-const sha256 = (value: string): string =>
-  createHash('sha256').update(value).digest('hex')
-
-const migrationFiles = (): ReadonlyArray<string> =>
-  readdirSync(fileURLToPath(MIGRATIONS_DIR))
-    .filter(file => file.endsWith('.sql'))
-    .sort()
-
-const makeHarness = async () => {
-  const db = new DatabaseSync(':memory:')
-  for (const file of migrationFiles()) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), 'utf8'))
-  }
-
-  const seedUser = (id: string, email: string): void => {
-    db.prepare(
-      `INSERT INTO users
-        (id, email, credential_verifier, credential_salt, kdf_version,
-         display_name, time_zone, week_start, digits, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 1, ?, 'Asia/Tehran', 'saturday', 'persian', ?, ?)`,
-    ).run(id, email, '0'.repeat(64), '0'.repeat(32), email, NOW, NOW)
-  }
-  const seedSession = (userId: string, token: string): void => {
-    db.prepare(
-      `INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
-    ).run(uuidV7(), userId, sha256(token), FUTURE, NOW)
-  }
-
-  seedUser(USER_A, 'habit-a@example.com')
-  seedUser(USER_C, 'habit-c@example.com')
-  db.prepare(
-    `INSERT INTO households (id, name, invite_code, created_by, created_at)
-     VALUES (?, ?, ?, ?, ?)`,
-  ).run(HOUSEHOLD, 'خانه', 'habit-invite', USER_A, NOW)
-  db.prepare(
-    `INSERT INTO memberships (id, household_id, user_id, role, joined_at)
-     VALUES (?, ?, ?, 'owner', ?)`,
-  ).run(uuidV7(), HOUSEHOLD, USER_A, NOW)
-  seedSession(USER_A, TOKEN_A)
-  seedSession(USER_C, TOKEN_C)
-
-  const d1 = D1Client.layer({
-    db: new FakeD1(db).asD1Database(),
-    transformQueryNames: Str.camelToSnake,
-    transformResultNames: Str.snakeToCamel,
-  })
-  const layer = Layer.mergeAll(
+const serviceLayer = ({ d1 }: HarnessEnv) =>
+  Layer.mergeAll(
     RpcHandlers,
     HabitServiceLive,
     AuthServiceLive,
     PreferencesServiceLive,
   ).pipe(Layer.provide(d1))
 
-  const run = <A, E>(effect: Effect.Effect<A, E, never>): Promise<A> =>
-    Effect.runPromise(Effect.provide(effect, layer))
+const makeHarness = async () => {
+  const harness = makeHarnessCore(serviceLayer)
+  const { db } = harness
+
+  seedUser(db, { id: USER_A, email: 'habit-a@example.com', now: NOW })
+  seedUser(db, { id: USER_C, email: 'habit-c@example.com', now: NOW })
+  seedHousehold(db, {
+    id: HOUSEHOLD,
+    creator: USER_A,
+    inviteCode: 'habit-invite',
+    name: 'خانه',
+    now: NOW,
+  })
+  seedMembership(db, USER_A, HOUSEHOLD, { role: 'owner', now: NOW })
+  seedSession(db, USER_A, TOKEN_A, { now: NOW, expiresAt: FUTURE })
+  seedSession(db, USER_C, TOKEN_C, { now: NOW, expiresAt: FUTURE })
+
+  const { run } = harness
 
   type TestClient = RpcClient.RpcClient<RpcGroup.Rpcs<typeof ApiRpcs>>
 

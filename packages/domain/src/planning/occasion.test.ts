@@ -62,7 +62,7 @@ describe('Occasion model', () => {
       version: 1,
       deletedAt: null,
     }
-    const decoded = Schema.decodeUnknownSync(Occasion)(occasion)
+    const decoded = Schema.decodeSync(Occasion)(occasion)
     expect(decoded.originDate).toBe('2018-06-15')
     expect(decoded.yearly).toBe(true)
     expect(decoded.advanceReminderDays).toBe(14)
@@ -70,7 +70,7 @@ describe('Occasion model', () => {
 
   it('rejects an offset outside 0…365 days', () => {
     expect(() =>
-      Schema.decodeUnknownSync(Occasion)({
+      Schema.decodeSync(Occasion)({
         id: uuidV7(1_700_000_000_101) as OccasionId,
         type: 'occasion',
         title: 'تولد',

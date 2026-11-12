@@ -1,12 +1,8 @@
-import { readFileSync, readdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { Effect, Layer, String as Str } from 'effect'
-import { D1Client } from '@effect/sql-d1'
+import { Effect, Layer } from 'effect'
 import { type SyncPullResponse, type SyncPushEntry, uuidV7 } from '@tali/domain'
 import { SyncService, SyncServiceLive } from '../src/sync-service.js'
-import { FakeD1 } from './fake-d1.js'
+import { makeHarnessCore, type HarnessEnv } from './harness.js'
 
 /**
  * Ticket #57 at the sync seam: an event has to travel through the real push
@@ -18,40 +14,15 @@ import { FakeD1 } from './fake-d1.js'
  * production.
  */
 
-const MIGRATIONS_DIR = new URL(
-  '../../../packages/sql/migrations/',
-  import.meta.url,
-)
-
-const migrationFiles = (): ReadonlyArray<string> =>
-  readdirSync(fileURLToPath(MIGRATIONS_DIR))
-    .filter(file => file.endsWith('.sql'))
-    .sort()
-
 const HOUSEHOLD = 'household-a'
 const USER_A = 'user-a'
 const USER_B = 'user-b'
 const HOUSEHOLD_B = 'household-b'
 
-const makeHarness = () => {
-  const db = new DatabaseSync(':memory:')
-  for (const file of migrationFiles()) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), 'utf8'))
-  }
+const serviceLayer = ({ d1 }: HarnessEnv) =>
+  SyncServiceLive.pipe(Layer.provide(d1))
 
-  const fake = new FakeD1(db)
-  const d1 = D1Client.layer({
-    db: fake.asD1Database(),
-    transformQueryNames: Str.camelToSnake,
-    transformResultNames: Str.snakeToCamel,
-  })
-  const layer = SyncServiceLive.pipe(Layer.provide(d1))
-
-  const run = <A>(effect: Effect.Effect<A, unknown, SyncService>): Promise<A> =>
-    Effect.runPromise(Effect.provide(effect, layer))
-
-  return { db, fake, run }
-}
+const makeHarness = () => makeHarnessCore(serviceLayer)
 
 type Harness = ReturnType<typeof makeHarness>
 

@@ -1,5 +1,6 @@
 import { Schema } from 'effect'
 import { Temporal } from 'temporal-polyfill/full'
+import { addLocalDays, localDateOfInstant, plainDateOf } from '../local-date.js'
 import type { LocalDate, TaskStatus } from './common.js'
 
 /**
@@ -60,12 +61,12 @@ const asInstant = (now: TaskBucketDateInput): Temporal.Instant =>
       ? Temporal.Instant.from(now)
       : Temporal.Instant.fromEpochMilliseconds(now.getTime())
 
-const localDateAt = (date: Temporal.PlainDate, timeZone: string): string =>
-  date.toZonedDateTime(timeZone).toInstant().toString()
+const localDateAt = (date: string, timeZone: string): string =>
+  plainDateOf(date).toZonedDateTime(timeZone).toInstant().toString()
 
 /** UTC instant at which a local calendar date starts in `timeZone`. */
 export const localDateStartInstant = (date: string, timeZone: string): string =>
-  localDateAt(Temporal.PlainDate.from(date), timeZone)
+  localDateAt(date, timeZone)
 
 /**
  * UTC instant of a wall time (`HH:MM`, optional `:SS`) on a local date in
@@ -81,7 +82,7 @@ export const localDateTimeInstant = (
   time: string,
   timeZone: string,
 ): string =>
-  Temporal.PlainDate.from(date)
+  plainDateOf(date)
     .toPlainDateTime(Temporal.PlainTime.from(time))
     .toZonedDateTime(timeZone, { disambiguation: 'compatible' })
     .toInstant()
@@ -96,21 +97,18 @@ export const taskBucketBounds = (
   timeZone: string,
   now: TaskBucketDateInput,
 ): TaskBucketBounds => {
-  const today = asInstant(now).toZonedDateTimeISO(timeZone).toPlainDate()
-  const tomorrow = today.add({ days: 1 })
-  const dayAfterTomorrow = today.add({ days: 2 })
-  const weekEnd = today.add({ days: 7 })
+  const today = localDateOfInstant(asInstant(now).toString(), timeZone)
   return {
     timeZone,
-    today: today.toString() as LocalDate,
-    tomorrow: tomorrow.toString() as LocalDate,
-    dayAfterTomorrow: dayAfterTomorrow.toString() as LocalDate,
-    weekEnd: weekEnd.toString() as LocalDate,
-    weekAfter: today.add({ days: 8 }).toString() as LocalDate,
+    today,
+    tomorrow: addLocalDays(today, 1),
+    dayAfterTomorrow: addLocalDays(today, 2),
+    weekEnd: addLocalDays(today, 7),
+    weekAfter: addLocalDays(today, 8),
     todayStart: localDateAt(today, timeZone),
-    tomorrowStart: localDateAt(tomorrow, timeZone),
-    dayAfterTomorrowStart: localDateAt(dayAfterTomorrow, timeZone),
-    weekEndExclusive: localDateAt(today.add({ days: 8 }), timeZone),
+    tomorrowStart: localDateAt(addLocalDays(today, 1), timeZone),
+    dayAfterTomorrowStart: localDateAt(addLocalDays(today, 2), timeZone),
+    weekEndExclusive: localDateAt(addLocalDays(today, 8), timeZone),
   }
 }
 

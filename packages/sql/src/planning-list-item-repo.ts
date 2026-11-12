@@ -7,6 +7,7 @@ import {
   TagId,
   type UserId,
 } from '@tali/domain'
+import { visibleScopeSql } from './scope'
 
 /**
  * D1-backed repository for the real `ListItem` aggregate (ticket #33;
@@ -75,9 +76,7 @@ export class PlanningListItemRepo extends Context.Service<PlanningListItemRepo>(
           sql<ListItemRow>`
             SELECT ${sql.literal(LIST_ITEM_COLUMNS)} FROM list_items
             WHERE list_id = ${input.listId}
-              AND household_id = ${input.householdId}
-              AND deleted_at IS NULL
-              AND (owner_id = ${input.userId} OR visibility = 'shared')
+              AND ${visibleScopeSql(sql, input)}
             ORDER BY ordering ASC, id ASC
           `,
           rows => rows.map(toListItem),
@@ -86,7 +85,8 @@ export class PlanningListItemRepo extends Context.Service<PlanningListItemRepo>(
       /**
        * Every live item under a list, without the per-viewer visibility filter.
        * Used by `deleteList` to cascade a soft delete over the whole list, so a
-       * spouse's private items cannot outlive it in their mirror.
+       * spouse's private items cannot outlive it in their mirror. Deliberately
+       * not `visibleScopeSql`: this is a system cascade, not a member's read.
        */
       const listAllForList = (input: {
         readonly listId: ListId

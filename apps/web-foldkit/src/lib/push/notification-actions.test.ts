@@ -2,6 +2,7 @@ import { Effect } from 'effect'
 import 'fake-indexeddb/auto'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
+import { stubFetch } from '../../test-http'
 import {
   PUSH_ACTIONS_STORE,
   PUSH_DB_NAME,
@@ -173,18 +174,8 @@ describe('respondToDispatch', () => {
     at: '2026-10-19T08:05:00.000Z',
   }
 
-  const respond = (response: Response) => {
-    const fetchStub = vi.fn(
-      async (_input: RequestInfo | URL, _init?: RequestInit) => response,
-    )
-
-    vi.stubGlobal('fetch', fetchStub)
-
-    return fetchStub
-  }
-
   test('posts the snooze minutes to the encoded respond route', async () => {
-    const fetchStub = respond(new Response('{}', { status: 200 }))
+    const fetchStub = stubFetch(new Response('{}', { status: 200 }))
 
     expect(await Effect.runPromise(respondToDispatch(record))).toBe(true)
 
@@ -200,23 +191,18 @@ describe('respondToDispatch', () => {
   })
 
   test('a gone or malformed dispatch is finished with', async () => {
-    respond(new Response('{}', { status: 404 }))
+    stubFetch(new Response('{}', { status: 404 }))
     expect(await Effect.runPromise(respondToDispatch(record))).toBe(true)
 
-    respond(new Response('{}', { status: 400 }))
+    stubFetch(new Response('{}', { status: 400 }))
     expect(await Effect.runPromise(respondToDispatch(record))).toBe(true)
   })
 
   test('a server or network failure keeps the record for the next open', async () => {
-    respond(new Response('{}', { status: 500 }))
+    stubFetch(new Response('{}', { status: 500 }))
     expect(await Effect.runPromise(respondToDispatch(record))).toBe(false)
 
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => {
-        throw new TypeError('network down')
-      }),
-    )
+    stubFetch(new TypeError('network down'))
     expect(await Effect.runPromise(respondToDispatch(record))).toBe(false)
   })
 })

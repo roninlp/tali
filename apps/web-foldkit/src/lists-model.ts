@@ -1,9 +1,18 @@
 import { Array, Match, Option, Schema } from 'effect'
 
-import { defaultVisibilityFor } from '@tali/domain'
 import type { MirrorRecord } from '@tali/sync-client'
 
 import { JsonField } from './lib/json-field'
+import {
+  mirrorCreatedAt,
+  mirrorId,
+  mirrorMeta,
+  mirrorNonEmpty,
+  mirrorNullableNonEmpty,
+  mirrorNullableString,
+  mirrorText,
+  mirrorVisibility,
+} from './lib/mirror-field'
 
 /**
  * The `/lists` read model and its ordering rules, ported from
@@ -89,16 +98,6 @@ export const ICON_CHOICES: ReadonlyArray<string> = [
   '✨',
 ]
 
-const asNullableString = Schema.decodeUnknownOption(Schema.String)
-
-const asString = Schema.decodeUnknownOption(
-  Schema.String.check(Schema.isMinLength(1)),
-)
-
-const asVisibility = Schema.decodeUnknownOption(
-  Schema.Literals(['private', 'shared']),
-)
-
 const asSort = Schema.decodeUnknownOption(ListSort)
 
 const asPlacement = Schema.decodeUnknownOption(CheckedPlacement)
@@ -127,59 +126,43 @@ const asDone = (record: MirrorRecord): boolean =>
   record.data.done === true || record.data.checked === true
 
 const asName = (record: MirrorRecord): string =>
-  Option.getOrElse(asString(record.data.name), () =>
-    Option.getOrElse(asString(record.data.title), () => ''),
-  )
+  mirrorNonEmpty(record, 'name', mirrorNonEmpty(record, 'title', ''))
 
 /** Project a mirrored list row into the shape the screens understand. */
 export const toListRow = (record: MirrorRecord): ListRow =>
   ListRow.make({
-    id: record.entityId,
-    ownerId: Option.getOrElse(asNullableString(record.data.ownerId), () => ''),
-    title: Option.getOrElse(asNullableString(record.data.title), () => ''),
-    description: Option.getOrNull(asNullableString(record.data.description)),
-    color: Option.getOrNull(asNullableString(record.data.color)),
-    icon: Option.getOrNull(asString(record.data.icon)),
+    id: mirrorId(record),
+    ownerId: mirrorText(record, 'ownerId'),
+    title: mirrorText(record, 'title'),
+    description: mirrorNullableString(record, 'description'),
+    color: mirrorNullableString(record, 'color'),
+    icon: mirrorNullableNonEmpty(record, 'icon'),
     sort: Option.getOrElse(asSort(record.data.sort), () => 'manual'),
     checkedPlacement: Option.getOrElse(
       asPlacement(record.data.checkedPlacement),
       () => 'bottom',
     ),
-    visibility: Option.getOrElse(asVisibility(record.data.visibility), () =>
-      defaultVisibilityFor('list'),
-    ),
-    lastWriterId: Option.getOrNull(asNullableString(record.data.lastWriterId)),
-    createdAt: Option.getOrElse(
-      asNullableString(record.data.createdAt),
-      () => record.updatedAt,
-    ),
-    updatedAt: record.updatedAt,
-    version: record.version,
-    hasSyncError: record.syncError !== undefined,
+    visibility: mirrorVisibility(record, 'list'),
+    lastWriterId: mirrorNullableString(record, 'lastWriterId'),
+    createdAt: mirrorCreatedAt(record),
+    ...mirrorMeta(record),
   })
 
 /** Project a mirrored list-item row into the shape the screens understand. */
 export const toListItemRow = (record: MirrorRecord): ListItemRow =>
   ListItemRow.make({
-    id: record.entityId,
-    listId: Option.getOrElse(asNullableString(record.data.listId), () => ''),
+    id: mirrorId(record),
+    listId: mirrorText(record, 'listId'),
     name: asName(record),
     done: asDone(record),
     order: asOrder(record),
-    checkedAt: Option.getOrNull(asNullableString(record.data.checkedAt)),
-    color: Option.getOrNull(asNullableString(record.data.color)),
+    checkedAt: mirrorNullableString(record, 'checkedAt'),
+    color: mirrorNullableString(record, 'color'),
     tagIds: Option.getOrElse(asStringArray(record.data.tagIds), () => []),
-    visibility: Option.getOrElse(asVisibility(record.data.visibility), () =>
-      defaultVisibilityFor('listItem'),
-    ),
-    lastWriterId: Option.getOrNull(asNullableString(record.data.lastWriterId)),
-    createdAt: Option.getOrElse(
-      asNullableString(record.data.createdAt),
-      () => record.updatedAt,
-    ),
-    updatedAt: record.updatedAt,
-    version: record.version,
-    hasSyncError: record.syncError !== undefined,
+    visibility: mirrorVisibility(record, 'listItem'),
+    lastWriterId: mirrorNullableString(record, 'lastWriterId'),
+    createdAt: mirrorCreatedAt(record),
+    ...mirrorMeta(record),
   })
 
 export const listRowsFromMirror = (

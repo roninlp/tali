@@ -11,7 +11,7 @@ import {
 
 import { HouseholdSummary } from '../household-summary'
 import { Session } from '../session'
-import { API_URL } from './config'
+import { type HttpResult, requestJson } from './http'
 
 /**
  * The plain-HTTP auth client, ported from `apps/web/src/lib/auth-api.ts`.
@@ -30,9 +30,6 @@ import { API_URL } from './config'
  * runtime. Plain strings keep the decoded session and household in the app's
  * own Model types.
  */
-
-/** No request may hang the boot splash or disable a form forever. */
-const REQUEST_TIMEOUT_MS = 15_000
 
 export const AuthErrorCode = Schema.Literals(AUTH_ERROR_CODES)
 
@@ -62,11 +59,7 @@ const OkResponse = Schema.Struct({ ok: Schema.Boolean })
 
 const HouseholdResponse = Schema.Struct({ household: HouseholdSummary })
 
-export type ApiResult<A> =
-  | { readonly ok: true; readonly value: A }
-  | { readonly ok: false; readonly error: AuthFailure }
-
-const networkFailure = AuthFailure.make({ code: 'Network', retryable: true })
+export type ApiResult<A> = HttpResult<A, AuthFailure>
 
 const decodeErrorCode = Schema.decodeUnknownOption(AuthErrorCode)
 
@@ -103,59 +96,17 @@ const send = <A>(
   schema: Schema.ConstraintDecoder<A>,
   body?: Schema.Json,
 ): Effect.Effect<ApiResult<A>> =>
-  Effect.gen(function* () {
-    const init: RequestInit = {
-      method,
-      credentials: 'include',
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    }
-
-    if (body !== undefined) {
-      init.headers = { 'content-type': 'application/json' }
-      init.body = JSON.stringify(body)
-    }
-
-    const maybeResponse = yield* Effect.option(
-      Effect.tryPromise({
-        try: () => fetch(`${API_URL}${path}`, init),
-        catch: () => networkFailure,
-      }),
-    )
-
-    if (Option.isNone(maybeResponse)) {
-      return { ok: false, error: networkFailure }
-    }
-
-    const response = maybeResponse.value
-
-    const maybeJson = yield* Effect.option(
-      Effect.tryPromise({
-        try: () => response.json(),
-        catch: () => undefined,
-      }),
-    )
-
-    const json = Option.getOrUndefined(
-      Option.flatMap(maybeJson, value =>
-        Schema.decodeUnknownOption(Schema.Json)(value),
-      ),
-    )
-
-    if (!response.ok) {
-      return { ok: false, error: classifyApiFailure(response.status, json) }
-    }
-
-    const decoded = Schema.decodeOption(schema)(json)
-
-    return Option.isSome(decoded)
-      ? { ok: true, value: decoded.value }
-      : {
-          ok: false,
-          error: AuthFailure.make({
-            code: 'InternalError',
-            retryable: false,
-          }),
-        }
+  requestJson({
+    method,
+    path,
+    schema,
+    body,
+    classify: classifyApiFailure,
+    networkFailure: AuthFailure.make({ code: 'Network', retryable: true }),
+    decodeFailure: AuthFailure.make({
+      code: 'InternalError',
+      retryable: false,
+    }),
   })
 
 export const authApi = {

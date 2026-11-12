@@ -6,6 +6,7 @@ import { Listbox } from '@foldkit/ui'
 import type { ReminderInboxItem } from '../lib/reminders/api'
 import { shareActionOf } from '../lib/visibility-writes'
 import { buttonView } from '../ui/button'
+import { emptyStateView, inlineAlertView } from '../ui/feedback'
 import { listboxViewInputs } from '../ui/listbox'
 import { Message, SnoozeListbox, snoozeListboxFor } from './reminders'
 import type { Model, SnoozeOption } from './reminders'
@@ -51,14 +52,7 @@ const loadingView = (h: HtmlBuilder<Message>): Html =>
   )
 
 const emptyView = (model: Model, h: HtmlBuilder<Message>): Html =>
-  h.p(
-    [
-      h.Class(
-        'm-0 grid justify-items-center gap-2 rounded-2xl border border-dashed border-base-300 px-6 py-10 text-center text-sm leading-7 text-base-content/70',
-      ),
-    ],
-    [emptyText(model)],
-  )
+  emptyStateView(emptyText(model), h)
 
 const statusView = (model: Model, h: HtmlBuilder<Message>): Html => {
   const isEmpty = Array.isReadonlyArrayEmpty(model.items)
@@ -71,14 +65,7 @@ const statusView = (model: Model, h: HtmlBuilder<Message>): Html => {
 }
 
 const errorView = (model: Model, h: HtmlBuilder<Message>): Html =>
-  Option.match(model.maybeError, {
-    onNone: () => h.empty,
-    onSome: message =>
-      h.p(
-        [h.Role('alert'), h.Class('notice notice-error m-0 text-sm leading-7')],
-        [message],
-      ),
-  })
+  inlineAlertView(model.maybeError, h)
 
 const metadataView = (
   item: ReminderInboxItem,

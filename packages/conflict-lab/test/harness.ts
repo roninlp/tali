@@ -2,6 +2,8 @@ import { exports } from 'cloudflare:workers'
 import { Effect, Predicate, Schema } from 'effect'
 import { IDBFactory } from 'fake-indexeddb'
 import {
+  decodeErrorEnvelope,
+  entityKey,
   SyncBootstrapResponse,
   SyncPullResponse,
   SyncPushResponse,
@@ -171,25 +173,17 @@ const decodeBody = async <A>(
 ): Promise<A> => {
   const body: unknown = await response.json().catch(() => undefined)
   if (!response.ok) {
-    const envelope = Schema.decodeUnknownOption(
-      Schema.Struct({
-        error: Schema.Struct({
-          code: Schema.String,
-          details: Schema.optional(
-            Schema.Record(Schema.String, Schema.Unknown),
-          ),
-        }),
-      }),
-    )(body)
+    const envelope = decodeErrorEnvelope(body)
     throw envelope._tag === 'Some'
       ? new SyncRejected(
           envelope.value.error.code,
-          envelope.value.error.details ?? {},
+          envelope.value.error.details,
+          envelope.value.error.retryable,
         )
       : new SyncRejected(`sync-failed-${response.status}`)
   }
   if (body === undefined) throw new SyncRejected(`${path}-empty-body`)
-  return Schema.decodeUnknownSync(schema)(body)
+  return Schema.decodeSync(schema)(body)
 }
 
 export const makeTransport = (
@@ -455,11 +449,7 @@ export const mirrorSnapshot = async (
     rows.push(...(await store.list(entityType)))
     rows.push(...(await store.listTrashed(entityType)))
   }
-  return rows.sort((a, b) =>
-    `${a.entityType}\u0000${a.entityId}`.localeCompare(
-      `${b.entityType}\u0000${b.entityId}`,
-    ),
-  )
+  return rows.sort((a, b) => entityKey(a).localeCompare(entityKey(b)))
 }
 
 const canonical = (value: unknown): string => {
@@ -473,7 +463,7 @@ const canonical = (value: unknown): string => {
 }
 
 const rowKey = (row: { entityType: string; entityId: string }): string =>
-  `${row.entityType}\u0000${row.entityId}`
+  entityKey(row.entityType, row.entityId)
 
 const comparable = (row: {
   entityType: string

@@ -1,4 +1,4 @@
-import { Temporal } from 'temporal-polyfill/full'
+import { addLocalDays, plainDateOf } from '../local-date.js'
 import type { LocalDate } from './common.js'
 import type { HabitEntryStatus, HabitFrequency } from './habit.js'
 
@@ -114,15 +114,11 @@ export const streakUnitOf = (frequency: HabitFrequency): StreakUnit =>
 
 const SATURDAY = 6
 
-const addDays = (date: LocalDate, days: number): LocalDate =>
-  Temporal.PlainDate.from(date).add({ days }).toString() as LocalDate
-
-const dayOfWeek = (date: LocalDate): number =>
-  Temporal.PlainDate.from(date).dayOfWeek
+const dayOfWeek = (date: LocalDate): number => plainDateOf(date).dayOfWeek
 
 /** The Saturday on or before `date` (the fixed counting week, R6). */
 const saturdayOnOrBefore = (date: LocalDate): LocalDate =>
-  addDays(date, -((dayOfWeek(date) - SATURDAY + 7) % 7))
+  addLocalDays(date, -((dayOfWeek(date) - SATURDAY + 7) % 7))
 
 /**
  * The Friday that closes the counting week whose first day is `start`.
@@ -132,7 +128,7 @@ const saturdayOnOrBefore = (date: LocalDate): LocalDate =>
  * that week's Friday instead of producing a backwards range.
  */
 const countingWeekEnd = (start: LocalDate): LocalDate =>
-  addDays(start, 6 - ((dayOfWeek(start) - SATURDAY + 7) % 7))
+  addLocalDays(start, 6 - ((dayOfWeek(start) - SATURDAY + 7) % 7))
 
 const CREDIT: Readonly<Record<HabitEntryStatus, number>> = {
   done: 1,
@@ -287,7 +283,7 @@ export const habitStreak = (input: StreakInput): StreakResult => {
     entries.set(entry.localDate, entry.status)
   }
 
-  const windowStart = addDays(today, -(input.windowDays - 1))
+  const windowStart = addLocalDays(today, -(input.windowDays - 1))
   const periods: Array<StreakPeriod> = []
 
   let run = 0
@@ -309,7 +305,7 @@ export const habitStreak = (input: StreakInput): StreakResult => {
       // Every day is stepped over; only expected days are periods, so a rest
       // day is transparent (R5) and never breaks or extends a run.
       const day = cursor
-      cursor = addDays(cursor, 1)
+      cursor = addLocalDays(cursor, 1)
       if (!isExpectedDay(era.frequency, day)) continue
 
       const start = day
@@ -361,7 +357,7 @@ export const habitStreak = (input: StreakInput): StreakResult => {
     const start =
       firstPeriod && eraIndex === 0 ? saturdayOnOrBefore(startedOn) : cursor
     const end = countingWeekEnd(start)
-    cursor = addDays(end, 1)
+    cursor = addLocalDays(end, 1)
 
     const frequency = era.frequency
     const requirement = requirementOf(frequency)
@@ -370,7 +366,7 @@ export const habitStreak = (input: StreakInput): StreakResult => {
     let credit = 0
     let weighted = 0
     if (from <= to) {
-      for (let day = from; day <= to; day = addDays(day, 1)) {
+      for (let day = from; day <= to; day = addLocalDays(day, 1)) {
         const status = entries.get(day)
         if (status === undefined) continue
         credit += CREDIT[status]!
@@ -444,7 +440,7 @@ export const habitStreak = (input: StreakInput): StreakResult => {
       for (
         let day = maxDate(windowStart, startedOn);
         day <= today;
-        day = addDays(day, 1)
+        day = addLocalDays(day, 1)
       ) {
         const status = entries.get(day)
         if (status === undefined) continue

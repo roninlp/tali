@@ -94,7 +94,7 @@ describe('CaptureDraft', () => {
   })
 
   it('carries typed Needs Input entries', () => {
-    const decoded = Schema.decodeUnknownSync(CaptureDraft)({
+    const decoded = Schema.decodeSync(CaptureDraft)({
       _tag: 'event',
       title: 'مهمانی',
       sourceQuote: 'پنجشنبه مهمونی ساراست',
@@ -116,7 +116,7 @@ describe('CaptureDraft', () => {
   })
 
   it('accepts a free-form Needs Input field name (old rows stay readable)', () => {
-    const decoded = Schema.decodeUnknownSync(CaptureDraft)({
+    const decoded = Schema.decodeSync(CaptureDraft)({
       _tag: 'event',
       title: 'مصاحبه',
       sourceQuote: 'ساعت ۷ مصاحبه دارم',
@@ -209,7 +209,7 @@ describe('toCreateInput', () => {
   })
 
   it('refuses an event without a timing instead of inventing a date', () => {
-    const draft = Schema.decodeUnknownSync(CaptureDraft)({
+    const draft = Schema.decodeSync(CaptureDraft)({
       _tag: 'event',
       title: 'دکتر',
       sourceQuote: 'دکتر',
@@ -228,7 +228,7 @@ describe('toCreateInput', () => {
   })
 
   it('defaults a habit with no stated rhythm to daily', () => {
-    const draft = Schema.decodeUnknownSync(CaptureDraft)({
+    const draft = Schema.decodeSync(CaptureDraft)({
       _tag: 'habit',
       title: 'کتاب',
       sourceQuote: 'هر روز کتاب بخونم',
@@ -243,7 +243,7 @@ describe('toCreateInput', () => {
   })
 
   it("defaults a reminder's kind to general but still asks for its repeat", () => {
-    const draft = Schema.decodeUnknownSync(CaptureDraft)({
+    const draft = Schema.decodeSync(CaptureDraft)({
       _tag: 'reminder',
       title: 'زنگ',
       sourceQuote: 'زنگ',
@@ -256,7 +256,7 @@ describe('toCreateInput', () => {
       expect(result.failure).toMatchObject({ fields: ['repeat'] })
     }
 
-    const withRepeat = Schema.decodeUnknownSync(CaptureDraft)({
+    const withRepeat = Schema.decodeSync(CaptureDraft)({
       _tag: 'reminder',
       title: 'زنگ',
       repeat: { _tag: 'daily', time: '08:00' },
@@ -271,7 +271,7 @@ describe('toCreateInput', () => {
   })
 
   it('asks for a fire time on a one-off reminder', () => {
-    const draft = Schema.decodeUnknownSync(CaptureDraft)({
+    const draft = Schema.decodeSync(CaptureDraft)({
       _tag: 'reminder',
       title: 'زنگ',
       repeat: { _tag: 'once' },
@@ -286,7 +286,7 @@ describe('toCreateInput', () => {
   })
 
   it("wraps a note's plain text into the minimal ProseMirror document", () => {
-    const draft = Schema.decodeUnknownSync(CaptureDraft)({
+    const draft = Schema.decodeSync(CaptureDraft)({
       _tag: 'note',
       body: 'خط اول\nخط دوم',
       sourceQuote: 'خط اول\nخط دوم',

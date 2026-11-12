@@ -1,6 +1,11 @@
 import { Schema } from 'effect'
 import { Model } from 'effect/schema'
-import { Temporal } from 'temporal-polyfill/full'
+import {
+  addLocalDays,
+  localDateOfInstant,
+  localDateOfInstantOption,
+  plainDateOf,
+} from '../local-date.js'
 import {
   commonItemFields,
   HabitEntryId,
@@ -9,7 +14,13 @@ import {
   TimestampUtc,
   TimeZone,
 } from './common.js'
-import { HouseholdId, UserId, Visibility } from '../common.js'
+import {
+  ClockTime,
+  HouseholdId,
+  IsoWeekday,
+  UserId,
+  Visibility,
+} from '../common.js'
 
 /**
  * `Habit` + `HabitEntry` aggregates (Slice 4 / ticket #63; FR-HAB-01/02).
@@ -68,11 +79,14 @@ import { HouseholdId, UserId, Visibility } from '../common.js'
 
 // ── Frequency ─────────────────────────────────────────────────────────────
 
-/** ISO weekday: 1 = Monday … 7 = Sunday (matching `RecurrenceRule.byDay`). */
-export const HabitWeekday = Schema.Int.check(
-  Schema.isBetween({ minimum: 1, maximum: 7 }),
-)
-export type HabitWeekday = Schema.Schema.Type<typeof HabitWeekday>
+/**
+ * ISO weekday: 1 = Monday … 7 = Sunday (matching `RecurrenceRule.byDay`).
+ *
+ * An alias of the shared scalar, kept because the habit contract's public name
+ * reads better at its call sites.
+ */
+export const HabitWeekday = IsoWeekday
+export type HabitWeekday = IsoWeekday
 
 /**
  * How often the habit is meant to happen.
@@ -85,16 +99,14 @@ export type HabitWeekday = Schema.Schema.Type<typeof HabitWeekday>
  *   streak algorithm's business (#65).
  */
 export const HabitFrequency = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal('daily') }),
-  Schema.Struct({
-    _tag: Schema.Literal('weekdays'),
+  Schema.TaggedStruct('daily', {}),
+  Schema.TaggedStruct('weekdays', {
     days: Schema.Array(HabitWeekday).check(
       Schema.isMinLength(1),
       Schema.isUnique(),
     ),
   }),
-  Schema.Struct({
-    _tag: Schema.Literal('weekly'),
+  Schema.TaggedStruct('weekly', {
     times: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 7 })),
   }),
 ])
@@ -175,10 +187,8 @@ export type HabitFrequencyHistory = Schema.Schema.Type<
 >
 
 /** Local wall-clock time `HH:mm` (24h). Stored as text; the zone is the habit's. */
-export const HabitReminderTime = Schema.String.check(
-  Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/),
-)
-export type HabitReminderTime = Schema.Schema.Type<typeof HabitReminderTime>
+export const HabitReminderTime = ClockTime
+export type HabitReminderTime = ClockTime
 
 /**
  * Two frequencies are the same definition.
@@ -209,10 +219,7 @@ const canonicalHabitFrequency = (frequency: HabitFrequency): string =>
  * inputs only; the sync path uses `localDateInOption`.
  */
 export const localDateIn = (instant: string, timeZone: string): LocalDate =>
-  Temporal.Instant.from(instant)
-    .toZonedDateTimeISO(timeZone)
-    .toPlainDate()
-    .toString() as LocalDate
+  localDateOfInstant(instant, timeZone)
 
 /**
  * As `localDateIn`, but a malformed instant or IANA zone yields `null`.
@@ -224,22 +231,13 @@ export const localDateIn = (instant: string, timeZone: string): LocalDate =>
 export const localDateInOption = (
   instant: string,
   timeZone: string,
-): LocalDate | null => {
-  try {
-    return localDateIn(instant, timeZone)
-  } catch {
-    return null
-  }
-}
+): LocalDate | null => localDateOfInstantOption(instant, timeZone)
 
 // ── Frequency eras (#65) ──────────────────────────────────────────────────
 
 /** The counting unit of a frequency: day for daily/weekdays, week for weekly. */
 const habitUnit = (frequency: HabitFrequency): 'day' | 'week' =>
   frequency._tag === 'weekly' ? 'week' : 'day'
-
-const addDays = (date: LocalDate, days: number): LocalDate =>
-  Temporal.PlainDate.from(date).add({ days }).toString() as LocalDate
 
 /** ISO weekday 6 = Saturday, 5 = Friday (the fixed counting week, #65). */
 const SATURDAY = 6
@@ -248,8 +246,8 @@ const FRIDAY = 5
 /** The last day of the period of `unit` containing `date`. */
 const periodEndIn = (date: LocalDate, unit: 'day' | 'week'): LocalDate => {
   if (unit === 'day') return date
-  const dayOfWeek = Temporal.PlainDate.from(date).dayOfWeek
-  return addDays(date, (FRIDAY - dayOfWeek + 7) % 7)
+  const dayOfWeek = plainDateOf(date).dayOfWeek
+  return addLocalDays(date, (FRIDAY - dayOfWeek + 7) % 7)
 }
 
 /** The first day of the next `unit` period strictly after `date`. */
@@ -257,11 +255,11 @@ const nextPeriodStartAfter = (
   date: LocalDate,
   unit: 'day' | 'week',
 ): LocalDate => {
-  if (unit === 'day') return addDays(date, 1)
-  const dayOfWeek = Temporal.PlainDate.from(date).dayOfWeek
+  if (unit === 'day') return addLocalDays(date, 1)
+  const dayOfWeek = plainDateOf(date).dayOfWeek
   // A Saturday change belongs to the week that opened that day, so its next
   // boundary is a full week later.
-  return addDays(date, (SATURDAY - dayOfWeek + 7) % 7 || 7)
+  return addLocalDays(date, (SATURDAY - dayOfWeek + 7) % 7 || 7)
 }
 
 /**
@@ -279,7 +277,7 @@ const habitEraStartAfter = (input: {
   readonly next: HabitFrequency
   readonly changeDate: LocalDate
 }): LocalDate => {
-  const afterOldPeriod = addDays(
+  const afterOldPeriod = addLocalDays(
     periodEndIn(input.changeDate, habitUnit(input.previous)),
     1,
   )
@@ -403,7 +401,7 @@ export interface HabitLogWindow {
  * happened yet).
  */
 export const habitLogWindow = (today: LocalDate): HabitLogWindow => ({
-  earliest: addDays(today, -HABIT_LOG_BACKDATE_DAYS),
+  earliest: addLocalDays(today, -HABIT_LOG_BACKDATE_DAYS),
   latest: today,
 })
 

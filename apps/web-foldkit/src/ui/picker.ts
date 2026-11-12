@@ -21,6 +21,8 @@ import {
 } from '@tali/domain'
 
 import { type ButtonConfig, buttonView } from './button'
+import { confirmDialogFolds } from './confirm'
+import { type ChildField, foldFieldChild } from './fold'
 import {
   calendarIcon,
   chevronLeftIcon,
@@ -292,41 +294,17 @@ const scrollCommandsFor = (
 
 type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage>
 
-const foldDialogOutMessage = Dialog.OutMessage.match<
-  Update.Step<Model, Message>
->({
-  Opened: () => model => ({ model }),
-  Closed: () => stepModel => ({
-    model: modifyFields(stepModel, { target: () => Option.none() }),
-  }),
-})
-
-const foldDialog = Update.foldChild({
-  update: Dialog.update,
-  read: (model: Model) => Option.some(model.dialog),
-  write: (model, nextDialog) =>
+const dialogFolds = confirmDialogFolds<Model, Message>({
+  field: model => model.dialog,
+  setField: (model, nextDialog) =>
     modifyFields(model, { dialog: () => nextDialog }),
   toParentMessage: message => Message.GotDialogMessage({ message }),
-  foldOutMessage: foldDialogOutMessage,
+  whenClosed: model => modifyFields(model, { target: () => Option.none() }),
 })
 
-const foldDialogOpen = Update.foldChildStep({
-  update: Dialog.open,
-  read: (model: Model) => Option.some(model.dialog),
-  write: (model, nextDialog) =>
-    modifyFields(model, { dialog: () => nextDialog }),
-  toParentMessage: message => Message.GotDialogMessage({ message }),
-  foldOutMessage: foldDialogOutMessage,
-})
-
-const foldDialogClose = Update.foldChildStep({
-  update: Dialog.close,
-  read: (model: Model) => Option.some(model.dialog),
-  write: (model, nextDialog) =>
-    modifyFields(model, { dialog: () => nextDialog }),
-  toParentMessage: message => Message.GotDialogMessage({ message }),
-  foldOutMessage: foldDialogOutMessage,
-})
+const foldDialog = dialogFolds.fold
+const foldDialogOpen = dialogFolds.openStep
+const foldDialogClose = dialogFolds.closeStep
 
 /** Programmatically opens the picker on a target. Screens normally let the
  *  trigger dispatch `RequestedOpen`; this helper exists for flows that open a
@@ -472,6 +450,44 @@ export const update = (model: Model, message: Message) =>
 
     ClickedClear: () => clear(model),
     ClickedConfirm: () => commit(model),
+  })
+
+/**
+ * The fold for a screen's single `Picker.Model` field.
+ *
+ * Screens own one picker rather than one per field: a trigger opens it with a
+ * `target` string the screen defines, and the picker reports the committed or
+ * cleared value against that same target. `applyValue` is the only per-screen
+ * piece, so the `read`/`write` pair and the OutMessage matcher stop being
+ * copied per page.
+ */
+export const pickerFieldFold = <ParentModel, ParentMessage>(
+  config: Readonly<
+    ChildField<ParentModel, Model> & {
+      toParentMessage: (message: Message) => ParentMessage
+      applyValue: (
+        model: ParentModel,
+        target: string,
+        value: string,
+      ) => ParentModel
+    }
+  >,
+): Update.Fold<ParentModel, ParentMessage, Message> =>
+  foldFieldChild({
+    update,
+    field: config.field,
+    setField: config.setField,
+    toParentMessage: config.toParentMessage,
+    foldOutMessage: OutMessage.match<Update.Step<ParentModel, ParentMessage>>({
+      PickedValue:
+        ({ target, value }) =>
+        stepModel => ({
+          model: config.applyValue(stepModel, target, value),
+        }),
+      ClearedValue:
+        ({ target }) =>
+        stepModel => ({ model: config.applyValue(stepModel, target, '') }),
+    }),
   })
 
 // VIEW

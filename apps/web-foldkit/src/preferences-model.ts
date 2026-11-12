@@ -1,5 +1,13 @@
 import { Schema } from 'effect'
 
+import {
+  DEFAULT_CHECKED_ITEM_PLACEMENT,
+  DEFAULT_DASHBOARD_SECTION_ORDER,
+  DEFAULT_DIGITS_STYLE,
+  DEFAULT_TIME_ZONE,
+  DEFAULT_WEEK_START,
+} from '@tali/domain'
+
 /**
  * Per-user display preferences as the Foldkit Model holds them.
  *
@@ -66,17 +74,14 @@ export type PreferenceDefaults = Readonly<{
   digits?: Digits
 }>
 
-export const DEFAULT_TIME_ZONE = 'Asia/Tehran'
-export const DEFAULT_WEEK_START: WeekStart = 'saturday'
-export const DEFAULT_DIGITS: Digits = 'persian'
-
-export const DEFAULT_DASHBOARD_ORDER: ReadonlyArray<string> = [
-  'tasks',
-  'events',
-  'reminders',
-  'habits',
-  'notes',
-]
+/** The shared product defaults, under the names this module has always used. */
+export {
+  DEFAULT_CHECKED_ITEM_PLACEMENT,
+  DEFAULT_DASHBOARD_SECTION_ORDER as DEFAULT_DASHBOARD_ORDER,
+  DEFAULT_DIGITS_STYLE as DEFAULT_DIGITS,
+  DEFAULT_TIME_ZONE,
+  DEFAULT_WEEK_START,
+}
 
 /** Fallback display settings, matching `defaultPreferences` in the domain. */
 export const defaultPreferences = (
@@ -87,9 +92,9 @@ export const defaultPreferences = (
     userId,
     timeZone: defaults.timeZone ?? DEFAULT_TIME_ZONE,
     weekStart: defaults.weekStart ?? DEFAULT_WEEK_START,
-    digits: defaults.digits ?? DEFAULT_DIGITS,
-    dashboardSectionOrder: DEFAULT_DASHBOARD_ORDER,
-    checkedItemPlacement: 'bottom',
+    digits: defaults.digits ?? DEFAULT_DIGITS_STYLE,
+    dashboardSectionOrder: DEFAULT_DASHBOARD_SECTION_ORDER,
+    checkedItemPlacement: DEFAULT_CHECKED_ITEM_PLACEMENT,
     // Timestamps are server-owned. Defaults only render before the first read.
     createdAt: '',
     updatedAt: '',

@@ -2,9 +2,11 @@ import { Array, Match, Option, Schema } from 'effect'
 import { defineTaggedUnion } from 'foldkit/schema'
 
 import {
+  COMPLETED_TASK_RETENTION_MS,
   addJalaliDays,
   formatJalaliDate,
   localizeDigits,
+  resolveTimeZone,
   taskBucketBounds,
   taskBucketOf,
   toIsoDate,
@@ -543,15 +545,11 @@ export const BOARD_COPY: Readonly<Record<TaskBoardKey, BoardCopy>> = {
 
 // DATES
 
-export const validTimeZone = (timeZone: string): string => {
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone })
-
-    return timeZone
-  } catch {
-    return 'UTC'
-  }
-}
+/**
+ * The board's name for the shared resolver: an invalid stored zone falls back
+ * to `Asia/Tehran` here too, never to UTC (domain `resolveTimeZone`).
+ */
+export const validTimeZone = resolveTimeZone
 
 export const boundsFor = (timeZone: string, now: number): TaskBucketBounds =>
   taskBucketBounds(validTimeZone(timeZone), new Date(now))
@@ -618,7 +616,8 @@ export const dueLabel = (
 
 // COMPLETION HISTORY
 
-export const COMPLETED_TASK_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
+/** Re-exported from the domain for the board's tests (FR-TASK-06). */
+export { COMPLETED_TASK_RETENTION_MS }
 
 /** True while the completion is still restorable (mirrors TaskService.undo). */
 export const isRestorable = (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Effect, Tracer } from 'effect'
+import { Data, Effect, Tracer } from 'effect'
 import {
   exportableSpanAttribute,
   isExportableSpanAttributeKey,
@@ -7,6 +7,10 @@ import {
 import { redactTracer } from './tracer.js'
 
 const PERSIAN_TEXT = 'فردا ساعت ۵ دکتر دارم'
+
+class TestFailure extends Data.TaggedError('TestFailure')<{
+  readonly message: string
+}> {}
 
 describe('span attribute redaction', () => {
   it('drops the names Foldkit puts on a Capture Command span', () => {
@@ -110,11 +114,8 @@ describe('redactTracer', () => {
         'exception.message': PERSIAN_TEXT,
         'exception.type': 'Error',
       })
-      return yield* Effect.fail(new Error(PERSIAN_TEXT))
-    }).pipe(
-      Effect.withSpan('CommitCapture'),
-      Effect.catch(() => Effect.void),
-    )
+      return yield* new TestFailure({ message: PERSIAN_TEXT })
+    }).pipe(Effect.withSpan('CommitCapture'), Effect.ignore)
 
     await Effect.runPromise(
       program.pipe(

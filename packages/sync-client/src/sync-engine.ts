@@ -1,5 +1,7 @@
 import { Predicate, Schema } from 'effect'
 import {
+  decodeErrorEnvelope,
+  entityKey,
   type Habit,
   type HabitEntry,
   type HabitEntryLogInput,
@@ -133,11 +135,17 @@ const isHabitRestore = (entry: SyncPushEntry): boolean =>
   entry.op === 'upsert' &&
   Object.keys(entry.patch).length === 0
 
-/** A non-2xx sync response; the stable code and details travel to the engine. */
+/**
+ * A non-2xx sync response; the stable code and details travel to the engine.
+ *
+ * `retryable` is the server's own verdict from the shared error envelope
+ * (`SyncRejected` defaults to retryable for callers that do not have one).
+ */
 export class SyncRejected extends Error {
   constructor(
     readonly code: string,
     readonly details: Readonly<Record<string, unknown>> = {},
+    readonly retryable = true,
   ) {
     super(code)
   }
@@ -182,20 +190,12 @@ const request = async <A>(
   }
   const body: unknown = await response.json().catch(() => undefined)
   if (!response.ok) {
-    const envelope = Schema.decodeUnknownOption(
-      Schema.Struct({
-        error: Schema.Struct({
-          code: Schema.String,
-          details: Schema.optional(
-            Schema.Record(Schema.String, Schema.Unknown),
-          ),
-        }),
-      }),
-    )(body)
+    const envelope = decodeErrorEnvelope(body)
     throw envelope._tag === 'Some'
       ? new SyncRejected(
           envelope.value.error.code,
-          envelope.value.error.details ?? {},
+          envelope.value.error.details,
+          envelope.value.error.retryable,
         )
       : new SyncRejected('sync-failed')
   }
@@ -323,7 +323,7 @@ export const createSyncEngine = (transport: SyncTransport): SyncEngine => {
       )
       if (marked.length === 0) return
       const entries = marked.map(entry => {
-        const key = `${entry.entityType}\u0000${entry.entityId}`
+        const key = entityKey(entry)
         const chained = versionByEntity.get(key)
         return chained === undefined
           ? entry
@@ -383,7 +383,10 @@ export const createSyncEngine = (transport: SyncTransport): SyncEngine => {
                 clientMutationId: queued.clientMutationId,
               })
               repairedRows.push(habitRow(restored))
-              versionByEntity.set(`habit\u0000${restored.id}`, restored.version)
+              versionByEntity.set(
+                entityKey('habit', restored.id),
+                restored.version,
+              )
             } catch (cause) {
               const tag = causeTag(cause)
               if (
@@ -443,12 +446,12 @@ export const createSyncEngine = (transport: SyncTransport): SyncEngine => {
               }
               repairedRows.push(habitEntryRow(revived))
               versionByEntity.set(
-                `habitEntry\u0000${revived.id}`,
+                entityKey('habitEntry', revived.id),
                 revived.version,
               )
               if (revived.id !== queued.entityId) {
                 versionByEntity.set(
-                  `habitEntry\u0000${queued.entityId}`,
+                  entityKey('habitEntry', queued.entityId),
                   revived.version,
                 )
               }
@@ -498,7 +501,7 @@ export const createSyncEngine = (transport: SyncTransport): SyncEngine => {
           entityId: result.entityId,
         })
         versionByEntity.set(
-          `${result.entityType}\u0000${result.entityId}`,
+          entityKey(result.entityType, result.entityId),
           result.version,
         )
       }

@@ -1,3 +1,4 @@
+export * from './scope'
 export * from './list-item-repo'
 export * from './task-repo'
 export * from './project-repo'

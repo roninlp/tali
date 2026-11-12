@@ -5,6 +5,7 @@ import { RecurrenceRule, TaskRecurrenceMode } from '../recurrence.js'
 import {
   commonItemFields,
   LocalDate,
+  NonEmptyString,
   Priority,
   ProjectId,
   TagIds,
@@ -34,7 +35,7 @@ export class Task extends Model.Class<Task>('Task')({
   ...commonItemFields('task', TaskId),
   /** Resolved from the task's `shareable` policy (ADR-0011), never client-invented. */
   visibility: Visibility,
-  title: Schema.String.check(Schema.isMinLength(1)),
+  title: NonEmptyString,
   description: Schema.NullOr(Schema.String),
   status: TaskStatus,
   priority: Priority,
@@ -58,25 +59,3 @@ export class Task extends Model.Class<Task>('Task')({
   /** Server timestamp for the `→ done` transition. */
   completedAt: Schema.NullOr(TimestampUtc),
 }) {}
-
-/**
- * Title-only create input (FR-TASK-01: "Task can be created with title only").
- * The server fills id, timestamps, version, status defaults and ownership.
- * Omitted fields are simply not patched on insert.
- */
-export const TaskCreate = Schema.Struct({
-  title: Schema.String.check(Schema.isMinLength(1)),
-  description: Schema.optional(Schema.NullOr(Schema.String)),
-  status: Schema.optional(TaskStatus),
-  priority: Schema.optional(Priority),
-  dueAt: Schema.optional(Schema.NullOr(TimestampUtc)),
-  dueDate: Schema.optional(Schema.NullOr(LocalDate)),
-  timeZone: Schema.optional(TimeZone),
-  projectId: Schema.optional(Schema.NullOr(ProjectId)),
-  tagIds: Schema.optional(TagIds),
-  recurrence: Schema.optional(Schema.NullOr(RecurrenceRule)),
-  /** Defaults to `onDueDate` when a rule is supplied without a mode. */
-  recurrenceMode: Schema.optional(Schema.NullOr(TaskRecurrenceMode)),
-  visibility: Schema.optional(Visibility),
-})
-export type TaskCreate = Schema.Schema.Type<typeof TaskCreate>

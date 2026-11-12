@@ -11,22 +11,17 @@ import {
   type ReminderId,
   type ReminderInboxItem,
   ReminderLink,
+  type ReminderLinkColumns,
   ReminderRepeat,
   type ReminderTier,
   type ReminderType,
-  EventId,
-  HabitId,
-  OccasionId,
-  TaskId,
   type UserId,
   type Visibility,
-  eventReminderLink,
-  habitReminderLink,
-  noReminderLink,
-  occasionReminderLink,
+  decodeReminderLink,
+  encodeReminderLink,
   onceReminderRepeat,
-  taskReminderLink,
 } from '@tali/domain'
+import { visibleScopeSql, type VisibleScopeOptions } from './scope'
 
 /**
  * D1 persistence for the `Reminder` aggregate and its dispatch ledger
@@ -112,28 +107,6 @@ const asRepeat = Schema.decodeOption(Schema.fromJsonString(ReminderRepeat))
 const repeatOf = (value: string): ReminderRepeat =>
   Option.getOrElse(asRepeat(value), onceReminderRepeat)
 
-/** A row's link union from the flattened columns. */
-const linkOf = (type: string, id: string | null): ReminderLink => {
-  switch (type) {
-    case 'task':
-      return id === null ? noReminderLink() : taskReminderLink(TaskId.make(id))
-    case 'event':
-      return id === null
-        ? noReminderLink()
-        : eventReminderLink(EventId.make(id))
-    case 'habit':
-      return id === null
-        ? noReminderLink()
-        : habitReminderLink(HabitId.make(id))
-    case 'occasion':
-      return id === null
-        ? noReminderLink()
-        : occasionReminderLink(OccasionId.make(id))
-    default:
-      return noReminderLink()
-  }
-}
-
 /** The model's plain shape, built from a D1 row. */
 export const reminderPropsOf = (row: ReminderRow) => ({
   id: row.id as Reminder['id'],
@@ -145,7 +118,7 @@ export const reminderPropsOf = (row: ReminderRow) => ({
   repeat: repeatOf(row.repeat),
   fireAt: row.fireAt,
   offsetMinutes: Number(row.offsetMinutes),
-  link: linkOf(row.linkType, row.linkId),
+  link: decodeReminderLink(row.linkType, row.linkId),
   silencedUntil: row.silencedUntil,
   timeZone: row.timeZone,
   ownerId: row.ownerId as UserId,
@@ -183,23 +156,14 @@ export const toReminderDispatch = (
   row: ReminderDispatchRow,
 ): ReminderDispatch => new ReminderDispatch(dispatchPropsOf(row))
 
-/** Flatten a link union for the two columns. */
-export const linkColumns = (
-  link: ReminderLink,
-): { readonly linkType: string; readonly linkId: string | null } => {
-  switch (link._tag) {
-    case 'task':
-      return { linkType: 'task', linkId: link.taskId }
-    case 'event':
-      return { linkType: 'event', linkId: link.eventId }
-    case 'habit':
-      return { linkType: 'habit', linkId: link.habitId }
-    case 'occasion':
-      return { linkType: 'occasion', linkId: link.occasionId }
-    default:
-      return { linkType: 'none', linkId: null }
-  }
-}
+/**
+ * Flatten a link union for the two columns.
+ *
+ * Thin alias: the codec lives with the union in `@tali/domain`, this keeps the
+ * name this module has always published.
+ */
+export const linkColumns: (link: ReminderLink) => ReminderLinkColumns =
+  encodeReminderLink
 
 const encodeRepeat = (repeat: ReminderRepeat): string => JSON.stringify(repeat)
 
@@ -209,15 +173,19 @@ export class ReminderRepo extends Context.Service<ReminderRepo>()(
     make: Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient
 
-      /** The visibility filter every reminder read shares (private owner-only). */
-      const visibleScope = (input: {
-        readonly householdId: string
-        readonly userId: UserId
-      }): Statement.Fragment =>
-        sql`
-        household_id = ${input.householdId}
-        AND (owner_id = ${input.userId} OR visibility = 'shared')
-      `
+      /**
+       * ADR-0011: the visibility filter every reminder read shares.
+       *
+       * `trash` is the caller's choice because the reminder list can include
+       * tombstones (the delete undo path); every other read takes the default.
+       */
+      const visibleScope = (
+        input: {
+          readonly householdId: string
+          readonly userId: UserId
+        },
+        options?: VisibleScopeOptions,
+      ): Statement.Fragment => visibleScopeSql(sql, input, options)
 
       const findById = (id: ReminderId) =>
         Effect.map(
@@ -284,7 +252,10 @@ export class ReminderRepo extends Context.Service<ReminderRepo>()(
         LIMIT ${input.limit}
       `
 
-      /** Live rows visible to one member: shared reminders plus their own private ones. */
+      /**
+       * Live rows visible to one member: shared reminders plus their own private
+       * ones. `includeDeleted` is the undo/trash-aware read and keeps tombstones.
+       */
       const listVisible = (input: {
         readonly householdId: string
         readonly userId: UserId
@@ -293,8 +264,9 @@ export class ReminderRepo extends Context.Service<ReminderRepo>()(
         Effect.map(
           sql<ReminderRow>`
           SELECT ${sql.literal(REMINDER_SELECT)} FROM reminders
-          WHERE ${visibleScope(input)}
-            ${input.includeDeleted === true ? sql`` : sql`AND deleted_at IS NULL`}
+          WHERE ${visibleScope(input, {
+            trash: input.includeDeleted === true ? 'include' : 'exclude',
+          })}
           ORDER BY fire_at ASC, id ASC
         `,
           rows => rows.map(toReminder),
@@ -618,7 +590,7 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
             note: row.rNote,
             kind: row.rKind as ReminderType,
             tier: row.rTier as ReminderTier,
-            link: linkOf(row.rLinkType, row.rLinkId),
+            link: decodeReminderLink(row.rLinkType, row.rLinkId),
             visibility:
               row.rVisibility === 'private' || row.rVisibility === 'shared'
                 ? row.rVisibility

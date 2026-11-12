@@ -1,5 +1,11 @@
 import { Schema } from 'effect'
 import { Temporal } from 'temporal-polyfill/full'
+import {
+  addLocalDays,
+  isReadableLocalDate,
+  localDateOfInstant,
+  plainDateOf,
+} from '../local-date.js'
 import { occurrenceDates, type RecurrenceRule } from '../recurrence.js'
 import { EventExceptionId, EventId, LocalDate, TimeZone } from './common.js'
 import {
@@ -119,31 +125,9 @@ export interface EventOccurrenceSource {
 
 // ── Local-date helpers ───────────────────────────────────────────────────
 
-const plainDate = (date: string): Temporal.PlainDate =>
-  Temporal.PlainDate.from(date)
-
-/** A local date the calendar can actually read (`2026-02-30` cannot). */
-const isReadableDate = (date: string): boolean => {
-  try {
-    plainDate(date)
-    return true
-  } catch {
-    return false
-  }
-}
-
 /** The local date one day before `date` (`YYYY-MM-DD`). */
 export const localDayBefore = (date: string): LocalDate =>
-  plainDate(date).subtract({ days: 1 }).toString() as LocalDate
-
-const localDayAfter = (date: string): LocalDate =>
-  plainDate(date).add({ days: 1 }).toString() as LocalDate
-
-const localDateOfInstant = (instant: string, timeZone: string): LocalDate =>
-  Temporal.Instant.from(instant)
-    .toZonedDateTimeISO(timeZone)
-    .toPlainDate()
-    .toString() as LocalDate
+  addLocalDays(date, -1)
 
 const canonicalInstant = (instant: Temporal.Instant): string =>
   new Date(instant.epochMilliseconds).toISOString()
@@ -180,7 +164,7 @@ export const eventTimingOn = (
   const startTime = anchorStart.toZonedDateTimeISO(event.timeZone).toPlainTime()
   const duration = anchorEnd.since(anchorStart)
 
-  const startInstant = plainDate(instanceId)
+  const startInstant = plainDateOf(instanceId)
     .toPlainDateTime(startTime)
     .toZonedDateTime(event.timeZone, { disambiguation: 'compatible' })
     .toInstant()
@@ -309,7 +293,7 @@ const seriesOccurrences = (input: {
       if (instanceIds.has(exception.instanceId)) continue
       // The wire pattern admits dates that are not days; such an exception is
       // noise, not a reason to hide the series.
-      if (!isReadableDate(exception.instanceId)) continue
+      if (!isReadableLocalDate(exception.instanceId)) continue
       if (!isEventOccurrence(event, exception.instanceId)) continue
       instanceIds.add(exception.instanceId)
     }
@@ -356,7 +340,7 @@ export const eventOccurrences = (
 ): ReadonlyArray<EventOccurrence> => {
   const occurrences: Array<EventOccurrence> = []
   const windowStart = localDayBefore(input.from)
-  const windowEnd = localDayAfter(input.to)
+  const windowEnd = addLocalDays(input.to, 1)
   // The same series can arrive twice: the month read model unions the grid's
   // rows with a second range query for an out-of-grid drill-down, and both
   // queries also return every live recurring row. Expanding a row twice would

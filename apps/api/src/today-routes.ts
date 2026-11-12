@@ -1,20 +1,14 @@
 import { Effect, Schema } from 'effect'
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from 'effect/http'
+import { HttpRouter, HttpServerRequest } from 'effect/http'
 import {
   type DashboardSectionOrder,
   normalizeDashboardSectionOrder,
   TodayReadModel,
-  Unauthorized,
 } from '@tali/domain'
 import { AuthService } from './auth-service.js'
-import { SESSION_COOKIE } from './auth-routes.js'
+import { conditionalJson, fail } from './http-envelope.js'
 import { PreferencesService } from './preferences-service.js'
-import {
-  cacheHeaders,
-  etagOf,
-  fail,
-  matchesIfNoneMatch,
-} from './read-model-http.js'
+import { principalResolver } from './principal.js'
 import { TodayService, type TodayViewer } from './today-service.js'
 
 /**
@@ -40,68 +34,31 @@ export const TodayRoutes = HttpRouter.use(router =>
     const auth = yield* AuthService
     const preferences = yield* PreferencesService
     const today = yield* TodayService
-
-    /** Resolve the cookie principal into a viewer + its saved display order. */
-    const principal = (request: HttpServerRequest.HttpServerRequest) =>
-      Effect.gen(function* () {
-        const token = request.cookies[SESSION_COOKIE]
-        if (token === undefined) {
-          return yield* Effect.fail(new Unauthorized())
-        }
-        const context = yield* auth.me(token)
-        const prefs = yield* preferences.get(context.user.id, {
-          timeZone: context.user.timeZone,
-          weekStart: context.user.weekStart,
-          digits: context.user.digits,
-        })
-        return {
-          viewer: {
-            userId: context.user.id,
-            householdId: context.householdId,
-            timeZone: prefs.timeZone,
-          },
-          sectionOrder: normalizeDashboardSectionOrder(
-            prefs.dashboardSectionOrder,
-          ) as DashboardSectionOrder,
-        }
-      })
+    const principal = principalResolver(auth, preferences)
 
     yield* router.add(
       'GET',
       '/today',
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
-        const { viewer: candidate, sectionOrder } = yield* principal(request)
-        if (candidate.householdId === null) {
+        const resolved = yield* principal(request)
+        if (resolved.context.householdId === null) {
           return yield* fail(403, 'Forbidden', 'Join a household to see Today')
         }
         const viewer: TodayViewer = {
-          userId: candidate.userId,
-          householdId: candidate.householdId,
-          timeZone: candidate.timeZone,
+          userId: resolved.context.user.id,
+          householdId: resolved.context.householdId,
+          timeZone: resolved.preferences.timeZone,
         }
+        const sectionOrder = normalizeDashboardSectionOrder(
+          resolved.preferences.dashboardSectionOrder,
+        ) as DashboardSectionOrder
 
         const model = yield* today.get(viewer, sectionOrder)
         // Encode through the shared schema: the wire shape is the contract,
         // not whatever object the composition happened to build.
         const body = yield* Schema.encodeEffect(TodayReadModel)(model)
-        const etag = yield* etagOf(body)
-        const ifNoneMatch = request.headers['if-none-match']
-
-        if (
-          ifNoneMatch !== undefined &&
-          matchesIfNoneMatch(ifNoneMatch, etag)
-        ) {
-          return HttpServerResponse.empty({
-            status: 304,
-            headers: cacheHeaders(etag),
-          })
-        }
-
-        return yield* HttpServerResponse.json(body, {
-          status: 200,
-          headers: cacheHeaders(etag),
-        })
+        return yield* conditionalJson(request, body)
       }).pipe(
         Effect.catchTags(
           {

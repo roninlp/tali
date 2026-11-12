@@ -1,12 +1,8 @@
-import { readFileSync, readdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { Effect, Layer, Option, String as Str } from 'effect'
-import { D1Client } from '@effect/sql-d1'
+import { Layer, Option } from 'effect'
 import { type Capture, type CaptureId, type UserId, uuidV7 } from '@tali/domain'
 import { CaptureRepo, CaptureRepoLive } from '@tali/sql'
-import { FakeD1 } from './fake-d1.js'
+import { makeServiceHarness, type HarnessEnv } from './harness.js'
 
 /**
  * Capture persistence (ticket #101; ADR-0012 §6).
@@ -16,58 +12,24 @@ import { FakeD1 } from './fake-d1.js'
  * aggregate version. Capture is a server-of-record log, not a synced row.
  */
 
-const MIGRATIONS_DIR = new URL(
-  '../../../packages/sql/migrations/',
-  import.meta.url,
-)
-
-const migrationFiles = (): ReadonlyArray<string> =>
-  readdirSync(fileURLToPath(MIGRATIONS_DIR))
-    .filter(file => file.endsWith('.sql'))
-    .sort()
-
 const OWNER = 'user-a' as UserId
 const OTHER = 'user-b' as UserId
 const NOW = '2026-11-08T12:00:00.000Z'
 
+const serviceLayer = ({ d1 }: HarnessEnv) =>
+  CaptureRepoLive.pipe(Layer.provide(d1))
+
 const makeHarness = () => {
-  const db = new DatabaseSync(':memory:')
-  for (const file of migrationFiles()) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), 'utf8'))
-  }
-
-  const fake = new FakeD1(db)
-  const layer = CaptureRepoLive.pipe(
-    Layer.provide(
-      D1Client.layer({
-        db: fake.asD1Database(),
-        transformQueryNames: Str.camelToSnake,
-        transformResultNames: Str.snakeToCamel,
-      }),
-    ),
-  )
-
-  const run = <A, E>(effect: Effect.Effect<A, E, CaptureRepo>): Promise<A> =>
-    Effect.runPromise(Effect.provide(effect, layer))
-
-  const repo = <A, E>(
-    f: (service: CaptureRepo['Service']) => Effect.Effect<A, E, never>,
-  ) =>
-    run(
-      Effect.gen(function* () {
-        const service = yield* CaptureRepo
-        return yield* f(service)
-      }),
-    )
+  const harness = makeServiceHarness(serviceLayer, CaptureRepo)
 
   const count = (table: string): number =>
     (
-      db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as {
+      harness.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as {
         readonly n: number
       }
     ).n
 
-  return { db, fake, run, repo, count }
+  return { ...harness, repo: harness.svc, count }
 }
 
 const captureOf = (overrides: Partial<Capture> = {}): Capture => ({

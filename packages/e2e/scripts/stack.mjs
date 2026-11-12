@@ -18,10 +18,9 @@ import { spawn } from 'node:child_process'
 import { createServer } from 'node:net'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { API_PORT, ALCHEMY_STATE_DIR, STAGE, WEB_PORT } from '../config.mjs'
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
-const STAGE = process.env.E2E_STAGE ?? 'e2e'
-const STATE_DIR = join(repoRoot, 'infra', '.alchemy', 'state', 'tali', STAGE)
 
 const busy = port =>
   new Promise(resolve => {
@@ -31,7 +30,7 @@ const busy = port =>
     server.listen(port, '::')
   })
 
-for (const port of [3001, 8787]) {
+for (const port of [WEB_PORT, API_PORT]) {
   if (await busy(port)) {
     console.error(
       `[e2e] port ${port} is already in use. Stop the running stack (pnpm dev) ` +
@@ -42,7 +41,7 @@ for (const port of [3001, 8787]) {
 }
 
 if (process.env.E2E_KEEP_STATE !== '1') {
-  rmSync(STATE_DIR, { recursive: true, force: true })
+  rmSync(ALCHEMY_STATE_DIR, { recursive: true, force: true })
 }
 
 const child = spawn(

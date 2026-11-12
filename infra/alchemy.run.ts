@@ -16,13 +16,17 @@
 // root with `--config infra/alchemy.run.ts`.
 import * as Alchemy from 'alchemy'
 import * as Cloudflare from 'alchemy/Cloudflare'
-import { CRON, CRON_EXPRESSIONS } from '@tali/config'
+import {
+  CRON,
+  CRON_EXPRESSIONS,
+  DEFAULT_CAPTURE_BASE_URL,
+  DEFAULT_CAPTURE_MODEL,
+} from '@tali/config'
 import * as Effect from 'effect/Effect'
 import * as Redacted from 'effect/Redacted'
-import { createECDH } from 'node:crypto'
-import { Buffer } from 'node:buffer'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { publicKeyOf } from '../scripts/lib/vapid.mjs'
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -96,16 +100,12 @@ export const Backups = backupsEnabled
  * ```
  *
  * Only the private key needs to be supplied: the public half is derived with
- * Node's ECDH (this file runs at deploy time, not in the Worker). With no key in
- * a local run, dispatch is disabled (the ledger still records the inbox row);
- * a deploy without one fails instead of silently shipping an inbox-only app.
+ * Node's ECDH (this file runs at deploy time, not in the Worker) by the shared
+ * helper in `scripts/lib/vapid.mjs`, the same one `test:push` uses. With no key
+ * in a local run, dispatch is disabled (the ledger still records the inbox
+ * row); a deploy without one fails instead of silently shipping an inbox-only
+ * app.
  */
-const publicKeyOf = (privateKey: string): string => {
-  const ecdh = createECDH('prime256v1')
-  ecdh.setPrivateKey(Buffer.from(privateKey, 'base64url'))
-  return ecdh.getPublicKey().toString('base64url')
-}
-
 const VAPID_DEV_SUBJECT = 'mailto:dev@tali.local'
 
 const resolveVapid = () => {
@@ -166,22 +166,17 @@ const resolveVapid = () => {
  * Capture model config (ticket #101; ADR-0012 §7).
  *
  * The key is a Workers Secret supplied out of band; the Go base URL and the
- * paid model id are ordinary vars. The feature is inert without the key: the
- * Worker still builds and every Dissect fails with a typed `ModelUnavailable`,
- * so a deploy without Capture credentials is a warning, not a broken stack.
- *
- * The base URL is the **Go** root, not the pay-as-you-go `/inference` root, and
- * the gateway also needs `x-opencode-session` + a non-generic User-Agent; both
- * are set by the extractor's `wrapFetch` middleware, not here.
+ * paid model id are ordinary vars, defaulted from `@tali/config` so the deploy
+ * stack cannot disagree with the Worker. The feature is inert without the key:
+ * the Worker still builds and every Dissect fails with a typed
+ * `ModelUnavailable`, so a deploy without Capture credentials is a warning,
+ * not a broken stack.
  */
-const CAPTURE_DEFAULT_BASE_URL = 'https://opencode.ai/inference/go/openai/v1'
-const CAPTURE_DEFAULT_MODEL = 'deepseek-v4.1-flash'
-
 const resolveCapture = () => {
   const apiKey = process.env.OPENCODE_API_KEY?.trim() ?? ''
   const baseUrl =
-    process.env.CAPTURE_BASE_URL?.trim() || CAPTURE_DEFAULT_BASE_URL
-  const model = process.env.CAPTURE_MODEL?.trim() || CAPTURE_DEFAULT_MODEL
+    process.env.CAPTURE_BASE_URL?.trim() || DEFAULT_CAPTURE_BASE_URL
+  const model = process.env.CAPTURE_MODEL?.trim() || DEFAULT_CAPTURE_MODEL
 
   if (apiKey === '') {
     console.warn(

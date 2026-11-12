@@ -5,11 +5,9 @@ import {
   HabitEntryRow as HabitEntryRowSchema,
   HabitFrequency,
   type HabitRow,
-  HabitRow as HabitRowSchema,
 } from '../habits-model'
-import { emptyMirrorSnapshot } from '../mirror'
-import type { MirrorSnapshot } from '../mirror'
-import { TODAY_NOW } from '../test-fixtures'
+import { mirrorHabit, mirrorSnapshot } from '../mirror-fixtures'
+import { DISPLAY, TODAY_NOW } from '../test-fixtures'
 import * as Habits from './habits'
 import type { Inputs, Model } from './habits'
 
@@ -25,27 +23,7 @@ export const SECOND_HABIT_ID = '0192f0a0-0000-7000-8000-000000000031'
 export const HABIT_ENTRY_ID = '0192f0a0-0000-7000-8000-000000000032'
 
 export const habitRow = (overrides: Partial<HabitRow> = {}): HabitRow =>
-  HabitRowSchema.make({
-    id: HABIT_ID,
-    title: 'آب خوردن',
-    description: null,
-    icon: '💧',
-    color: null,
-    frequency: HabitFrequency.daily(),
-    frequencyHistory: [
-      { effectiveFrom: '2026-10-01', frequency: HabitFrequency.daily() },
-    ],
-    startedOn: '2026-10-01',
-    reminderTime: null,
-    timeZone: 'Asia/Tehran',
-    ownerId: null,
-    visibility: 'shared',
-    createdAt: '2026-10-01T08:00:00.000Z',
-    updatedAt: '2026-10-01T08:00:00.000Z',
-    version: 1,
-    hasSyncError: false,
-    ...overrides,
-  })
+  mirrorHabit({ id: HABIT_ID, ...overrides })
 
 export const weeklyHabit = (overrides: Partial<HabitRow> = {}): HabitRow =>
   habitRow({
@@ -82,25 +60,12 @@ export const habitEntryRow = (
     ...overrides,
   })
 
-export const mirrorWith = (
-  habits: ReadonlyArray<HabitRow> = [],
-  habitEntries: ReadonlyArray<HabitEntryRow> = [],
-): MirrorSnapshot => ({
-  ...emptyMirrorSnapshot(),
-  habits,
-  habitEntries,
-})
-
 export const habitsInputs = (overrides: Partial<Inputs> = {}): Inputs => ({
-  display: {
-    timeZone: 'Asia/Tehran',
-    weekStart: 'saturday',
-    digits: 'persian',
-  },
+  display: DISPLAY,
   isStoreReady: true,
   isOnline: true,
   pending: 0,
-  mirror: mirrorWith(),
+  mirror: mirrorSnapshot(),
   pendingKeys: [],
   maybeSyncError: Option.none(),
   maybeUserId: Option.none(),

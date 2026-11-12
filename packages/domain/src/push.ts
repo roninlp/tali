@@ -1,6 +1,6 @@
 import { Schema } from 'effect'
 import { Model } from 'effect/schema'
-import { PushSubscriptionId, UserId } from './common.js'
+import { NonEmptyString, PushSubscriptionId, UserId } from './common.js'
 
 /**
  * Web Push shapes (tickets #20, #61).
@@ -75,10 +75,10 @@ export const isSafePushEndpoint = (value: string): boolean => {
 export const PushSubscriptionInput = Schema.Struct({
   endpoint: Schema.String.check(Schema.isPattern(/^https:\/\/[^\s]+$/)),
   /** Milliseconds since epoch, or `null` when the browser did not set one. */
-  expirationTime: Schema.NullOr(Schema.Number),
+  expirationTime: Schema.NullOr(Schema.Finite),
   keys: Schema.Struct({
-    p256dh: Schema.String.check(Schema.isMinLength(1)),
-    auth: Schema.String.check(Schema.isMinLength(1)),
+    p256dh: NonEmptyString,
+    auth: NonEmptyString,
   }),
 })
 export type PushSubscriptionInput = Schema.Schema.Type<

@@ -1,6 +1,18 @@
 import { Schema } from 'effect'
 import { Visibility } from '../common.js'
-import { HabitEntryId, HabitId, LocalDate, TimeZone } from './common.js'
+import {
+  HabitEntryId,
+  HabitId,
+  LocalDate,
+  TimeZone,
+  conflictFields,
+  createEnvelope,
+  forbiddenFields,
+  mutationEnvelope,
+  notFoundFields,
+  updateEnvelope,
+  validationFields,
+} from './common.js'
 import { HabitEntryStatus, HabitFrequency, HabitReminderTime } from './habit.js'
 
 /**
@@ -44,39 +56,25 @@ import { HabitEntryStatus, HabitFrequency, HabitReminderTime } from './habit.js'
 /** The habit does not exist, or is not visible to this viewer. */
 export class HabitNotFound extends Schema.TaggedError<HabitNotFound>()(
   'HabitNotFound',
-  {
-    id: HabitId,
-  },
+  notFoundFields(HabitId),
 ) {}
 
 /** The row exists but this viewer may not read/write it. */
 export class HabitForbidden extends Schema.TaggedError<HabitForbidden>()(
   'HabitForbidden',
-  {
-    id: Schema.NullOr(Schema.String),
-    reason: Schema.Literals(['private', 'household', 'noHousehold']),
-  },
+  forbiddenFields,
 ) {}
 
 /** Field-level validation (empty title, empty/duplicate weekdays, bad time, …). */
 export class HabitValidationError extends Schema.TaggedError<HabitValidationError>()(
   'HabitValidationError',
-  {
-    issues: Schema.Array(
-      Schema.Struct({
-        field: Schema.String,
-        message: Schema.String,
-      }),
-    ),
-  },
+  validationFields,
 ) {}
 
 /** A concurrent writer won the version CAS; the caller may retry. */
 export class HabitConflict extends Schema.TaggedError<HabitConflict>()(
   'HabitConflict',
-  {
-    id: Schema.String,
-  },
+  conflictFields,
 ) {}
 
 /**
@@ -99,9 +97,7 @@ export class HabitEntryOutOfWindow extends Schema.TaggedError<HabitEntryOutOfWin
 /** The replayed entry no longer exists (already purged past its trash window). */
 export class HabitEntryNotFound extends Schema.TaggedError<HabitEntryNotFound>()(
   'HabitEntryNotFound',
-  {
-    id: HabitEntryId,
-  },
+  notFoundFields(HabitEntryId),
 ) {}
 
 export const HabitServiceError = Schema.Union([
@@ -136,10 +132,7 @@ const habitFields = {
 }
 
 /** Create input. A habit needs a title and a frequency; everything else defaults. */
-export const HabitCreateInput = Schema.Struct({
-  /** A client may mint the UUID v7 offline; the server mints one otherwise. */
-  id: Schema.optional(HabitId),
-  clientMutationId: Schema.String,
+export const HabitCreateInput = createEnvelope(HabitId, {
   title: habitFields.title,
   frequency: habitFields.frequency,
   description: Schema.optional(habitFields.description),
@@ -165,20 +158,11 @@ export const HabitPatch = Schema.Struct({
 })
 export type HabitPatch = Schema.Schema.Type<typeof HabitPatch>
 
-export const HabitUpdateInput = Schema.Struct({
-  id: HabitId,
-  clientMutationId: Schema.String,
-  /** Informational; the update re-reads and retries on a lost CAS. */
-  baseVersion: Schema.optional(Schema.Int),
-  patch: HabitPatch,
-})
+export const HabitUpdateInput = updateEnvelope(HabitId, HabitPatch)
 export type HabitUpdateInput = Schema.Schema.Type<typeof HabitUpdateInput>
 
 /** Delete/restore carry only the row id plus the replay key. */
-export const HabitMutationInput = Schema.Struct({
-  id: HabitId,
-  clientMutationId: Schema.String,
-})
+export const HabitMutationInput = mutationEnvelope(HabitId)
 export type HabitMutationInput = Schema.Schema.Type<typeof HabitMutationInput>
 
 /**
@@ -196,10 +180,7 @@ export type HabitMutationInput = Schema.Schema.Type<typeof HabitMutationInput>
  * `visibility` is deliberately absent: the entry inherits the habit's, exactly
  * like the sync path, so a tap can never widen a private habit's log.
  */
-export const HabitEntryLogInput = Schema.Struct({
-  /** A client-minted id for a brand-new day; ignored when the day has a row. */
-  id: Schema.optional(HabitEntryId),
-  clientMutationId: Schema.String,
+export const HabitEntryLogInput = createEnvelope(HabitEntryId, {
   habitId: HabitId,
   localDate: LocalDate,
   status: HabitEntryStatus,

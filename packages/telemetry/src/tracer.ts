@@ -1,4 +1,4 @@
-import { Context, Exit, Option, Tracer } from 'effect'
+import { Context, Data, Exit, Option, Tracer } from 'effect'
 import {
   exportableSpanAttribute,
   exportableSpanAttributes,
@@ -15,12 +15,7 @@ import {
  * propagation still matches the server.
  */
 
-class RedactedFailure extends Error {
-  constructor() {
-    super('operation failed; error details are redacted')
-    this.name = 'RedactedFailure'
-  }
-}
+class RedactedFailure extends Data.TaggedError('RedactedFailure')<{}> {}
 
 const redactLinks = (
   links: ReadonlyArray<Tracer.SpanLink>,

@@ -1,7 +1,7 @@
-import { Effect, Option } from 'effect'
+import { Effect, Schema } from 'effect'
 
 import { type ApiResult, AuthFailure, classifyApiFailure } from '../auth-api'
-import { API_URL } from '../config'
+import { requestJson } from '../http'
 import { PushSubscriptionInput } from './subscription'
 
 /**
@@ -11,43 +11,26 @@ import { PushSubscriptionInput } from './subscription'
  * Returns failures as values rather than throwing: the permission panel shows
  * a calm message and the subscription stays usable locally (a later boot
  * retries the registration), exactly like the auth client.
+ *
+ * A success answers `{ ok: true }`, so the response now decodes through the
+ * shared JSON client and its error envelope reaches the classifier when the
+ * worker rejects the registration. The status alone classified before.
  */
 
-const REQUEST_TIMEOUT_MS = 15_000
+const RegisterResponse = Schema.Struct({ ok: Schema.Boolean })
 
 export const registerPushSubscription = (
   subscription: PushSubscriptionInput,
 ): Effect.Effect<ApiResult<{ ok: boolean }>> =>
-  Effect.gen(function* () {
-    const maybeResponse = yield* Effect.option(
-      Effect.tryPromise({
-        try: () =>
-          fetch(`${API_URL}/push/register`, {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(subscription),
-            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-          }),
-        catch: () => undefined,
-      }),
-    )
-
-    if (Option.isNone(maybeResponse)) {
-      return {
-        ok: false,
-        error: AuthFailure.make({ code: 'Network', retryable: true }),
-      }
-    }
-
-    const response = maybeResponse.value
-
-    if (response.ok) {
-      return { ok: true, value: { ok: true } }
-    }
-
-    return {
-      ok: false,
-      error: classifyApiFailure(response.status, undefined),
-    }
+  requestJson({
+    method: 'POST',
+    path: '/push/register',
+    schema: RegisterResponse,
+    body: subscription,
+    classify: classifyApiFailure,
+    networkFailure: AuthFailure.make({ code: 'Network', retryable: true }),
+    decodeFailure: AuthFailure.make({
+      code: 'InternalError',
+      retryable: false,
+    }),
   })

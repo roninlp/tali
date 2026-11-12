@@ -1,6 +1,7 @@
 import { Context, Effect, Layer, Option, Schema } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { Note, type NoteId, TagId, type UserId } from '@tali/domain'
+import { visibleScopeSql } from './scope'
 
 /**
  * D1-backed repository for `Note` (ticket #33; FR-NOTE-01/03).
@@ -59,9 +60,7 @@ export class NoteRepo extends Context.Service<NoteRepo>()('NoteRepo', {
       Effect.map(
         sql<NoteRow>`
           SELECT ${sql.literal(NOTE_COLUMNS)} FROM notes
-          WHERE household_id = ${input.householdId}
-            AND deleted_at IS NULL
-            AND (owner_id = ${input.userId} OR visibility = 'shared')
+          WHERE ${visibleScopeSql(sql, input)}
           ORDER BY is_pinned DESC, updated_at DESC, id ASC
         `,
         rows => rows.map(toNote),
@@ -75,16 +74,17 @@ export class NoteRepo extends Context.Service<NoteRepo>()('NoteRepo', {
       Effect.map(
         sql<NoteRow>`
           SELECT ${sql.literal(NOTE_COLUMNS)} FROM notes
-          WHERE household_id = ${input.householdId}
-            AND deleted_at IS NULL
+          WHERE ${visibleScopeSql(sql, input)}
             AND is_archived = 0
-            AND (owner_id = ${input.userId} OR visibility = 'shared')
           ORDER BY is_pinned DESC, updated_at DESC, id ASC
         `,
         rows => rows.map(toNote),
       )
 
-    /** Trash view (FR-NOTE-03): soft-deleted notes, most recently trashed first. */
+    /**
+     * Trash view (FR-NOTE-03): soft-deleted notes, most recently trashed first.
+     * (The inverted half of the shared scope: `trash: 'only'`.)
+     */
     const listTrashed = (input: {
       readonly householdId: string
       readonly userId: UserId
@@ -92,9 +92,7 @@ export class NoteRepo extends Context.Service<NoteRepo>()('NoteRepo', {
       Effect.map(
         sql<NoteRow>`
           SELECT ${sql.literal(NOTE_COLUMNS)} FROM notes
-          WHERE household_id = ${input.householdId}
-            AND deleted_at IS NOT NULL
-            AND (owner_id = ${input.userId} OR visibility = 'shared')
+          WHERE ${visibleScopeSql(sql, input, { trash: 'only' })}
           ORDER BY deleted_at DESC, id ASC
         `,
         rows => rows.map(toNote),
@@ -108,11 +106,9 @@ export class NoteRepo extends Context.Service<NoteRepo>()('NoteRepo', {
       Effect.map(
         sql<NoteRow>`
           SELECT ${sql.literal(NOTE_COLUMNS)} FROM notes
-          WHERE household_id = ${input.householdId}
-            AND deleted_at IS NULL
+          WHERE ${visibleScopeSql(sql, input)}
             AND is_pinned = 1
             AND is_archived = 0
-            AND (owner_id = ${input.userId} OR visibility = 'shared')
           ORDER BY updated_at DESC, id ASC
         `,
         rows => rows.map(toNote),

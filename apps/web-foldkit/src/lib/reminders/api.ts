@@ -1,6 +1,6 @@
 import { Effect, Option, Schema } from 'effect'
 
-import { API_URL } from '../config'
+import { type HttpResult, type JsonRequest, requestJson } from '../http'
 
 /**
  * The reminder ledger client, ported from `apps/web/src/lib/reminders/api.ts`.
@@ -16,8 +16,6 @@ import { API_URL } from '../config'
  * module graph, so decoding through `@tali/domain`'s wire schemas would produce
  * values from the other Schema runtime.
  */
-
-const REQUEST_TIMEOUT_MS = 15_000
 
 export const DispatchResponse = Schema.Literals(['done', 'snooze', 'dismiss'])
 
@@ -102,14 +100,7 @@ export const ReminderFailure = Schema.Struct({
 
 export type ReminderFailure = typeof ReminderFailure.Type
 
-export type ReminderApiResult<A> =
-  | { readonly ok: true; readonly value: A }
-  | { readonly ok: false; readonly error: ReminderFailure }
-
-const networkFailure = ReminderFailure.make({
-  code: 'Network',
-  retryable: true,
-})
+export type ReminderApiResult<A> = HttpResult<A, ReminderFailure>
 
 /** Map a non-2xx status onto the legacy failure codes. */
 export const classifyReminderStatus = (status: number): ReminderFailure => {
@@ -136,57 +127,22 @@ export const classifyReminderStatus = (status: number): ReminderFailure => {
   return ReminderFailure.make({ code: 'InternalError', retryable: true })
 }
 
+type ReminderJsonRequest<A> = Omit<
+  JsonRequest<A, ReminderFailure>,
+  'classify' | 'networkFailure' | 'decodeFailure'
+>
+
 const send = <A>(
-  path: string,
-  init: RequestInit,
-  schema: Schema.ConstraintDecoder<A>,
+  request: ReminderJsonRequest<A>,
 ): Effect.Effect<ReminderApiResult<A>> =>
-  Effect.gen(function* () {
-    const maybeResponse = yield* Effect.option(
-      Effect.tryPromise({
-        try: () =>
-          fetch(`${API_URL}${path}`, {
-            credentials: 'include',
-            ...init,
-            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-          }),
-        catch: () => networkFailure,
-      }),
-    )
-
-    if (Option.isNone(maybeResponse)) {
-      return { ok: false as const, error: networkFailure }
-    }
-
-    const response = maybeResponse.value
-
-    const maybeJson = yield* Effect.option(
-      Effect.tryPromise({
-        try: () => response.json(),
-        catch: () => undefined,
-      }),
-    )
-
-    const json: unknown = Option.getOrUndefined(maybeJson)
-
-    if (!response.ok) {
-      return {
-        ok: false as const,
-        error: classifyReminderStatus(response.status),
-      }
-    }
-
-    const decoded = Schema.decodeUnknownOption(schema)(json)
-
-    return Option.isSome(decoded)
-      ? { ok: true as const, value: decoded.value }
-      : {
-          ok: false as const,
-          error: ReminderFailure.make({
-            code: 'InternalError',
-            retryable: false,
-          }),
-        }
+  requestJson({
+    ...request,
+    classify: classifyReminderStatus,
+    networkFailure: ReminderFailure.make({ code: 'Network', retryable: true }),
+    decodeFailure: ReminderFailure.make({
+      code: 'InternalError',
+      retryable: false,
+    }),
   })
 
 export type ReminderInboxOptions = Readonly<{
@@ -194,32 +150,28 @@ export type ReminderInboxOptions = Readonly<{
   limit?: number
 }>
 
+const unwrapInboxItems = (
+  result: ReminderApiResult<{
+    readonly items: ReadonlyArray<ReminderInboxItem>
+  }>,
+): ReminderApiResult<ReadonlyArray<ReminderInboxItem>> =>
+  result.ok ? { ok: true, value: result.value.items } : result
+
 /** `GET /reminders/inbox` — the missed-reminder view (or its history page). */
 export const fetchReminderInbox = (
   options: ReminderInboxOptions = {},
-): Effect.Effect<ReminderApiResult<ReadonlyArray<ReminderInboxItem>>> => {
-  const params = new URLSearchParams()
-
-  if (options.history === true) {
-    params.set('history', '1')
-  }
-
-  if (options.limit !== undefined) {
-    params.set('limit', String(options.limit))
-  }
-
-  const query = params.size === 0 ? '' : `?${params.toString()}`
-
-  return send(
-    `/reminders/inbox${query}`,
-    { method: 'GET' },
-    ReminderInboxResponse,
-  ).pipe(
-    Effect.map(result =>
-      result.ok ? { ok: true as const, value: result.value.items } : result,
-    ),
-  )
-}
+): Effect.Effect<ReminderApiResult<ReadonlyArray<ReminderInboxItem>>> =>
+  send({
+    path: '/reminders/inbox',
+    schema: ReminderInboxResponse,
+    query: {
+      history: options.history === true ? Option.some('1') : Option.none(),
+      limit:
+        options.limit === undefined
+          ? Option.none()
+          : Option.some(String(options.limit)),
+    },
+  }).pipe(Effect.map(unwrapInboxItems))
 
 export type RespondToReminderInput = Readonly<{
   dispatchId: string
@@ -235,16 +187,12 @@ export type RespondToReminderInput = Readonly<{
 export const respondToReminder = (
   input: RespondToReminderInput,
 ): Effect.Effect<ReminderApiResult<ReminderResponseResult>> =>
-  send(
-    `/reminders/dispatches/${encodeURIComponent(input.dispatchId)}/respond`,
-    {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(
-        input.snoozeMinutes === undefined
-          ? { response: input.response }
-          : { response: input.response, snoozeMinutes: input.snoozeMinutes },
-      ),
-    },
-    ReminderResponseResult,
-  )
+  send({
+    method: 'POST',
+    path: `/reminders/dispatches/${encodeURIComponent(input.dispatchId)}/respond`,
+    schema: ReminderResponseResult,
+    body:
+      input.snoozeMinutes === undefined
+        ? { response: input.response }
+        : { response: input.response, snoozeMinutes: input.snoozeMinutes },
+  })

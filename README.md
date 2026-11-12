@@ -139,7 +139,7 @@ The last two are decided in ADR-0009; restoring a dump is documented in
    (`@effect/sql-d1` `SqlClient` + `SqlSchema`).
 3. **`packages/rpc`** — `ApiRpcs` (`CreateListItem` / `ListListItems` /
    `ToggleListItem`) + derived `ApiClient` type.
-4. **`apps/api`** — `ListItemService` layer → RPC handlers → `RpcServer.layerHttp`
+4. **`apps/api`** — `ListService` layer → RPC handlers → `RpcServer.layerHttp`
    at `/rpc`; plain-HTTP `/sync/pull`; served as a Cloudflare Worker via
    `HttpRouter.toWebHandler` + `D1Client.layer`.
 5. **`apps/web-foldkit`** — Foldkit shell; the browser calls a derived

@@ -18,6 +18,7 @@ import * as Reminders from './page/reminders'
 import * as Tasks from './page/tasks'
 import * as Today from './page/today'
 import * as Preferences from './preferences'
+import type { DisplayFields } from './preferences-model'
 import * as Push from './push'
 import { AppRoute } from './route'
 import { Session } from './session'
@@ -30,13 +31,22 @@ export const USER_ID = '0192f0a0-0000-7000-8000-000000000001'
 export const HOUSEHOLD_ID = '0192f0a0-0000-7000-8000-000000000002'
 export const TODAY_NOW = Date.parse('2026-10-30T09:30:00.000Z')
 
+/** The viewer's display settings every screen fixture starts from. */
+export const DISPLAY: DisplayFields = {
+  timeZone: 'Asia/Tehran',
+  weekStart: 'saturday',
+  digits: 'persian',
+}
+
+export const displayWith = (
+  overrides: Partial<DisplayFields> = {},
+): DisplayFields => ({ ...DISPLAY, ...overrides })
+
 const user: Session['user'] = {
   id: USER_ID,
   email: 'owner@example.com',
   displayName: 'مالک',
-  timeZone: 'Asia/Tehran',
-  weekStart: 'saturday',
-  digits: 'persian',
+  ...DISPLAY,
 }
 
 export const sessionWithHousehold: Session = Session.make({
@@ -100,20 +110,14 @@ export const syncModel = (
     pendingKeys: [],
   })
 
-const DEFAULT_DISPLAY_FIELDS: Preferences.Model['defaults'] = {
-  timeZone: 'Asia/Tehran',
-  weekStart: 'saturday',
-  digits: 'persian',
-}
-
 export const preferencesModel = (
   overrides: Partial<Preferences.Model> = {},
 ): Preferences.Model =>
   Preferences.Model.make({
     maybeUserId: Option.some(USER_ID),
     maybePreferences: Option.none(),
-    defaults: DEFAULT_DISPLAY_FIELDS,
-    draft: DEFAULT_DISPLAY_FIELDS,
+    defaults: DISPLAY,
+    draft: DISPLAY,
     source: 'Default',
     isSaving: false,
     hasSaved: false,

@@ -3,6 +3,8 @@ import { D1Client } from '@effect/sql-d1'
 import { SqlClient, Statement } from 'effect/sql'
 import {
   defaultVisibilityFor,
+  entityKey,
+  type EntityRef,
   type SyncEntityRow,
   type SyncEntityType,
   type SyncOp,
@@ -15,6 +17,13 @@ import {
   type SyncIndexInput,
   type SyncRegistry,
 } from './sync-registry.js'
+
+/**
+ * Entity identity belongs to `@tali/domain` (the sync client and the web mirror
+ * key the same rows); re-exported here because the API imports it from
+ * `@tali/sql` alongside this repo.
+ */
+export { entityKey, type EntityRef } from '@tali/domain'
 
 /**
  * D1-backed persistence for the sync engine (tickets #18, #34).
@@ -80,15 +89,6 @@ export interface AppliedWrite {
   readonly version: number
   readonly createdAt: string
 }
-
-/** `(entityType, entityId)` is the real identity of a row across tables. */
-export interface EntityRef {
-  readonly entityType: SyncEntityType
-  readonly entityId: string
-}
-
-export const entityKey = (ref: EntityRef): string =>
-  `${ref.entityType}\u0000${ref.entityId}`
 
 /**
  * D1 refuses a statement that binds more than 100 parameters
@@ -331,6 +331,9 @@ export class SyncRepo extends Context.Service<SyncRepo>()('SyncRepo', {
           registry.all(),
           MAX_COMPOUND_SELECT_TERMS,
         )) {
+          // Not `visibleScopeSql`: each entity's column names come from its own
+          // registry definition (`def.scope` / `def.softDeleteColumn`), so the
+          // federated read is parameterised from the registry instead.
           const branches = group.map(
             def =>
               sql`

@@ -89,7 +89,7 @@ const weeklyHabit = {
 describe('Habit model', () => {
   it('round-trips each frequency shape', () => {
     for (const habit of [dailyHabit, weekdayHabit, weeklyHabit]) {
-      const decoded = Schema.decodeUnknownSync(Habit)(habit)
+      const decoded = Schema.decodeSync(Habit)(habit)
       expect(decoded.frequency).toEqual(habit.frequency)
       expect(decoded.frequencyHistory).toEqual(habit.frequencyHistory)
       expect(decoded.title).toBe(habit.title)
@@ -119,22 +119,22 @@ describe('Habit model', () => {
 
   it('rejects an empty or duplicate weekday selection', () => {
     expect(() =>
-      Schema.decodeUnknownSync(HabitFrequency)({ _tag: 'weekdays', days: [] }),
+      Schema.decodeSync(HabitFrequency)({ _tag: 'weekdays', days: [] }),
     ).toThrow()
     expect(() =>
-      Schema.decodeUnknownSync(HabitFrequency)({
+      Schema.decodeSync(HabitFrequency)({
         _tag: 'weekdays',
         days: [2, 2],
       }),
     ).toThrow()
     expect(() =>
-      Schema.decodeUnknownSync(HabitFrequency)({
+      Schema.decodeSync(HabitFrequency)({
         _tag: 'weekdays',
         days: [0, 1],
       }),
     ).toThrow()
     expect(() =>
-      Schema.decodeUnknownSync(HabitFrequency)({
+      Schema.decodeSync(HabitFrequency)({
         _tag: 'weekdays',
         days: [1, 8],
       }),
@@ -143,16 +143,16 @@ describe('Habit model', () => {
 
   it('bounds the weekly target to 1..7', () => {
     expect(() =>
-      Schema.decodeUnknownSync(HabitFrequency)({ _tag: 'weekly', times: 0 }),
+      Schema.decodeSync(HabitFrequency)({ _tag: 'weekly', times: 0 }),
     ).toThrow()
     expect(() =>
-      Schema.decodeUnknownSync(HabitFrequency)({ _tag: 'weekly', times: 8 }),
+      Schema.decodeSync(HabitFrequency)({ _tag: 'weekly', times: 8 }),
     ).toThrow()
     expect(() =>
-      Schema.decodeUnknownSync(HabitFrequency)({ _tag: 'weekly', times: 1.5 }),
+      Schema.decodeSync(HabitFrequency)({ _tag: 'weekly', times: 1.5 }),
     ).toThrow()
     expect(
-      Schema.decodeUnknownSync(HabitFrequency)({ _tag: 'weekly', times: 7 }),
+      Schema.decodeSync(HabitFrequency)({ _tag: 'weekly', times: 7 }),
     ).toEqual({
       _tag: 'weekly',
       times: 7,
@@ -161,12 +161,10 @@ describe('Habit model', () => {
 
   it('validates the local reminder time', () => {
     for (const valid of ['00:00', '07:30', '23:59']) {
-      expect(Schema.decodeUnknownSync(HabitReminderTime)(valid)).toBe(valid)
+      expect(Schema.decodeSync(HabitReminderTime)(valid)).toBe(valid)
     }
     for (const invalid of ['7:30', '24:00', '07:60', '0730', '07:3']) {
-      expect(() =>
-        Schema.decodeUnknownSync(HabitReminderTime)(invalid),
-      ).toThrow()
+      expect(() => Schema.decodeSync(HabitReminderTime)(invalid)).toThrow()
     }
   })
 
@@ -175,16 +173,16 @@ describe('Habit model', () => {
       Schema.decodeUnknownSync(Habit)({ ...dailyHabit, type: 'task' }),
     ).toThrow()
     expect(() =>
-      Schema.decodeUnknownSync(Habit)({ ...dailyHabit, id: 'not-a-uuid' }),
+      Schema.decodeSync(Habit)({ ...dailyHabit, id: 'not-a-uuid' }),
     ).toThrow()
     expect(() =>
-      Schema.decodeUnknownSync(Habit)({
+      Schema.decodeSync(Habit)({
         ...dailyHabit,
         timeZone: 'Mars/Olympus',
       }),
     ).toThrow()
     expect(() =>
-      Schema.decodeUnknownSync(Habit)({
+      Schema.decodeSync(Habit)({
         ...dailyHabit,
         frequencyHistory: [
           { effectiveFrom: '1403/07/28', frequency: { _tag: 'daily' } },
@@ -193,10 +191,10 @@ describe('Habit model', () => {
     ).toThrow()
     // #65: the era log is non-empty and strictly increasing (no overlap).
     expect(() =>
-      Schema.decodeUnknownSync(Habit)({ ...dailyHabit, frequencyHistory: [] }),
+      Schema.decodeSync(Habit)({ ...dailyHabit, frequencyHistory: [] }),
     ).toThrow()
     expect(() =>
-      Schema.decodeUnknownSync(Habit)({
+      Schema.decodeSync(Habit)({
         ...dailyHabit,
         frequencyHistory: [
           { effectiveFrom: '2026-10-21', frequency: dailyHabit.frequency },
@@ -205,7 +203,7 @@ describe('Habit model', () => {
       }),
     ).toThrow()
     expect(() =>
-      Schema.decodeUnknownSync(Habit)({
+      Schema.decodeSync(Habit)({
         ...dailyHabit,
         frequencyHistory: [
           { effectiveFrom: '2026-10-21', frequency: dailyHabit.frequency },
@@ -216,7 +214,7 @@ describe('Habit model', () => {
   })
 
   it('decodes the create and patch inputs', () => {
-    const created = Schema.decodeUnknownSync(HabitCreateInput)({
+    const created = Schema.decodeSync(HabitCreateInput)({
       clientMutationId: 'm-1',
       title: 'آب خوردن',
       frequency: { _tag: 'daily' },
@@ -417,7 +415,7 @@ describe('HabitEntry model', () => {
   }
 
   it('round-trips a logged day', () => {
-    const decoded = Schema.decodeUnknownSync(HabitEntry)(entry)
+    const decoded = Schema.decodeSync(HabitEntry)(entry)
     expect(decoded.localDate).toBe('2026-10-21')
     expect(decoded.habitId).toBe(weekdayHabit.id)
     expect(decoded.status).toBe('done')
@@ -437,13 +435,13 @@ describe('HabitEntry model', () => {
       Schema.decodeUnknownSync(HabitEntry)({ ...entry, status: 'skipped' }),
     ).toThrow()
     expect(() =>
-      Schema.decodeUnknownSync(HabitEntry)({
+      Schema.decodeSync(HabitEntry)({
         ...entry,
         localDate: '2026/10/21',
       }),
     ).toThrow()
     expect(() =>
-      Schema.decodeUnknownSync(HabitEntry)({ ...entry, habitId: 'habit-1' }),
+      Schema.decodeSync(HabitEntry)({ ...entry, habitId: 'habit-1' }),
     ).toThrow()
   })
 })

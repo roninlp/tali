@@ -1,13 +1,12 @@
-import { readFileSync, readdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { Effect, Layer, String as Str } from 'effect'
+import { Effect, Layer } from 'effect'
 import { D1Client } from '@effect/sql-d1'
 import { type SyncEntityType, type SyncPushEntry, uuidV7 } from '@tali/domain'
 import { SyncService, SyncServiceLive } from '../src/sync-service.js'
 import { dumpDatabase } from '../src/d1-dump.js'
 import { FakeD1 } from './fake-d1.js'
+import { d1Layer, openMigratedDatabase } from './harness.js'
 
 /**
  * The restore drill (ticket #85).
@@ -27,25 +26,12 @@ import { FakeD1 } from './fake-d1.js'
  * (#44).
  */
 
-const MIGRATIONS_DIR = new URL(
-  '../../../packages/sql/migrations/',
-  import.meta.url,
-)
-
-const migrationFiles = (): ReadonlyArray<string> =>
-  readdirSync(fileURLToPath(MIGRATIONS_DIR))
-    .filter(file => file.endsWith('.sql'))
-    .sort()
-
 const USER = 'user-a'
 const HOUSEHOLD = 'household-a'
 const NOW = '2026-10-20T00:00:00.000Z'
 
 const makeSource = (): DatabaseSync => {
-  const db = new DatabaseSync(':memory:')
-  for (const file of migrationFiles()) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), 'utf8'))
-  }
+  const db = openMigratedDatabase()
 
   db.prepare(
     `INSERT INTO tasks
@@ -101,15 +87,7 @@ const makeSource = (): DatabaseSync => {
 
 const syncLayer = (db: DatabaseSync) => {
   const fake = new FakeD1(db)
-  return SyncServiceLive.pipe(
-    Layer.provide(
-      D1Client.layer({
-        db: fake.asD1Database(),
-        transformQueryNames: Str.camelToSnake,
-        transformResultNames: Str.snakeToCamel,
-      }),
-    ),
-  )
+  return SyncServiceLive.pipe(Layer.provide(d1Layer(fake)))
 }
 
 const count = (

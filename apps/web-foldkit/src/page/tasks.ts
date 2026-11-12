@@ -1,4 +1,4 @@
-import { Clock, Duration, Effect, Option, Schema, Stream } from 'effect'
+import { Clock, Duration, Effect, Option, Schema } from 'effect'
 import { Command, Dom, Submodel, Subscription, Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
@@ -7,6 +7,7 @@ import { Listbox } from '@foldkit/ui'
 import { uuidV7 } from '@tali/domain'
 import { createTaskInMirror } from '@tali/sync-client'
 
+import { TimestampMillis } from '../lib/schema-primitives'
 import {
   TaskEditPatch,
   completeTaskInMirror,
@@ -21,7 +22,10 @@ import type { MirrorSnapshot, TaskRow } from '../mirror'
 import type { DisplayFields } from '../preferences-model'
 import { LocalStoreResource } from '../sync/local-store'
 import type { LocalStoreService } from '../sync/local-store'
+import { clockEvents } from '../ui/dom-stream'
+import { listboxOutMessageFold } from '../ui/fold'
 import * as Picker from '../ui/picker'
+import { currentIso, localWrite, storeFailureMessage } from './local-write'
 import {
   DEFAULT_TASK_VIEW,
   ProjectFilter,
@@ -188,7 +192,7 @@ export const CreateSource = Schema.Literals(['quickAdd', 'filters'])
 export type CreateSource = typeof CreateSource.Type
 
 export const Model = Schema.Struct({
-  now: Schema.Number,
+  now: TimestampMillis,
   maybeUserId: Schema.Option(Schema.String),
   settings: TaskViewSettings,
   isFiltersOpen: Schema.Boolean,
@@ -277,7 +281,7 @@ export type ViewInputs = Inputs
 // MESSAGE
 
 export const Message = defineMessageUnion({
-  TickedClock: { now: Schema.Number },
+  TickedClock: { now: TimestampMillis },
   CompletedScrollToTaskAnchor: {},
   GotPickerMessage: { message: Picker.Message },
 
@@ -430,13 +434,6 @@ export const OutMessage = defineMessageUnion({
 export type OutMessage = typeof OutMessage.Type
 
 // COMMAND
-
-const storeFailureMessage = (cause: unknown): string =>
-  cause instanceof Error ? cause.message : 'ذخیره در حافظه‌ی محلی ناموفق بود'
-
-const currentIso = Clock.currentTimeMillis.pipe(
-  Effect.map(millis => new Date(millis).toISOString()),
-)
 
 const TASK_ANCHOR = /^#task-[\w-]+$/
 
@@ -593,26 +590,13 @@ export const SetTaskVisibility = Command.define('SetTaskVisibility', {
     Message.FailedSetTaskVisibility,
   ],
   execute: ({ taskId, visibility }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () =>
-          setVisibilityInMirror(store, 'task', taskId, visibility, now),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedSetTaskVisibility({ taskId, visibility })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedSetTaskVisibility({
-            message: storeFailureMessage(error),
-          }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: (store, now) =>
+        setVisibilityInMirror(store, 'task', taskId, visibility, now),
+      onSuccess: () =>
+        Message.CompletedSetTaskVisibility({ taskId, visibility }),
+      onFailure: message => Message.FailedSetTaskVisibility({ message }),
+    }),
 })
 
 export const SaveTaskFields = Command.define('SaveTaskFields', {
@@ -665,23 +649,11 @@ export const CompleteTask = Command.define('CompleteTask', {
   args: { taskId: Schema.String, title: Schema.String },
   messages: [Message.CompletedCompleteTask, Message.FailedCompleteTask],
   execute: ({ taskId, title }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () => completeTaskInMirror(store, taskId, now),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedCompleteTask({ taskId, title })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedCompleteTask({ message: storeFailureMessage(error) }),
-        ),
-      ),
-    ),
+    localWrite({
+      run: (store, now) => completeTaskInMirror(store, taskId, now),
+      onSuccess: () => Message.CompletedCompleteTask({ taskId, title }),
+      onFailure: message => Message.FailedCompleteTask({ message }),
+    }),
 })
 
 export const UndoTask = Command.define('UndoTask', {
@@ -692,28 +664,16 @@ export const UndoTask = Command.define('UndoTask', {
   },
   messages: [Message.CompletedUndoTask, Message.FailedUndoTask],
   execute: ({ taskId, title, maybeStartedAt }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () =>
-          undoTaskInMirror(
-            store,
-            { id: taskId, startedAt: Option.getOrNull(maybeStartedAt) },
-            now,
-          ),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedUndoTask({ taskId, title })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedUndoTask({ message: storeFailureMessage(error) }),
+    localWrite({
+      run: (store, now) =>
+        undoTaskInMirror(
+          store,
+          { id: taskId, startedAt: Option.getOrNull(maybeStartedAt) },
+          now,
         ),
-      ),
-    ),
+      onSuccess: () => Message.CompletedUndoTask({ taskId, title }),
+      onFailure: message => Message.FailedUndoTask({ message }),
+    }),
 })
 
 export const MoveTask = Command.define('MoveTask', {
@@ -725,30 +685,18 @@ export const MoveTask = Command.define('MoveTask', {
   },
   messages: [Message.CompletedMoveTask, Message.FailedMoveTask],
   execute: ({ taskId, title, maybeDueDate, timeZone }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* currentIso
-
-      yield* Effect.tryPromise({
-        try: () =>
-          moveTaskInMirror(
-            store,
-            taskId,
-            Option.getOrNull(maybeDueDate),
-            validTimeZone(timeZone),
-            now,
-          ),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedMoveTask({ taskId, title })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedMoveTask({ message: storeFailureMessage(error) }),
+    localWrite({
+      run: (store, now) =>
+        moveTaskInMirror(
+          store,
+          taskId,
+          Option.getOrNull(maybeDueDate),
+          validTimeZone(timeZone),
+          now,
         ),
-      ),
-    ),
+      onSuccess: () => Message.CompletedMoveTask({ taskId, title }),
+      onFailure: message => Message.FailedMoveTask({ message }),
+    }),
 })
 
 export const ClearQuickAddSaved = Command.define('ClearQuickAddSaved', {
@@ -986,188 +934,99 @@ const boardDueDate = (
   return Option.some(board === 'upcoming' ? bounds.tomorrow : bounds.today)
 }
 
-const foldPriorityListboxOutMessage = (
-  inputs: Inputs,
-  handleUpdate: (
-    model: Model,
-    message: Message,
-    inputs: Inputs,
-  ) => UpdateReturn,
-) =>
-  Listbox.OutMessage.match<
-    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
-    Listbox.OutMessage<TaskPriorityFilter>
+const foldPriorityListboxOutMessage = (inputs: Inputs) =>
+  listboxOutMessageFold<
+    Model,
+    Message,
+    OutMessage,
+    LocalStoreService,
+    TaskPriorityFilter
   >({
-    Selected:
-      ({ value }) =>
-      stepModel =>
-        handleUpdate(
-          stepModel,
-          Message.SelectedPriorityFilter({ priority: value }),
-          inputs,
-        ),
+    handleUpdate: (model, message) => update(model, message, inputs),
+    toMessage: (_model, value) =>
+      Message.SelectedPriorityFilter({ priority: value }),
   })
 
-const foldStatusListboxOutMessage = (
-  inputs: Inputs,
-  handleUpdate: (
-    model: Model,
-    message: Message,
-    inputs: Inputs,
-  ) => UpdateReturn,
-) =>
-  Listbox.OutMessage.match<
-    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
-    Listbox.OutMessage<TaskStatusFilter>
+const foldStatusListboxOutMessage = (inputs: Inputs) =>
+  listboxOutMessageFold<
+    Model,
+    Message,
+    OutMessage,
+    LocalStoreService,
+    TaskStatusFilter
   >({
-    Selected:
-      ({ value }) =>
-      stepModel =>
-        handleUpdate(
-          stepModel,
-          Message.SelectedStatusFilter({ status: value }),
-          inputs,
-        ),
+    handleUpdate: (model, message) => update(model, message, inputs),
+    toMessage: (_model, value) =>
+      Message.SelectedStatusFilter({ status: value }),
   })
 
-const foldDateListboxOutMessage = (
-  inputs: Inputs,
-  handleUpdate: (
-    model: Model,
-    message: Message,
-    inputs: Inputs,
-  ) => UpdateReturn,
-) =>
-  Listbox.OutMessage.match<
-    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
-    Listbox.OutMessage<TaskDateFilter>
+const foldDateListboxOutMessage = (inputs: Inputs) =>
+  listboxOutMessageFold<
+    Model,
+    Message,
+    OutMessage,
+    LocalStoreService,
+    TaskDateFilter
   >({
-    Selected:
-      ({ value }) =>
-      stepModel =>
-        handleUpdate(
-          stepModel,
-          Message.SelectedDateFilter({ date: value }),
-          inputs,
-        ),
+    handleUpdate: (model, message) => update(model, message, inputs),
+    toMessage: (_model, value) => Message.SelectedDateFilter({ date: value }),
   })
 
-const foldSortListboxOutMessage = (
-  inputs: Inputs,
-  handleUpdate: (
-    model: Model,
-    message: Message,
-    inputs: Inputs,
-  ) => UpdateReturn,
-) =>
-  Listbox.OutMessage.match<
-    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
-    Listbox.OutMessage<TaskSortField>
+const foldSortListboxOutMessage = (inputs: Inputs) =>
+  listboxOutMessageFold<
+    Model,
+    Message,
+    OutMessage,
+    LocalStoreService,
+    TaskSortField
   >({
-    Selected:
-      ({ value }) =>
-      stepModel =>
-        handleUpdate(
-          stepModel,
-          Message.SelectedSortField({ by: value }),
-          inputs,
-        ),
+    handleUpdate: (model, message) => update(model, message, inputs),
+    toMessage: (_model, value) => Message.SelectedSortField({ by: value }),
   })
 
-const foldQuickAddProjectListboxOutMessage = (
-  inputs: Inputs,
-  handleUpdate: (
-    model: Model,
-    message: Message,
-    inputs: Inputs,
-  ) => UpdateReturn,
-) =>
-  Listbox.OutMessage.match<
-    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
-    Listbox.OutMessage<string>
-  >({
-    Selected:
-      ({ value }) =>
-      stepModel =>
-        handleUpdate(
-          stepModel,
-          Message.SelectedQuickAddProject({
-            maybeProjectId: value === '' ? Option.none() : Option.some(value),
-          }),
-          inputs,
-        ),
+const foldQuickAddProjectListboxOutMessage = (inputs: Inputs) =>
+  listboxOutMessageFold<Model, Message, OutMessage, LocalStoreService>({
+    handleUpdate: (model, message) => update(model, message, inputs),
+    toMessage: (_model, value) =>
+      Message.SelectedQuickAddProject({
+        maybeProjectId: value === '' ? Option.none() : Option.some(value),
+      }),
   })
 
-const foldTaskPriorityListboxOutMessage = (
-  taskId: string,
-  inputs: Inputs,
-  handleUpdate: (
-    model: Model,
-    message: Message,
-    inputs: Inputs,
-  ) => UpdateReturn,
-) =>
-  Listbox.OutMessage.match<
-    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
-    Listbox.OutMessage<TaskPriority>
+const foldTaskPriorityListboxOutMessage = (taskId: string, inputs: Inputs) =>
+  listboxOutMessageFold<
+    Model,
+    Message,
+    OutMessage,
+    LocalStoreService,
+    TaskPriority
   >({
-    Selected:
-      ({ value }) =>
-      stepModel =>
-        handleUpdate(
-          stepModel,
-          Message.SelectedTaskPriority({ taskId, priority: value }),
-          inputs,
-        ),
+    handleUpdate: (model, message) => update(model, message, inputs),
+    toMessage: (_model, value) =>
+      Message.SelectedTaskPriority({ taskId, priority: value }),
   })
 
-const foldTaskStatusListboxOutMessage = (
-  taskId: string,
-  inputs: Inputs,
-  handleUpdate: (
-    model: Model,
-    message: Message,
-    inputs: Inputs,
-  ) => UpdateReturn,
-) =>
-  Listbox.OutMessage.match<
-    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
-    Listbox.OutMessage<TaskStatusOption>
+const foldTaskStatusListboxOutMessage = (taskId: string, inputs: Inputs) =>
+  listboxOutMessageFold<
+    Model,
+    Message,
+    OutMessage,
+    LocalStoreService,
+    TaskStatusOption
   >({
-    Selected:
-      ({ value }) =>
-      stepModel =>
-        handleUpdate(
-          stepModel,
-          Message.SelectedTaskStatus({ taskId, status: value }),
-          inputs,
-        ),
+    handleUpdate: (model, message) => update(model, message, inputs),
+    toMessage: (_model, value) =>
+      Message.SelectedTaskStatus({ taskId, status: value }),
   })
 
-const foldTaskProjectListboxOutMessage = (
-  taskId: string,
-  inputs: Inputs,
-  handleUpdate: (
-    model: Model,
-    message: Message,
-    inputs: Inputs,
-  ) => UpdateReturn,
-) =>
-  Listbox.OutMessage.match<
-    Update.StepWithOutMessage<Model, Message, OutMessage, LocalStoreService>,
-    Listbox.OutMessage<string>
-  >({
-    Selected:
-      ({ value }) =>
-      stepModel =>
-        handleUpdate(
-          stepModel,
-          Message.SelectedTaskProject({
-            taskId,
-            maybeProjectId: value === '' ? Option.none() : Option.some(value),
-          }),
-          inputs,
-        ),
+const foldTaskProjectListboxOutMessage = (taskId: string, inputs: Inputs) =>
+  listboxOutMessageFold<Model, Message, OutMessage, LocalStoreService>({
+    handleUpdate: (model, message) => update(model, message, inputs),
+    toMessage: (_model, value) =>
+      Message.SelectedTaskProject({
+        taskId,
+        maybeProjectId: value === '' ? Option.none() : Option.some(value),
+      }),
   })
 
 const dropOnBoard = (
@@ -1265,24 +1124,12 @@ const applyPickerValue = (
   return model
 }
 
-const foldPickerOutMessage = Picker.OutMessage.match<
-  Update.Step<Model, Message>
->({
-  PickedValue:
-    ({ target, value }) =>
-    stepModel => ({ model: applyPickerValue(stepModel, target, value) }),
-  ClearedValue:
-    ({ target }) =>
-    stepModel => ({ model: applyPickerValue(stepModel, target, '') }),
-})
-
-const foldPicker = Update.foldChild({
-  update: Picker.update,
-  read: (model: Model) => Option.some(model.picker),
-  write: (model, nextPicker) =>
+const foldPicker = Picker.pickerFieldFold<Model, Message>({
+  field: model => model.picker,
+  setField: (model, nextPicker) =>
     modifyFields(model, { picker: () => nextPicker }),
   toParentMessage: message => Message.GotPickerMessage({ message }),
-  foldOutMessage: foldPickerOutMessage,
+  applyValue: applyPickerValue,
 })
 
 export const update = (
@@ -1296,7 +1143,7 @@ export const update = (
     write: (model, nextListbox) =>
       modifyFields(model, { priorityListbox: () => nextListbox }),
     toParentMessage: message => Message.GotPriorityListboxMessage({ message }),
-    foldOutMessage: foldPriorityListboxOutMessage(inputs, update),
+    foldOutMessage: foldPriorityListboxOutMessage(inputs),
   })
 
   const foldStatusListbox = Update.foldChild({
@@ -1305,7 +1152,7 @@ export const update = (
     write: (model, nextListbox) =>
       modifyFields(model, { statusListbox: () => nextListbox }),
     toParentMessage: message => Message.GotStatusListboxMessage({ message }),
-    foldOutMessage: foldStatusListboxOutMessage(inputs, update),
+    foldOutMessage: foldStatusListboxOutMessage(inputs),
   })
 
   const foldDateListbox = Update.foldChild({
@@ -1314,7 +1161,7 @@ export const update = (
     write: (model, nextListbox) =>
       modifyFields(model, { dateListbox: () => nextListbox }),
     toParentMessage: message => Message.GotDateListboxMessage({ message }),
-    foldOutMessage: foldDateListboxOutMessage(inputs, update),
+    foldOutMessage: foldDateListboxOutMessage(inputs),
   })
 
   const foldSortListbox = Update.foldChild({
@@ -1323,7 +1170,7 @@ export const update = (
     write: (model, nextListbox) =>
       modifyFields(model, { sortListbox: () => nextListbox }),
     toParentMessage: message => Message.GotSortListboxMessage({ message }),
-    foldOutMessage: foldSortListboxOutMessage(inputs, update),
+    foldOutMessage: foldSortListboxOutMessage(inputs),
   })
 
   const foldQuickAddProjectListbox = Update.foldChild({
@@ -1333,7 +1180,7 @@ export const update = (
       modifyFields(model, { quickAddProjectListbox: () => nextListbox }),
     toParentMessage: message =>
       Message.GotQuickAddProjectListboxMessage({ message }),
-    foldOutMessage: foldQuickAddProjectListboxOutMessage(inputs, update),
+    foldOutMessage: foldQuickAddProjectListboxOutMessage(inputs),
   })
 
   const foldTaskPriorityListbox = Update.foldChildAt({
@@ -1351,8 +1198,7 @@ export const update = (
       ),
     toParentMessage: (taskId, message) =>
       Message.GotTaskPriorityListboxMessage({ taskId, message }),
-    foldOutMessage: taskId =>
-      foldTaskPriorityListboxOutMessage(taskId, inputs, update),
+    foldOutMessage: taskId => foldTaskPriorityListboxOutMessage(taskId, inputs),
   })
 
   const foldTaskStatusListbox = Update.foldChildAt({
@@ -1370,8 +1216,7 @@ export const update = (
       ),
     toParentMessage: (taskId, message) =>
       Message.GotTaskStatusListboxMessage({ taskId, message }),
-    foldOutMessage: taskId =>
-      foldTaskStatusListboxOutMessage(taskId, inputs, update),
+    foldOutMessage: taskId => foldTaskStatusListboxOutMessage(taskId, inputs),
   })
 
   const foldTaskProjectListbox = Update.foldChildAt({
@@ -1389,8 +1234,7 @@ export const update = (
       ),
     toParentMessage: (taskId, message) =>
       Message.GotTaskProjectListboxMessage({ taskId, message }),
-    foldOutMessage: taskId =>
-      foldTaskProjectListboxOutMessage(taskId, inputs, update),
+    foldOutMessage: taskId => foldTaskProjectListboxOutMessage(taskId, inputs),
   })
 
   return Message.match<UpdateReturn>(message, {
@@ -2157,27 +2001,12 @@ export const applySession = (
 
 // SUBSCRIPTION
 
-const clockTick = Effect.gen(function* () {
-  const now = yield* Clock.currentTimeMillis
-
-  return Message.TickedClock({ now })
-})
-
-const clockEvents = Subscription.persistentEntry(
-  Stream.concat(
-    Stream.fromEffect(clockTick),
-    Stream.fromEffectRepeat(
-      Effect.gen(function* () {
-        yield* Effect.sleep(Duration.seconds(60))
-
-        return yield* clockTick
-      }),
-    ),
-  ),
+const clockSubscription = Subscription.persistentEntry(
+  clockEvents(now => Message.TickedClock({ now })),
 )
 
 export const subscriptions = Subscription.make<Model, Message>()(_entry => ({
-  tasksClock: clockEvents,
+  tasksClock: clockSubscription,
 }))
 
 // VIEW

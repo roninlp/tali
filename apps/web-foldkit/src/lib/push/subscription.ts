@@ -10,7 +10,7 @@ import { Schema } from 'effect'
 
 export const PushSubscriptionJson = Schema.Struct({
   endpoint: Schema.String,
-  expirationTime: Schema.NullOr(Schema.Number),
+  expirationTime: Schema.NullOr(Schema.Finite),
   keys: Schema.Struct({
     p256dh: Schema.String,
     auth: Schema.String,
@@ -21,7 +21,7 @@ export type PushSubscriptionJson = typeof PushSubscriptionJson.Type
 
 export const PushSubscriptionInput = Schema.Struct({
   endpoint: Schema.String,
-  expirationTime: Schema.NullOr(Schema.Number),
+  expirationTime: Schema.NullOr(Schema.Finite),
   keys: Schema.Struct({
     p256dh: Schema.String,
     auth: Schema.String,

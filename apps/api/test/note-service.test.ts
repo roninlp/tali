@@ -1,9 +1,5 @@
-import { readFileSync, readdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { Effect, Layer, String as Str } from 'effect'
-import { D1Client } from '@effect/sql-d1'
+import { Effect, Layer } from 'effect'
 import {
   extractNotePlainText,
   uuidV7,
@@ -15,33 +11,24 @@ import {
 import {
   NoteService,
   NoteServiceLive,
-  type NoteServiceApi,
   type NoteViewer,
 } from '../src/note-service.js'
 import { SyncService, SyncServiceLive } from '../src/sync-service.js'
-import { FakeD1 } from './fake-d1.js'
+import {
+  HOUSEHOLD,
+  NOW,
+  OTHER_HOUSEHOLD,
+  USER_A,
+  USER_B,
+  makeViewer,
+} from './fixtures/identities.js'
+import { makeServiceHarness, type HarnessEnv } from './harness.js'
 
 /**
  * Ticket #40, at the service seam. These run the real service, repository and
  * sync-primitive SQL against SQLite (D1's engine) through a D1-shaped batch, so
  * version CAS, `changes()` gating and feed ordering behave like production.
  */
-
-const MIGRATIONS_DIR = new URL(
-  '../../../packages/sql/migrations/',
-  import.meta.url,
-)
-
-const migrationFiles = (): ReadonlyArray<string> =>
-  readdirSync(fileURLToPath(MIGRATIONS_DIR))
-    .filter(file => file.endsWith('.sql'))
-    .sort()
-
-const USER_A = 'user-a' as UserId
-const USER_B = 'user-b' as UserId
-const HOUSEHOLD = 'household-a' as HouseholdId
-const OTHER_HOUSEHOLD = 'household-b' as HouseholdId
-const NOW = '2026-10-20T09:30:00.000Z'
 
 /** The editor's fallback doc: paragraphs of plain text inside the JSON column. */
 const doc = (text: string): unknown => ({
@@ -54,64 +41,33 @@ const doc = (text: string): unknown => ({
   ],
 })
 
-const viewer = (overrides: Partial<NoteViewer> = {}): NoteViewer => ({
-  userId: USER_A,
-  householdId: HOUSEHOLD,
-  ...overrides,
-})
+const viewer = makeViewer<NoteViewer>()
+
+const serviceLayer = ({ d1 }: HarnessEnv) =>
+  Layer.mergeAll(NoteServiceLive, SyncServiceLive).pipe(Layer.provide(d1))
 
 const makeHarness = () => {
-  const db = new DatabaseSync(':memory:')
-  for (const file of migrationFiles()) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), 'utf8'))
-  }
-
-  const fake = new FakeD1(db)
-  const d1 = D1Client.layer({
-    db: fake.asD1Database(),
-    transformQueryNames: Str.camelToSnake,
-    transformResultNames: Str.snakeToCamel,
-  })
-  const layer = Layer.mergeAll(NoteServiceLive, SyncServiceLive).pipe(
-    Layer.provide(d1),
-  )
-
-  const run = <A, E>(
-    effect: Effect.Effect<A, E, NoteService | SyncService>,
-  ): Promise<A> => Effect.runPromise(Effect.provide(effect, layer))
-
-  const svc = <A, E>(
-    f: (service: NoteServiceApi) => Effect.Effect<A, E, never>,
-  ): Promise<A> =>
-    run(
-      Effect.gen(function* () {
-        const service = yield* NoteService
-        return yield* f(service)
-      }),
-    )
+  const harness = makeServiceHarness(serviceLayer, NoteService)
 
   const pull = (
     userId: UserId,
     householdId: HouseholdId = HOUSEHOLD,
     cursor = 0,
   ): Promise<Awaited<ReturnType<SyncService['pull']>>> =>
-    run(
-      Effect.gen(function* () {
-        const service = yield* SyncService
-        return yield* service.pull({ userId, householdId, cursor, limit: 100 })
-      }),
+    harness.sync(service =>
+      service.pull({ userId, householdId, cursor, limit: 100 }),
     )
 
   const feedCount = (): number =>
     (
-      db.prepare('SELECT COUNT(*) AS n FROM change_feed').get() as {
+      harness.db.prepare('SELECT COUNT(*) AS n FROM change_feed').get() as {
         readonly n: number
       }
     ).n
 
   const joinTagIds = (noteId: NoteId): ReadonlyArray<string> =>
     (
-      db
+      harness.db
         .prepare(
           "SELECT tag_id AS tagId FROM item_tags WHERE item_type = 'note' AND item_id = ?",
         )
@@ -126,25 +82,27 @@ const makeHarness = () => {
     readonly deletedAt?: string | null
   }): TagId => {
     const id = uuidV7() as TagId
-    db.prepare(
-      `INSERT INTO tags
+    harness.db
+      .prepare(
+        `INSERT INTO tags
         (id, type, name, owner_id, household_id, visibility, color,
          created_at, updated_at, version, deleted_at)
        VALUES (?, 'tag', ?, ?, ?, ?, NULL, ?, ?, 1, ?)`,
-    ).run(
-      id,
-      input.name,
-      input.ownerId ?? USER_A,
-      input.householdId ?? HOUSEHOLD,
-      input.visibility ?? 'shared',
-      NOW,
-      NOW,
-      input.deletedAt ?? null,
-    )
+      )
+      .run(
+        id,
+        input.name,
+        input.ownerId ?? USER_A,
+        input.householdId ?? HOUSEHOLD,
+        input.visibility ?? 'shared',
+        NOW,
+        NOW,
+        input.deletedAt ?? null,
+      )
     return id
   }
 
-  return { db, run, svc, pull, pullFeed: feedCount, joinTagIds, seedTag, fake }
+  return { ...harness, pull, pullFeed: feedCount, joinTagIds, seedTag }
 }
 
 const noteIn = (page: Awaited<ReturnType<SyncService['pull']>>, id: string) =>

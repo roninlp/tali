@@ -1,5 +1,3 @@
-import { readFileSync, readdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
 import { Effect, Layer } from 'effect'
@@ -12,6 +10,7 @@ import {
   TrashPurgeRepoLive,
 } from '@tali/sql'
 import { FakeD1 } from './fake-d1.js'
+import { openMigratedDatabase } from './harness.js'
 
 /**
  * Ticket #85's trash purge, against D1's own engine (SQLite) through a
@@ -23,16 +22,6 @@ import { FakeD1 } from './fake-d1.js'
  * feed and (for notes) the FTS index together. The extra cases pin the two
  * properties the nightly job depends on: it is idempotent, and it is bounded.
  */
-
-const MIGRATIONS_DIR = new URL(
-  '../../../packages/sql/migrations/',
-  import.meta.url,
-)
-
-const migrationFiles = (): ReadonlyArray<string> =>
-  readdirSync(fileURLToPath(MIGRATIONS_DIR))
-    .filter(file => file.endsWith('.sql'))
-    .sort()
 
 const NOW = '2026-10-23T03:17:00.000Z'
 const OLD = new Date(
@@ -211,10 +200,7 @@ const countWhere = (
     .n
 
 const makeHarness = () => {
-  const db = new DatabaseSync(':memory:')
-  for (const file of migrationFiles()) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), 'utf8'))
-  }
+  const db = openMigratedDatabase()
   const fake = new FakeD1(db)
   const d1 = D1Client.layer({ db: fake.asD1Database() })
   const layer = TrashPurgeRepoLive.pipe(Layer.provide(d1))

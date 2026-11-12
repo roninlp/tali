@@ -18,7 +18,6 @@ import {
   NoteUpdateInput,
   NoteValidationError,
   NOTE_TRASH_RETENTION_MS,
-  type SyncEntityType,
   type Tag,
   type TagId,
   type UserId,
@@ -34,7 +33,11 @@ import {
   TagRepo,
   TagRepoLive,
 } from '@tali/sql'
+import { readScoped } from './row-scope.js'
+import { casUpdate } from './cas.js'
+import { makeSyncKit } from './sync-write.js'
 import { loadAssignableTags } from './tag-guard.js'
+import { unchangedExcept } from './patch-compare.js'
 
 /**
  * `NoteService` — quick create, autosave, tags, pin, archive, trash (#40;
@@ -65,8 +68,11 @@ import { loadAssignableTags } from './tag-guard.js'
  * Slice 5 hardening.
  */
 
-/** How many CAS retries a metadata update makes before reporting contention. */
-const MAX_CAS_ATTEMPTS = 3
+/**
+ * Marker for "every CAS attempt lost", replaced inside `casNote` by a
+ * `NoteConflict` built from a fresh read. It never escapes the service.
+ */
+const NOTE_CAS_EXHAUSTED = 'note-cas-exhausted' as const
 
 export interface NoteViewer {
   readonly userId: UserId
@@ -158,66 +164,19 @@ export class NoteService extends Context.Service<NoteService>()('NoteService', {
     const tags = yield* TagRepo
     const sync = yield* SyncRepo
 
-    const definition = (entityType: SyncEntityType) => {
-      const def = sync.definition(entityType)
-      if (def === undefined) {
-        throw new Error(`sync entity type is not registered: ${entityType}`)
-      }
-      return def
-    }
+    const kit = makeSyncKit<NoteServiceError>({ sync, invalid })
 
     /** The aggregate through the same validation boundary the sync push uses. */
-    const noteState = (note: Note): SyncEntityState => {
-      const def = definition('note')
-      return {
-        entityType: 'note',
-        entityId: note.id,
-        householdId: note.householdId,
-        ownerId: note.ownerId,
-        visibility: note.visibility,
-        version: note.version,
-        updatedAt: note.updatedAt,
-        deletedAt: note.deletedAt,
-        data: def.validate(
-          { ...note },
-          {
-            version: note.version,
-            updatedAt: note.updatedAt,
-            deletedAt: note.deletedAt,
-          },
-        ),
-      }
-    }
+    const noteState = (note: Note): SyncEntityState => kit.stateOf('note', note)
 
     const appliedMutation = (viewer: NoteViewer, clientMutationId: string) =>
-      Effect.gen(function* () {
-        const applied = yield* sync
-          .findApplied({
-            householdId: viewer.householdId,
-            clientMutationIds: [clientMutationId],
-          })
-          .pipe(Effect.orDie)
-        return Option.fromUndefinedOr(applied.get(clientMutationId))
-      })
-
-    /** A mutation id may not be reused for a different row or aggregate. */
-    const reusedMutationId = (
-      row: { readonly entityType: SyncEntityType; readonly entityId: string },
-      expected: { readonly entityType: SyncEntityType; readonly id?: string },
-    ): boolean =>
-      row.entityType !== expected.entityType ||
-      (expected.id !== undefined && row.entityId !== expected.id)
-
-    const reusedMutationIdError = (_id: string) =>
-      invalid(
-        'clientMutationId',
-        'this mutation id was already applied to a different change',
-      )
+      kit.appliedMutation(viewer.householdId, clientMutationId)
 
     /**
      * One note mutation: CAS entity write, gated feed append, gated ledger row,
-     * then tag-join statements — one D1 batch. Returns true when this mutation
-     * id is recorded (i.e. the write, rather than a lost CAS, happened).
+     * the search index and then tag-join statements — one D1 batch. Returns true
+     * when this mutation id is recorded (i.e. the write, rather than a lost CAS,
+     * happened).
      */
     const commitNote = (input: {
       readonly viewer: NoteViewer
@@ -230,83 +189,38 @@ export class NoteService extends Context.Service<NoteService>()('NoteService', {
         readonly previous: ReadonlyArray<TagId>
         readonly next: ReadonlyArray<TagId>
       }
-    }): Effect.Effect<boolean, NoteServiceError> =>
-      Effect.gen(function* () {
-        const prior = yield* appliedMutation(
-          input.viewer,
-          input.clientMutationId,
-        )
-        if (
-          Option.isSome(prior) &&
-          reusedMutationId(prior.value, {
-            entityType: input.state.entityType,
-            id: input.state.entityId,
-          })
-        ) {
-          return yield* reusedMutationIdError(input.state.entityId)
-        }
-
-        const statements = [
-          sync.writeEntity({
-            state: input.state,
-            expectedVersion: input.expectedVersion,
-          }),
-          sync.appendFeed({
-            householdId: input.viewer.householdId,
-            entityType: input.state.entityType,
-            entityId: input.state.entityId,
-            op: input.op ?? 'upsert',
-            version: input.state.version,
-            updatedAt: input.state.updatedAt,
-            ownerId: input.state.ownerId,
-            visibility: input.state.visibility,
-          }),
-          sync.recordApplied({
-            clientMutationId: input.clientMutationId,
-            householdId: input.viewer.householdId,
-            entityType: input.state.entityType,
-            entityId: input.state.entityId,
-            version: input.state.version,
-            createdAt: input.now,
-          }),
-          // The search index rides the same batch (#41): a note that is
-          // committed is findable, and a note that lost the CAS keeps the
-          // index entry it already had.
-          ...sync.indexStatements(input.state),
-        ]
-
-        if (
-          input.tagChanges !== undefined &&
-          !sameTags(input.tagChanges.previous, input.tagChanges.next)
-        ) {
-          statements.push(
-            notes.detachTagsIfVersion({
-              noteId: input.state.entityId as NoteId,
-              version: input.state.version,
-              updatedAt: input.state.updatedAt,
-            }),
-            ...input.tagChanges.next.map(tagId =>
-              notes.attachTagIfVersion({
-                noteId: input.state.entityId as NoteId,
-                tagId,
-                householdId: input.viewer.householdId,
-                createdAt: input.now,
-                version: input.state.version,
-                updatedAt: input.state.updatedAt,
-              }),
-            ),
-          )
-        }
-
-        yield* sync.commit(statements).pipe(Effect.orDie)
-        const applied = yield* sync
-          .findApplied({
-            householdId: input.viewer.householdId,
-            clientMutationIds: [input.clientMutationId],
-          })
-          .pipe(Effect.orDie)
-        return applied.has(input.clientMutationId)
+    }): Effect.Effect<boolean, NoteServiceError> => {
+      const tagChanges = input.tagChanges
+      return kit.commitOne({
+        householdId: input.viewer.householdId,
+        state: input.state,
+        expectedVersion: input.expectedVersion,
+        clientMutationId: input.clientMutationId,
+        now: input.now,
+        op: input.op,
+        extra:
+          tagChanges === undefined ||
+          sameTags(tagChanges.previous, tagChanges.next)
+            ? undefined
+            : state => [
+                notes.detachTagsIfVersion({
+                  noteId: state.entityId as NoteId,
+                  version: state.version,
+                  updatedAt: state.updatedAt,
+                }),
+                ...tagChanges.next.map(tagId =>
+                  notes.attachTagIfVersion({
+                    noteId: state.entityId as NoteId,
+                    tagId,
+                    householdId: input.viewer.householdId,
+                    createdAt: input.now,
+                    version: state.version,
+                    updatedAt: state.updatedAt,
+                  }),
+                ),
+              ],
       })
+    }
 
     const requireTags = (
       viewer: NoteViewer,
@@ -325,26 +239,16 @@ export class NoteService extends Context.Service<NoteService>()('NoteService', {
       id: NoteId,
       includeTrashed: boolean,
     ): Effect.Effect<Note, NoteServiceError> =>
-      Effect.gen(function* () {
-        const found = yield* notes.findById(id).pipe(Effect.orDie)
-        if (Option.isNone(found)) {
-          return yield* Effect.fail(new NoteNotFound({ id }))
-        }
-        const note = found.value
-        if (note.householdId !== viewer.householdId) {
-          return yield* Effect.fail(
-            new NoteForbidden({ id, reason: 'household' }),
-          )
-        }
-        if (note.visibility === 'private' && note.ownerId !== viewer.userId) {
-          return yield* Effect.fail(
-            new NoteForbidden({ id, reason: 'private' }),
-          )
-        }
-        if (!includeTrashed && note.deletedAt !== null) {
-          return yield* Effect.fail(new NoteNotFound({ id }))
-        }
-        return note
+      readScoped({
+        viewer,
+        id,
+        find: notes.findById,
+        includeTrashed,
+        trash: 'last',
+        onViolation: violation =>
+          violation === 'notFound' || violation === 'trashed'
+            ? new NoteNotFound({ id })
+            : new NoteForbidden({ id, reason: violation }),
       })
 
     /** Replay guard: same mutation id + same row ⇒ return the stored note. */
@@ -357,9 +261,14 @@ export class NoteService extends Context.Service<NoteService>()('NoteService', {
         const row = yield* appliedMutation(viewer, clientMutationId)
         if (Option.isNone(row)) return Option.none()
         if (
-          reusedMutationId(row.value, { entityType: 'note', id: expectedId })
+          kit.reusedMutationId(row.value, {
+            entityType: 'note',
+            id: expectedId,
+          })
         ) {
-          return yield* reusedMutationIdError(expectedId ?? row.value.entityId)
+          return yield* kit.reusedMutationIdError(
+            expectedId ?? row.value.entityId,
+          )
         }
         const current = yield* readNote(
           viewer,
@@ -415,9 +324,7 @@ export class NoteService extends Context.Service<NoteService>()('NoteService', {
           tagChanges: { previous: [], next: note.tagIds },
         })
         if (!applied)
-          return yield* Effect.fail(
-            new NoteConflict({ id: note.id, version: 1 }),
-          )
+          return yield* new NoteConflict({ id: note.id, version: 1 })
         return note
       })
 
@@ -462,9 +369,10 @@ export class NoteService extends Context.Service<NoteService>()('NoteService', {
         }
         // The editor wrote against a version another writer already replaced.
         if (input.baseVersion !== current.version) {
-          return yield* Effect.fail(
-            new NoteConflict({ id: current.id, version: current.version }),
-          )
+          return yield* new NoteConflict({
+            id: current.id,
+            version: current.version,
+          })
         }
 
         const next = new Note({
@@ -489,9 +397,7 @@ export class NoteService extends Context.Service<NoteService>()('NoteService', {
         // fresh version so the client can reconcile instead of retrying the
         // stale text blindly.
         const fresh = yield* readNote(viewer, input.id, false)
-        return yield* Effect.fail(
-          new NoteConflict({ id: fresh.id, version: fresh.version }),
-        )
+        return yield* new NoteConflict({ id: fresh.id, version: fresh.version })
       })
 
     const patchNote = (
@@ -529,15 +435,47 @@ export class NoteService extends Context.Service<NoteService>()('NoteService', {
         })
       })
 
-    const sameNoteFields = (a: Note, b: Note): boolean =>
-      a.title === b.title &&
-      sameBody(a.body, b.body) &&
-      a.plainText === b.plainText &&
-      a.isPinned === b.isPinned &&
-      a.isArchived === b.isArchived &&
-      a.color === b.color &&
-      a.visibility === b.visibility &&
-      sameTags(a.tagIds, b.tagIds)
+    /**
+     * The CAS shell the four note writes share, with one note-specific twist:
+     * a lost CAS reports the row's *current* version, so the client reconciles
+     * against what the other writer landed instead of the stale version this
+     * loop last read. The terminal read is therefore part of the conflict.
+     */
+    const casNote = (input: {
+      readonly viewer: NoteViewer
+      readonly id: NoteId
+      readonly includeTrashed: boolean
+      readonly plan: (
+        current: Note,
+      ) => Effect.Effect<Note | null, NoteServiceError>
+      readonly write: (
+        current: Note,
+        next: Note,
+      ) => Effect.Effect<boolean, NoteServiceError>
+    }): Effect.Effect<Note, NoteServiceError> =>
+      casUpdate<Note, NoteServiceError | typeof NOTE_CAS_EXHAUSTED>({
+        read: readNote(input.viewer, input.id, input.includeTrashed),
+        plan: input.plan,
+        write: input.write,
+        conflict: () => NOTE_CAS_EXHAUSTED,
+      }).pipe(
+        Effect.catchIf(
+          (error): error is typeof NOTE_CAS_EXHAUSTED =>
+            error === NOTE_CAS_EXHAUSTED,
+          () =>
+            Effect.gen(function* () {
+              const fresh = yield* readNote(
+                input.viewer,
+                input.id,
+                input.includeTrashed,
+              )
+              return yield* new NoteConflict({
+                id: fresh.id,
+                version: fresh.version,
+              })
+            }),
+        ),
+      )
 
     const update = (
       viewer: NoteViewer,
@@ -552,24 +490,27 @@ export class NoteService extends Context.Service<NoteService>()('NoteService', {
         )
         if (Option.isSome(replayed)) return replayed.value
 
-        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-          const current = yield* readNote(viewer, input.id, false)
-          const next = yield* patchNote(viewer, current, input.patch, now)
-          if (sameNoteFields(current, next)) return current
-          const applied = yield* commitNote({
-            viewer,
-            state: noteState(next),
-            expectedVersion: current.version,
-            clientMutationId: input.clientMutationId,
-            now,
-            tagChanges: { previous: current.tagIds, next: next.tagIds },
-          })
-          if (applied) return next
-        }
-        const fresh = yield* readNote(viewer, input.id, false)
-        return yield* Effect.fail(
-          new NoteConflict({ id: fresh.id, version: fresh.version }),
-        )
+        return yield* casNote({
+          viewer,
+          id: input.id,
+          includeTrashed: false,
+          plan: current =>
+            Effect.gen(function* () {
+              const next = yield* patchNote(viewer, current, input.patch, now)
+              // `patchNote` writes patch fields only (`plainText` is derived
+              // from `body`), so the patch is the complete no-op test.
+              return unchangedExcept(current, next, input.patch) ? null : next
+            }),
+          write: (current, next) =>
+            commitNote({
+              viewer,
+              state: noteState(next),
+              expectedVersion: current.version,
+              clientMutationId: input.clientMutationId,
+              now,
+              tagChanges: { previous: current.tagIds, next: next.tagIds },
+            }),
+        })
       })
 
     /** Idempotent pin/archive set: an unchanged flag writes nothing. */
@@ -587,29 +528,31 @@ export class NoteService extends Context.Service<NoteService>()('NoteService', {
         )
         if (Option.isSome(replayed)) return replayed.value
 
-        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-          const current = yield* readNote(viewer, input.id, false)
-          if (current[field] === input.value) return current
-          const next = new Note({
-            ...current,
-            [field]: input.value,
-            version: current.version + 1,
-            updatedAt: now,
-          })
-          const applied = yield* commitNote({
-            viewer,
-            state: noteState(next),
-            expectedVersion: current.version,
-            clientMutationId: input.clientMutationId,
-            now,
-            tagChanges: { previous: current.tagIds, next: next.tagIds },
-          })
-          if (applied) return next
-        }
-        const fresh = yield* readNote(viewer, input.id, false)
-        return yield* Effect.fail(
-          new NoteConflict({ id: fresh.id, version: fresh.version }),
-        )
+        return yield* casNote({
+          viewer,
+          id: input.id,
+          includeTrashed: false,
+          plan: current =>
+            Effect.succeed(
+              current[field] === input.value
+                ? null
+                : new Note({
+                    ...current,
+                    [field]: input.value,
+                    version: current.version + 1,
+                    updatedAt: now,
+                  }),
+            ),
+          write: (current, next) =>
+            commitNote({
+              viewer,
+              state: noteState(next),
+              expectedVersion: current.version,
+              clientMutationId: input.clientMutationId,
+              now,
+              tagChanges: { previous: current.tagIds, next: next.tagIds },
+            }),
+        })
       })
 
     const setPinned = (
@@ -654,31 +597,33 @@ export class NoteService extends Context.Service<NoteService>()('NoteService', {
         )
         if (Option.isSome(replayed)) return replayed.value
 
-        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-          const current = yield* readNote(viewer, input.id, true)
+        return yield* casNote({
+          viewer,
+          id: input.id,
+          includeTrashed: true,
           // Idempotent: trashing an already-trashed note writes nothing.
-          if (current.deletedAt !== null) return current
-          const next = new Note({
-            ...current,
-            deletedAt: now,
-            version: current.version + 1,
-            updatedAt: now,
-          })
-          const applied = yield* commitNote({
-            viewer,
-            state: noteState(next),
-            expectedVersion: current.version,
-            clientMutationId: input.clientMutationId,
-            now,
-            op: 'delete',
-            tagChanges: { previous: current.tagIds, next: next.tagIds },
-          })
-          if (applied) return next
-        }
-        const fresh = yield* readNote(viewer, input.id, true)
-        return yield* Effect.fail(
-          new NoteConflict({ id: fresh.id, version: fresh.version }),
-        )
+          plan: current =>
+            Effect.succeed(
+              current.deletedAt !== null
+                ? null
+                : new Note({
+                    ...current,
+                    deletedAt: now,
+                    version: current.version + 1,
+                    updatedAt: now,
+                  }),
+            ),
+          write: (current, next) =>
+            commitNote({
+              viewer,
+              state: noteState(next),
+              expectedVersion: current.version,
+              clientMutationId: input.clientMutationId,
+              now,
+              op: 'delete',
+              tagChanges: { previous: current.tagIds, next: next.tagIds },
+            }),
+        })
       })
 
     const restore = (
@@ -694,40 +639,39 @@ export class NoteService extends Context.Service<NoteService>()('NoteService', {
         )
         if (Option.isSome(replayed)) return replayed.value
 
-        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-          const current = yield* readNote(viewer, input.id, true)
-          if (current.deletedAt === null) return current
-          if (
-            Date.parse(now) - Date.parse(current.deletedAt) >
-            NOTE_TRASH_RETENTION_MS
-          ) {
-            return yield* Effect.fail(
-              new NoteNotRestorable({
-                id: current.id,
-                deletedAt: current.deletedAt,
-              }),
-            )
-          }
-          const next = new Note({
-            ...current,
-            deletedAt: null,
-            version: current.version + 1,
-            updatedAt: now,
-          })
-          const applied = yield* commitNote({
-            viewer,
-            state: noteState(next),
-            expectedVersion: current.version,
-            clientMutationId: input.clientMutationId,
-            now,
-            tagChanges: { previous: current.tagIds, next: next.tagIds },
-          })
-          if (applied) return next
-        }
-        const fresh = yield* readNote(viewer, input.id, true)
-        return yield* Effect.fail(
-          new NoteConflict({ id: fresh.id, version: fresh.version }),
-        )
+        return yield* casNote({
+          viewer,
+          id: input.id,
+          includeTrashed: true,
+          plan: current =>
+            Effect.gen(function* () {
+              if (current.deletedAt === null) return null
+              if (
+                Date.parse(now) - Date.parse(current.deletedAt) >
+                NOTE_TRASH_RETENTION_MS
+              ) {
+                return yield* new NoteNotRestorable({
+                  id: current.id,
+                  deletedAt: current.deletedAt,
+                })
+              }
+              return new Note({
+                ...current,
+                deletedAt: null,
+                version: current.version + 1,
+                updatedAt: now,
+              })
+            }),
+          write: (current, next) =>
+            commitNote({
+              viewer,
+              state: noteState(next),
+              expectedVersion: current.version,
+              clientMutationId: input.clientMutationId,
+              now,
+              tagChanges: { previous: current.tagIds, next: next.tagIds },
+            }),
+        })
       })
 
     const list = (

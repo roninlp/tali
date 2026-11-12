@@ -9,8 +9,11 @@ import type { LocalWrite, MirrorRecord, OutboxRecord } from './types'
  * tombstones) testable without a database.
  */
 
-export const entityKey = (entityType: string, entityId: string): string =>
-  `${entityType}\u0000${entityId}`
+/**
+ * The `type\0id` identity key lives in `@tali/domain`, because the web mirror
+ * and the API key the same rows; re-exported so store consumers keep one import.
+ */
+export { entityKey } from '@tali/domain'
 
 export const isEmptyPatch = (
   patch: Readonly<Record<string, unknown>>,

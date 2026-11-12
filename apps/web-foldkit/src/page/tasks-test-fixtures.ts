@@ -1,11 +1,18 @@
 import { Option } from 'effect'
 import { modifyFields } from 'foldkit/struct'
 
-import { emptyMirrorSnapshot } from '../mirror'
 import type { ProjectRow, TagRow, TaskRow } from '../mirror'
-import { TODAY_NOW, USER_ID } from '../test-fixtures'
+import { mirrorSnapshot, mirrorTask } from '../mirror-fixtures'
+import { DISPLAY, TODAY_NOW, USER_ID } from '../test-fixtures'
 import * as Tasks from './tasks'
 import type { Inputs } from './tasks'
+import {
+  DEFAULT_TASK_FILTERS,
+  DEFAULT_TASK_SORT,
+  TaskFilters,
+  TaskSort,
+  TaskViewSettings,
+} from './tasks-model'
 
 /**
  * Shared, deterministic fixtures for the Tasks Story and Scene tests. The
@@ -22,24 +29,7 @@ export const doneTaskId = '0192f0a0-0000-7000-8000-000000000106'
 export const projectId = '0192f0a0-0000-7000-8000-000000000201'
 export const tagId = '0192f0a0-0000-7000-8000-000000000301'
 
-const baseTask: TaskRow = {
-  id: todayTaskId,
-  title: 'خرید نان',
-  description: null,
-  status: 'todo',
-  priority: 'medium',
-  dueDate: '2026-10-30',
-  dueAt: null,
-  timeZone: 'Asia/Tehran',
-  projectId: null,
-  tagIds: [],
-  startedAt: null,
-  completedAt: null,
-  createdAt: '2026-10-28T08:00:00.000Z',
-  updatedAt: '2026-10-28T08:00:00.000Z',
-  version: 1,
-  hasSyncError: false,
-}
+const baseTask: TaskRow = mirrorTask({ id: todayTaskId })
 
 export const todayTask: TaskRow = { ...baseTask }
 
@@ -105,19 +95,14 @@ export const tasks: ReadonlyArray<TaskRow> = [
   doneTask,
 ]
 
-export const mirror = {
-  ...emptyMirrorSnapshot(),
+export const mirror = mirrorSnapshot({
   tasks: [...tasks],
   projects: [project],
   tags: [tag],
-}
+})
 
 export const defaultInputs = (overrides: Partial<Inputs> = {}): Inputs => ({
-  display: {
-    timeZone: 'Asia/Tehran',
-    weekStart: 'saturday',
-    digits: 'persian',
-  },
+  display: DISPLAY,
   isStoreReady: true,
   isOnline: true,
   pending: 0,
@@ -125,6 +110,16 @@ export const defaultInputs = (overrides: Partial<Inputs> = {}): Inputs => ({
   pendingKeys: [],
   ...overrides,
 })
+
+/** The saved board settings a Story or Scene starts from. */
+export const settingsFor = (
+  filters: Partial<typeof DEFAULT_TASK_FILTERS> = {},
+  sort: Partial<typeof DEFAULT_TASK_SORT> = {},
+): TaskViewSettings =>
+  TaskViewSettings.make({
+    filters: TaskFilters.make({ ...DEFAULT_TASK_FILTERS, ...filters }),
+    sort: TaskSort.make({ ...DEFAULT_TASK_SORT, ...sort }),
+  })
 
 export const baseModel = (): Tasks.Model =>
   Tasks.initialModel({

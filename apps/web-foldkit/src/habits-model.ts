@@ -3,7 +3,6 @@ import { defineTaggedUnion } from 'foldkit/schema'
 
 import {
   DEFAULT_TIME_ZONE,
-  defaultVisibilityFor,
   formatJalaliDate,
   habitStreak,
   jalaliDate,
@@ -24,6 +23,15 @@ import type {
 import type { MirrorRecord } from '@tali/sync-client'
 
 import { JsonField } from './lib/json-field'
+import {
+  mirrorCreatedAt,
+  mirrorId,
+  mirrorMeta,
+  mirrorNonEmpty,
+  mirrorNullableNonEmpty,
+  mirrorTimeZone,
+  mirrorVisibility,
+} from './lib/mirror-field'
 
 /**
  * Habit read models, ported from `apps/web/src/lib/habits/model.ts`.
@@ -80,10 +88,6 @@ export const HabitEntryRow = Schema.Struct({
 })
 
 export type HabitEntryRow = typeof HabitEntryRow.Type
-
-const asNonEmptyString = Schema.decodeUnknownOption(
-  Schema.String.check(Schema.isMinLength(1)),
-)
 
 const asFrequency = Schema.decodeUnknownOption(JsonField(HabitFrequency))
 
@@ -171,22 +175,16 @@ const localDateOr = (
 
 /** Project a mirrored habit row into the shape the screens understand. */
 export const toHabitRow = (record: MirrorRecord): HabitRow => {
-  const timeZone = Option.getOrElse(
-    asNonEmptyString(record.data.timeZone),
-    () => DEFAULT_TIME_ZONE,
-  )
+  const timeZone = mirrorTimeZone(record)
 
   const frequency = Option.match(asFrequency(record.data.frequency), {
     onNone: () => HabitFrequency.daily(),
     onSome: normalizeFrequency,
   })
 
-  const createdAt = Option.getOrElse(
-    asNonEmptyString(record.data.createdAt),
-    () => record.updatedAt,
-  )
+  const createdAt = mirrorCreatedAt(record)
 
-  const startedOnRaw = Option.getOrNull(asNonEmptyString(record.data.startedOn))
+  const startedOnRaw = mirrorNullableNonEmpty(record, 'startedOn')
 
   const startedOn =
     startedOnRaw !== null && /^\d{4}-\d{2}-\d{2}$/.test(startedOnRaw)
@@ -194,14 +192,11 @@ export const toHabitRow = (record: MirrorRecord): HabitRow => {
       : localDateOr(createdAt, timeZone, '1970-01-01')
 
   return HabitRow.make({
-    id: record.entityId,
-    title: Option.getOrElse(
-      asNonEmptyString(record.data.title),
-      () => 'بدون نام',
-    ),
-    description: Option.getOrNull(asNonEmptyString(record.data.description)),
-    icon: Option.getOrNull(asNonEmptyString(record.data.icon)),
-    color: Option.getOrNull(asNonEmptyString(record.data.color)),
+    id: mirrorId(record),
+    title: mirrorNonEmpty(record, 'title', 'بدون نام'),
+    description: mirrorNullableNonEmpty(record, 'description'),
+    icon: mirrorNullableNonEmpty(record, 'icon'),
+    color: mirrorNullableNonEmpty(record, 'color'),
     frequency,
     frequencyHistory: parseHistory(
       Option.getOrElse(asHistoryItems(record.data.frequencyHistory), () => []),
@@ -209,35 +204,23 @@ export const toHabitRow = (record: MirrorRecord): HabitRow => {
       frequency,
     ),
     startedOn,
-    reminderTime: Option.getOrNull(asNonEmptyString(record.data.reminderTime)),
+    reminderTime: mirrorNullableNonEmpty(record, 'reminderTime'),
     timeZone,
-    ownerId: Option.getOrNull(asNonEmptyString(record.data.ownerId)),
-    visibility:
-      record.data.visibility === 'private' ||
-      record.data.visibility === 'shared'
-        ? record.data.visibility
-        : defaultVisibilityFor('habit'),
+    ownerId: mirrorNullableNonEmpty(record, 'ownerId'),
+    visibility: mirrorVisibility(record, 'habit'),
     createdAt,
-    updatedAt: record.updatedAt,
-    version: record.version,
-    hasSyncError: record.syncError !== undefined,
+    ...mirrorMeta(record),
   })
 }
 
 /** Project a mirrored habit entry (a day's log) into a row. */
 export const toHabitEntryRow = (record: MirrorRecord): HabitEntryRow =>
   HabitEntryRow.make({
-    id: record.entityId,
-    habitId: Option.getOrElse(asNonEmptyString(record.data.habitId), () => ''),
-    localDate: Option.getOrElse(
-      asNonEmptyString(record.data.localDate),
-      () => '1970-01-01',
-    ),
+    id: mirrorId(record),
+    habitId: mirrorNonEmpty(record, 'habitId', ''),
+    localDate: mirrorNonEmpty(record, 'localDate', '1970-01-01'),
     status: Option.getOrElse(asStatus(record.data.status), () => 'done'),
-    timeZone: Option.getOrElse(
-      asNonEmptyString(record.data.timeZone),
-      () => DEFAULT_TIME_ZONE,
-    ),
+    timeZone: mirrorTimeZone(record),
     updatedAt: record.updatedAt,
     version: record.version,
   })

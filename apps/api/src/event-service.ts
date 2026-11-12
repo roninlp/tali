@@ -20,7 +20,6 @@ import {
   EventUpdateInput,
   type HouseholdId,
   RecurrenceRule,
-  type SyncEntityType,
   type EventTiming,
   type UserId,
   deleteEventOccurrence,
@@ -46,6 +45,10 @@ import {
   SyncRepo,
   SyncRepoLive,
 } from '@tali/sql'
+import { readScoped } from './row-scope.js'
+import { casUpdate } from './cas.js'
+import { makeSyncKit, type CommitEntry } from './sync-write.js'
+import { unchangedExcept } from './patch-compare.js'
 
 /**
  * `EventService` — create, edit, delete (ticket #57; FR-CAL-01).
@@ -96,9 +99,6 @@ import {
  * A one-off event has no exceptions: an occurrence edit is a plain series edit
  * and a delete is the shared tombstone.
  */
-
-/** How many CAS retries a service mutation makes before reporting contention. */
-const MAX_CAS_ATTEMPTS = 3
 
 export interface EventViewer {
   readonly userId: UserId
@@ -179,13 +179,7 @@ export class EventService extends Context.Service<EventService>()(
       const events = yield* EventRepo
       const sync = yield* SyncRepo
 
-      const definition = (entityType: SyncEntityType) => {
-        const def = sync.definition(entityType)
-        if (def === undefined) {
-          throw new Error(`sync entity type is not registered: ${entityType}`)
-        }
-        return def
-      }
+      const kit = makeSyncKit<EventServiceError>({ sync, invalid })
 
       /**
        * Turn a validated aggregate into the registry's trusted write state. The
@@ -193,172 +187,11 @@ export class EventService extends Context.Service<EventService>()(
        * so a service write can never put a shape on the wire that a pull would
        * reject.
        */
-      const eventState = (event: Event): SyncEntityState => {
-        const def = definition('event')
-        return {
-          entityType: 'event',
-          entityId: event.id,
-          householdId: event.householdId,
-          ownerId: event.ownerId,
-          visibility: event.visibility,
-          version: event.version,
-          updatedAt: event.updatedAt,
-          deletedAt: event.deletedAt,
-          data: def.validate(
-            { ...event },
-            {
-              version: event.version,
-              updatedAt: event.updatedAt,
-              deletedAt: event.deletedAt,
-            },
-          ),
-        }
-      }
+      const eventState = (event: Event): SyncEntityState =>
+        kit.stateOf('event', event)
 
       const appliedMutation = (viewer: EventViewer, clientMutationId: string) =>
-        Effect.gen(function* () {
-          const applied = yield* sync
-            .findApplied({
-              householdId: viewer.householdId,
-              clientMutationIds: [clientMutationId],
-            })
-            .pipe(Effect.orDie)
-          return Option.fromUndefinedOr(applied.get(clientMutationId))
-        })
-
-      /** A mutation id may not be reused for a different row or aggregate. */
-      const reusedMutationId = (
-        row: { readonly entityType: SyncEntityType; readonly entityId: string },
-        expected: { readonly entityType: SyncEntityType; readonly id?: string },
-      ): boolean =>
-        row.entityType !== expected.entityType ||
-        (expected.id !== undefined && row.entityId !== expected.id)
-
-      const reusedMutationIdError = (_id: string) =>
-        invalid(
-          'clientMutationId',
-          'this mutation id was already applied to a different change',
-        )
-
-      interface CommitEntry {
-        readonly state: SyncEntityState
-        readonly expectedVersion: number | null
-        readonly clientMutationId: string
-        readonly op?: 'upsert' | 'delete'
-        /**
-         * A gated insert for a row that must not land unless another row in the
-         * same batch did (a split's new tail row). Defaults to the registry's
-         * plain insert.
-         */
-        readonly insert?: (
-          state: SyncEntityState,
-        ) => ReturnType<typeof sync.writeEntity>
-      }
-
-      /**
-       * One event mutation (or a split's pair of mutations): each CAS entity
-       * write with its gated feed append and gated ledger row, all in one D1
-       * batch. Returns whether every `clientMutationId` is now recorded, i.e. the
-       * batch won; a lost CAS in any write records nothing for that write.
-       */
-      const commitEntries = (input: {
-        readonly viewer: EventViewer
-        readonly entries: ReadonlyArray<CommitEntry>
-        readonly now: string
-      }): Effect.Effect<boolean, EventServiceError> =>
-        Effect.gen(function* () {
-          if (input.entries.length === 0) return true
-          const ids = input.entries.map(entry => entry.clientMutationId)
-          if (new Set(ids).size !== ids.length) {
-            return yield* invalid(
-              'clientMutationId',
-              'a split needs two distinct mutation ids',
-            )
-          }
-
-          // A mutation id is one mutation for its whole retention window. If the
-          // ledger already maps it to a different row/aggregate, `recordApplied`
-          // below would be an `INSERT OR IGNORE` no-op: the write would land with
-          // no replay guard. Refuse before writing.
-          const prior = yield* sync
-            .findApplied({
-              householdId: input.viewer.householdId,
-              clientMutationIds: ids,
-            })
-            .pipe(Effect.orDie)
-          for (const entry of input.entries) {
-            const row = Option.fromUndefinedOr(
-              prior.get(entry.clientMutationId),
-            )
-            if (
-              Option.isSome(row) &&
-              reusedMutationId(row.value, {
-                entityType: entry.state.entityType,
-                id: entry.state.entityId,
-              })
-            ) {
-              return yield* reusedMutationIdError(entry.state.entityId)
-            }
-          }
-
-          const statements = input.entries.flatMap(entry => [
-            entry.insert === undefined
-              ? sync.writeEntity({
-                  state: entry.state,
-                  expectedVersion: entry.expectedVersion,
-                })
-              : entry.insert(entry.state),
-            sync.appendFeed({
-              householdId: input.viewer.householdId,
-              entityType: entry.state.entityType,
-              entityId: entry.state.entityId,
-              op: entry.op ?? 'upsert',
-              version: entry.state.version,
-              updatedAt: entry.state.updatedAt,
-              ownerId: entry.state.ownerId,
-              visibility: entry.state.visibility,
-            }),
-            sync.recordApplied({
-              clientMutationId: entry.clientMutationId,
-              householdId: input.viewer.householdId,
-              entityType: entry.state.entityType,
-              entityId: entry.state.entityId,
-              version: entry.state.version,
-              createdAt: input.now,
-            }),
-          ])
-          yield* sync.commit(statements).pipe(Effect.orDie)
-
-          const applied = yield* sync
-            .findApplied({
-              householdId: input.viewer.householdId,
-              clientMutationIds: ids,
-            })
-            .pipe(Effect.orDie)
-          return ids.every(id => applied.has(id))
-        })
-
-      /** The single-row case of `commitEntries`. */
-      const commitEvent = (input: {
-        readonly viewer: EventViewer
-        readonly state: SyncEntityState
-        readonly expectedVersion: number | null
-        readonly clientMutationId: string
-        readonly now: string
-        readonly op?: 'upsert' | 'delete'
-      }): Effect.Effect<boolean, EventServiceError> =>
-        commitEntries({
-          viewer: input.viewer,
-          now: input.now,
-          entries: [
-            {
-              state: input.state,
-              expectedVersion: input.expectedVersion,
-              clientMutationId: input.clientMutationId,
-              op: input.op,
-            },
-          ],
-        })
+        kit.appliedMutation(viewer.householdId, clientMutationId)
 
       /**
        * Read one event with the standard scope rules. A tombstone reads as
@@ -369,29 +202,16 @@ export class EventService extends Context.Service<EventService>()(
         id: EventId,
         includeTrashed: boolean,
       ): Effect.Effect<Event, EventServiceError> =>
-        Effect.gen(function* () {
-          const found = yield* events.findById(id).pipe(Effect.orDie)
-          if (Option.isNone(found)) {
-            return yield* Effect.fail(new EventNotFound({ id }))
-          }
-          const event = found.value
-          if (event.householdId !== viewer.householdId) {
-            return yield* Effect.fail(
-              new EventForbidden({ id, reason: 'household' }),
-            )
-          }
-          if (
-            event.visibility === 'private' &&
-            event.ownerId !== viewer.userId
-          ) {
-            return yield* Effect.fail(
-              new EventForbidden({ id, reason: 'private' }),
-            )
-          }
-          if (!includeTrashed && event.deletedAt !== null) {
-            return yield* Effect.fail(new EventNotFound({ id }))
-          }
-          return event
+        readScoped({
+          viewer,
+          id,
+          find: events.findById,
+          includeTrashed,
+          trash: 'last',
+          onViolation: violation =>
+            violation === 'notFound' || violation === 'trashed'
+              ? new EventNotFound({ id })
+              : new EventForbidden({ id, reason: violation }),
         })
 
       /** Replay guard: the same mutation id already committed (lost response). */
@@ -404,9 +224,12 @@ export class EventService extends Context.Service<EventService>()(
           const row = yield* appliedMutation(viewer, clientMutationId)
           if (Option.isNone(row)) return Option.none()
           if (
-            reusedMutationId(row.value, { entityType: 'event', id: expectedId })
+            kit.reusedMutationId(row.value, {
+              entityType: 'event',
+              id: expectedId,
+            })
           ) {
-            return yield* reusedMutationIdError(
+            return yield* kit.reusedMutationIdError(
               expectedId ?? row.value.entityId,
             )
           }
@@ -424,7 +247,7 @@ export class EventService extends Context.Service<EventService>()(
       const decodeRule = (
         rule: RecurrenceRule,
       ): Effect.Effect<RecurrenceRule, EventValidationError> => {
-        const decoded = Schema.decodeUnknownOption(RecurrenceRule)(rule)
+        const decoded = Schema.decodeOption(RecurrenceRule)(rule)
         return Option.isNone(decoded)
           ? invalid('recurrence', 'recurrence rule is not valid')
           : Effect.succeed(decoded.value)
@@ -543,15 +366,15 @@ export class EventService extends Context.Service<EventService>()(
             deletedAt: null,
           })
 
-          const applied = yield* commitEvent({
-            viewer,
+          const applied = yield* kit.commitOne({
+            householdId: viewer.householdId,
             state: eventState(event),
             expectedVersion: null,
             clientMutationId: input.clientMutationId,
             now,
           })
           if (!applied) {
-            return yield* Effect.fail(new EventConflict({ id: event.id }))
+            return yield* new EventConflict({ id: event.id })
           }
           return event
         })
@@ -626,21 +449,6 @@ export class EventService extends Context.Service<EventService>()(
           })
         })
 
-      /** Are two events equal in every field the service owns? */
-      const sameEvent = (a: Event, b: Event): boolean =>
-        a.title === b.title &&
-        a.description === b.description &&
-        a.location === b.location &&
-        a.category === b.category &&
-        a.color === b.color &&
-        a.timeZone === b.timeZone &&
-        a.visibility === b.visibility &&
-        a.occasionId === b.occasionId &&
-        JSON.stringify(a.people) === JSON.stringify(b.people) &&
-        JSON.stringify(a.timing) === JSON.stringify(b.timing) &&
-        JSON.stringify(a.recurrence) === JSON.stringify(b.recurrence) &&
-        JSON.stringify(a.exceptions) === JSON.stringify(b.exceptions)
-
       const update = (
         viewer: EventViewer,
         input: Schema.Schema.Type<typeof EventUpdateInput>,
@@ -654,20 +462,31 @@ export class EventService extends Context.Service<EventService>()(
           )
           if (Option.isSome(replayed)) return replayed.value
 
-          for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-            const current = yield* readEvent(viewer, input.id, false)
-            const next = yield* patchEvent(viewer, current, input.patch, now)
-            if (sameEvent(current, next)) return current
-            const applied = yield* commitEvent({
-              viewer,
-              state: eventState(next),
-              expectedVersion: current.version,
-              clientMutationId: input.clientMutationId,
-              now,
-            })
-            if (applied) return next
-          }
-          return yield* Effect.fail(new EventConflict({ id: input.id }))
+          return yield* casUpdate({
+            read: readEvent(viewer, input.id, false),
+            plan: current =>
+              Effect.gen(function* () {
+                const next = yield* patchEvent(
+                  viewer,
+                  current,
+                  input.patch,
+                  now,
+                )
+                // `patchEvent` only writes fields the patch can name (timing,
+                // recurrence and exceptions are derived from their own patch
+                // field), so the patch is the complete no-op test.
+                return unchangedExcept(current, next, input.patch) ? null : next
+              }),
+            write: (current, next) =>
+              kit.commitOne({
+                householdId: viewer.householdId,
+                state: eventState(next),
+                expectedVersion: current.version,
+                clientMutationId: input.clientMutationId,
+                now,
+              }),
+            conflict: () => new EventConflict({ id: input.id }),
+          })
         })
 
       /**
@@ -688,25 +507,28 @@ export class EventService extends Context.Service<EventService>()(
           )
           if (Option.isSome(replayed)) return replayed.value
 
-          for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-            const current = yield* readEvent(viewer, input.id, false)
-            const next = new Event({
-              ...current,
-              deletedAt: now,
-              version: current.version + 1,
-              updatedAt: now,
-            })
-            const applied = yield* commitEvent({
-              viewer,
-              state: eventState(next),
-              expectedVersion: current.version,
-              clientMutationId: input.clientMutationId,
-              now,
-              op: 'delete',
-            })
-            if (applied) return next
-          }
-          return yield* Effect.fail(new EventConflict({ id: input.id }))
+          return yield* casUpdate({
+            read: readEvent(viewer, input.id, false),
+            plan: current =>
+              Effect.succeed(
+                new Event({
+                  ...current,
+                  deletedAt: now,
+                  version: current.version + 1,
+                  updatedAt: now,
+                }),
+              ),
+            write: (current, next) =>
+              kit.commitOne({
+                householdId: viewer.householdId,
+                state: eventState(next),
+                expectedVersion: current.version,
+                clientMutationId: input.clientMutationId,
+                now,
+                op: 'delete',
+              }),
+            conflict: () => new EventConflict({ id: input.id }),
+          })
         })
 
       /**
@@ -744,12 +566,12 @@ export class EventService extends Context.Service<EventService>()(
             userId: viewer.userId,
           }
           if (input?.from === undefined && input?.before === undefined) {
-            return yield* events.listVisible(scope).pipe(Effect.orDie)
+            return yield* events.listVisible(scope)
           }
-          return yield* events
-            .listInRange(rangeQuery(viewer, input.from, input.before))
-            .pipe(Effect.orDie)
-        })
+          return yield* events.listInRange(
+            rangeQuery(viewer, input.from, input.before),
+          )
+        }).pipe(Effect.orDie)
 
       /**
        * Expand every visible series into `[from, before)`.
@@ -959,9 +781,12 @@ export class EventService extends Context.Service<EventService>()(
           const row = yield* appliedMutation(viewer, input.clientMutationId)
           if (Option.isNone(row)) return Option.none()
           if (
-            reusedMutationId(row.value, { entityType: 'event', id: input.id })
+            kit.reusedMutationId(row.value, {
+              entityType: 'event',
+              id: input.id,
+            })
           ) {
-            return yield* reusedMutationIdError(input.id)
+            return yield* kit.reusedMutationIdError(input.id)
           }
           const series = yield* readEvent(
             viewer,
@@ -976,12 +801,12 @@ export class EventService extends Context.Service<EventService>()(
             )
             if (Option.isSome(tail)) {
               if (
-                reusedMutationId(tail.value, {
+                kit.reusedMutationId(tail.value, {
                   entityType: 'event',
                   id: input.followingId,
                 })
               ) {
-                return yield* reusedMutationIdError(tail.value.entityId)
+                return yield* kit.reusedMutationIdError(tail.value.entityId)
               }
               following = yield* readEvent(
                 viewer,
@@ -1028,43 +853,56 @@ export class EventService extends Context.Service<EventService>()(
             }
           }
 
-          for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-            const current = yield* readEvent(viewer, input.id, false)
-            const change = yield* applyOccurrenceEdit(current, input, now)
-            if (change === null) return { series: current, following: null }
-            const entries: Array<CommitEntry> = [
-              {
-                state: eventState(change.series),
-                expectedVersion: current.version,
-                clientMutationId: input.clientMutationId,
-                op: 'upsert',
-              },
-            ]
-            if (change.following !== null) {
-              const following = change.following
-              if (input.followingMutationId === undefined) {
-                return yield* invalid(
-                  'followingMutationId',
-                  'a split needs a replay key for the new series',
-                )
-              }
-              entries.push({
-                state: eventState(following),
-                expectedVersion: null,
-                clientMutationId: input.followingMutationId,
-                op: 'upsert',
-                // The tail is only written when the old row is exactly the
-                // truncated row this batch wrote: a lost CAS — including one a
-                // competing writer masks with the same next version — must not
-                // leave two live halves.
-                insert: () =>
-                  events.insertStatementGated(following, change.series),
-              })
-            }
-            const applied = yield* commitEntries({ viewer, entries, now })
-            if (applied) return change
-          }
-          return yield* Effect.fail(new EventConflict({ id: input.id }))
+          return yield* casUpdate({
+            // A row read yields "this occurrence, no tail yet"; the plan decides
+            // whether there is a change at all.
+            read: readEvent(viewer, input.id, false).pipe(
+              Effect.map((current): EventOccurrenceChange => ({
+                series: current,
+                following: null,
+              })),
+            ),
+            plan: current => applyOccurrenceEdit(current.series, input, now),
+            write: (current, next) =>
+              Effect.gen(function* () {
+                const entries: Array<CommitEntry> = [
+                  {
+                    state: eventState(next.series),
+                    expectedVersion: current.series.version,
+                    clientMutationId: input.clientMutationId,
+                    op: 'upsert',
+                  },
+                ]
+                if (next.following !== null) {
+                  const following = next.following
+                  if (input.followingMutationId === undefined) {
+                    return yield* invalid(
+                      'followingMutationId',
+                      'a split needs a replay key for the new series',
+                    )
+                  }
+                  entries.push({
+                    state: eventState(following),
+                    expectedVersion: null,
+                    clientMutationId: input.followingMutationId,
+                    op: 'upsert',
+                    // The tail is only written when the old row is exactly the
+                    // truncated row this batch wrote: a lost CAS — including one
+                    // a competing writer masks with the same next version — must
+                    // not leave two live halves.
+                    insert: () =>
+                      events.insertStatementGated(following, next.series),
+                  })
+                }
+                const applied = yield* kit.commitEntries({
+                  householdId: viewer.householdId,
+                  entries,
+                  now,
+                })
+                return applied.size === entries.length
+              }),
+            conflict: () => new EventConflict({ id: input.id }),
+          })
         })
 
       const deleteOccurrence = (
@@ -1083,51 +921,63 @@ export class EventService extends Context.Service<EventService>()(
             )
           }
 
-          for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-            const current = yield* readEvent(viewer, input.id, false)
-            const anchor = eventAnchorDate(current)
-            let next: Event
+          return yield* casUpdate({
+            // A row read yields "this occurrence, no tail yet"; the plan picks
+            // the tombstone or the truncated series.
+            read: readEvent(viewer, input.id, false).pipe(
+              Effect.map((current): EventOccurrenceChange => ({
+                series: current,
+                following: null,
+              })),
+            ),
+            plan: current =>
+              Effect.gen(function* () {
+                const event = current.series
+                const anchor = eventAnchorDate(event)
+                let next: Event
 
-            if (current.recurrence === null) {
-              if (input.instanceId !== anchor) {
-                return yield* invalid(
-                  'instanceId',
-                  'a one-off event has only its own occurrence',
-                )
-              }
-              next = trashEvent(current, now)
-            } else if (!isEventOccurrence(current, input.instanceId)) {
-              return yield* invalid(
-                'instanceId',
-                'instanceId is not an occurrence of this series',
-              )
-            } else if (input.scope === 'thisAndFollowing') {
-              next = truncateEventSeries({
-                event: current,
-                instanceId: input.instanceId,
-                now,
-              })
-            } else {
-              next = deleteEventOccurrence({
-                event: current,
-                instanceId: input.instanceId,
-                exceptionId: (input.exceptionId ??
-                  uuidV7()) as EventExceptionId,
-                now,
-              })
-            }
+                if (event.recurrence === null) {
+                  if (input.instanceId !== anchor) {
+                    return yield* invalid(
+                      'instanceId',
+                      'a one-off event has only its own occurrence',
+                    )
+                  }
+                  next = trashEvent(event, now)
+                } else if (!isEventOccurrence(event, input.instanceId)) {
+                  return yield* invalid(
+                    'instanceId',
+                    'instanceId is not an occurrence of this series',
+                  )
+                } else if (input.scope === 'thisAndFollowing') {
+                  next = truncateEventSeries({
+                    event,
+                    instanceId: input.instanceId,
+                    now,
+                  })
+                } else {
+                  next = deleteEventOccurrence({
+                    event,
+                    instanceId: input.instanceId,
+                    exceptionId: (input.exceptionId ??
+                      uuidV7()) as EventExceptionId,
+                    now,
+                  })
+                }
 
-            const applied = yield* commitEvent({
-              viewer,
-              state: eventState(next),
-              expectedVersion: current.version,
-              clientMutationId: input.clientMutationId,
-              now,
-              op: next.deletedAt === null ? 'upsert' : 'delete',
-            })
-            if (applied) return { series: next, following: null }
-          }
-          return yield* Effect.fail(new EventConflict({ id: input.id }))
+                return { series: next, following: null }
+              }),
+            write: (current, next) =>
+              kit.commitOne({
+                householdId: viewer.householdId,
+                state: eventState(next.series),
+                expectedVersion: current.series.version,
+                clientMutationId: input.clientMutationId,
+                now,
+                op: next.series.deletedAt === null ? 'upsert' : 'delete',
+              }),
+            conflict: () => new EventConflict({ id: input.id }),
+          })
         })
 
       return {

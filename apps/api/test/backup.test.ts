@@ -1,5 +1,3 @@
-import { readFileSync, readdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
 import {
@@ -15,6 +13,7 @@ import { runD1Backup, sha256Hex } from '../src/d1-backup.js'
 import { renderSqlDump } from '../src/d1-dump.js'
 import { FakeD1 } from './fake-d1.js'
 import { FakeR2 } from './fake-r2.js'
+import { openMigratedDatabase } from './harness.js'
 
 /**
  * Ticket #85's backup manifest and retention logic, plus the nightly runner
@@ -25,23 +24,7 @@ import { FakeR2 } from './fake-r2.js'
  * window remove the right whole backups while keeping the newest one?
  */
 
-const MIGRATIONS_DIR = new URL(
-  '../../../packages/sql/migrations/',
-  import.meta.url,
-)
-
-const migrationFiles = (): ReadonlyArray<string> =>
-  readdirSync(fileURLToPath(MIGRATIONS_DIR))
-    .filter(file => file.endsWith('.sql'))
-    .sort()
-
-const makeDatabase = (): DatabaseSync => {
-  const db = new DatabaseSync(':memory:')
-  for (const file of migrationFiles()) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), 'utf8'))
-  }
-  return db
-}
+const makeDatabase = (): DatabaseSync => openMigratedDatabase()
 
 const seed = (db: DatabaseSync, id: string) => {
   const now = '2026-10-20T00:00:00.000Z'

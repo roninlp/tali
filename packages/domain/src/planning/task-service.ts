@@ -4,6 +4,7 @@ import { RecurrenceRule, TaskRecurrenceMode } from '../recurrence.js'
 import { TaskBucket } from './buckets.js'
 import {
   LocalDate,
+  NonEmptyString,
   Priority,
   ProjectId,
   TagId,
@@ -12,6 +13,13 @@ import {
   TaskStatus,
   TimeZone,
   TimestampUtc,
+  conflictFields,
+  createEnvelope,
+  forbiddenFields,
+  mutationEnvelope,
+  notFoundFields,
+  updateEnvelope,
+  validationFields,
 } from './common.js'
 import { Task } from './task.js'
 
@@ -31,32 +39,23 @@ import { Task } from './task.js'
 /** The task does not exist, or is not visible to this viewer. */
 export class TaskNotFound extends Schema.TaggedError<TaskNotFound>()(
   'TaskNotFound',
-  {
-    id: TaskId,
-  },
+  notFoundFields(TaskId),
 ) {}
 
 export class ProjectNotFound extends Schema.TaggedError<ProjectNotFound>()(
   'ProjectNotFound',
-  {
-    id: ProjectId,
-  },
+  notFoundFields(ProjectId),
 ) {}
 
 export class TagNotFound extends Schema.TaggedError<TagNotFound>()(
   'TagNotFound',
-  {
-    id: TagId,
-  },
+  notFoundFields(TagId),
 ) {}
 
 /** The row exists but this viewer may not read/write it. */
 export class TaskForbidden extends Schema.TaggedError<TaskForbidden>()(
   'TaskForbidden',
-  {
-    id: Schema.NullOr(Schema.String),
-    reason: Schema.Literals(['private', 'household', 'noHousehold']),
-  },
+  forbiddenFields,
 ) {}
 
 /** A lifecycle move that the task's current status cannot make. */
@@ -72,22 +71,13 @@ export class TaskInvalidTransition extends Schema.TaggedError<TaskInvalidTransit
 /** Field-level validation (bad due instant, foreign project/tag, both due shapes, …). */
 export class TaskValidationError extends Schema.TaggedError<TaskValidationError>()(
   'TaskValidationError',
-  {
-    issues: Schema.Array(
-      Schema.Struct({
-        field: Schema.String,
-        message: Schema.String,
-      }),
-    ),
-  },
+  validationFields,
 ) {}
 
 /** A concurrent writer won the version CAS; the caller may retry. */
 export class TaskConflict extends Schema.TaggedError<TaskConflict>()(
   'TaskConflict',
-  {
-    id: Schema.String,
-  },
+  conflictFields,
 ) {}
 
 /** A completion older than the 7-day retention window can no longer be undone. */
@@ -111,6 +101,9 @@ export const TaskServiceError = Schema.Union([
 ])
 export type TaskServiceError = Schema.Schema.Type<typeof TaskServiceError>
 
+/** FR-TASK-06: completed tasks stay visible/restorable for seven days. */
+export const COMPLETED_TASK_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
+
 // ── Mutation inputs ──────────────────────────────────────────────────────
 
 /**
@@ -119,7 +112,7 @@ export type TaskServiceError = Schema.Schema.Type<typeof TaskServiceError>
  * field-level conflict merge possible.
  */
 export const TaskPatch = Schema.Struct({
-  title: Schema.optional(Schema.String.check(Schema.isMinLength(1))),
+  title: Schema.optional(NonEmptyString),
   description: Schema.optional(Schema.NullOr(Schema.String)),
   status: Schema.optional(TaskStatus),
   priority: Schema.optional(Priority),
@@ -136,11 +129,8 @@ export const TaskPatch = Schema.Struct({
 export type TaskPatch = Schema.Schema.Type<typeof TaskPatch>
 
 /** Create is title-first; everything else has a benign default. */
-export const TaskCreateInput = Schema.Struct({
-  /** A client may mint the UUID v7 offline; the server mints one otherwise. */
-  id: Schema.optional(TaskId),
-  clientMutationId: Schema.String,
-  title: Schema.String.check(Schema.isMinLength(1)),
+export const TaskCreateInput = createEnvelope(TaskId, {
+  title: NonEmptyString,
   description: Schema.optional(Schema.NullOr(Schema.String)),
   status: Schema.optional(TaskStatus),
   priority: Schema.optional(Priority),
@@ -157,13 +147,7 @@ export const TaskCreateInput = Schema.Struct({
 })
 export type TaskCreateInput = Schema.Schema.Type<typeof TaskCreateInput>
 
-export const TaskUpdateInput = Schema.Struct({
-  id: TaskId,
-  clientMutationId: Schema.String,
-  /** The version the client last saw; informational for the service CAS. */
-  baseVersion: Schema.optional(Schema.Int),
-  patch: TaskPatch,
-})
+export const TaskUpdateInput = updateEnvelope(TaskId, TaskPatch)
 export type TaskUpdateInput = Schema.Schema.Type<typeof TaskUpdateInput>
 
 /** `moveTask` changes the due day (and clears a timed due instant). */
@@ -176,10 +160,7 @@ export const TaskMoveInput = Schema.Struct({
 export type TaskMoveInput = Schema.Schema.Type<typeof TaskMoveInput>
 
 /** Start/complete/undo all carry only the row id plus the replay key. */
-export const TaskMutationInput = Schema.Struct({
-  id: TaskId,
-  clientMutationId: Schema.String,
-})
+export const TaskMutationInput = mutationEnvelope(TaskId)
 export type TaskMutationInput = Schema.Schema.Type<typeof TaskMutationInput>
 
 // ── Query inputs ─────────────────────────────────────────────────────────
@@ -243,10 +224,8 @@ export type TaskBuckets = Schema.Schema.Type<typeof TaskBuckets>
 
 // ── Project / tag inputs (FR-TASK-02) ────────────────────────────────────
 
-export const ProjectCreateInput = Schema.Struct({
-  id: Schema.optional(ProjectId),
-  clientMutationId: Schema.String,
-  title: Schema.String.check(Schema.isMinLength(1)),
+export const ProjectCreateInput = createEnvelope(ProjectId, {
+  title: NonEmptyString,
   color: Schema.optional(Schema.NullOr(Schema.String)),
 })
 export type ProjectCreateInput = Schema.Schema.Type<typeof ProjectCreateInput>
@@ -254,14 +233,12 @@ export type ProjectCreateInput = Schema.Schema.Type<typeof ProjectCreateInput>
 export const ProjectRenameInput = Schema.Struct({
   id: ProjectId,
   clientMutationId: Schema.String,
-  title: Schema.String.check(Schema.isMinLength(1)),
+  title: NonEmptyString,
 })
 export type ProjectRenameInput = Schema.Schema.Type<typeof ProjectRenameInput>
 
-export const TagCreateInput = Schema.Struct({
-  id: Schema.optional(TagId),
-  clientMutationId: Schema.String,
-  name: Schema.String.check(Schema.isMinLength(1)),
+export const TagCreateInput = createEnvelope(TagId, {
+  name: NonEmptyString,
   color: Schema.optional(Schema.NullOr(Schema.String)),
 })
 export type TagCreateInput = Schema.Schema.Type<typeof TagCreateInput>
@@ -269,6 +246,6 @@ export type TagCreateInput = Schema.Schema.Type<typeof TagCreateInput>
 export const TagRenameInput = Schema.Struct({
   id: TagId,
   clientMutationId: Schema.String,
-  name: Schema.String.check(Schema.isMinLength(1)),
+  name: NonEmptyString,
 })
 export type TagRenameInput = Schema.Schema.Type<typeof TagRenameInput>

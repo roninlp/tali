@@ -1,6 +1,10 @@
 import { Array, Option, Schema } from 'effect'
 
-import { DEFAULT_TIME_ZONE, defaultVisibilityFor } from '@tali/domain'
+import {
+  DEFAULT_TIME_ZONE,
+  defaultVisibilityFor,
+  entityKey,
+} from '@tali/domain'
 import type { LocalStore, MirrorRecord } from '@tali/sync-client'
 
 import {
@@ -13,6 +17,16 @@ import {
 import { CalendarRecurrenceRule } from './lib/calendar-data'
 import { EventRow, eventRowsFromMirror } from './lib/event-writes'
 import { JsonField } from './lib/json-field'
+import {
+  asNonEmptyStringOption,
+  mirrorCreatedAt,
+  mirrorId,
+  mirrorMeta,
+  mirrorNullableString,
+  mirrorText,
+  mirrorTimeZone,
+  mirrorVisibility,
+} from './lib/mirror-field'
 import {
   NoteData,
   emptyNoteData,
@@ -136,12 +150,6 @@ export const emptyMirrorSnapshot = (): MirrorSnapshot =>
     trashedOccasions: [],
   })
 
-const asNullableString = Schema.decodeUnknownOption(Schema.String)
-
-const asString = Schema.decodeUnknownOption(
-  Schema.String.check(Schema.isMinLength(1)),
-)
-
 const asPriority = Schema.decodeUnknownOption(
   Schema.Literals(['high', 'medium', 'low']),
 )
@@ -167,41 +175,29 @@ const asNoteData = Schema.decodeUnknownOption(NoteData)
 /** Project a mirrored task row into the shape the screens understand. */
 export const toTaskRow = (record: MirrorRecord): TaskRow =>
   TaskRow.make({
-    id: record.entityId,
-    title: Option.getOrElse(asNullableString(record.data.title), () => ''),
-    description: Option.getOrNull(asNullableString(record.data.description)),
+    id: mirrorId(record),
+    title: mirrorText(record, 'title'),
+    description: mirrorNullableString(record, 'description'),
     status: Option.getOrElse(asStatus(record.data.status), () => 'todo'),
     priority: Option.getOrElse(
       asPriority(record.data.priority),
       () => 'medium',
     ),
-    dueDate: Option.getOrNull(asNullableString(record.data.dueDate)),
-    dueAt: Option.getOrNull(asNullableString(record.data.dueAt)),
-    timeZone: Option.getOrElse(
-      asString(record.data.timeZone),
-      () => DEFAULT_TIME_ZONE,
-    ),
-    projectId: Option.getOrNull(asNullableString(record.data.projectId)),
+    dueDate: mirrorNullableString(record, 'dueDate'),
+    dueAt: mirrorNullableString(record, 'dueAt'),
+    timeZone: mirrorTimeZone(record),
+    projectId: mirrorNullableString(record, 'projectId'),
     tagIds: Option.getOrElse(asTagIds(record.data.tagIds), () => []),
-    startedAt: Option.getOrNull(asNullableString(record.data.startedAt)),
-    completedAt: Option.getOrNull(asNullableString(record.data.completedAt)),
+    startedAt: mirrorNullableString(record, 'startedAt'),
+    completedAt: mirrorNullableString(record, 'completedAt'),
     recurrence: Option.getOrUndefined(asRecurrence(record.data.recurrence)),
     recurrenceMode: Option.getOrNull(
       asRecurrenceMode(record.data.recurrenceMode),
     ),
-    createdAt: Option.getOrElse(
-      asNullableString(record.data.createdAt),
-      () => record.updatedAt,
-    ),
-    updatedAt: record.updatedAt,
-    version: record.version,
-    hasSyncError: record.syncError !== undefined,
-    ownerId: Option.getOrNull(asNullableString(record.data.ownerId)),
-    visibility:
-      record.data.visibility === 'private' ||
-      record.data.visibility === 'shared'
-        ? record.data.visibility
-        : defaultVisibilityFor('task'),
+    createdAt: mirrorCreatedAt(record),
+    ...mirrorMeta(record),
+    ownerId: mirrorNullableString(record, 'ownerId'),
+    visibility: mirrorVisibility(record, 'task'),
   })
 
 /** Project a mirrored note row into the pinned-note lane's shape. */
@@ -209,7 +205,7 @@ export const toNoteRow = (record: MirrorRecord): NoteRow => {
   const data = Option.getOrElse(asNoteData(record.data), emptyNoteData)
 
   return NoteRow.make({
-    id: record.entityId,
+    id: mirrorId(record),
     title: noteDisplayTitle(data),
     text: noteTextFromData(data),
     excerpt: noteExcerpt(data),
@@ -226,17 +222,17 @@ export const toNoteRow = (record: MirrorRecord): NoteRow => {
 /** Project a mirrored project row into the filter sidebar's shape. */
 export const toProjectRow = (record: MirrorRecord): ProjectRow =>
   ProjectRow.make({
-    id: record.entityId,
-    title: Option.getOrElse(asNullableString(record.data.title), () => ''),
-    color: Option.getOrNull(asNullableString(record.data.color)),
+    id: mirrorId(record),
+    title: mirrorText(record, 'title'),
+    color: mirrorNullableString(record, 'color'),
   })
 
 /** Project a mirrored tag row into the chip / filter shape. */
 export const toTagRow = (record: MirrorRecord): TagRow =>
   TagRow.make({
-    id: record.entityId,
-    name: Option.getOrElse(asNullableString(record.data.name), () => ''),
-    color: Option.getOrNull(asNullableString(record.data.color)),
+    id: mirrorId(record),
+    name: mirrorText(record, 'name'),
+    color: mirrorNullableString(record, 'color'),
   })
 
 export const taskRowsFromMirror = (
@@ -330,9 +326,11 @@ export const readMirrorSnapshot = async (
   })
 }
 
-/** The overlay key for one entity: the same `type\0id` pair Today uses. */
-export const entityKey = (entityType: string, entityId: string): string =>
-  `${entityType}\u0000${entityId}`
+/**
+ * The overlay key for one entity: the domain's `type\0id` identity, re-exported
+ * so screens keep importing it from the mirror they already read.
+ */
+export { entityKey } from '@tali/domain'
 
 export const taskKey = (taskId: string): string => entityKey('task', taskId)
 
@@ -368,7 +366,7 @@ export const taskRowFromServer = (task: ServerTask): TaskRow =>
     dueDate: task.dueDate ?? null,
     dueAt: task.dueAt ?? null,
     timeZone: Option.getOrElse(
-      asString(task.timeZone),
+      asNonEmptyStringOption(task.timeZone),
       () => DEFAULT_TIME_ZONE,
     ),
     projectId: task.projectId ?? null,

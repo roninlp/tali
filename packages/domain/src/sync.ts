@@ -1,5 +1,6 @@
 import { Schema } from 'effect'
 import { Visibility } from './common.js'
+import { ErrorEnvelope } from './error.js'
 import { ItemType } from './planning/common.js'
 
 /**
@@ -22,6 +23,27 @@ export type SyncEntityType = Schema.Schema.Type<typeof SyncEntityType>
 /** `delete` is a soft-delete tombstone, not a physical row removal. */
 export const SyncOp = Schema.Literals(['upsert', 'delete'])
 export type SyncOp = Schema.Schema.Type<typeof SyncOp>
+
+/** An entity addressed without its payload (a feed row, a pending key). */
+export interface EntityRef {
+  readonly entityType: SyncEntityType
+  readonly entityId: string
+}
+
+/**
+ * The `type \u0000 id` composite key, used as a Map key in push/pull.
+ *
+ * `(entityType, entityId)` is the real identity of a row across tables, and
+ * `\u0000` cannot occur in either half, so concatenation is injective. Two call
+ * styles are supported: a ref, or the two fields separately.
+ */
+export function entityKey(ref: EntityRef): string
+export function entityKey(entityType: string, entityId: string): string
+export function entityKey(ref: EntityRef | string, entityId?: string): string {
+  return typeof ref === 'string'
+    ? `${ref}\u0000${entityId ?? ''}`
+    : `${ref.entityType}\u0000${ref.entityId}`
+}
 
 /**
  * One queued local mutation (the outbox entry).
@@ -132,8 +154,7 @@ export const SyncPushRequest = Schema.Struct({
 })
 export type SyncPushRequest = Schema.Schema.Type<typeof SyncPushRequest>
 
-const AppliedResult = Schema.Struct({
-  _tag: Schema.Literal('applied'),
+const AppliedResult = Schema.TaggedStruct('applied', {
   clientMutationId: Schema.String,
   entityType: SyncEntityType,
   entityId: Schema.String,
@@ -142,8 +163,7 @@ const AppliedResult = Schema.Struct({
   item: Schema.optional(SyncEntityRow),
 })
 
-const AlreadyAppliedResult = Schema.Struct({
-  _tag: Schema.Literal('alreadyApplied'),
+const AlreadyAppliedResult = Schema.TaggedStruct('alreadyApplied', {
   clientMutationId: Schema.String,
   entityType: SyncEntityType,
   entityId: Schema.String,
@@ -152,8 +172,7 @@ const AlreadyAppliedResult = Schema.Struct({
   item: Schema.optional(SyncEntityRow),
 })
 
-const ConflictResult = Schema.Struct({
-  _tag: Schema.Literal('conflict'),
+const ConflictResult = Schema.TaggedStruct('conflict', {
   clientMutationId: Schema.String,
   entityType: SyncEntityType,
   entityId: Schema.String,
@@ -162,8 +181,7 @@ const ConflictResult = Schema.Struct({
   item: Schema.optional(SyncEntityRow),
 })
 
-const TombstoneResult = Schema.Struct({
-  _tag: Schema.Literal('tombstone'),
+const TombstoneResult = Schema.TaggedStruct('tombstone', {
   clientMutationId: Schema.String,
   entityType: SyncEntityType,
   entityId: Schema.String,
@@ -182,8 +200,7 @@ const TombstoneResult = Schema.Struct({
  * drops it so it cannot wedge the outbox behind a permanent failure; `code` is
  * stable for programmatic handling, `message` is for diagnosis only.
  */
-const RejectedResult = Schema.Struct({
-  _tag: Schema.Literal('rejected'),
+const RejectedResult = Schema.TaggedStruct('rejected', {
   clientMutationId: Schema.String,
   entityType: SyncEntityType,
   entityId: Schema.String,
@@ -223,3 +240,10 @@ export const SYNC_ERROR_CODES = [
   'InternalError',
 ] as const
 export type SyncErrorCode = (typeof SYNC_ERROR_CODES)[number]
+
+/**
+ * Decode the shared plain-HTTP error body, or `None` when the response is not
+ * one (a proxy page, a truncated body). Callers fall back to a synthetic code
+ * rather than inventing `message`/`retryable` values the server never sent.
+ */
+export const decodeErrorEnvelope = Schema.decodeUnknownOption(ErrorEnvelope)

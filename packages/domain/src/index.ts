@@ -4,6 +4,7 @@ export * from './visibility'
 export * from './backup'
 export * from './digits'
 export * from './jalali'
+export * from './local-date'
 export * from './ids'
 export * from './sync'
 export * from './error'
@@ -17,8 +18,10 @@ export * from './persian'
 export * from './note-search'
 export * from './capture'
 export {
+  ClientMutationId,
   EventExceptionId,
   EventId,
+  ForbiddenReason,
   HabitEntryId,
   HabitId,
   ItemType,
@@ -38,7 +41,15 @@ export {
   TaskStatus,
   TimeZone,
   TimestampUtc,
+  ValidationIssue,
   commonItemFields,
+  conflictFields,
+  createEnvelope,
+  forbiddenFields,
+  mutationEnvelope,
+  notFoundFields,
+  updateEnvelope,
+  validationFields,
 } from './planning/common'
 export * from './planning/buckets'
 export * from './planning/calendar'
@@ -67,9 +78,6 @@ export * from './planning/reminder-service'
 // The real `ListItem` aggregate collides with the pre-Slice-2 scaffold stub
 // (`./list-item`), which sync still speaks for the web mirror (#34). Re-export
 // it under an unambiguous alias plus the full `Planning` namespace.
-export {
-  ListItem as PlanningListItem,
-  ListItemCreate as PlanningListItemCreate,
-} from './planning/list-item'
+export { ListItem as PlanningListItem } from './planning/list-item'
 export { ListItemId as PlanningListItemId } from './planning/common'
 export * as Planning from './planning'

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Schema } from 'effect'
+import type { HouseholdId, UserId } from './common.js'
 import {
   ListCreateInput,
   ListItemCreateInput,
@@ -10,11 +11,15 @@ import {
 } from './planning/index.js'
 import {
   VISIBILITY_POLICY,
+  canView,
   defaultVisibilityFor,
   isShareableVisibility,
   resolveCreateVisibility,
   resolveInheritedVisibility,
+  visibilityDenial,
   visibilityPolicyOf,
+  type VisibilityRow,
+  type VisibilityViewer,
 } from './visibility.js'
 
 /**
@@ -208,14 +213,14 @@ describe('create schemas only accept visibility where the policy is shareable', 
 
   it('keeps visibility on the shareable creates', () => {
     expect(
-      Schema.decodeUnknownSync(NoteCreateInput)({
+      Schema.decodeSync(NoteCreateInput)({
         clientMutationId: 'm4',
         visibility: 'shared',
       }),
     ).toMatchObject({ visibility: 'shared' })
 
     expect(
-      Schema.decodeUnknownSync(ListCreateInput)({
+      Schema.decodeSync(ListCreateInput)({
         clientMutationId: 'm5',
         title: 'خرید',
         visibility: 'private',
@@ -223,11 +228,111 @@ describe('create schemas only accept visibility where the policy is shareable', 
     ).toMatchObject({ visibility: 'private' })
 
     expect(
-      Schema.decodeUnknownSync(TaskCreateInput)({
+      Schema.decodeSync(TaskCreateInput)({
         clientMutationId: 'm6',
         title: 'تماس',
         visibility: 'private',
       }),
     ).toMatchObject({ visibility: 'private' })
+  })
+})
+
+/**
+ * The read-authorization predicate every API read path shares. The truth table
+ * is written out explicitly because the reason, not just the boolean, is what
+ * each service turns into a tagged error.
+ */
+describe('visibilityDenial', () => {
+  const owner = 'user-owner' as UserId
+  const partner = 'user-partner' as UserId
+  const household = 'household-1' as HouseholdId
+  const otherHousehold = 'household-2' as HouseholdId
+
+  const ownerViewer: VisibilityViewer = {
+    householdId: household,
+    userId: owner,
+  }
+  const partnerViewer: VisibilityViewer = {
+    householdId: household,
+    userId: partner,
+  }
+  const outsiderViewer: VisibilityViewer = {
+    householdId: otherHousehold,
+    userId: partner,
+  }
+
+  it('lets both members read a shared row in the same household', () => {
+    const row: VisibilityRow = {
+      householdId: household,
+      ownerId: owner,
+      visibility: 'shared',
+    }
+    expect(visibilityDenial(row, ownerViewer)).toBeNull()
+    expect(visibilityDenial(row, partnerViewer)).toBeNull()
+  })
+
+  it('lets the owner read their own private row', () => {
+    const row: VisibilityRow = {
+      householdId: household,
+      ownerId: owner,
+      visibility: 'private',
+    }
+    expect(visibilityDenial(row, ownerViewer)).toBeNull()
+  })
+
+  it('denies the partner a private row in the same household', () => {
+    const row: VisibilityRow = {
+      householdId: household,
+      ownerId: owner,
+      visibility: 'private',
+    }
+    expect(visibilityDenial(row, partnerViewer)).toBe('private')
+  })
+
+  it('denies every row from another household', () => {
+    const shared: VisibilityRow = {
+      householdId: household,
+      ownerId: owner,
+      visibility: 'shared',
+    }
+    const priv: VisibilityRow = {
+      householdId: household,
+      ownerId: owner,
+      visibility: 'private',
+    }
+    expect(visibilityDenial(shared, outsiderViewer)).toBe('household')
+    expect(visibilityDenial(priv, outsiderViewer)).toBe('household')
+  })
+
+  it('answers household before private when both apply', () => {
+    const row: VisibilityRow = {
+      householdId: otherHousehold,
+      ownerId: owner,
+      visibility: 'private',
+    }
+    // The viewer owns the row but is not in its household.
+    expect(visibilityDenial(row, ownerViewer)).toBe('household')
+  })
+
+  it('agrees with canView on every case', () => {
+    const rows: ReadonlyArray<VisibilityRow> = [
+      { householdId: household, ownerId: owner, visibility: 'shared' },
+      { householdId: household, ownerId: owner, visibility: 'private' },
+      { householdId: otherHousehold, ownerId: owner, visibility: 'private' },
+    ]
+    const viewers: ReadonlyArray<VisibilityViewer> = [
+      ownerViewer,
+      partnerViewer,
+      outsiderViewer,
+    ]
+    for (const row of rows) {
+      for (const viewer of viewers) {
+        expect(canView(row, viewer)).toBe(
+          visibilityDenial(row, viewer) === null,
+        )
+      }
+    }
+    expect(canView(rows[1]!, ownerViewer)).toBe(true)
+    expect(canView(rows[1]!, partnerViewer)).toBe(false)
   })
 })

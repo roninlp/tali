@@ -20,7 +20,7 @@ import { modifyFields } from 'foldkit/struct'
 import { expect as assert, describe, test } from 'vitest'
 
 import { emptyMirrorSnapshot } from '../mirror'
-import { TODAY_NOW } from '../test-fixtures'
+import { DISPLAY, TODAY_NOW } from '../test-fixtures'
 import * as Today from './today'
 import type { Inputs } from './today'
 import { TodayFetchState, todayView } from './today-model'
@@ -35,11 +35,7 @@ import {
 } from './today-test-fixtures'
 
 const inputs = (overrides: Partial<Inputs> = {}): Inputs => ({
-  display: {
-    timeZone: 'Asia/Tehran',
-    weekStart: 'saturday',
-    digits: 'persian',
-  },
+  display: DISPLAY,
   sectionOrder: ['tasks', 'events', 'reminders', 'habits', 'notes'],
   isStoreReady: true,
   isOnline: true,

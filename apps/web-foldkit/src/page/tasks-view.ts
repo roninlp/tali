@@ -9,9 +9,11 @@ import { shareActionOf } from '../lib/visibility-writes'
 import type { TagRow, TaskRow } from '../mirror'
 import { taskKey } from '../mirror'
 import { buttonView } from '../ui/button'
+import { inlineAlertView } from '../ui/feedback'
 import { inputControlView, textAreaFieldView, textInputView } from '../ui/field'
 import { chevronDownIcon } from '../ui/icons'
 import { listboxViewInputs } from '../ui/listbox'
+import { offlineNoticeView, pageHeaderView, pendingCountView } from '../ui/page'
 import { pickerDialogView, pickerTriggerView } from '../ui/picker'
 import { Message } from './tasks'
 import type {
@@ -1704,43 +1706,21 @@ const toastView = (
   })
 
 const headerView = (inputs: ViewInputs, h: HtmlBuilder<Message>): Html =>
-  h.header(
-    [h.Class('grid gap-2')],
-    [
-      h.h1(
-        [h.Class('m-0 text-2xl font-bold tracking-tight sm:text-3xl')],
-        ['کارها'],
-      ),
-      h.p(
-        [h.Class('m-0 text-sm leading-7 text-base-content/70')],
-        [
-          'هر تغییر اول روی همین دستگاه ذخیره می‌شود؛ بعد در پس‌زمینه همگام می‌شود.',
-        ],
-      ),
-      inputs.isOnline
-        ? h.empty
-        : h.p(
-            [
-              h.Role('status'),
-              h.Class('notice notice-warning m-0 text-[0.8rem] leading-7'),
-            ],
-            [
-              'آفلاین هستید: ساخت، جابه‌جایی و انجام‌دادن کار می‌کند و بعداً ارسال می‌شود.',
-            ],
-          ),
-      inputs.pending > 0
-        ? h.p(
-            [
-              h.Role('status'),
-              h.AriaLive('polite'),
-              h.Class('m-0 text-[0.78rem] leading-6 text-base-content/70'),
-            ],
-            [
-              `${localizeDigits(inputs.pending, inputs.display.digits)} تغییر در صف همگام‌سازی است.`,
-            ],
-          )
-        : h.empty,
-    ],
+  pageHeaderView(
+    {
+      title: 'کارها',
+      subtitle:
+        'هر تغییر اول روی همین دستگاه ذخیره می‌شود؛ بعد در پس‌زمینه همگام می‌شود.',
+      details: [
+        offlineNoticeView(
+          inputs.isOnline,
+          'آفلاین هستید: ساخت، جابه‌جایی و انجام‌دادن کار می‌کند و بعداً ارسال می‌شود.',
+          h,
+        ),
+        pendingCountView(inputs.pending, inputs.display.digits, h),
+      ],
+    },
+    h,
   )
 
 export const tasksPageView = (
@@ -1797,17 +1777,7 @@ export const tasksPageView = (
             [
               headerView(inputs, h),
               quickAddView(model, inputs, view, h),
-              Option.match(model.maybeError, {
-                onNone: () => h.empty,
-                onSome: message =>
-                  h.p(
-                    [
-                      h.Role('alert'),
-                      h.Class('notice notice-error m-0 text-sm leading-7'),
-                    ],
-                    [message],
-                  ),
-              }),
+              inlineAlertView(model.maybeError, h),
               inputs.isStoreReady
                 ? h.div(
                     [],

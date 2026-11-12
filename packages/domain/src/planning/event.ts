@@ -7,6 +7,7 @@ import {
   EventExceptionId,
   EventId,
   LocalDate,
+  NonEmptyString,
   OccasionId,
   TimeZone,
   TimestampUtc,
@@ -64,15 +65,13 @@ import {
  *   back at `EventId`, so #60 needs no migration either.
  */
 export const EventTiming = Schema.Union([
-  Schema.Struct({
-    _tag: Schema.Literal('timed'),
+  Schema.TaggedStruct('timed', {
     /** Start instant (UTC, ISO-8601). */
     start: TimestampUtc,
     /** End instant (UTC, ISO-8601). Never earlier than `start`. */
     end: TimestampUtc,
   }),
-  Schema.Struct({
-    _tag: Schema.Literal('allDay'),
+  Schema.TaggedStruct('allDay', {
     /** Local calendar date `YYYY-MM-DD`, in the event's `timeZone`. */
     date: LocalDate,
   }),
@@ -161,7 +160,7 @@ export class Event extends Model.Class<Event>('Event')({
   /** Free-text category label ("work", "family", "health", …). */
   category: Schema.NullOr(Schema.String),
   /** People involved, by name (household members and guests alike). */
-  people: Schema.Array(Schema.String.check(Schema.isMinLength(1))),
+  people: Schema.Array(NonEmptyString),
   /** Timed instants or an all-day local date — never both. */
   timing: EventTiming,
   /** The event's IANA zone; the all-day date is read in it. */

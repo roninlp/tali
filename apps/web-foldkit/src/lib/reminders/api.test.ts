@@ -1,11 +1,17 @@
-import { Effect, Schema } from 'effect'
+import { Effect } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { noReminderLink } from '@tali/domain'
 
+import { jsonResponse, stubFetch } from '../../test-http'
 import { API_URL } from '../config'
-import type { ReminderDispatch } from './api'
 import { fetchReminderInbox, respondToReminder } from './api'
+import {
+  CHILD_DISPATCH_ID,
+  DISPATCH_ID,
+  REMINDER_ID,
+  dispatchRow,
+} from './fixtures'
 
 /**
  * The plain-HTTP ledger client, ported from
@@ -14,45 +20,18 @@ import { fetchReminderInbox, respondToReminder } from './api'
  * body (including the preset snooze minutes), and error classification.
  */
 
-const dispatch = (
-  overrides: Partial<ReminderDispatch> = {},
-): ReminderDispatch => ({
-  id: '0192f0a0-0000-7000-8000-000000000101',
-  reminderId: '0192f0a0-0000-7000-8000-000000000102',
-  userId: '0192f0a0-0000-7000-8000-000000000001',
-  scheduledFor: '2026-10-20T08:00:00.000Z',
-  deliverAt: '2026-10-20T08:00:00.000Z',
-  rootScheduledFor: '2026-10-20T08:00:00.000Z',
-  origin: 'schedule',
-  pushOutcome: 'accepted',
-  attempts: 1,
-  lastAttemptAt: '2026-10-20T08:00:05.000Z',
-  parentDispatchId: null,
-  response: null,
-  respondedAt: null,
-  snoozedUntil: null,
-  createdAt: '2026-10-20T08:00:00.000Z',
-  ...overrides,
-})
-
-const jsonResponse = (body: Schema.Json, status = 200): Response =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  })
-
 afterEach(() => {
   vi.unstubAllGlobals()
 })
 
 describe('fetchReminderInbox', () => {
   it('requests the inbox with history/limit and decodes the items', async () => {
-    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
-      jsonResponse({
+    const fetchMock = stubFetch(
+      jsonResponse(200, {
         items: [
           {
-            dispatch: dispatch(),
-            reminderId: '0192f0a0-0000-7000-8000-000000000102',
+            dispatch: dispatchRow(),
+            reminderId: REMINDER_ID,
             title: 'دارو',
             note: 'یک قرص',
             kind: 'medication',
@@ -64,8 +43,6 @@ describe('fetchReminderInbox', () => {
         ],
       }),
     )
-
-    vi.stubGlobal('fetch', fetchMock)
 
     const result = await Effect.runPromise(
       fetchReminderInbox({ history: true, limit: 25 }),
@@ -90,10 +67,7 @@ describe('fetchReminderInbox', () => {
   })
 
   it('maps a 401 to a non-retryable Unauthorized failure', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => jsonResponse({}, 401)),
-    )
+    stubFetch(jsonResponse(401, {}))
     const result = await Effect.runPromise(fetchReminderInbox())
     expect(result).toEqual({
       ok: false,
@@ -102,12 +76,7 @@ describe('fetchReminderInbox', () => {
   })
 
   it('maps a transport failure to a retryable Network failure', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => {
-        throw new Error('offline')
-      }),
-    )
+    stubFetch(new TypeError('offline'))
     const result = await Effect.runPromise(fetchReminderInbox())
     expect(result).toEqual({
       ok: false,
@@ -118,16 +87,14 @@ describe('fetchReminderInbox', () => {
 
 describe('respondToReminder', () => {
   it('posts Done and decodes the answered dispatch', async () => {
-    const answered = dispatch({
+    const answered = dispatchRow({
       response: 'done',
       respondedAt: '2026-10-20T08:10:00.000Z',
     })
 
-    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
-      jsonResponse({ dispatch: answered, child: null, onTime: true }),
+    const fetchMock = stubFetch(
+      jsonResponse(200, { dispatch: answered, child: null, onTime: true }),
     )
-
-    vi.stubGlobal('fetch', fetchMock)
 
     const result = await Effect.runPromise(
       respondToReminder({ dispatchId: answered.id, response: 'done' }),
@@ -149,24 +116,22 @@ describe('respondToReminder', () => {
   })
 
   it('sends the snooze preset in the body', async () => {
-    const parent = dispatch({
+    const parent = dispatchRow({
       response: 'snooze',
       snoozedUntil: '2026-10-20T08:15:00.000Z',
     })
 
-    const child = dispatch({
-      id: '0192f0a0-0000-7000-8000-000000000103',
+    const child = dispatchRow({
+      id: CHILD_DISPATCH_ID,
       scheduledFor: '2026-10-20T08:15:00.000Z',
       deliverAt: '2026-10-20T08:15:00.000Z',
       origin: `snooze:${parent.id}`,
       parentDispatchId: parent.id,
     })
 
-    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
-      jsonResponse({ dispatch: parent, child, onTime: false }),
+    const fetchMock = stubFetch(
+      jsonResponse(200, { dispatch: parent, child, onTime: false }),
     )
-
-    vi.stubGlobal('fetch', fetchMock)
 
     const result = await Effect.runPromise(
       respondToReminder({
@@ -185,14 +150,11 @@ describe('respondToReminder', () => {
   })
 
   it('maps a 404 to NotFound', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => jsonResponse({}, 404)),
-    )
+    stubFetch(jsonResponse(404, {}))
 
     const result = await Effect.runPromise(
       respondToReminder({
-        dispatchId: '0192f0a0-0000-7000-8000-000000000101',
+        dispatchId: DISPATCH_ID,
         response: 'dismiss',
       }),
     )

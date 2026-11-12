@@ -1,4 +1,4 @@
-import { Effect } from 'effect'
+import { Data, Effect } from 'effect'
 import { ManagedResource } from 'foldkit'
 
 import { type LocalStore, openLocalStore } from '@tali/sync-client'
@@ -18,17 +18,34 @@ export type LocalStoreService = ManagedResource.ServiceOf<
   typeof LocalStoreResource
 >
 
-export const openStore = (userId: string): Effect.Effect<LocalStore, Error> =>
+const LOCAL_STORE_UNAVAILABLE = 'ذخیره‌سازی محلی در دسترس نیست'
+
+export class LocalStoreError extends Data.TaggedError('LocalStoreError')<{
+  readonly message: string
+  readonly cause: unknown
+}> {}
+
+const storeError = (cause: unknown): LocalStoreError =>
+  new LocalStoreError({
+    message: cause instanceof Error ? cause.message : LOCAL_STORE_UNAVAILABLE,
+    cause,
+  })
+
+export const openStore = (
+  userId: string,
+): Effect.Effect<LocalStore, LocalStoreError> =>
   Effect.tryPromise({
     try: () => openLocalStore(userId),
-    catch: cause =>
-      cause instanceof Error
-        ? cause
-        : new Error('IndexedDB is not available in this environment'),
+    catch: storeError,
   })
 
 export const closeStore = (store: LocalStore): Effect.Effect<void> =>
   Effect.sync(() => store.close())
 
-export const storeErrorMessage = (cause: unknown): string =>
-  cause instanceof Error ? cause.message : 'ذخیره‌سازی محلی در دسترس نیست'
+export const storeErrorMessage = (cause: unknown): string => {
+  if (cause instanceof LocalStoreError) {
+    return cause.message
+  }
+
+  return cause instanceof Error ? cause.message : LOCAL_STORE_UNAVAILABLE
+}

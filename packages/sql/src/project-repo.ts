@@ -1,6 +1,7 @@
 import { Context, Effect, Layer, Option } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { Project, type ProjectId, type UserId } from '@tali/domain'
+import { visibleScopeSql } from './scope'
 
 /** D1-backed repository for `Project` (ticket #33; FR-TASK-02). Pure persistence. */
 
@@ -25,9 +26,7 @@ export class ProjectRepo extends Context.Service<ProjectRepo>()('ProjectRepo', {
       Effect.map(
         sql<Project>`
           SELECT ${sql.literal(PROJECT_COLUMNS)} FROM projects
-          WHERE household_id = ${input.householdId}
-            AND deleted_at IS NULL
-            AND (owner_id = ${input.userId} OR visibility = 'shared')
+          WHERE ${visibleScopeSql(sql, input)}
           ORDER BY title ASC, id ASC
         `,
         rows => rows,

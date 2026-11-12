@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Temporal } from 'temporal-polyfill/full'
 import {
+  DEFAULT_TIME_ZONE,
   addJalaliDays,
   addJalaliMonths,
   addJalaliYears,
@@ -15,6 +16,7 @@ import {
   jalaliDate,
   jalaliMonthGrid,
   jalaliWeek,
+  resolveTimeZone,
   startOfJalaliMonth,
   startOfJalaliYear,
   startOfJalaliWeek,
@@ -257,6 +259,19 @@ describe('timezone-aware today', () => {
 
   it('rejects an unknown timezone', () => {
     expect(() => todayInTimeZone('Not/AZone', instant)).toThrow(RangeError)
+  })
+})
+
+describe('resolveTimeZone', () => {
+  it('keeps a valid IANA zone unchanged', () => {
+    expect(resolveTimeZone('UTC')).toBe('UTC')
+    expect(resolveTimeZone('Asia/Tehran')).toBe('Asia/Tehran')
+    expect(resolveTimeZone('Europe/Berlin')).toBe('Europe/Berlin')
+  })
+
+  it('falls back to the household default for an invalid zone', () => {
+    expect(resolveTimeZone('Not/AZone')).toBe(DEFAULT_TIME_ZONE)
+    expect(resolveTimeZone('')).toBe(DEFAULT_TIME_ZONE)
   })
 })
 

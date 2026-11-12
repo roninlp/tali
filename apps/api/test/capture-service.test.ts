@@ -1,9 +1,5 @@
-import { readFileSync, readdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { Effect, Layer, String as Str, Tracer } from 'effect'
-import { D1Client } from '@effect/sql-d1'
+import { Effect, Layer, Tracer } from 'effect'
 import {
   type CaptureDraft,
   type HouseholdId,
@@ -23,7 +19,7 @@ import {
   ExtractorReplay,
   noteDraftFromText,
 } from '../src/capture-extractor.js'
-import { FakeD1 } from './fake-d1.js'
+import { makeServiceHarness } from './harness.js'
 
 /**
  * CaptureService (ticket #101; ADR-0012 §5–§6, §9).
@@ -32,16 +28,6 @@ import { FakeD1 } from './fake-d1.js'
  * through the D1-shaped batch. The Extractor is always a replay/custom layer:
  * no test calls a model.
  */
-
-const MIGRATIONS_DIR = new URL(
-  '../../../packages/sql/migrations/',
-  import.meta.url,
-)
-
-const migrationFiles = (): ReadonlyArray<string> =>
-  readdirSync(fileURLToPath(MIGRATIONS_DIR))
-    .filter(file => file.endsWith('.sql'))
-    .sort()
 
 const USER_A = 'user-a' as UserId
 const HOUSEHOLD = 'household-a' as HouseholdId
@@ -108,51 +94,31 @@ const makeHarness = (
   extractor: Layer.Layer<Extractor>,
   tracer?: Tracer.Tracer,
 ) => {
-  const db = new DatabaseSync(':memory:')
-  for (const file of migrationFiles()) {
-    db.exec(readFileSync(fileURLToPath(new URL(file, MIGRATIONS_DIR)), 'utf8'))
-  }
-
-  const fake = new FakeD1(db)
-  const layer = CaptureServiceLive.pipe(
-    Layer.provide(extractor),
-    Layer.provide(
-      D1Client.layer({
-        db: fake.asD1Database(),
-        transformQueryNames: Str.camelToSnake,
-        transformResultNames: Str.snakeToCamel,
-      }),
-    ),
+  const harness = makeServiceHarness(
+    ({ d1 }) =>
+      CaptureServiceLive.pipe(Layer.provide(extractor), Layer.provide(d1)),
+    CaptureService,
   )
 
   const run = <A, E>(effect: Effect.Effect<A, E, CaptureService>): Promise<A> =>
-    Effect.runPromise(
-      Effect.provide(
-        tracer === undefined
-          ? effect
-          : Effect.provideService(effect, Tracer.Tracer, tracer),
-        layer,
-      ),
+    harness.run(
+      tracer === undefined
+        ? effect
+        : Effect.provideService(effect, Tracer.Tracer, tracer),
     )
 
   const svc = <A, E>(
     f: (service: CaptureServiceApi) => Effect.Effect<A, E, never>,
-  ): Promise<A> =>
-    run(
-      Effect.gen(function* () {
-        const service = yield* CaptureService
-        return yield* f(service)
-      }),
-    )
+  ): Promise<A> => run(CaptureService.use(f))
 
   const count = (table: string): number =>
     (
-      db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as {
+      harness.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as {
         readonly n: number
       }
     ).n
 
-  return { db, fake, run, svc, count }
+  return { ...harness, run, svc, count }
 }
 
 const replayLayer = (text: string, drafts: ReadonlyArray<CaptureDraft>) =>

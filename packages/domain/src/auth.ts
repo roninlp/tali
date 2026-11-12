@@ -7,8 +7,10 @@ import {
   InviteCode,
   MembershipId,
   MembershipRole,
+  NonEmptyString,
   normalizeEmail,
   SessionId,
+  TimeZone,
   UserId,
   WeekStart,
 } from './common.js'
@@ -37,7 +39,7 @@ export class User extends Model.Class<User>('User')({
   /** Which client-side KDF produced the login key; currently always 1. */
   kdfVersion: Schema.Int,
   displayName: Schema.String,
-  timeZone: Schema.String,
+  timeZone: TimeZone,
   weekStart: WeekStart,
   digits: Digits,
   createdAt: Schema.String,
@@ -75,7 +77,7 @@ export const UserProfile = Schema.Struct({
   id: UserId,
   email: Email,
   displayName: Schema.String,
-  timeZone: Schema.String,
+  timeZone: TimeZone,
   weekStart: WeekStart,
   digits: Digits,
 })
@@ -197,22 +199,13 @@ export type LoginKey = Schema.Schema.Type<typeof LoginKey>
 
 // --- Inputs -------------------------------------------------------------
 
-/** Real IANA time-zone identifiers only (validated by the platform's `Intl`). */
-const isIanaTimeZone = Schema.makeFilter<string>(value => {
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: value })
-    return true
-  } catch {
-    return 'must be a valid IANA time zone identifier'
-  }
-})
-
 export const RegisterInput = Schema.Struct({
   email: Email,
   /** The browser-derived credential; no password is ever sent. */
   loginKey: LoginKey,
-  displayName: Schema.String.check(Schema.isMinLength(1)),
-  timeZone: Schema.String.check(isIanaTimeZone),
+  displayName: NonEmptyString,
+  /** The profile zone preferences, reminders and habits default to. */
+  timeZone: TimeZone,
 })
 export type RegisterInput = Schema.Schema.Type<typeof RegisterInput>
 
@@ -230,7 +223,7 @@ export const ChangePasswordInput = Schema.Struct({
 export type ChangePasswordInput = Schema.Schema.Type<typeof ChangePasswordInput>
 
 export const CreateHouseholdInput = Schema.Struct({
-  name: Schema.String.check(Schema.isMinLength(1)),
+  name: NonEmptyString,
 })
 export type CreateHouseholdInput = Schema.Schema.Type<
   typeof CreateHouseholdInput
