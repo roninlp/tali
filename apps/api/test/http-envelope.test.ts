@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { Effect, Schema } from 'effect'
-import { HttpServerRequest, HttpServerResponse } from 'effect/http'
+import {
+  HttpServerError,
+  HttpServerRequest,
+  HttpServerResponse,
+} from 'effect/http'
 import {
   cacheHeaders,
   conditionalJson,
@@ -133,6 +137,95 @@ describe('unexpectedFailure', () => {
 
   it('maps anything else to a retryable 500', async () => {
     const response = await web(unexpectedFailure()(new Error('boom')))
+
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({
+      error: {
+        code: 'InternalError',
+        message: 'Unexpected server error',
+        retryable: true,
+        details: {},
+      },
+    })
+  })
+
+  it('maps a request-parse error to a 400 carrying the route message', async () => {
+    const response = await web(
+      unexpectedFailure('Malformed preferences')(
+        new HttpServerError.HttpServerError({
+          reason: new HttpServerError.RequestParseError({
+            request: requestWith('/preferences'),
+          }),
+        }),
+      ),
+    )
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({
+      error: {
+        code: 'BadRequest',
+        message: 'Malformed preferences',
+        retryable: false,
+        details: {},
+      },
+    })
+  })
+
+  it('maps a missing route to a 404', async () => {
+    const response = await web(
+      unexpectedFailure()(
+        new HttpServerError.HttpServerError({
+          reason: new HttpServerError.RouteNotFound({
+            request: requestWith('/nowhere'),
+          }),
+        }),
+      ),
+    )
+
+    expect(response.status).toBe(404)
+    expect(await response.json()).toEqual({
+      error: {
+        code: 'NotFound',
+        message: 'No such route',
+        retryable: false,
+        details: {},
+      },
+    })
+  })
+
+  it('maps an InternalError to a retryable 500, not a 400', async () => {
+    const response = await web(
+      unexpectedFailure()(
+        new HttpServerError.HttpServerError({
+          reason: new HttpServerError.InternalError({
+            request: requestWith('/today'),
+          }),
+        }),
+      ),
+    )
+
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({
+      error: {
+        code: 'InternalError',
+        message: 'Unexpected server error',
+        retryable: true,
+        details: {},
+      },
+    })
+  })
+
+  it('maps a ResponseError to a retryable 500, not a 400', async () => {
+    const response = await web(
+      unexpectedFailure()(
+        new HttpServerError.HttpServerError({
+          reason: new HttpServerError.ResponseError({
+            request: requestWith('/today'),
+            response: HttpServerResponse.empty(),
+          }),
+        }),
+      ),
+    )
 
     expect(response.status).toBe(500)
     expect(await response.json()).toEqual({

@@ -70,8 +70,10 @@ export const malformed =
     fail(400, 'BadRequest', message)
 
 /**
- * Maps non-domain failures: a schema or request-body error is the client's
- * fault (400, carrying the given message), anything else is a retryable 500.
+ * Maps non-domain failures: a schema error or an `HttpServerError` caused by a
+ * request that will not parse is the client's fault (400, carrying the given
+ * message), a missing route is a 404, and anything else — including the
+ * server's own `InternalError` and `ResponseError` — is a retryable 500.
  */
 export const unexpectedFailure =
   (
@@ -79,10 +81,30 @@ export const unexpectedFailure =
   ): ((
     error: unknown,
   ) => Effect.Effect<HttpServerResponse.HttpServerResponse>) =>
-  error =>
-    Schema.isSchemaError(error) || HttpServerError.isHttpServerError(error)
-      ? malformed(message)(error)
-      : fail(500, 'InternalError', 'Unexpected server error', true)
+  error => {
+    if (Schema.isSchemaError(error)) {
+      return malformed(message)(error)
+    }
+
+    if (HttpServerError.isHttpServerError(error)) {
+      switch (error.reason._tag) {
+        case 'RequestParseError':
+          return malformed(message)(error)
+        case 'RouteNotFound':
+          return fail(404, 'NotFound', 'No such route')
+        case 'InternalError':
+        case 'ResponseError':
+          break
+      }
+    }
+
+    // Only errors the route did not map reach here (an unmapped service tag or
+    // a typed `SqlError`), so a generic 500 is still the one signal a client
+    // has that retrying may help. Revisit once infrastructure failures get a
+    // typed retryable error (`docs/error-model-draft.md` DP-6) and every route
+    // maps its error union exhaustively.
+    return fail(500, 'InternalError', 'Unexpected server error', true)
+  }
 
 /** A strong hash of the encoded payload; the body alone determines the tag. */
 export const etagOf = (body: unknown): Effect.Effect<string> =>
