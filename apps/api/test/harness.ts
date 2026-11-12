@@ -46,11 +46,6 @@ export const d1Layer = (fake: FakeD1) =>
     transformResultNames: Str.snakeToCamel,
   })
 
-/** A `Context.Service` seen only through the shape it resolves to. */
-interface ServiceTag<Shape> {
-  readonly Service: Shape
-}
-
 type ShapeOf<Tag> = Tag extends { readonly Service: infer Shape }
   ? Shape
   : never
@@ -65,7 +60,9 @@ export interface Harness<Services = never> {
   readonly db: DatabaseSync
   readonly fake: FakeD1
   readonly layer: Layer.Layer<Services, unknown, never>
-  readonly run: <A, E>(effect: Effect.Effect<A, E, Services>) => Promise<A>
+  readonly run: <A, E, R extends Services>(
+    effect: Effect.Effect<A, E, R>,
+  ) => Promise<A>
 }
 export interface ServiceHarness<
   Services = never,
@@ -84,26 +81,30 @@ const buildHarness = <Services, LayerError, LayerServices>(
 ): Harness<Services> => {
   const db = openMigratedDatabase()
   const fake = new FakeD1(db)
-  const layer = build({ db, fake, d1: d1Layer(fake) })
+  const built = build({ db, fake, d1: d1Layer(fake) })
 
-  const run = <A, E>(effect: Effect.Effect<A, E, Services>): Promise<A> =>
-    Effect.runPromise(
-      // `RpcHandlers` (and the route layers) advertise the services they use as
-      // *requirements* even though the same `mergeAll` also provides them; the
-      // original per-file harnesses relied on that, so the closed-layer view is
-      // restored here in one place instead of at every call site.
-      Effect.provide(
-        effect,
-        layer as Layer.Layer<Services, LayerError, never>,
-      ) as Effect.Effect<A, E>,
-    )
+  // The RPC handler map and the route layers advertise *every* service their
+  // handlers may reach for as a requirement, even though `mergeAll` also
+  // provides some of them and the suites never provide the rest (the handler
+  // captures the build context and only touches what each call needs). That
+  // makes their `RIn` unprovable, so the requirement-free view is asserted
+  // here, in one place, instead of at every call site. It says nothing about
+  // the *success* services: those stay fully inferred, which is what `run`'s
+  // `R extends Services` check below is built on.
+  const layer = built as Layer.Layer<Services, LayerError, never>
 
-  return {
-    db,
-    fake,
-    layer: layer as Layer.Layer<Services, unknown, never>,
-    run,
+  const run = <A, E, R extends Services>(
+    effect: Effect.Effect<A, E, R>,
+  ): Promise<A> => {
+    // `Layer` is contravariant in the services it provides, so the layer that
+    // produces all of `Services` also produces this effect's narrower
+    // requirement `R`; `Exclude<R, R>` then leaves the provided effect closed.
+    const closed: Layer.Layer<R, LayerError, never> = layer
+
+    return Effect.runPromise(Effect.provide(effect, closed))
   }
+
+  return { db, fake, layer, run }
 }
 
 /**
@@ -118,26 +119,21 @@ export const makeHarnessCore = <
   build: (env: HarnessEnv) => Layer.Layer<Services, LayerError, LayerServices>,
 ): Harness<Services> => buildHarness(build)
 
+/** An accessor for one `Context.Service` key provided by `Services`. */
 const accessorOf =
   <Services>(harness: Harness<Services>) =>
-  <S>(tag: ServiceTag<S>) =>
-  <A, E>(f: (service: S) => Effect.Effect<A, E, never>): Promise<A> =>
-    harness.run(
-      (tag as unknown as Context.Service<never, S>).use(f) as Effect.Effect<
-        A,
-        E,
-        Services
-      >,
-    )
+  <Self extends Services, Shape>(tag: Context.Service<Self, Shape>) =>
+  <A, E>(f: (service: Shape) => Effect.Effect<A, E, never>): Promise<A> =>
+    harness.run(tag.use(f))
 
 /**
  * An extra accessor from the same layer, for suites that expose more than one
  * service (the occasion suite also answers reminders).
  */
-export const serviceAccessor = <Services, Tag extends ServiceTag<unknown>>(
+export const serviceAccessor = <Services, Self extends Services, Shape>(
   harness: Harness<Services>,
-  tag: Tag,
-) => accessorOf(harness)(tag as unknown as ServiceTag<ShapeOf<Tag>>)
+  tag: Context.Service<Self, Shape>,
+) => accessorOf(harness)(tag)
 
 /**
  * The same harness plus the two accessors almost every suite wants: `svc`
@@ -145,12 +141,13 @@ export const serviceAccessor = <Services, Tag extends ServiceTag<unknown>>(
  */
 export const makeServiceHarness = <
   Services,
+  Self extends Services,
   Shape,
   LayerError = never,
   LayerServices = never,
 >(
   build: (env: HarnessEnv) => Layer.Layer<Services, LayerError, LayerServices>,
-  serviceTag: ServiceTag<Shape>,
+  serviceTag: Context.Service<Self, Shape>,
 ): ServiceHarness<Services, Shape> => {
   const harness = buildHarness(build)
   const accessor = accessorOf(harness)
@@ -158,6 +155,13 @@ export const makeServiceHarness = <
   return {
     ...harness,
     svc: accessor(serviceTag),
+    // `sync` is part of the shared accessor shape even for the three suites
+    // whose layer stops at a repo or a single service (capture, capture
+    // persistence, reminders) and so has no `SyncService`; none of them calls
+    // it. A generic `Services` cannot prove that membership without requiring
+    // `SyncService` of every suite's layer, so this one assertion stays: a
+    // `sync` call without the provider is still a runtime "Service not found",
+    // unlike `svc` and `serviceAccessor`, which are now checked.
     sync: <A, E>(
       f: (service: ShapeOf<typeof SyncService>) => Effect.Effect<A, E, never>,
     ): Promise<A> =>
