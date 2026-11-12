@@ -7,7 +7,7 @@ import {
   type NoteSearchViewer,
 } from './note-search-service.js'
 import { sessionResolver } from './principal.js'
-import { fail, json, requestUrl } from './read-model-http.js'
+import { fail, json, requestUrl } from './http-envelope.js'
 
 /**
  * `GET /search/notes?q=…` — Persian full-text note search (ticket #41;

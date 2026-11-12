@@ -1,7 +1,7 @@
 import { Effect } from 'effect'
 import { HttpRouter, HttpServerRequest } from 'effect/http'
 import { ReminderSweep } from './reminder-sweep.js'
-import { fail, json, requestUrl } from './read-model-http.js'
+import { fail, json, requestUrl } from './http-envelope.js'
 
 /**
  * The local-only sweep trigger (ticket #61; ADR-0005 §11).
