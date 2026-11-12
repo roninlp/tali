@@ -1,6 +1,6 @@
 import { Effect, Option } from 'effect'
+import { SqlError } from 'effect/sql'
 import type { Statement } from 'effect/sql'
-import type { SqlError } from 'effect/sql/SqlError'
 import type { SyncEntityType, Visibility } from '@tali/domain'
 import type {
   AppliedMutation,
@@ -48,7 +48,7 @@ export interface SyncWriteRepo {
   readonly findApplied: (input: {
     readonly householdId: string
     readonly clientMutationIds: ReadonlyArray<string>
-  }) => Effect.Effect<ReadonlyMap<string, AppliedMutation>, SqlError>
+  }) => Effect.Effect<ReadonlyMap<string, AppliedMutation>, SqlError.SqlError>
   readonly writeEntity: (input: EntityWrite) => Statement.Statement<unknown>
   readonly indexStatements: (
     state: SyncEntityState,
@@ -57,7 +57,7 @@ export interface SyncWriteRepo {
   readonly recordApplied: (entry: AppliedWrite) => Statement.Statement<unknown>
   readonly commit: (
     statements: ReadonlyArray<Statement.Statement<unknown>>,
-  ) => Effect.Effect<ReadonlyArray<unknown>, SqlError>
+  ) => Effect.Effect<ReadonlyArray<unknown>, SqlError.SqlError>
 }
 
 export interface SyncKitConfig<E> {
@@ -335,36 +335,36 @@ export const makeSyncKit = <E>(config: SyncKitConfig<E>) => {
     })
 
   /**
-   * One mutation (or a split's pair of mutations): each CAS entity write with
-   * its gated feed append, gated ledger row and registry index statements, all
-   * in one D1 batch. Returns the mutation ids the ledger now records, i.e. the
-   * writes that won their gate.
-   */
-  const commitEntries = (
-    input: CommitInput,
-  ): Effect.Effect<ReadonlySet<string>, E> =>
-    Effect.gen(function* () {
-      const planned = yield* plan(input)
-      yield* sync
-        .commit(statementsFor(input, planned.entries))
-        .pipe(Effect.orDie)
-      return yield* appliedIds(input.householdId, planned.ids)
-    })
-
-  /**
-   * `commitEntries` with the repository failure left typed.
+   * The base commit: one mutation (or a split's pair of mutations), each CAS
+   * entity write with its gated feed append, gated ledger row and registry
+   * index statements, all in one D1 batch. Returns the mutation ids the ledger
+   * now records, i.e. the writes that won their gate. The repository failure
+   * stays typed.
    *
    * The task service maps a `SqlError` from the tag unique index onto a field
-   * validation error; every other service treats a batch failure as a defect.
+   * validation error; every other service treats a batch failure as a defect
+   * (`commitEntries`).
    */
   const tryCommitEntries = (
     input: CommitInput,
-  ): Effect.Effect<ReadonlySet<string>, E | SqlError> =>
+  ): Effect.Effect<ReadonlySet<string>, E | SqlError.SqlError> =>
     Effect.gen(function* () {
       const planned = yield* plan(input)
       yield* sync.commit(statementsFor(input, planned.entries))
       return yield* appliedIds(input.householdId, planned.ids)
     })
+
+  /**
+   * `tryCommitEntries` with the repository failure made a defect: every service
+   * but the task one treats a failed batch as unexpected, so only the service's
+   * own typed failures propagate.
+   */
+  const commitEntries = (
+    input: CommitInput,
+  ): Effect.Effect<ReadonlySet<string>, E> =>
+    tryCommitEntries(input).pipe(
+      Effect.catchIf(SqlError.isSqlError, error => Effect.die(error)),
+    )
 
   /** The single-row case of `commitEntries`. */
   const commitOne = (input: CommitOneInput): Effect.Effect<boolean, E> =>
