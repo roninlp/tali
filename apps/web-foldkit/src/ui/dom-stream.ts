@@ -48,21 +48,13 @@ export const clockEvents = <M>(
   const intervalMs = options?.intervalMs ?? DEFAULT_CLOCK_INTERVAL_MS
   const immediate = options?.immediate ?? true
 
-  const tick = Effect.gen(function* () {
-    const now = yield* Clock.currentTimeMillis
+  const ticks = Stream.tick(Duration.millis(intervalMs))
+  const stream = immediate ? ticks : Stream.drop(ticks, 1)
 
-    return toMessage(now)
-  })
-
-  const repeated = Stream.fromEffectRepeat(
-    Effect.gen(function* () {
-      yield* Effect.sleep(Duration.millis(intervalMs))
-
-      return yield* tick
-    }),
+  return stream.pipe(
+    Stream.mapEffect(() => Clock.currentTimeMillis),
+    Stream.map(toMessage),
   )
-
-  return immediate ? Stream.concat(Stream.fromEffect(tick), repeated) : repeated
 }
 
 /** The browser going online or offline, as the caller's two Messages. */
