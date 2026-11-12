@@ -96,11 +96,13 @@ export const principalFromToken = (
 /**
  * The implementations a plain-HTTP route captures at layer scope.
  *
- * `HttpRouter` route handlers cannot carry service requirements of their own:
- * the requirement escapes the router layer as a request-level one and
- * `toWebHandler` then demands it in a per-request `Context`. Routes therefore
- * resolve the services once, where they already did, and use the bound forms
- * below inside their handlers.
+ * A route handler may declare service requirements of its own; `HttpRouter`
+ * resolves them when the router's layer is built. The binding here is instead
+ * about reuse: `sessionOf` and `principalOf` take `AuthService` (and
+ * `PreferencesService`) in their requirement channel, while a route already
+ * captures those services at layer scope when it registers its handlers. The
+ * bound forms below close over that captured pair, so a handler calls them like
+ * the plain function without threading the services through its own effect.
  */
 type AuthServiceShape = Effect.Success<typeof AuthService>
 type PreferencesServiceShape = Effect.Success<typeof PreferencesService>

@@ -313,7 +313,7 @@ export const makeSyncKit = <E>(config: SyncKitConfig<E>) => {
       if (new Set(ids).size !== ids.length) {
         return yield* invalid(
           'clientMutationId',
-          'a split needs two distinct mutation ids',
+          'one commit may not reuse a mutation id for two entries',
         )
       }
       const prior = yield* priorOf(input.householdId, ids)
@@ -353,16 +353,6 @@ export const makeSyncKit = <E>(config: SyncKitConfig<E>) => {
   ): Effect.Effect<ReadonlySet<string>> =>
     Effect.map(priorOf(householdId, ids), applied => new Set(applied.keys()))
 
-  const statementsFor = (
-    input: CommitInput,
-    entries: ReadonlyArray<CommitEntry>,
-  ) =>
-    entryStatements({
-      householdId: input.householdId,
-      entries,
-      now: input.now,
-    })
-
   /**
    * The base commit: one mutation (or a split's pair of mutations), each CAS
    * entity write with its gated feed append, gated ledger row and registry
@@ -390,7 +380,13 @@ export const makeSyncKit = <E>(config: SyncKitConfig<E>) => {
       // is nothing to write, so skip both the empty batch and the second ledger
       // read.
       if (planned.entries.length === 0) return new Set(planned.ids)
-      yield* sync.commit(statementsFor(input, planned.entries))
+      yield* sync.commit(
+        entryStatements({
+          householdId: input.householdId,
+          entries: planned.entries,
+          now: input.now,
+        }),
+      )
       return yield* appliedIds(input.householdId, planned.ids)
     })
 
