@@ -991,7 +991,6 @@ export class OccasionService extends Context.Service<OccasionService>()(
                 {
                   state: occasionState(next),
                   expectedVersion: current.version,
-                  clientMutationId: `${input.clientMutationId}:occasion`,
                   ledger: 'none',
                 },
                 {

@@ -91,24 +91,11 @@ export interface StateShape<A> {
   readonly decorate?: (data: Record<string, unknown>) => Record<string, unknown>
 }
 
-/**
- * The ledger role of one written row.
- *
- * - `client` (default) — the row is the mutation: a prior ledger row for the id
- *   that names another row is a reuse conflict.
- * - `derived` — the ledger key is server-minted (a recurrence successor's
- *   `recurrence:<parentId>`). A prior row is not a conflict: the successor
- *   insert is already exactly-once through its unique parent index.
- * - `none` — the row is written by the mutation but is not its replay key (the
- *   occasion a "prepare gift" task is linked from).
- */
-export type LedgerMode = 'client' | 'derived' | 'none'
-
-export interface CommitEntry {
+/** The fields every written row shares, whatever its ledger role. */
+interface CommitEntryFields {
   readonly state: SyncEntityState
   /** `null` inserts; otherwise the version this write is conditioned on. */
   readonly expectedVersion: number | null
-  readonly clientMutationId: string
   readonly op?: 'upsert' | 'delete'
   /**
    * A gated insert for a row that must not land unless another row in the same
@@ -119,8 +106,35 @@ export interface CommitEntry {
   readonly extra?: (
     state: SyncEntityState,
   ) => ReadonlyArray<Statement.Statement<unknown>>
-  readonly ledger?: LedgerMode
 }
+
+/**
+ * One row in the batch, discriminated by its ledger role.
+ *
+ * - `client` (default) — the row is the mutation: a prior ledger row for the id
+ *   that names another row is a reuse conflict.
+ * - `derived` — the ledger key is server-minted (a recurrence successor's
+ *   `recurrence:<parentId>`). A prior row is not a conflict: the successor
+ *   insert is already exactly-once through its unique parent index.
+ * - `none` — the row is written by the mutation but is not its replay key (the
+ *   occasion a "prepare gift" task is linked from).
+ *
+ * `client` and `derived` rows are recorded in `applied_mutations` under
+ * `clientMutationId`; a `none` row carries no id at all.
+ */
+export type CommitEntry =
+  | (CommitEntryFields & {
+      readonly ledger?: 'client'
+      readonly clientMutationId: string
+    })
+  | (CommitEntryFields & {
+      readonly ledger: 'derived'
+      readonly clientMutationId: string
+    })
+  | (CommitEntryFields & {
+      readonly ledger: 'none'
+      readonly clientMutationId?: never
+    })
 
 export interface CommitInput {
   readonly householdId: string
@@ -232,41 +246,45 @@ export const makeSyncKit = <E>(config: SyncKitConfig<E>) => {
     readonly entries: ReadonlyArray<CommitEntry>
     readonly now: string
   }): ReadonlyArray<Statement.Statement<unknown>> =>
-    input.entries.flatMap(entry => [
-      entry.insert === undefined
-        ? sync.writeEntity({
-            state: entry.state,
-            expectedVersion: entry.expectedVersion,
-          })
-        : entry.insert(entry.state),
-      sync.appendFeed({
-        householdId: input.householdId,
-        entityType: entry.state.entityType,
-        entityId: entry.state.entityId,
-        op: entry.op ?? 'upsert',
-        version: entry.state.version,
-        updatedAt: entry.state.updatedAt,
-        ownerId: entry.state.ownerId,
-        visibility: entry.state.visibility,
-      }),
+    input.entries.flatMap(entry => {
+      const statements: Array<Statement.Statement<unknown>> = [
+        entry.insert === undefined
+          ? sync.writeEntity({
+              state: entry.state,
+              expectedVersion: entry.expectedVersion,
+            })
+          : entry.insert(entry.state),
+        sync.appendFeed({
+          householdId: input.householdId,
+          entityType: entry.state.entityType,
+          entityId: entry.state.entityId,
+          op: entry.op ?? 'upsert',
+          version: entry.state.version,
+          updatedAt: entry.state.updatedAt,
+          ownerId: entry.state.ownerId,
+          visibility: entry.state.visibility,
+        }),
+      ]
       // The ledger row must directly follow its own feed append: its `seq` is
       // `last_insert_rowid()`, and its own write is gated on `changes() = 1`
-      // (the feed statement) so a lost CAS records nothing at all.
-      ...((entry.ledger ?? 'client') === 'none'
-        ? []
-        : [
-            sync.recordApplied({
-              clientMutationId: entry.clientMutationId,
-              householdId: input.householdId,
-              entityType: entry.state.entityType,
-              entityId: entry.state.entityId,
-              version: entry.state.version,
-              createdAt: input.now,
-            }),
-          ]),
-      ...sync.indexStatements(entry.state),
-      ...(entry.extra?.(entry.state) ?? []),
-    ])
+      // (the feed statement) so a lost CAS records nothing at all. A `none` row
+      // has no ledger key, so it contributes only its entity write and feed.
+      if (entry.ledger !== 'none') {
+        statements.push(
+          sync.recordApplied({
+            clientMutationId: entry.clientMutationId,
+            householdId: input.householdId,
+            entityType: entry.state.entityType,
+            entityId: entry.state.entityId,
+            version: entry.state.version,
+            createdAt: input.now,
+          }),
+        )
+      }
+      statements.push(...sync.indexStatements(entry.state))
+      statements.push(...(entry.extra?.(entry.state) ?? []))
+      return statements
+    })
 
   /**
    * Check the batch refusals and decide which entries still need statements.
@@ -287,7 +305,11 @@ export const makeSyncKit = <E>(config: SyncKitConfig<E>) => {
     E
   > =>
     Effect.gen(function* () {
-      const ids = input.entries.map(entry => entry.clientMutationId)
+      // A `none` row is not in the ledger by design, so it contributes no id to
+      // read, refuse or report.
+      const ids = input.entries.flatMap(entry =>
+        entry.ledger === 'none' ? [] : [entry.clientMutationId],
+      )
       if (new Set(ids).size !== ids.length) {
         return yield* invalid(
           'clientMutationId',
@@ -296,7 +318,9 @@ export const makeSyncKit = <E>(config: SyncKitConfig<E>) => {
       }
       const prior = yield* priorOf(input.householdId, ids)
       for (const entry of input.entries) {
-        if ((entry.ledger ?? 'client') !== 'client') continue
+        // Only a `client` row arms the reuse refusal: a `derived` key is
+        // server-minted and already exactly-once through its unique index.
+        if (entry.ledger === 'derived' || entry.ledger === 'none') continue
         const row = Option.fromUndefinedOr(prior.get(entry.clientMutationId))
         if (
           Option.isSome(row) &&
@@ -312,7 +336,12 @@ export const makeSyncKit = <E>(config: SyncKitConfig<E>) => {
         ids,
         entries:
           input.skipApplied === true
-            ? input.entries.filter(entry => !prior.has(entry.clientMutationId))
+            ? input.entries.filter(
+                // A `none` row has no ledger row that could make it a replay,
+                // so it is always written.
+                entry =>
+                  entry.ledger === 'none' || !prior.has(entry.clientMutationId),
+              )
             : input.entries,
       }
     })

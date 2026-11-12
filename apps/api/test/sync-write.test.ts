@@ -189,4 +189,40 @@ describe('sync write kit', () => {
     expect(h.count('notes')).toBe(1)
     expect(h.count('applied_mutations')).toBe(1)
   })
+
+  it('writes a none row without recording a ledger row for it', async () => {
+    const h = makeHarness()
+
+    const result = await h.run(
+      Effect.gen(function* () {
+        const kit = yield* h.kitOf()
+        const applied = yield* kit.commitEntries({
+          householdId: HOUSEHOLD,
+          now: NOW,
+          entries: [
+            // The row this mutation writes but does not key its replay on: it
+            // carries no mutation id, so the ledger must never name it.
+            {
+              state: kit.stateOf('note', h.note('مهمانی')),
+              expectedVersion: null,
+              ledger: 'none',
+            },
+            {
+              state: kit.stateOf('note', h.note('خرید نان')),
+              expectedVersion: null,
+              clientMutationId: 'm-note',
+            },
+          ],
+        })
+        return { applied: [...applied] }
+      }),
+    )
+
+    // Both rows and both feed appends landed, but only the ledgered one is the
+    // mutation's replay key: the applied set and the ledger name just the note.
+    expect(result.applied).toEqual(['m-note'])
+    expect(h.count('notes')).toBe(2)
+    expect(h.count('change_feed')).toBe(2)
+    expect(h.count('applied_mutations')).toBe(1)
+  })
 })

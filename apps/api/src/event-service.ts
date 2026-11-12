@@ -899,7 +899,12 @@ export class EventService extends Context.Service<EventService>()(
                   entries,
                   now,
                 })
-                return applied.size === entries.length
+                // A `none` row is written but never recorded, so it is not part
+                // of the "did everything land" count.
+                const ledgered = entries.filter(
+                  entry => entry.ledger !== 'none',
+                ).length
+                return applied.size === ledgered
               }),
             conflict: () => new EventConflict({ id: input.id }),
           })
