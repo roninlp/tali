@@ -28,6 +28,7 @@ export const SESSION_COOKIE = 'tali_session'
 export type ReadFailureCode =
   | 'Unauthorized'
   | 'Forbidden'
+  | 'NotFound'
   | 'BadRequest'
   | 'InternalError'
 

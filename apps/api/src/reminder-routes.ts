@@ -1,4 +1,4 @@
-import { Effect, Option, Predicate, Schema } from 'effect'
+import { Effect, Option, Schema } from 'effect'
 import { HttpRouter, HttpServerRequest } from 'effect/http'
 import {
   DispatchResponse,
@@ -65,26 +65,17 @@ export const ReminderRoutes = HttpRouter.use(router =>
      * Map the typed service outcomes onto the shared `{status,code}` envelope;
      * anything unrecognised falls through to the generic schema/500 mapping.
      */
-    const reminderFailure = (error: unknown) => {
-      const tag =
-        Predicate.isObject(error) && typeof error._tag === 'string'
-          ? error._tag
-          : undefined
-      switch (tag) {
-        case 'ReminderDispatchNotFound':
-        case 'ReminderNotFound':
-          return fail(404, 'BadRequest', 'Reminder not found')
-        case 'ReminderForbidden':
-          return fail(403, 'Forbidden', 'Reminder is not visible')
-        case 'ReminderValidationError':
-          return fail(400, 'BadRequest', 'Reminder response is not valid')
-        case 'ReminderConflict':
-          return fail(409, 'BadRequest', 'Reminder changed concurrently', true)
-        case 'Unauthorized':
-          return fail(401, 'Unauthorized', 'No active session')
-        default:
-          return unexpectedFailure()(error)
-      }
+    const reminderFailures = {
+      ReminderDispatchNotFound: () =>
+        fail(404, 'NotFound', 'Reminder not found'),
+      ReminderNotFound: () => fail(404, 'NotFound', 'Reminder not found'),
+      ReminderForbidden: () =>
+        fail(403, 'Forbidden', 'Reminder is not visible'),
+      ReminderValidationError: () =>
+        fail(400, 'BadRequest', 'Reminder response is not valid'),
+      ReminderConflict: () =>
+        fail(409, 'Conflict', 'Reminder changed concurrently', true),
+      Unauthorized: () => fail(401, 'Unauthorized', 'No active session'),
     }
 
     yield* router.add(
@@ -112,7 +103,7 @@ export const ReminderRoutes = HttpRouter.use(router =>
           limit,
         })
         return yield* json(200, { items })
-      }).pipe(Effect.catch(reminderFailure)),
+      }).pipe(Effect.catchTags(reminderFailures, unexpectedFailure())),
     )
 
     yield* router.add(
@@ -133,7 +124,7 @@ export const ReminderRoutes = HttpRouter.use(router =>
           snoozeMinutes: body.snoozeMinutes,
         })
         return yield* json(200, result)
-      }).pipe(Effect.catch(reminderFailure)),
+      }).pipe(Effect.catchTags(reminderFailures, unexpectedFailure())),
     )
   }),
 )
