@@ -344,12 +344,23 @@ export const makeSyncKit = <E>(config: SyncKitConfig<E>) => {
    * The task service maps a `SqlError` from the tag unique index onto a field
    * validation error; every other service treats a batch failure as a defect
    * (`commitEntries`).
+   *
+   * A plan that filtered every entry out is a fully-applied replay, and it
+   * returns `planned.ids` without a batch or a second ledger read: `skipApplied`
+   * drops an id exactly when the ledger already records it, so the entries that
+   * remain are precisely the ones not yet applied — when none remain, every id
+   * in `planned.ids` is already applied.
    */
   const tryCommitEntries = (
     input: CommitInput,
   ): Effect.Effect<ReadonlySet<string>, E | SqlError.SqlError> =>
     Effect.gen(function* () {
       const planned = yield* plan(input)
+      // A batch whose entries the ledger already records (skipApplied) is a
+      // replay: the plan read already told us which ids are applied, and there
+      // is nothing to write, so skip both the empty batch and the second ledger
+      // read.
+      if (planned.entries.length === 0) return new Set(planned.ids)
       yield* sync.commit(statementsFor(input, planned.entries))
       return yield* appliedIds(input.householdId, planned.ids)
     })

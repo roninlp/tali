@@ -148,4 +148,45 @@ describe('sync write kit', () => {
     expect(result.hooked).toBe(false)
     expect(result.statements).toBe(3)
   })
+
+  it('a fully-applied replay performs no batch and one ledger read', async () => {
+    const h = makeHarness()
+
+    const result = await h.run(
+      Effect.gen(function* () {
+        const kit = yield* h.kitOf()
+        const state = kit.stateOf('note', h.note('خرید نان'))
+        const entries = [
+          { state, expectedVersion: null, clientMutationId: 'm-note' },
+        ]
+        yield* kit.commitEntries({
+          householdId: HOUSEHOLD,
+          now: NOW,
+          entries,
+          skipApplied: true,
+        })
+        const batchCalls = h.fake.batchCalls
+        const statementCalls = h.fake.statementCalls
+        const applied = yield* kit.commitEntries({
+          householdId: HOUSEHOLD,
+          now: NOW,
+          entries,
+          skipApplied: true,
+        })
+        return {
+          applied: [...applied],
+          batches: h.fake.batchCalls - batchCalls,
+          statements: h.fake.statementCalls - statementCalls,
+        }
+      }),
+    )
+
+    expect(result.applied).toEqual(['m-note'])
+    expect(result.batches).toBe(0)
+    // The plan's ledger read is the replay's whole budget: no empty batch, and
+    // no second read to re-learn what the plan already saw.
+    expect(result.statements).toBe(1)
+    expect(h.count('notes')).toBe(1)
+    expect(h.count('applied_mutations')).toBe(1)
+  })
 })
