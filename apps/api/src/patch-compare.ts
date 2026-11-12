@@ -12,7 +12,19 @@
  * new patch field is compared for free, because the patch is the list.
  */
 
-/** Deep, order-insensitive equality for the plain JSON-shaped values in a patch. */
+/**
+ * Deep, order-insensitive equality for the plain JSON-shaped values in a patch:
+ * primitives, arrays element-wise, structs by their union of keys.
+ *
+ * Deliberately not `Equal.equals`. Effect's structural equality counts an
+ * explicitly-`undefined` key as a distinct key, while this module's callers
+ * build `next` from the patch and must not mint a version for an in-process
+ * struct that merely spells a field as `undefined`. A patch decoded from JSON
+ * never carries `undefined`, so both comparators agree on the wire; keeping the
+ * comparison local keeps the in-process contract explicit.
+ *
+ * `test/patch-compare.test.ts` ("keeps null and undefined distinct") pins this.
+ */
 const sameValue = (a: unknown, b: unknown): boolean => {
   if (Object.is(a, b)) return true
   if (Array.isArray(a) || Array.isArray(b)) {
