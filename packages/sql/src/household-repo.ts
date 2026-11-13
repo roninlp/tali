@@ -32,7 +32,7 @@ export class HouseholdRepo extends Context.Service<HouseholdRepo>()(
         insert: base.insert,
         findByInviteCode,
         insertStatement,
-      } as const
+      }
     }),
   },
 ) {}
@@ -88,7 +88,7 @@ export class MembershipRepo extends Context.Service<MembershipRepo>()(
         findByUserId,
         insertStatement,
         insertIfRoom,
-      } as const
+      }
     }),
   },
 ) {}

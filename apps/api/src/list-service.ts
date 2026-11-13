@@ -1024,7 +1024,7 @@ export class ListService extends Context.Service<ListService>()('ListService', {
       setItemChecked,
       deleteItem,
       reorder,
-    } as const
+    }
   }),
 }) {}
 

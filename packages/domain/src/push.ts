@@ -41,12 +41,7 @@ import { NonEmptyString, PushSubscriptionId, UserId } from './common.js'
 export const MAX_PUSH_ENDPOINT_LENGTH = 2048
 
 const IPV4 = /^(?:\d{1,3}\.){3}\d{1,3}$/u
-const RESERVED_SUFFIXES = [
-  '.localhost',
-  '.local',
-  '.internal',
-  '.home.arpa',
-] as const
+const RESERVED_SUFFIXES = ['.localhost', '.local', '.internal', '.home.arpa']
 
 export const isSafePushEndpoint = (value: string): boolean => {
   if (value.length === 0 || value.length > MAX_PUSH_ENDPOINT_LENGTH)

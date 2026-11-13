@@ -74,7 +74,7 @@ export const viewerFromHeaders = (
       timeZone: preferences.timeZone,
       weekStart: preferences.weekStart,
       defaultCheckedPlacement: preferences.checkedItemPlacement,
-    } as const
+    }
   })
 
 /**

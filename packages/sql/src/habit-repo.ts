@@ -214,7 +214,7 @@ export class HabitRepo extends Context.Service<HabitRepo>()('HabitRepo', {
       insert,
       update,
       insertStatement,
-    } as const
+    }
   }),
 }) {}
 

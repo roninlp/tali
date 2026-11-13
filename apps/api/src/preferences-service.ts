@@ -51,7 +51,7 @@ export class PreferencesService extends Context.Service<PreferencesService>()(
           return yield* repo.upsert(next).pipe(Effect.orDie)
         })
 
-      return { get, update } as const
+      return { get, update }
     }),
   },
 ) {}

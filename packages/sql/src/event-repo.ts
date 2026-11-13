@@ -378,7 +378,7 @@ export class EventRepo extends Context.Service<EventRepo>()('EventRepo', {
       update,
       insertStatement,
       insertStatementGated,
-    } as const
+    }
   }),
 }) {}
 

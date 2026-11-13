@@ -823,7 +823,7 @@ const saveTaskPatch = (
   const next = updateEditor(withoutError(model), taskId, current =>
     modifyFields(current, {
       generation: () => generation,
-      saveState: () => 'saving' as const,
+      saveState: () => 'saving',
       hasPendingSave: () => true,
     }),
   )
@@ -847,7 +847,7 @@ const invalidateEditorSave = (model: Model, taskId: string): Model =>
   updateEditor(model, taskId, current =>
     modifyFields(current, {
       generation: () => current.generation + 1,
-      saveState: () => 'idle' as const,
+      saveState: () => 'idle',
       hasPendingSave: () => false,
     }),
   )
@@ -1769,7 +1769,7 @@ export const update = (
             taskId,
             current =>
               modifyFields(current, {
-                saveState: () => 'saved' as const,
+                saveState: () => 'saved',
                 hasPendingSave: () => false,
               }),
           )
@@ -1793,7 +1793,7 @@ export const update = (
         ? {
             model: updateEditor(model, taskId, current =>
               modifyFields(current, {
-                saveState: () => 'error' as const,
+                saveState: () => 'error',
                 hasPendingSave: () => false,
               }),
             ),
@@ -1809,7 +1809,7 @@ export const update = (
         editor.saveState === 'saved'
         ? {
             model: updateEditor(model, taskId, current =>
-              modifyFields(current, { saveState: () => 'idle' as const }),
+              modifyFields(current, { saveState: () => 'idle' }),
             ),
           }
         : { model }

@@ -74,7 +74,7 @@ export class ListRepo extends Context.Service<ListRepo>()('ListRepo', {
         rows => Option.fromUndefinedOr(rows[0]),
       )
 
-    return { findById, listVisible, insert, update } as const
+    return { findById, listVisible, insert, update }
   }),
 }) {}
 

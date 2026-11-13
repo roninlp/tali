@@ -189,7 +189,7 @@ describe('readScoped', () => {
       id: 'row-1',
       find: () => Effect.succeed(maybeRow),
       ...options,
-      onViolation: violation => ({ _tag: 'Denied', violation }) as const,
+      onViolation: violation => ({ _tag: 'Denied', violation }),
     })
 
   it('returns the row when the viewer may read it', async () => {
@@ -255,7 +255,7 @@ describe('readScoped', () => {
         viewer: owner,
         id: 'row-1',
         find: () => Effect.fail(new Error('db down')),
-        onViolation: violation => ({ _tag: 'Denied', violation }) as const,
+        onViolation: violation => ({ _tag: 'Denied', violation }),
       }),
     )
     expect(Exit.isFailure(exit)).toBe(true)

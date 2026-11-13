@@ -69,7 +69,7 @@ export class ListItemRepo extends Context.Service<ListItemRepo>()(
       `,
       })
 
-      return { findById, findAll, findAllForSync, insert, setChecked } as const
+      return { findById, findAll, findAllForSync, insert, setChecked }
     }),
   },
 ) {}

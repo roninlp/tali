@@ -47,7 +47,7 @@ export class SessionRepo extends Context.Service<SessionRepo>()('SessionRepo', {
       deleteByTokenHash,
       extend,
       insertStatement,
-    } as const
+    }
   }),
 }) {}
 

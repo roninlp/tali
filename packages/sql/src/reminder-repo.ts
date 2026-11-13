@@ -334,7 +334,7 @@ export class ReminderRepo extends Context.Service<ReminderRepo>()(
         listVisible,
         insert,
         update,
-      } as const
+      }
     }),
   },
 ) {}
@@ -758,7 +758,7 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
         claimInsertStatement,
         advanceFireAtStatement,
         advanceSuppressedStatement,
-      } as const
+      }
     }),
   },
 ) {}

@@ -154,7 +154,7 @@ export class TagRepo extends Context.Service<TagRepo>()('TagRepo', {
       attach,
       detach,
       detachAllForItem,
-    } as const
+    }
   }),
 }) {}
 

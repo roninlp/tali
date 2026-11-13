@@ -18,7 +18,7 @@ const task = (input: {
 }) => ({
   dueDate: input.dueDate ?? null,
   dueAt: input.dueAt ?? null,
-  status: input.status ?? ('todo' as const),
+  status: input.status ?? 'todo',
 })
 
 describe('task bucket bounds', () => {

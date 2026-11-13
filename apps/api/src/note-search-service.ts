@@ -62,7 +62,7 @@ export class NoteSearchService extends Context.Service<NoteSearchService>()(
           return { query: trimmed, hits }
         })
 
-      return { search } as const
+      return { search }
     }),
   },
 ) {}

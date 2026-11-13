@@ -472,7 +472,7 @@ export class CaptureService extends Context.Service<CaptureService>()(
           return capture
         })
 
-      return { dissect, commit, list, remove } as const
+      return { dissect, commit, list, remove }
     }),
   },
 ) {}

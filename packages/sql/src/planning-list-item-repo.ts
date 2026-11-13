@@ -193,7 +193,7 @@ export class PlanningListItemRepo extends Context.Service<PlanningListItemRepo>(
         update,
         detachTagsIfVersion,
         attachTagIfVersion,
-      } as const
+      }
     }),
   },
 ) {}

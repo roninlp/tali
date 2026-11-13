@@ -431,5 +431,5 @@ export const makeSyncKit = <E>(config: SyncKitConfig<E>) => {
     commitEntries,
     tryCommitEntries,
     commitOne,
-  } as const
+  }
 }

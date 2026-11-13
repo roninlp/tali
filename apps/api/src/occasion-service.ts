@@ -953,11 +953,11 @@ export class OccasionService extends Context.Service<OccasionService>()(
 
                 const task = new Task({
                   id: uuidV7() as TaskId,
-                  type: 'task' as const,
+                  type: 'task',
                   title,
                   description: null,
-                  status: 'todo' as const,
-                  priority: 'medium' as const,
+                  status: 'todo',
+                  priority: 'medium',
                   dueAt: null,
                   dueDate,
                   timeZone: current.timeZone,
@@ -1061,7 +1061,7 @@ export class OccasionService extends Context.Service<OccasionService>()(
         materialiseForHousehold,
         materialiseDue,
         prepareTask,
-      } as const
+      }
     }),
   },
 ) {}

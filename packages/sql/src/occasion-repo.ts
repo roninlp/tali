@@ -161,7 +161,7 @@ export class OccasionRepo extends Context.Service<OccasionRepo>()(
         listVisible,
         listByHousehold,
         listAdvanceReminderSources,
-      } as const
+      }
     }),
   },
 ) {}

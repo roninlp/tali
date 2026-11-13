@@ -49,7 +49,7 @@ const HOUSEHOLD = uuidV7()
 const OTHER_HOUSEHOLD = uuidV7()
 const EMPTY_HOUSEHOLD = uuidV7()
 
-const REORDERED = ['notes', 'tasks', 'events', 'reminders', 'habits'] as const
+const REORDERED = ['notes', 'tasks', 'events', 'reminders', 'habits']
 
 interface Harness {
   readonly db: DatabaseSync

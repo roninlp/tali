@@ -817,7 +817,7 @@ export class HabitService extends Context.Service<HabitService>()(
         list,
         logEntry,
         entries: entriesInRange,
-      } as const
+      }
     }),
   },
 ) {}

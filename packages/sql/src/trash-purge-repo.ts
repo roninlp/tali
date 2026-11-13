@@ -290,7 +290,7 @@ export class TrashPurgeRepo extends Context.Service<TrashPurgeRepo>()(
           return { at: now, cutoff, purged, entities, statements, capped }
         })
 
-      return { purge } as const
+      return { purge }
     }),
   },
 ) {}

@@ -40,7 +40,7 @@ export class UserRepo extends Context.Service<UserRepo>()('UserRepo', {
       findById: base.findById,
       findByEmail,
       insertStatement,
-    } as const
+    }
   }),
 }) {}
 

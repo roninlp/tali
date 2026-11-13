@@ -26,7 +26,7 @@ const redactLinks = (
   }))
 
 class RedactedSpan implements Tracer.Span {
-  readonly _tag = 'Span' as const
+  readonly _tag = 'Span'
 
   constructor(private readonly inner: Tracer.Span) {}
 

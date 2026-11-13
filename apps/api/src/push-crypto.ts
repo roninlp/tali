@@ -31,8 +31,8 @@ export class PushCryptoError extends Schema.TaggedError<PushCryptoError>()(
   { cause: Schema.Defect() },
 ) {}
 
-const P256 = { name: 'ECDH', namedCurve: 'P-256' } as const
-const AES_GCM = { name: 'AES-GCM', length: 128 } as const
+const P256 = { name: 'ECDH', namedCurve: 'P-256' }
+const AES_GCM = { name: 'AES-GCM', length: 128 }
 const ECDH_BITS = 256
 /** RFC 8188: the last (here: only) record's padding delimiter. */
 const LAST_RECORD_DELIMITER = 0x02

@@ -134,7 +134,7 @@ const makeDraftTool = <D extends CaptureDraft>(
           ),
         )
         yield* Ref.update(collector, drafts => [...drafts, draft])
-        return { accepted: true as const }
+        return { accepted: true }
       }),
   )
 
@@ -194,5 +194,5 @@ export const makeDraftTools = (
     decode: decodeDraft(ReminderDraft, 'reminder', text),
   })
 
-  return [task, event, note, habit, reminder] as const
+  return [task, event, note, habit, reminder]
 }

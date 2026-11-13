@@ -228,8 +228,8 @@ export const overlayEventSources = (input: {
   readonly overlayIds: ReadonlySet<string>
   readonly deletedIds?: ReadonlySet<string>
 }): ReadonlyArray<CalendarEventSource> => {
-  const byId = new Map(input.base.map(event => [event.id, event] as const))
-  const mirrorById = new Map(input.mirror.map(row => [row.id, row] as const))
+  const byId = new Map(input.base.map(event => [event.id, event]))
+  const mirrorById = new Map(input.mirror.map(row => [row.id, row]))
 
   for (const id of input.overlayIds) {
     if (input.deletedIds?.has(id) === true) {
