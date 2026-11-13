@@ -3,7 +3,7 @@ import { Effect, Layer } from 'effect'
 import { RpcClient, RpcGroup } from 'effect/rpc'
 import * as RpcTest from 'effect/rpc/RpcTest'
 import { ApiRpcs } from '@tali/rpc'
-import { habitLogWindow, localDateIn, uuidV7 } from '@tali/domain'
+import { type HabitId, habitLogWindow, localDateIn, uuidV7 } from '@tali/domain'
 import { AuthServiceLive } from '../src/auth-service.js'
 import { HabitServiceLive } from '../src/habit-service.js'
 import { PreferencesServiceLive } from '../src/preferences-service.js'
@@ -82,7 +82,7 @@ const makeHarness = async () => {
 describe('Habit RPC round-trip', () => {
   it('creates, edits, deletes and restores a habit over the derived client', async () => {
     const h = await makeHarness()
-    const id = uuidV7()
+    const id = uuidV7() as HabitId
 
     const result = await h.withClient(TOKEN_A, client =>
       Effect.gen(function* () {
@@ -184,7 +184,7 @@ describe('Habit RPC round-trip', () => {
 
   it('logs a day, cycles the status in place, and reads the range (#64)', async () => {
     const h = await makeHarness()
-    const habitId = uuidV7()
+    const habitId = uuidV7() as HabitId
 
     const today = localDateIn(new Date().toISOString(), 'Asia/Tehran')
     const window = habitLogWindow(today)

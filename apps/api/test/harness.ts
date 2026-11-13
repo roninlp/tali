@@ -1,8 +1,10 @@
+import { strict as assert } from 'node:assert'
 import { readFileSync, readdirSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { URL, fileURLToPath } from 'node:url'
 import { Effect, Layer, String as Str, type Context } from 'effect'
 import { D1Client } from '@effect/sql-d1'
+import type { SyncPushResponse, SyncPushResult } from '@tali/domain'
 import { SyncService } from '../src/sync-service.js'
 import { FakeD1 } from './fake-d1.js'
 
@@ -167,4 +169,26 @@ export const makeServiceHarness = <
     ): Promise<A> =>
       harness.run(SyncService.use(f) as Effect.Effect<A, E, Services>),
   }
+}
+
+/**
+ * One push result with `rejected` ruled out.
+ *
+ * A suite still asserts the tag it wants next (`expect(result._tag).toBe(
+ * 'conflict')`), but `expect` cannot narrow a union and `rejected` is the only
+ * outcome without `seq`/`item`. Ruling it out here keeps that assertion
+ * readable and the field reads typed; a rejected entry throws its code.
+ */
+export const nonRejected = (
+  response: SyncPushResponse,
+  index = 0,
+): Exclude<SyncPushResult, { readonly _tag: 'rejected' }> => {
+  const result = response.results[index]
+  assert(result !== undefined, `no push result at ${index}`)
+  if (result._tag === 'rejected') {
+    throw new Error(
+      `push result ${index} was rejected (${result.code}): ${result.message}`,
+    )
+  }
+  return result
 }

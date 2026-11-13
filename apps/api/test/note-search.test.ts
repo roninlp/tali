@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Layer } from 'effect'
+import { Effect, Layer } from 'effect'
 import {
   uuidV7,
   type HouseholdId,
@@ -35,7 +35,7 @@ import {
  */
 
 /** The editor's fallback doc: paragraphs of plain text inside the JSON column. */
-const doc = (text: string): unknown => ({
+const doc = (text: string) => ({
   type: 'doc',
   content: [
     {
@@ -44,6 +44,11 @@ const doc = (text: string): unknown => ({
     },
   ],
 })
+
+/** One search response, as `NoteSearchService.search` yields it. */
+type SearchResult = Effect.Success<
+  ReturnType<Effect.Success<typeof NoteSearchService>['search']>
+>
 
 const serviceLayer = ({ d1 }: HarnessEnv) =>
   Layer.mergeAll(NoteServiceLive, NoteSearchServiceLive, SyncServiceLive).pipe(
@@ -60,7 +65,7 @@ const makeHarness = () => {
     query: string,
     userId: UserId = USER_A,
     householdId: HouseholdId = HOUSEHOLD,
-  ): Promise<Awaited<ReturnType<NoteSearchService['search']>>> =>
+  ): Promise<SearchResult> =>
     noteSearch(service => service.search({ userId, householdId }, query))
 
   const push = (
@@ -101,9 +106,9 @@ const makeHarness = () => {
     )
 
   const indexRows = (): ReadonlyArray<{ noteId: string }> =>
-    harness.db
-      .prepare('SELECT note_id AS noteId FROM notes_fts')
-      .all() as ReadonlyArray<{ readonly noteId: string }>
+    harness.db.prepare('SELECT note_id AS noteId FROM notes_fts').all() as {
+      readonly noteId: string
+    }[]
 
   return { ...harness, notes, search, push, pushNote, indexRows }
 }

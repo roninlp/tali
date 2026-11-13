@@ -1,4 +1,4 @@
 {
   "extends": "@tali/tsconfig/worker.json",
-  "include": ["src", "test/boundary"]
+  "include": ["src", "test"]
 }

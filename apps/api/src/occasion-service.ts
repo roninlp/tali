@@ -54,7 +54,7 @@ import {
   TaskRepoLive,
 } from '@tali/sql'
 import { readScoped } from './row-scope.js'
-import { casUpdate, MAX_CAS_ATTEMPTS } from './cas.js'
+import { casUpdate } from './cas.js'
 import { makeSyncKit } from './sync-write.js'
 import { ReminderService, ReminderServiceLive } from './reminder-service.js'
 import { unchangedExcept } from './patch-compare.js'
@@ -881,146 +881,172 @@ export class OccasionService extends Context.Service<OccasionService>()(
           const replayed = yield* replayPreparation(viewer, input)
           if (Option.isSome(replayed)) return replayed.value
 
-          // Not `casUpdate`: the settled branch returns the live linked task
-          // *and* the occasion, but a null plan can only return that row. The
-          // pair would need a nullable placeholder plus a non-null assertion,
-          // so the loop stays, bounded by the shared `MAX_CAS_ATTEMPTS`.
-          for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-            const current = yield* readOccasion(viewer, input.id, false)
+          return yield* casUpdate<
+            Occasion,
+            OccasionServiceError,
+            OccasionPreparationShape
+          >({
+            read: readOccasion(viewer, input.id, false),
 
-            // A live preparation task is the idempotent answer to a second tap.
-            if (current.preparationTaskId !== null) {
-              const linked = yield* tasks
-                .findById(current.preparationTaskId)
-                .pipe(Effect.orDie)
-              if (Option.isSome(linked) && linked.value.deletedAt === null) {
-                return { occasion: current, task: linked.value, created: false }
-              }
-            }
+            // A live preparation task is the idempotent answer to a second tap:
+            // it finishes the attempt without writing anything.
+            settled: current =>
+              Effect.gen(function* () {
+                if (current.preparationTaskId === null) return Option.none()
+                const linked = yield* tasks
+                  .findById(current.preparationTaskId)
+                  .pipe(Effect.orDie)
+                if (Option.isNone(linked) || linked.value.deletedAt !== null) {
+                  return Option.none()
+                }
+                return Option.some({
+                  occasion: current,
+                  task: linked.value,
+                  created: false,
+                })
+              }),
 
-            const occurrenceDate =
-              input.occurrenceDate ??
-              nextOccasionOccurrence(current, todayOf(viewer, now))?.date
-            if (occurrenceDate === undefined) {
-              return yield* invalid(
-                'occurrenceDate',
-                'this occasion has no upcoming occurrence to prepare for',
-              )
-            }
-            if (!validLocalDate(occurrenceDate)) {
-              return yield* invalid(
-                'occurrenceDate',
-                'the occurrence must be a real calendar date',
-              )
-            }
-            if (!isOccasionOccurrence(current, occurrenceDate)) {
-              return yield* invalid(
-                'occurrenceDate',
-                'the preparation date is not an occurrence of this occasion',
-              )
-            }
+            plan: current =>
+              Effect.gen(function* () {
+                const occurrenceDate =
+                  input.occurrenceDate ??
+                  nextOccasionOccurrence(current, todayOf(viewer, now))?.date
+                if (occurrenceDate === undefined) {
+                  return yield* invalid(
+                    'occurrenceDate',
+                    'this occasion has no upcoming occurrence to prepare for',
+                  )
+                }
+                if (!validLocalDate(occurrenceDate)) {
+                  return yield* invalid(
+                    'occurrenceDate',
+                    'the occurrence must be a real calendar date',
+                  )
+                }
+                if (!isOccasionOccurrence(current, occurrenceDate)) {
+                  return yield* invalid(
+                    'occurrenceDate',
+                    'the preparation date is not an occurrence of this occasion',
+                  )
+                }
 
-            const dueDate =
-              input.dueDate ??
-              occasionAdvanceReminderDate(current, occurrenceDate) ??
-              (occurrenceDate as LocalDate)
-            if (!validLocalDate(dueDate)) {
-              return yield* invalid(
-                'dueDate',
-                'the task due date must be a real calendar date',
-              )
-            }
+                const dueDate =
+                  input.dueDate ??
+                  occasionAdvanceReminderDate(current, occurrenceDate) ??
+                  (occurrenceDate as LocalDate)
+                if (!validLocalDate(dueDate)) {
+                  return yield* invalid(
+                    'dueDate',
+                    'the task due date must be a real calendar date',
+                  )
+                }
 
-            const title = (
-              input.title ?? occasionPreparationTaskTitle(current.title)
-            ).trim()
-            if (title === '') {
-              return yield* invalid('title', 'a preparation task needs a title')
-            }
+                const title = (
+                  input.title ?? occasionPreparationTaskTitle(current.title)
+                ).trim()
+                if (title === '') {
+                  return yield* invalid(
+                    'title',
+                    'a preparation task needs a title',
+                  )
+                }
 
-            const task = new Task({
-              id: uuidV7() as TaskId,
-              type: 'task' as const,
-              title,
-              description: null,
-              status: 'todo' as const,
-              priority: 'medium' as const,
-              dueAt: null,
-              dueDate,
-              timeZone: current.timeZone,
-              projectId: null,
-              tagIds: [],
-              color: current.color,
-              recurrence: null,
-              recurrenceMode: null,
-              startedAt: null,
-              completedAt: null,
-              ownerId: viewer.userId,
-              householdId: viewer.householdId,
-              visibility: current.visibility,
-              createdAt: now,
-              updatedAt: now,
-              version: 1,
-              deletedAt: null,
-            })
-            const next = new Occasion({
-              ...current,
-              preparationTaskId: task.id,
-              version: current.version + 1,
-              updatedAt: now,
-            })
+                const task = new Task({
+                  id: uuidV7() as TaskId,
+                  type: 'task' as const,
+                  title,
+                  description: null,
+                  status: 'todo' as const,
+                  priority: 'medium' as const,
+                  dueAt: null,
+                  dueDate,
+                  timeZone: current.timeZone,
+                  projectId: null,
+                  tagIds: [],
+                  color: current.color,
+                  recurrence: null,
+                  recurrenceMode: null,
+                  startedAt: null,
+                  completedAt: null,
+                  ownerId: viewer.userId,
+                  householdId: viewer.householdId,
+                  visibility: current.visibility,
+                  createdAt: now,
+                  updatedAt: now,
+                  version: 1,
+                  deletedAt: null,
+                })
+                const next = new Occasion({
+                  ...current,
+                  preparationTaskId: task.id,
+                  version: current.version + 1,
+                  updatedAt: now,
+                })
 
-            // The replay guard above already returned the ledger's task. Reaching
-            // here with the mutation recorded means that task was hard-purged;
-            // refuse rather than replacing a recorded mutation with a new row.
-            const prior = yield* appliedMutation(viewer, input.clientMutationId)
-            if (Option.isSome(prior)) {
-              if (kit.reusedMutationId(prior.value, { entityType: 'task' })) {
-                return yield* kit.reusedMutationIdError(prior.value.entityId)
-              }
-              return yield* invalid(
-                'clientMutationId',
-                'this mutation already prepared a task that no longer exists',
-              )
-            }
+                // The replay guard above already returned the ledger's task.
+                // Reaching here with the mutation recorded means that task was
+                // hard-purged; refuse rather than replacing a recorded
+                // mutation with a new row.
+                const prior = yield* appliedMutation(
+                  viewer,
+                  input.clientMutationId,
+                )
+                if (Option.isSome(prior)) {
+                  if (
+                    kit.reusedMutationId(prior.value, { entityType: 'task' })
+                  ) {
+                    return yield* kit.reusedMutationIdError(
+                      prior.value.entityId,
+                    )
+                  }
+                  return yield* invalid(
+                    'clientMutationId',
+                    'this mutation already prepared a task that no longer exists',
+                  )
+                }
+
+                return { occasion: next, task, created: true }
+              }),
 
             // One batch: the occasion CAS that links the new task, then the
             // task insert gated on the occasion reaching exactly the
             // version/link this batch wrote. A lost CAS inserts nothing. The
             // mutation's ledger row names the task, not the linking occasion.
-            const applied = yield* kit.commitEntries({
-              householdId: viewer.householdId,
-              now,
-              entries: [
-                {
-                  state: occasionState(next),
-                  expectedVersion: current.version,
-                  ledger: 'none',
-                },
-                {
-                  state: kit.stateOf('task', task),
-                  expectedVersion: null,
-                  clientMutationId: input.clientMutationId,
-                  insert: () =>
-                    tasks.insertStatementGated(
-                      task,
-                      sql`EXISTS (
+            write: (current, next) =>
+              kit
+                .commitEntries({
+                  householdId: viewer.householdId,
+                  now,
+                  entries: [
+                    {
+                      state: occasionState(next.occasion),
+                      expectedVersion: current.version,
+                      ledger: 'none',
+                    },
+                    {
+                      state: kit.stateOf('task', next.task),
+                      expectedVersion: null,
+                      clientMutationId: input.clientMutationId,
+                      insert: () =>
+                        tasks.insertStatementGated(
+                          next.task,
+                          sql`EXISTS (
                 SELECT 1 FROM occasions
-                WHERE id = ${next.id}
-                  AND version = ${next.version}
-                  AND preparation_task_id = ${task.id}
+                WHERE id = ${next.occasion.id}
+                  AND version = ${next.occasion.version}
+                  AND preparation_task_id = ${next.task.id}
                   AND deleted_at IS NULL
               )`,
-                    ),
-                },
-              ],
-            })
-            if (applied.has(input.clientMutationId)) {
-              return { occasion: next, task, created: true }
-            }
-            // The CAS lost: re-read and try again with a fresh occurrence/task.
-          }
-          return yield* new OccasionConflict({ id: input.id })
+                        ),
+                    },
+                  ],
+                })
+                .pipe(
+                  Effect.map(applied => applied.has(input.clientMutationId)),
+                ),
+
+            conflict: () => new OccasionConflict({ id: input.id }),
+          })
         })
 
       return {

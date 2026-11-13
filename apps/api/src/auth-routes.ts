@@ -11,12 +11,7 @@ import {
   Unauthorized,
 } from '@tali/domain'
 import { AuthService } from './auth-service'
-import {
-  fail,
-  json,
-  SESSION_COOKIE,
-  unexpectedFailure,
-} from './http-envelope'
+import { fail, json, SESSION_COOKIE, unexpectedFailure } from './http-envelope'
 
 /**
  * Auth & household endpoints (Slice 1 / ticket #15, shell in #16).

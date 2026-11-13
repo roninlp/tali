@@ -34,6 +34,19 @@ const daily = (overrides: Partial<RecurrenceRule> = {}): RecurrenceRule => ({
 const serviceLayer = ({ d1 }: HarnessEnv) =>
   Layer.mergeAll(TaskServiceLive, SyncServiceLive).pipe(Layer.provide(d1))
 
+/**
+ * The child-task columns this suite probes. `SELECT *` returns every column,
+ * but only these are read back; typing them keeps `child.id` usable as a
+ * statement parameter.
+ */
+type ChildTaskRow = {
+  readonly id: string
+  readonly project_id: string
+  readonly due_date: string
+  readonly tag_ids: string
+  readonly recurrence: string
+}
+
 const makeHarness = () => {
   const harness = makeServiceHarness(serviceLayer, TaskService)
 
@@ -60,14 +73,12 @@ const makeHarness = () => {
         .get(parentId) as { readonly n: number }
     ).n
 
-  const childrenOf = (
-    parentId: string,
-  ): ReadonlyArray<Record<string, unknown>> =>
+  const childrenOf = (parentId: string): ReadonlyArray<ChildTaskRow> =>
     harness.db
       .prepare(
         'SELECT * FROM tasks WHERE recurrence_parent_id = ? ORDER BY created_at',
       )
-      .all(parentId) as ReadonlyArray<Record<string, unknown>>
+      .all(parentId) as ChildTaskRow[]
 
   return {
     ...harness,
@@ -204,7 +215,7 @@ describe('recurring task completion: onDueDate', () => {
       .prepare(
         "SELECT tag_id AS tagId FROM item_tags WHERE item_id = ? AND item_type = 'task'",
       )
-      .all(child!.id) as ReadonlyArray<{ readonly tagId: string }>
+      .all(child!.id) as { readonly tagId: string }[]
     expect(joined.map(row => row.tagId)).toEqual([tag.id])
   })
 
@@ -846,7 +857,7 @@ describe("recurring completion through /sync/push (the app's offline path)", () 
       .prepare(
         "SELECT tag_id AS tagId FROM item_tags WHERE item_id = ? AND item_type = 'task'",
       )
-      .all(child!.id) as ReadonlyArray<{ readonly tagId: string }>
+      .all(child!.id) as { readonly tagId: string }[]
     expect(joins.map(row => row.tagId)).toEqual([tagId])
   })
 

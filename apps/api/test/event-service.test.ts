@@ -108,10 +108,10 @@ describe('EventService', () => {
       .prepare(
         'SELECT entity_type AS entityType, entity_id AS entityId FROM applied_mutations',
       )
-      .all() as ReadonlyArray<{
+      .all() as {
       readonly entityType: string
       readonly entityId: string
-    }>
+    }[]
     expect(ledger).toEqual([{ entityType: 'event', entityId: id }])
   })
 
@@ -273,7 +273,7 @@ describe('EventService', () => {
 
     const feed = h.db
       .prepare('SELECT op FROM change_feed WHERE entity_id = ? ORDER BY seq')
-      .all(id) as ReadonlyArray<{ readonly op: string }>
+      .all(id) as { readonly op: string }[]
     expect(feed.map(row => row.op)).toEqual(['upsert', 'delete'])
 
     // A deleted event reads as gone.

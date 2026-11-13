@@ -5,6 +5,7 @@ import {
   defaultPreferences,
   Unauthorized,
   UserPreferences,
+  type Email,
   type HouseholdId,
   type PreferenceDefaults,
   type SessionContext,
@@ -40,7 +41,7 @@ const NOW = '2026-10-20T09:30:00.000Z'
 const CONTEXT: SessionContext = {
   user: {
     id: USER_ID,
-    email: 'a@example.com',
+    email: 'a@example.com' as Email,
     displayName: 'A',
     // Deliberately not the Persian-first defaults, so a fallback is visible.
     timeZone: 'Europe/Berlin',
