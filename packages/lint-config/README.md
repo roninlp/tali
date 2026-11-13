@@ -1,57 +1,34 @@
 # @tali/lint-config
 
-Shared Oxlint configuration for the workspace. The root `vite.config.ts` `lint`
-block extends the generated `.oxlintrc.ts`, which extends the base preset, so
-`vp lint` and `vp check` apply it to every package. Packages add a local
-`.oxlintrc.json` only when they need overrides; `apps/web-foldkit` is the
-current example.
+Shared Oxlint JS plugins and the typed Effect lint preset for the workspace.
 
-## Presets
+## Where the config lives
 
-- `@tali/lint-config/oxlint/base` — required baseline: Oxlint's default
-  correctness rules, `no-unused-vars` with the workspace's ignore patterns, and
-  `typescript/no-explicit-any`.
-- `@tali/lint-config/oxlint/strict` — opt-in generic anti-slop rules, including
-  the native `oxc/no-accumulating-spread` companion. Extend base first.
-- `@tali/lint-config/oxlint/effect` — opt-in anti-slop rules for Effect
-  tagged values and service construction. Extend base and strict first.
+- **Main lint config:** the root `vite.config.ts` `lint` block. It owns the base
+  rules, ignore patterns, the `vite-plus` plugin, and the `apps/web-foldkit`
+  override that applies the strict anti-slop, Effect, and Foldkit rule sets.
+  There is no `.oxlintrc.json` in the workspace.
+- **Typed Effect pass:** `oxlint/effect-typed.ts`. Oxlint's `typeAware` option is
+  root-level, so this pass cannot live in the shared `lint` block: only
+  `apps/web-foldkit/src` needs the type-aware `effecttsgo` plugin that
+  `effect-tsgo patch --oxlint` installs. `pnpm lint:effect` runs it.
 
-`vp migrate` generated `.oxlintrc.ts` and `oxlint/base.ts` from their JSON
-counterparts. The JSON files remain the shared source for nested configs that
-have not migrated yet; keep `base.json` and `base.ts` in sync until those
-consumers migrate too. A package config uses a relative path to the root
-config, then adds its local presets:
+## Plugins
 
-```json
-{
-  "extends": [
-    "../../.oxlintrc.json",
-    "./node_modules/@tali/lint-config/oxlint/strict.json"
-  ]
-}
-```
+- `anti-slop/index.ts` registers the generic anti-slop rules.
+- `anti-slop/effect/index.ts` registers the Effect service/tagged-value rules.
 
-`apps/web-foldkit` also extends the Foldkit recommended config and keeps its
-local `sort-imports` and `typescript/consistent-type-assertions` rules.
+The root config loads both by relative path for `apps/web-foldkit` files. The
+vendored rule source and its provenance live in `anti-slop/`.
 
-## Root tasks
-
-Oxlint and Oxfmt run once from the repository root through Vite+. The root
-`package.json` owns `lint`, `lint:fix`, `format`, `format:fix`, `quality`, and
-`quality:fix`. Packages do not repeat those scripts.
-
-The root `vite.config.ts` holds the shared `lint` and `fmt` blocks, merged from
-the former `.oxlintrc.json` and `.oxfmtrc.jsonc`. Package-specific format
-options use `fmt.overrides`; `apps/web-foldkit` uses that for import sorting.
-`apps/web-foldkit` keeps its nested `.oxlintrc.json` for the strict, Effect,
-and Foldkit presets until that shared config can be merged manually.
+`@oxlint/plugins` is pinned to the Oxlint version bundled by Vite+ (1.93.0), so
+the plugin authoring API matches the linter.
 
 ## Adoption
 
-1. Keep the base preset green. New base findings are fixed before merge.
-2. Add `strict` to a package's local config only when its existing findings are
-   resolved or explicitly tracked.
-3. Add `effect` when the package owns Effect tagged values or services.
-4. Run `pnpm quality`; CI runs the same command.
-
-The vendored anti-slop source and its provenance live in `anti-slop/`.
+1. The base rules apply to every package. New base findings are fixed before
+   merge.
+2. Strict, Effect, and Foldkit rules currently apply to `apps/web-foldkit/src`.
+   To adopt them in another package, add a `lint.overrides` entry in the root
+   `vite.config.ts` with that package's files and the same rule blocks.
+3. Run `pnpm lint` or `pnpm quality`; CI runs the same commands.

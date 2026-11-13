@@ -28,7 +28,7 @@ The root `prepare` script patches the workspace TypeScript install with `@effect
 
 - Read Effect diagnostics without an editor: `pnpm exec effect-tsgo diagnostics --project <tsconfig> --format json` (`--file <path>` for one file).
 - `@effect/tsgo` is pinned exactly in the catalog: each release is built against one TypeScript and one Oxlint version. Bump it together with `typescript` / `oxlint`.
-- Effect lint rules are separate and stay with Oxlint: `apps/web-foldkit/.oxlintrc.effect.json`, run by `pnpm --filter @tali/web-foldkit lint:effect`.
+- Effect lint rules are separate and stay with Oxlint: `packages/lint-config/oxlint/effect-typed.ts`, run by `pnpm lint:effect`.
 
 ## Agent skills
 

@@ -83,4 +83,3 @@ export default defineConfig({
     },
   },
 })
-// vp migrate: pending .oxlintrc.json.

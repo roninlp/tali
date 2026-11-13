@@ -89,9 +89,9 @@ completions and refactors.
   and keep this the only TypeScript server in the workspace. Other editors
   should run their TypeScript LSP from the same workspace compiler
   (`node_modules/typescript/bin`).
-- Effect *linting* stays with Oxlint: `apps/web-foldkit/.oxlintrc.effect.json`
-  is the curated rule set that gates `pnpm lint`. The LSP reports the broader
-  set in the editor.
+- Effect *linting* stays with Oxlint: `packages/lint-config/oxlint/effect-typed.ts`
+  is the curated rule set that gates `pnpm lint:effect`. The LSP reports the
+  broader set in the editor.
 - Check a project or file without an editor:
 
   ```sh
