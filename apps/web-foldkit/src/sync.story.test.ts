@@ -1,7 +1,7 @@
 import { Option } from 'effect'
 import { Command, given, message, model, story } from 'foldkit/story'
 import { modifyFields } from 'foldkit/struct'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'vite-plus/test'
 
 import { emptyMirrorSnapshot } from './mirror'
 import * as Sync from './sync'

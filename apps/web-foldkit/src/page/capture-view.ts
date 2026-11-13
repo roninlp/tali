@@ -1122,20 +1122,18 @@ const resultView = (
               ),
           h.div(
             [h.Class('flex flex-wrap gap-2')],
-            [
-              ...result.created.map(row =>
-                h.keyed('a')(
-                  row.id,
-                  [
-                    h.Href(routeForRow(row)),
-                    h.Class(
-                      'badge badge-outline badge-lg min-w-0 max-w-full truncate text-[0.72rem] no-underline',
-                    ),
-                  ],
-                  [row.title],
-                ),
+            result.created.map(row =>
+              h.keyed('a')(
+                row.id,
+                [
+                  h.Href(routeForRow(row)),
+                  h.Class(
+                    'badge badge-outline badge-lg min-w-0 max-w-full truncate text-[0.72rem] no-underline',
+                  ),
+                ],
+                [row.title],
               ),
-            ],
+            ),
           ),
           h.div(
             [h.Class('flex flex-wrap gap-2')],

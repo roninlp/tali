@@ -17,7 +17,7 @@ import {
   withViewInputs,
 } from 'foldkit/scene'
 import { modifyFields } from 'foldkit/struct'
-import { expect as assert, describe, test } from 'vitest'
+import { expect as assert, describe, test } from 'vite-plus/test'
 
 import { emptyMirrorSnapshot } from '../mirror'
 import { DISPLAY, TODAY_NOW } from '../test-fixtures'

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { Layer } from 'effect'
 import { type ReminderId, uuidV7 } from '@tali/domain'
 import { ReminderDispatchRepoLive } from '@tali/sql'

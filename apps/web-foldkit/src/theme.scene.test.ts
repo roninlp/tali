@@ -1,5 +1,5 @@
 import { Command, click, expect, given, role, scene } from 'foldkit/scene'
-import { describe, test } from 'vitest'
+import { describe, test } from 'vite-plus/test'
 
 import { RadioGroup } from '@foldkit/ui'
 

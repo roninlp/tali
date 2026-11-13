@@ -103,5 +103,5 @@ npx create-foldkit-app@latest \
   --package-manager pnpm
 ```
 
-Foldkit 0.170.0 / Effect 4.1.0, then adapted to the Tali pnpm + Turbo workspace
+Foldkit 0.170.0 / Effect 4.1.0, then adapted to the Tali pnpm + Vite Task workspace
 (package name, pinned dev port, no nested lockfile or workspace file).

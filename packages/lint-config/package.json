@@ -9,6 +9,6 @@
     "./oxlint/effect": "./oxlint/effect.json"
   },
   "dependencies": {
-    "@oxlint/plugins": "1.85.0"
+    "@oxlint/plugins": "1.93.0"
   }
 }

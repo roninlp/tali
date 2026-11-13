@@ -3,7 +3,7 @@ import { UrlRequest } from 'foldkit/navigation'
 import { Command, given, message, model, story } from 'foldkit/story'
 import { modifyFields } from 'foldkit/struct'
 import { fromString, toString as urlToString } from 'foldkit/url'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'vite-plus/test'
 
 import { Dialog } from '@foldkit/ui'
 import { ListId, NoteId } from '@tali/domain'

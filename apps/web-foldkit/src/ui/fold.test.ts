@@ -1,7 +1,7 @@
 import { Option, Schema } from 'effect'
 import { Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'vite-plus/test'
 
 import { Listbox } from '@foldkit/ui'
 

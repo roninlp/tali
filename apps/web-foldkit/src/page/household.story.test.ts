@@ -9,7 +9,7 @@ import {
   story,
 } from 'foldkit/story'
 import { modifyFields } from 'foldkit/struct'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'vite-plus/test'
 
 import { InviteCode } from '@tali/domain'
 

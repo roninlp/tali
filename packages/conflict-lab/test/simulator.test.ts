@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers'
 import fc from 'fast-check'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { uuidV7 } from '@tali/domain'
 import {
   assertAcknowledgements,
@@ -38,7 +38,7 @@ import {
  */
 
 /**
- * Injected by `vitest.config.ts` (workerd cannot read `process.env`). The
+ * Injected by `vite.config.ts` (workerd cannot read `process.env`). The
  * mode test below fails if the injection stops tracking the CLI flag.
  */
 const NUM_RUNS = LAB_MODE.numRuns

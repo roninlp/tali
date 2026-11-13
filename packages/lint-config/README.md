@@ -1,9 +1,10 @@
 # @tali/lint-config
 
-Shared Oxlint configuration for the workspace. The root `.oxlintrc.json`
-extends the base preset, and Oxlint's nested-config resolution applies it to
-every package. Packages add a local `.oxlintrc.json` only when they need
-overrides; `apps/web-foldkit` is the current example.
+Shared Oxlint configuration for the workspace. The root `vite.config.ts` `lint`
+block extends the generated `.oxlintrc.ts`, which extends the base preset, so
+`vp lint` and `vp check` apply it to every package. Packages add a local
+`.oxlintrc.json` only when they need overrides; `apps/web-foldkit` is the
+current example.
 
 ## Presets
 
@@ -15,17 +16,11 @@ overrides; `apps/web-foldkit` is the current example.
 - `@tali/lint-config/oxlint/effect` — opt-in anti-slop rules for Effect
   tagged values and service construction. Extend base and strict first.
 
-The root config uses the linked dependency path because `.oxlintrc.json` does
-not support package specifiers:
-
-```json
-{
-  "extends": ["./node_modules/@tali/lint-config/oxlint/base.json"]
-}
-```
-
-A package config uses a relative path to the root config, then adds its local
-presets:
+`vp migrate` generated `.oxlintrc.ts` and `oxlint/base.ts` from their JSON
+counterparts. The JSON files remain the shared source for nested configs that
+have not migrated yet; keep `base.json` and `base.ts` in sync until those
+consumers migrate too. A package config uses a relative path to the root
+config, then adds its local presets:
 
 ```json
 {
@@ -41,13 +36,15 @@ local `sort-imports` and `typescript/consistent-type-assertions` rules.
 
 ## Root tasks
 
-Oxlint and Oxfmt run once from the repository root, following the Turborepo
-Oxc guide. The root `package.json` owns `lint`, `lint:fix`, `format`, and
-`format:fix`; `turbo.json` registers `//#lint`, `//#format`, `//#quality`, and
-their fix variants. Packages do not repeat those scripts.
+Oxlint and Oxfmt run once from the repository root through Vite+. The root
+`package.json` owns `lint`, `lint:fix`, `format`, `format:fix`, `quality`, and
+`quality:fix`. Packages do not repeat those scripts.
 
-The formatter has one root `.oxfmtrc.jsonc`; package-specific format options
-use its `overrides` array. `apps/web-foldkit` uses that for import sorting.
+The root `vite.config.ts` holds the shared `lint` and `fmt` blocks, merged from
+the former `.oxlintrc.json` and `.oxfmtrc.jsonc`. Package-specific format
+options use `fmt.overrides`; `apps/web-foldkit` uses that for import sorting.
+`apps/web-foldkit` keeps its nested `.oxlintrc.json` for the strict, Effect,
+and Foldkit presets until that shared config can be merged manually.
 
 ## Adoption
 
@@ -55,6 +52,6 @@ use its `overrides` array. `apps/web-foldkit` uses that for import sorting.
 2. Add `strict` to a package's local config only when its existing findings are
    resolved or explicitly tracked.
 3. Add `effect` when the package owns Effect tagged values or services.
-4. Run `pnpm exec turbo run quality`; CI runs the same task.
+4. Run `pnpm quality`; CI runs the same command.
 
 The vendored anti-slop source and its provenance live in `anti-slop/`.

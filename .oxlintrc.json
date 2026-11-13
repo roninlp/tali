@@ -4,7 +4,6 @@
   "ignorePatterns": [
     "node_modules",
     "dist",
-    ".turbo",
     ".agents",
     "repos",
     "patches",

@@ -18,7 +18,7 @@ import {
   within,
 } from 'foldkit/scene'
 import { modifyFields } from 'foldkit/struct'
-import { expect as assert, describe, test } from 'vitest'
+import { expect as assert, describe, test } from 'vite-plus/test'
 
 import { Animation, Dialog, Listbox, Toast as UiToast } from '@foldkit/ui'
 

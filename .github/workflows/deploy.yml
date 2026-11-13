@@ -15,7 +15,6 @@ permissions:
   contents: read
 
 env:
-  TURBO_TELEMETRY_DISABLED: "1"
   CI: "true"
   # Alchemy defaults the stage to `live_${USER}`. On a GitHub runner that is
   # `live_runner` — a different environment with its own D1 database, Workers

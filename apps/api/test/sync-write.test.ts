@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { Effect, Layer } from 'effect'
 import { type NoteId, Note, NoteValidationError, uuidV7 } from '@tali/domain'
 import { type SyncEntityState, SyncRepo, SyncRepoLive } from '@tali/sql'

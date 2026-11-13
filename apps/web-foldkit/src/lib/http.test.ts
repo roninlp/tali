@@ -1,5 +1,5 @@
 import { Effect, Option, Schema } from 'effect'
-import { afterEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vite-plus/test'
 
 import { jsonResponse, stubFetch } from '../test-http'
 import { API_URL } from './config'

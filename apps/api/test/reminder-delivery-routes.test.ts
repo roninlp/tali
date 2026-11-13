@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { Layer } from 'effect'
 import { HttpRouter } from 'effect/http'
 import { uuidV7 } from '@tali/domain'

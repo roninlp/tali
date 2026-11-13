@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { Data, Effect, Exit } from 'effect'
 import { casUpdate, MAX_CAS_ATTEMPTS } from '../src/cas.js'
 

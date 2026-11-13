@@ -1,6 +1,5 @@
 node_modules/
 dist/
-.turbo/
 .solid/
 .output/
 .vinxi/
@@ -18,3 +17,4 @@ dist/
 packages/e2e/.state/
 packages/e2e/test-results/
 packages/e2e/playwright-report/
+.vitest/

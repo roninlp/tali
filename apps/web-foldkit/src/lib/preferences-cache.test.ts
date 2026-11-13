@@ -1,5 +1,5 @@
 import { Option } from 'effect'
-import { beforeEach, describe, expect, test } from 'vitest'
+import { beforeEach, describe, expect, test } from 'vite-plus/test'
 
 import { Preferences, defaultPreferences } from '../preferences-model'
 import {

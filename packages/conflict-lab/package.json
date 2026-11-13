@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:nightly": "CONFLICT_LAB_NIGHTLY=1 vitest run"
+    "test": "vp test run",
+    "test:nightly": "CONFLICT_LAB_NIGHTLY=1 vp test run"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "catalog:",
@@ -20,6 +20,7 @@
     "fast-check": "^4.10.2",
     "typescript": "catalog:",
     "vitest": "catalog:",
-    "@tali/tsconfig": "workspace:*"
+    "@tali/tsconfig": "workspace:*",
+    "vite-plus": "catalog:"
   }
 }

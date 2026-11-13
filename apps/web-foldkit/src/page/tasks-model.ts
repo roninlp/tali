@@ -643,12 +643,10 @@ export const recentCompletions = (
   rows: ReadonlyArray<TaskRow>,
   now: string,
 ): ReadonlyArray<TaskRow> =>
-  [
-    ...Array.filter(
-      rows,
-      task => task.status === 'done' && isRestorable(task.completedAt, now),
-    ),
-  ].sort((left, right) =>
+  Array.filter(
+    rows,
+    task => task.status === 'done' && isRestorable(task.completedAt, now),
+  ).sort((left, right) =>
     compareText(right.completedAt ?? '', left.completedAt ?? ''),
   )
 

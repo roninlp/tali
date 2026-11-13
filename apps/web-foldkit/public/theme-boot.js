@@ -22,7 +22,7 @@
           ? 'talidark'
           : 'tali'
     document.documentElement.setAttribute('data-theme', resolved)
-  } catch (error) {
+  } catch {
     // Storage can be unavailable (private mode); the default theme applies.
   }
 })()

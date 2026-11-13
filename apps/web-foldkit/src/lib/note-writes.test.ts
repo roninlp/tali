@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
 import { Schema } from 'effect'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'vite-plus/test'
 
 import { Note, uuidV7 } from '@tali/domain'
 import { type LocalStore, openLocalStore } from '@tali/sync-client'

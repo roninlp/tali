@@ -15,7 +15,7 @@ import {
   within,
 } from 'foldkit/scene'
 import { modifyFields } from 'foldkit/struct'
-import { describe, test } from 'vitest'
+import { describe, test } from 'vite-plus/test'
 
 import { Listbox } from '@foldkit/ui'
 

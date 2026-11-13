@@ -392,7 +392,7 @@ const patchSeriesLocal = (
   const anchor = eventAnchorDate(event)
 
   const merged: EventExceptionOverrides = {
-    ...(storedOccurrenceOverrides(event, anchor) ?? {}),
+    ...storedOccurrenceOverrides(event, anchor),
     ...overrides,
   }
 

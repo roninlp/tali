@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vp test run"
   },
   "dependencies": {
     "@effect/sql-d1": "catalog:",
@@ -26,6 +26,7 @@
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:",
-    "@tali/tsconfig": "workspace:*"
+    "@tali/tsconfig": "workspace:*",
+    "vite-plus": "catalog:"
   }
 }

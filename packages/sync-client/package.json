@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vp test run"
   },
   "dependencies": {
     "@tali/domain": "workspace:*",
@@ -18,7 +18,7 @@
   "devDependencies": {
     "fake-indexeddb": "catalog:",
     "typescript": "catalog:",
-    "vitest": "catalog:",
-    "@tali/tsconfig": "workspace:*"
+    "@tali/tsconfig": "workspace:*",
+    "vite-plus": "catalog:"
   }
 }

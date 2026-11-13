@@ -31,7 +31,6 @@
     "public",
     "**/*.d.ts",
     "vite.config.ts",
-    "vitest.config.ts",
     "**/*.config.js",
     "**/*.config.mjs"
   ]

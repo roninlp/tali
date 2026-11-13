@@ -7,7 +7,7 @@ import type { LabMode } from './mode'
  * `exports.default` and `env.DB` are typed without generated `wrangler types`.
  */
 declare global {
-  /** Injected by `vitest.config.ts` (workerd cannot read `process.env`). */
+  /** Injected by `vite.config.ts` (workerd cannot read `process.env`). */
   var __CONFLICT_LAB_MODE__: LabMode
 
   namespace Cloudflare {
@@ -15,7 +15,7 @@ declare global {
       DB: D1Database
       WEB_ORIGIN?: string
       TEST_MIGRATIONS: D1Migration[]
-      /** `vitest.config.ts` forwards the CLI flag so the worker can see it. */
+      /** `vite.config.ts` forwards the CLI flag so the worker can see it. */
       CONFLICT_LAB_NIGHTLY?: string
     }
 

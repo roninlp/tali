@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import type { RecurrenceRule } from '../recurrence.js'
 import { nextRecurrenceDue } from './task-recurrence.js'
 

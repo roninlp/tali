@@ -14,8 +14,8 @@ permissions:
   contents: read
 
 env:
-  TURBO_TELEMETRY_DISABLED: "1"
-  # Keep boundary/service tests on one host zone in CI and in the Turbo hash.
+  # Keep boundary/service tests on one host zone in CI. Vite Task passes TZ
+  # through to every task, cached or not.
   TZ: UTC
 
 jobs:
@@ -37,23 +37,32 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      # Turbo's local cache is content-addressed by package inputs, so restoring
-      # it across runs reuses unchanged typecheck/build/test tasks. The pnpm
-      # store is cached by setup-node above.
-      - uses: actions/cache@v6
-        with:
-          path: .turbo
-          key: turbo-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            turbo-${{ runner.os }}-
-
       - run: pnpm install --frozen-lockfile
+
+      # Vite Task fingerprints task inputs itself; the Actions key only selects
+      # which saved task cache to restore. Restore after install so pnpm cannot
+      # replace the directory. The pnpm store is cached by setup-node above.
+      - name: Restore Vite Task cache
+        id: vite-task-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: node_modules/.vite/task-cache
+          key: vite-task-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            vite-task-${{ runner.os }}-${{ runner.arch }}-
 
       - run: pnpm typecheck
 
-      - run: pnpm exec turbo run quality
+      - run: pnpm quality
 
       - run: pnpm build
 
       # Unit + SQL integration (fake-d1) + the workerd boundary suite.
       - run: pnpm test
+
+      - name: Save Vite Task cache
+        if: success()
+        uses: actions/cache/save@v6
+        with:
+          path: node_modules/.vite/task-cache
+          key: ${{ steps.vite-task-cache.outputs.cache-primary-key }}

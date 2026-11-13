@@ -1,6 +1,6 @@
 import { expect, given, role, scene } from 'foldkit/scene'
 import { modifyFields } from 'foldkit/struct'
-import { describe, test } from 'vitest'
+import { describe, test } from 'vite-plus/test'
 
 import * as Sync from './sync'
 import { syncModel } from './test-fixtures'

@@ -1,6 +1,6 @@
 import { fileURLToPath, URL } from 'node:url'
 import { cloudflareTest, readD1Migrations } from '@cloudflare/vitest-plugin'
-import { defineConfig } from 'vitest/config'
+import { defineConfig } from 'vite-plus'
 
 /**
  * The conflict lab (ticket #83).

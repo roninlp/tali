@@ -1,6 +1,6 @@
 import { Effect } from 'effect'
 import 'fake-indexeddb/auto'
-import { afterEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vite-plus/test'
 
 import { stubFetch } from '../../test-http'
 import {

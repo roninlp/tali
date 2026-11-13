@@ -2,7 +2,7 @@
 
 Personal & family planner / bullet journal — Must MVP.
 
-Monorepo (Turborepo + pnpm workspaces) per `docs/must-have-feature-map.html` §3.
+Monorepo (Vite Task + pnpm workspaces) per `docs/must-have-feature-map.html` §3.
 Infrastructure is Alchemy (`alchemy` npm package): one stack owns the D1
 database, the api Worker, and the web assets.
 
@@ -27,7 +27,7 @@ pnpm install
 pnpm dev              # boots the whole app
 ```
 
-`pnpm dev` runs `alchemy dev` through Turbo and brings up the entire stack
+`pnpm dev` runs `alchemy dev` through Vite Task and brings up the entire stack
 locally — no Cloudflare account, no credentials, no `wrangler`:
 
 - **D1** — a local simulator; every migration in `packages/sql/migrations` is
@@ -58,14 +58,14 @@ fresh database (migrations re-apply on the next `pnpm dev`).
 ### Other commands
 
 ```sh
-pnpm typecheck        # turbo typecheck across all packages/apps (includes the Alchemy stack)
-pnpm lint             # oxlint across the repo (root task)
+pnpm typecheck        # Vite Task typecheck across all packages/apps (includes the Alchemy stack)
+pnpm lint             # Oxlint across the repo (root task)
 pnpm lint:fix         # apply Oxlint fixes
-pnpm format           # oxfmt check across the repo (root task)
+pnpm format           # Oxfmt check across the repo (root task)
 pnpm format:fix       # write Oxfmt changes
-pnpm exec turbo run quality  # lint + format check
-pnpm test             # turbo test
-pnpm build            # turbo build (packages typecheck; web: static SPA build)
+pnpm quality          # lint + format check
+pnpm test             # Vite Task test (cached)
+pnpm build            # Vite Task build (packages typecheck; web: static SPA build)
 pnpm stack:plan       # alchemy plan  — diff the Cloudflare stack (needs a profile)
 pnpm stack:deploy     # alchemy deploy
 pnpm stack:destroy    # alchemy destroy

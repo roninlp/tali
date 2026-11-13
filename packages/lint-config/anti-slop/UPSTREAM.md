@@ -19,11 +19,12 @@ None to the bundled rule source. Shared configuration lives in `packages/lint-co
 - `oxlint/strict.json` registers the generic anti-slop plugin and all generic
   rules, including the native `oxc/no-accumulating-spread` companion rule.
 - `oxlint/effect.json` registers the opt-in Effect plugin and its five rules.
-- The root `.oxlintrc.json` extends `base.json`. Oxlint's nested-config
-  resolution applies it to every package.
-- `apps/web-foldkit/.oxlintrc.json` extends the root config plus `strict`,
-  `effect`, and the Foldkit recommended config. This is the only strict
-  consumer today.
+- The root `vite.config.ts` `lint` block extends the generated `.oxlintrc.ts`,
+  which extends the generated `base.ts`. `vp lint` and `vp check` apply it to
+  every package. The JSON files remain for nested configs.
+- `apps/web-foldkit/.oxlintrc.json` extends the root `.oxlintrc.json` plus
+  `strict`, `effect`, and the Foldkit recommended config. This is the only
+  strict consumer today; Vite+ preserves it until it is merged manually.
 - `@oxlint/plugins` is pinned to `1.85.0` in this package, matching the
   `oxlint` catalog version. `@foldkit/oxlint-plugin` independently brings
   `@oxlint/plugins@1.90.0`; the two versions coexist.
@@ -36,8 +37,8 @@ nested `.oxlintrc.json`, not to the root config.
 
 ## Verification
 
-- `pnpm exec oxlint --ignore-pattern 'repos/**' --deny-warnings .` loads the
-  plugins through the root and nested configs and reports rule diagnostics.
-- `pnpm exec turbo run quality` runs the root lint and format tasks.
+- `pnpm lint` loads the plugins through the root and nested configs and reports
+  rule diagnostics.
+- `pnpm quality` runs the root lint and format checks.
 - Application cleanup is tracked separately. Enabling a strict preset surfaces
   existing findings rather than suppressing them.

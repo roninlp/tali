@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { Layer, Option } from 'effect'
 import { type Capture, type CaptureId, type UserId, uuidV7 } from '@tali/domain'
 import { CaptureRepo, CaptureRepoLive } from '@tali/sql'

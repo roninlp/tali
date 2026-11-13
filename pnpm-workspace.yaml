@@ -13,9 +13,10 @@ catalog:
   '@effect/platform-browser': ~4.1.0
   '@effect/platform-node': ~4.1.0
   # Effect LSP / Effect diagnostics (`effect-tsgo`). Pinned exactly: each
-  # release is built against one TypeScript and one Oxlint version, so an
-  # automatic bump would unpatch the compiler on the next install.
-  '@effect/tsgo': 0.50.0
+  # release is built against one TypeScript and one Oxlint build. Vite+ 1.6
+  # bundles Oxlint 1.93.0, so 0.68.1 is the matching release (TypeScript
+  # 7.0.2); bump it together with either tool.
+  '@effect/tsgo': 0.68.1
   '@effect/sql-d1': ~4.1.0
   '@tailwindcss/vite': ^4.3.3
   # TanStack AI: the Dissect run (ADR-0012 §7). `ai-openai` supplies the
@@ -28,15 +29,14 @@ catalog:
   '@types/node': ^26.6.5
   effect: ~4.1.0
   fake-indexeddb: ^6.2.6
-  oxfmt: 0.66.0
-  oxlint: 1.85.0
   tailwindcss: ^4.3.3
   # TypeScript 7 is the native compiler. A transitive peer (`capnp-es` via
   # alchemy) still declares a <6.1 range; it is codegen-only and passes its
   # gate, so `pnpm peers check` reports it as an expected warning.
   typescript: ^7.0.2
-  vite: ^8.3.1
-  vitest: ^5.0.4
+  vite: npm:@voidzero-dev/vite-plus-core@1.6.0
+  vitest: 5.1.0
+  vite-plus: 1.6.0
 
 onlyBuiltDependencies:
   - esbuild
@@ -68,3 +68,13 @@ minimumReleaseAgeExclude:
 # infra/README.md.
 patchedDependencies:
   alchemy@2.0.0-beta.83: patches/alchemy@2.0.0-beta.83.patch
+overrides:
+  vite@*: 'catalog:'
+  vitest@*: 'catalog:'
+peerDependencyRules:
+  allowAny:
+    - vite
+    - vitest
+  allowedVersions:
+    vite: '*'
+    vitest: '*'

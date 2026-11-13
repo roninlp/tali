@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import {
   MISSED_INBOX_HOURS,
   QUIET_HOURS_END_MINUTES,

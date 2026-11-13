@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, lazyPlugins } from 'vite-plus'
 
 import { foldkit } from '@foldkit/vite-plugin'
 import tailwindcss from '@tailwindcss/vite'
@@ -18,7 +18,7 @@ const spaDocumentBypass = (request: {
     : undefined
 
 export default defineConfig({
-  plugins: [tailwindcss(), foldkit()],
+  plugins: lazyPlugins(() => [tailwindcss(), foldkit()]),
   optimizeDeps: {
     // `effect/schema` arrives through `@tali/domain`'s branded ids. The Vite 8
     // optimizer chokes when it bundles `effect` and `effect/schema` as two
@@ -72,4 +72,15 @@ export default defineConfig({
       '/month': 'http://localhost:8787',
     },
   },
+  test: {
+    include: ['src/**/*.{test,spec}.ts'],
+    environment: 'happy-dom',
+    setupFiles: ['./src/vitest-setup.ts'],
+    server: {
+      deps: {
+        inline: ['foldkit', '@foldkit/ui', '@foldkit/devtools'],
+      },
+    },
+  },
 })
+// vp migrate: pending .oxlintrc.json.
