@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest'
 import { Effect, Layer } from 'effect'
 import {
   uuidV7,
+  type HouseholdId,
   type SyncEntityRow,
   type SyncEntityType,
   type SyncBootstrapResponse,
   type SyncPullResponse,
   type SyncPushEntry,
+  type UserId,
 } from '@tali/domain'
 import { SyncRepo, SyncRepoLive } from '@tali/sql'
 import {
@@ -20,7 +22,7 @@ import {
   SyncService,
   SyncServiceLive,
 } from '../src/sync-service.js'
-import { makeHarnessCore, type HarnessEnv } from './harness.js'
+import { makeHarnessCore, nonRejected, type HarnessEnv } from './harness.js'
 
 /**
  * The sync-engine suite: #18's two-device convergence for the dummy aggregate,
@@ -37,11 +39,11 @@ const NOW = (): string => new Date().toISOString()
 const PAST = '2020-01-01T00:00:00.000Z'
 const FUTURE = (): string => new Date(Date.now() + 60_000).toISOString()
 
-const HOUSEHOLD = 'household-a'
-const USER_A = 'user-a'
-const USER_B = 'user-b'
-const HOUSEHOLD_B = 'household-b'
-const USER_C = 'user-c'
+const HOUSEHOLD = 'household-a' as HouseholdId
+const USER_A = 'user-a' as UserId
+const USER_B = 'user-b' as UserId
+const HOUSEHOLD_B = 'household-b' as HouseholdId
+const USER_C = 'user-c' as UserId
 
 const serviceLayer = ({ d1 }: HarnessEnv) =>
   Layer.mergeAll(NoteSearchServiceLive, SyncServiceLive, SyncRepoLive).pipe(
@@ -290,8 +292,9 @@ describe('sync engine', () => {
         entry({ entityId: id, baseVersion: 1, patch: { checked: true } }),
       ],
     })
-    expect(bResult.results[0]?._tag).toBe('conflict')
-    expect(bResult.results[0]?.seq).toBeGreaterThan(0)
+    const bConflict = nonRejected(bResult)
+    expect(bConflict._tag).toBe('conflict')
+    expect(bConflict.seq).toBeGreaterThan(0)
 
     // Each device pulls the delta from its own cursor (a push never advances
     // the cursor — see the client engine), then renders the same bytes.
@@ -349,8 +352,9 @@ describe('sync engine', () => {
       householdId: HOUSEHOLD,
       entries: [mutation],
     })
-    expect(retry.results[0]?._tag).toBe('conflict')
-    expect(retry.results[0]?.item?.data.title).toBe('نوشته‌ی من')
+    const retryConflict = nonRejected(retry)
+    expect(retryConflict._tag).toBe('conflict')
+    expect(retryConflict.item?.data.title).toBe('نوشته‌ی من')
     expect(feedCount(h.db)).toBe(before + 1)
   })
 
@@ -409,8 +413,9 @@ describe('sync engine', () => {
         }),
       ],
     })
-    expect(loser.results[0]?._tag).toBe('conflict')
-    expect(loser.results[0]?.seq).toBe(0)
+    const loserResult = nonRejected(loser)
+    expect(loserResult._tag).toBe('conflict')
+    expect(loserResult.seq).toBe(0)
     expect(feedCount(h.db)).toBe(before)
 
     const page = await pull(h, {
@@ -497,9 +502,11 @@ describe('sync engine', () => {
       entries: [mutation],
     })
 
-    expect(first.results[0]?._tag).toBe('applied')
-    expect(replay.results[0]?._tag).toBe('alreadyApplied')
-    expect(replay.results[0]?.seq).toBe(first.results[0]?.seq)
+    const firstResult = nonRejected(first)
+    const replayResult = nonRejected(replay)
+    expect(firstResult._tag).toBe('applied')
+    expect(replayResult._tag).toBe('alreadyApplied')
+    expect(replayResult.seq).toBe(firstResult.seq)
     expect(feedCount(h.db)).toBe(before)
   })
 
@@ -955,12 +962,11 @@ describe('sync engine', () => {
         }),
       ],
     })
-    expect(bResult.results[0]?._tag).toBe('conflict')
-    expect(bResult.results[0]?.item?.data.status).toBe('done')
+    const bConflict = nonRejected(bResult)
+    expect(bConflict._tag).toBe('conflict')
+    expect(bConflict.item?.data.status).toBe('done')
     // The completion stamp is server-side and part of the synced row.
-    expect(bResult.results[0]?.item?.data.completedAt).toEqual(
-      expect.any(String),
-    )
+    expect(bConflict.item?.data.completedAt).toEqual(expect.any(String))
 
     await syncDevice(h, a)
     await syncDevice(h, b)
@@ -1017,8 +1023,9 @@ describe('sync engine', () => {
         }),
       ],
     })
-    expect(rename.results[0]?._tag).toBe('conflict')
-    expect(rename.results[0]?.item?.data).toMatchObject({
+    const renameResult = nonRejected(rename)
+    expect(renameResult._tag).toBe('conflict')
+    expect(renameResult.item?.data).toMatchObject({
       title: 'دوم',
       status: 'done',
     })
@@ -1036,9 +1043,10 @@ describe('sync engine', () => {
         }),
       ],
     })
-    expect(reopen.results[0]?._tag).toBe('applied')
-    expect(reopen.results[0]?.item?.data.status).toBe('todo')
-    expect(reopen.results[0]?.item?.data.completedAt).toBeNull()
+    const reopenResult = nonRejected(reopen)
+    expect(reopenResult._tag).toBe('applied')
+    expect(reopenResult.item?.data.status).toBe('todo')
+    expect(reopenResult.item?.data.completedAt).toBeNull()
   })
 
   it('authorizes Task rows: private owner-only, shared household-wide, foreign unwritable', async () => {
@@ -1132,8 +1140,9 @@ describe('sync engine', () => {
         }),
       ],
     })
-    expect(edit.results[0]?._tag).toBe('applied')
-    expect(edit.results[0]?.item?.data.title).toBe('از سوی همسر')
+    const editResult = nonRejected(edit)
+    expect(editResult._tag).toBe('applied')
+    expect(editResult.item?.data.title).toBe('از سوی همسر')
 
     // A row in another household is never writable, even when shared.
     await expect(
@@ -1217,8 +1226,9 @@ describe('sync engine', () => {
       householdId: HOUSEHOLD,
       entries: [mutation],
     })
-    expect(retry.results[0]?._tag).toBe('conflict')
-    expect(retry.results[0]?.item?.data.title).toBe('نوشته‌ی من')
+    const retryConflict = nonRejected(retry)
+    expect(retryConflict._tag).toBe('conflict')
+    expect(retryConflict.item?.data.title).toBe('نوشته‌ی من')
     expect(feedCount(h.db)).toBe(before + 1)
   })
 
@@ -1461,8 +1471,9 @@ describe('sync engine', () => {
         }),
       ],
     })
-    expect(guarded.results[0]?._tag).toBe('applied')
-    expect(guarded.results[0]?.item?.data).toMatchObject({
+    const guardedResult = nonRejected(guarded)
+    expect(guardedResult._tag).toBe('applied')
+    expect(guardedResult.item?.data).toMatchObject({
       status: 'todo',
       ownerId: USER_A,
     })
@@ -1493,8 +1504,9 @@ describe('sync engine', () => {
       _tag: 'rejected',
       code: 'InvalidPatch',
     })
-    expect(rejected.results[1]?._tag).toBe('applied')
-    expect(rejected.results[1]?.item?.data.title).toBe('سالم')
+    const validResult = nonRejected(rejected, 1)
+    expect(validResult._tag).toBe('applied')
+    expect(validResult.item?.data.title).toBe('سالم')
     expect(feedCount(h.db)).toBe(before + 1)
   })
 
@@ -1901,8 +1913,9 @@ describe('sync engine', () => {
       householdId: HOUSEHOLD,
       entries: [mutation],
     })
-    expect(retry.results[0]?._tag).toBe('applied')
-    expect(retry.results[0]?.item?.deletedAt).not.toBeNull()
+    const retryResult = nonRejected(retry)
+    expect(retryResult._tag).toBe('applied')
+    expect(retryResult.item?.deletedAt).not.toBeNull()
   })
 
   it('keeps non-constraint failures retryable instead of rejecting the entry', async () => {

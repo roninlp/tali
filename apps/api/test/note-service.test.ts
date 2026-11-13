@@ -1,3 +1,4 @@
+import { strict as assert } from 'node:assert'
 import { describe, expect, it } from 'vitest'
 import { Effect, Layer } from 'effect'
 import {
@@ -31,7 +32,7 @@ import { makeServiceHarness, type HarnessEnv } from './harness.js'
  */
 
 /** The editor's fallback doc: paragraphs of plain text inside the JSON column. */
-const doc = (text: string): unknown => ({
+const doc = (text: string) => ({
   type: 'doc',
   content: [
     {
@@ -40,6 +41,11 @@ const doc = (text: string): unknown => ({
     },
   ],
 })
+
+/** One sync page, as `SyncService.pull` yields it. */
+type PullPage = Effect.Success<
+  ReturnType<Effect.Success<typeof SyncService>['pull']>
+>
 
 const viewer = makeViewer<NoteViewer>()
 
@@ -53,7 +59,7 @@ const makeHarness = () => {
     userId: UserId,
     householdId: HouseholdId = HOUSEHOLD,
     cursor = 0,
-  ): Promise<Awaited<ReturnType<SyncService['pull']>>> =>
+  ): Promise<PullPage> =>
     harness.sync(service =>
       service.pull({ userId, householdId, cursor, limit: 100 }),
     )
@@ -71,7 +77,7 @@ const makeHarness = () => {
         .prepare(
           "SELECT tag_id AS tagId FROM item_tags WHERE item_type = 'note' AND item_id = ?",
         )
-        .all(noteId) as ReadonlyArray<{ readonly tagId: string }>
+        .all(noteId) as { readonly tagId: string }[]
     ).map(row => row.tagId)
 
   const seedTag = (input: {
@@ -105,7 +111,7 @@ const makeHarness = () => {
   return { ...harness, pull, pullFeed: feedCount, joinTagIds, seedTag }
 }
 
-const noteIn = (page: Awaited<ReturnType<SyncService['pull']>>, id: string) =>
+const noteIn = (page: PullPage, id: string) =>
   page.items.find(item => item.entityType === 'note' && item.entityId === id)
 
 describe('NoteService round-trip', () => {
@@ -419,7 +425,7 @@ describe('NoteService round-trip', () => {
       ),
     )
     expect(retagged.tagIds).toEqual([work, home])
-    expect(h.joinTagIds(first.id).sort()).toEqual([work, home].sort())
+    expect(h.joinTagIds(first.id).toSorted()).toEqual([work, home].toSorted())
 
     const cleared = await h.svc(svc =>
       svc.setTags(
@@ -450,7 +456,7 @@ describe('NoteService round-trip', () => {
         )
         .pipe(Effect.flip),
     )
-    expect(rejected._tag).toBe('NoteValidationError')
+    assert(rejected._tag === 'NoteValidationError')
     expect(rejected.issues[0]?.field).toBe('tagIds')
 
     // A deleted tag is not assignable either.
@@ -633,7 +639,7 @@ describe('NoteService round-trip', () => {
         })
         .pipe(Effect.flip),
     )
-    expect(failed._tag).toBe('NoteValidationError')
+    assert(failed._tag === 'NoteValidationError')
     expect(failed.issues[0]?.field).toBe('clientMutationId')
     // Nothing was written: no feed row and no note row.
     expect(h.pullFeed()).toBe(feedBefore)

@@ -1,3 +1,4 @@
+import { strict as assert } from 'node:assert'
 import { describe, expect, it } from 'vitest'
 import { Effect, Layer, Tracer } from 'effect'
 import {
@@ -5,6 +6,7 @@ import {
   type HouseholdId,
   ModelUnavailable,
   type UserId,
+  isEventCaptureDraft,
   localDateIn,
   reminderFireAt,
 } from '@tali/domain'
@@ -296,8 +298,10 @@ describe('CaptureService.commit', () => {
     const capture = await h.svc(svc =>
       svc.dissect(viewer, { text: FIVE_TEXT }, NOW),
     )
+    const eventDraft = fiveDrafts[1]
+    assert(eventDraft !== undefined && isEventCaptureDraft(eventDraft))
     const blocked: CaptureDraft = {
-      ...fiveDrafts[1]!,
+      ...eventDraft,
       timing: undefined,
       missing: [
         {

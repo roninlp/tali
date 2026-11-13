@@ -3,7 +3,7 @@ import { Effect, Layer } from 'effect'
 import { RpcClient, RpcGroup } from 'effect/rpc'
 import * as RpcTest from 'effect/rpc/RpcTest'
 import { ApiRpcs } from '@tali/rpc'
-import { uuidV7 } from '@tali/domain'
+import { type TaskId, uuidV7 } from '@tali/domain'
 import { AuthServiceLive } from '../src/auth-service.js'
 import { PreferencesServiceLive } from '../src/preferences-service.js'
 import { RpcHandlers } from '../src/rpc-handlers.js'
@@ -96,7 +96,7 @@ const makeHarness = async () => {
 describe('Task RPC round-trip', () => {
   it('create → filter → move → complete → undo over the derived client', async () => {
     const h = await makeHarness()
-    const id = uuidV7()
+    const id = uuidV7() as TaskId
 
     const result = await h.withClient(TOKEN_A, client =>
       Effect.gen(function* () {
@@ -159,7 +159,7 @@ describe('Task RPC round-trip', () => {
 
   it("keeps another member's private task out of reads and writes", async () => {
     const h = await makeHarness()
-    const id = uuidV7()
+    const id = uuidV7() as TaskId
 
     await h.withClient(TOKEN_A, client =>
       client.CreateTask({
@@ -188,7 +188,7 @@ describe('Task RPC round-trip', () => {
 
   it('replays the same mutation id without a second write', async () => {
     const h = await makeHarness()
-    const id = uuidV7()
+    const id = uuidV7() as TaskId
     const input = { id, clientMutationId: 'rpc-replay', title: 'یک‌بار' }
 
     const { first, replay } = await h.withClient(TOKEN_A, client =>

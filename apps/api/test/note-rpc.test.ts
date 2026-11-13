@@ -3,7 +3,7 @@ import { Effect, Layer } from 'effect'
 import { RpcClient, RpcGroup } from 'effect/rpc'
 import * as RpcTest from 'effect/rpc/RpcTest'
 import { ApiRpcs } from '@tali/rpc'
-import { uuidV7 } from '@tali/domain'
+import { type NoteId, uuidV7 } from '@tali/domain'
 import { AuthServiceLive } from '../src/auth-service.js'
 import { NoteServiceLive } from '../src/note-service.js'
 import { PreferencesServiceLive } from '../src/preferences-service.js'
@@ -103,7 +103,7 @@ const makeHarness = async () => {
 describe('Note RPC round-trip', () => {
   it('quick create → save → pin → archive → trash → restore', async () => {
     const h = await makeHarness()
-    const id = uuidV7()
+    const id = uuidV7() as NoteId
 
     const result = await h.withClient(TOKEN_A, client =>
       Effect.gen(function* () {
@@ -190,8 +190,8 @@ describe('Note RPC round-trip', () => {
 
   it("keeps another member's private note out of reads and requires a session", async () => {
     const h = await makeHarness()
-    const sharedId = uuidV7()
-    const privateId = uuidV7()
+    const sharedId = uuidV7() as NoteId
+    const privateId = uuidV7() as NoteId
 
     await h.withClient(TOKEN_A, client =>
       Effect.gen(function* () {
@@ -233,7 +233,7 @@ describe('Note RPC round-trip', () => {
 
   it('replays the same mutation id without a second version', async () => {
     const h = await makeHarness()
-    const id = uuidV7()
+    const id = uuidV7() as NoteId
     const input = { id, clientMutationId: 'rpc-replay', title: 'یک‌بار' }
 
     const { first, replay } = await h.withClient(TOKEN_A, client =>

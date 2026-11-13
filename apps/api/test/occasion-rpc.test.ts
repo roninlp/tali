@@ -3,7 +3,7 @@ import { Effect, Layer } from 'effect'
 import { RpcClient, RpcGroup } from 'effect/rpc'
 import * as RpcTest from 'effect/rpc/RpcTest'
 import { ApiRpcs } from '@tali/rpc'
-import { uuidV7 } from '@tali/domain'
+import { type OccasionId, uuidV7 } from '@tali/domain'
 import { AuthServiceLive } from '../src/auth-service.js'
 import { OccasionServiceLive } from '../src/occasion-service.js'
 import { PreferencesServiceLive } from '../src/preferences-service.js'
@@ -81,7 +81,7 @@ const makeHarness = async () => {
 describe('Occasion RPC round-trip', () => {
   it('creates, projects, reminds and prepares through the shared contract', async () => {
     const h = await makeHarness()
-    const id = uuidV7()
+    const id = uuidV7() as OccasionId
 
     const result = await h.withClient(TOKEN_A, client =>
       Effect.gen(function* () {

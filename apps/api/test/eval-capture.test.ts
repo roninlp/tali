@@ -1,7 +1,8 @@
+import process from 'node:process'
 import { Effect, Layer, Schema } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { CaptureDraft } from '@tali/domain'
+import { type CaptureId, CaptureDraft } from '@tali/domain'
 import {
   CaptureConfig,
   DEFAULT_CAPTURE_BASE_URL,
@@ -34,6 +35,9 @@ const hasKey =
   process.env.OPENCODE_API_KEY !== undefined &&
   process.env.OPENCODE_API_KEY.trim() !== ''
 
+/** The Capture row a live eval belongs to; tracing only. */
+const CAPTURE_ID = '019283a0-1234-7000-8000-000000000000' as CaptureId
+
 const layer = ExtractorLive.pipe(
   Layer.provide(
     Layer.succeed(CaptureConfig, {
@@ -51,6 +55,7 @@ const dissect = (text: string) =>
         const extractor = yield* Extractor
         return yield* extractor.dissect({
           userId: 'eval-user' as never,
+          captureId: CAPTURE_ID,
           text,
           // A pinned clock keeps the prompt reproducible across eval runs.
           now: '2026-11-08T09:00:00.000Z',

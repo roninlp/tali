@@ -161,7 +161,7 @@ describe('TaskService round-trip', () => {
       .prepare(
         "SELECT tag_id AS tagId FROM item_tags WHERE item_id = ? AND item_type = 'task'",
       )
-      .all(id) as ReadonlyArray<{ readonly tagId: string }>
+      .all(id) as { readonly tagId: string }[]
     expect(joinRows.map(row => row.tagId)).toEqual([tag.id])
   })
 
@@ -493,7 +493,7 @@ describe('TaskService round-trip', () => {
       .prepare(
         "SELECT tag_id AS tagId FROM item_tags WHERE item_id = ? AND item_type = 'task'",
       )
-      .all(id) as ReadonlyArray<{ readonly tagId: string }>
+      .all(id) as { readonly tagId: string }[]
     expect(joined.map(row => row.tagId)).toEqual([secondTag.id])
   })
 

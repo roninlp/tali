@@ -21,7 +21,7 @@ import {
   USER_B,
   makeViewer,
 } from './fixtures/identities.js'
-import { makeServiceHarness, type HarnessEnv } from './harness.js'
+import { makeServiceHarness, nonRejected, type HarnessEnv } from './harness.js'
 
 /**
  * Ticket #39 at the service/sync seam. These run the real ListService, repos
@@ -300,7 +300,7 @@ describe('two-device convergence', () => {
       clientUpdatedAt: '2026-10-20T09:31:00.000Z',
     }
     const result = await h.push(USER_B, [entry])
-    const outcome = result.results[0]!
+    const outcome = nonRejected(result)
     expect(outcome._tag).toBe('conflict')
     expect(outcome.item?.data).toMatchObject({ checked: true, done: true })
 
@@ -402,7 +402,7 @@ describe('sharing and privacy', () => {
 describe("offline push (the web client's only write path)", () => {
   it('persists listId/order/name/checked on insert and update with one feed row each', async () => {
     const h = makeHarness()
-    const listId = uuidV7()
+    const listId = uuidV7() as ListId
     const itemId = uuidV7()
     const entry = (
       clientMutationId: string,

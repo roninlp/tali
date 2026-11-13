@@ -2,6 +2,7 @@ import { Effect, Ref, Result, Schema } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
+  type CaptureId,
   CaptureDraft,
   DraftIncomplete,
   captureDedupeKey,
@@ -38,6 +39,9 @@ const fixtures = Schema.decodeUnknownSync(Schema.Array(Fixture))(fixturesJson)
 const draftsOf = (fixture: (typeof fixtures)[number]) =>
   fixture.drafts.map(draft => Schema.decodeUnknownSync(CaptureDraft)(draft))
 
+/** The Capture row a replayed fixture belongs to; tracing only. */
+const CAPTURE_ID = '019283a0-1234-7000-8000-000000000000' as CaptureId
+
 const context = (draftIndex: number) => ({
   draftIndex,
   clientMutationId: `fixture-${draftIndex}`,
@@ -60,6 +64,7 @@ describe('capture fixtures', () => {
             const extractor = yield* Extractor
             return yield* extractor.dissect({
               userId: 'user-a' as never,
+              captureId: CAPTURE_ID,
               text: fixture.text,
               now: '2026-11-08T09:00:00.000Z',
               timeZone: 'Asia/Tehran',

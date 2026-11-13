@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { Effect, Layer, Ref } from 'effect'
-import { type CaptureDraft, ModelUnavailable, type UserId } from '@tali/domain'
+import {
+  type CaptureDraft,
+  type CaptureId,
+  ModelUnavailable,
+  type UserId,
+} from '@tali/domain'
 import {
   CAPTURE_MODEL_OPTIONS,
   CaptureConfig,
@@ -26,6 +31,7 @@ import { makeDraftTools } from '../src/capture-tools.js'
 
 const input = {
   userId: 'user-a' as UserId,
+  captureId: '019283a0-1234-7000-8000-000000000000' as CaptureId,
   text: 'فردا ساعت ۵ دکتر دارم و یادم باشه قرص رو بگیرم',
   now: '2026-11-08T09:00:00.000Z',
   timeZone: 'Asia/Tehran',
