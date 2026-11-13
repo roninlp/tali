@@ -22,11 +22,11 @@ import { makeTestVapidKeys } from './vapid-fixture.js'
 const VAPID = {
   ...makeTestVapidKeys(),
   subject: 'mailto:dev@tali.local',
-} as const
+}
 
 const FIRE_AT = '2026-10-21T06:00:00.000Z'
-const USER = 'user-route' as const
-const HOUSEHOLD = 'household-route' as const
+const USER = 'user-route'
+const HOUSEHOLD = 'household-route'
 
 const makeDatabase = () => {
   const db = openMigratedDatabase()

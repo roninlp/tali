@@ -210,7 +210,7 @@ export class CaptureRepo extends Context.Service<CaptureRepo>()('CaptureRepo', {
       setStatus,
       purge,
       purgeAttemptsBefore,
-    } as const
+    }
   }),
 }) {}
 

@@ -72,7 +72,7 @@ export class CaptureRateLimiter extends Context.Service<CaptureRateLimiter>()(
           }
         })
 
-      return { consume } as const
+      return { consume }
     }),
   },
 ) {}

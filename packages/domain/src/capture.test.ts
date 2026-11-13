@@ -23,7 +23,7 @@ const context = {
   draftIndex: 0,
   clientMutationId: 'm-capture-0',
   timeZone: 'Asia/Tehran',
-} as const
+}
 
 const taskDraft = (overrides: Record<string, unknown> = {}) => ({
   _tag: 'task',

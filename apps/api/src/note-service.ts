@@ -720,7 +720,7 @@ export class NoteService extends Context.Service<NoteService>()('NoteService', {
       list,
       listPinned,
       listTrash,
-    } as const
+    }
   }),
 }) {}
 

@@ -279,7 +279,7 @@ export class EventService extends Context.Service<EventService>()(
                 'an event cannot end before it starts',
               )
             }
-            return { _tag: 'timed', start, end } as const
+            return { _tag: 'timed', start, end }
           }
           if (!validLocalDate(timing.date)) {
             return yield* invalid(
@@ -287,7 +287,7 @@ export class EventService extends Context.Service<EventService>()(
               'an all-day event needs a real calendar date',
             )
           }
-          return { _tag: 'allDay', date: timing.date } as const
+          return { _tag: 'allDay', date: timing.date }
         })
 
       /**
@@ -994,7 +994,7 @@ export class EventService extends Context.Service<EventService>()(
         occurrences,
         editOccurrence,
         deleteOccurrence,
-      } as const
+      }
     }),
   },
 ) {}

@@ -824,7 +824,7 @@ export const CommitCalendarEventScope = Command.define(
           clientMutationId: ids.clientMutationId,
           scope,
           exceptionId: EventExceptionId.make(ids.exceptionId),
-        } as const
+        }
 
         const change = yield* withRpcClient(client => {
           if (action !== 'edit') {

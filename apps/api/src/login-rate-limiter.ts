@@ -89,7 +89,7 @@ export class LoginRateLimiter extends Context.Service<LoginRateLimiter>()(
       return {
         consume: (key: string) => consume(key),
         clear,
-      } as const
+      }
     }),
   },
 ) {}

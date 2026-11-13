@@ -506,7 +506,7 @@ export class SyncRepo extends Context.Service<SyncRepo>()('SyncRepo', {
       appendFeed,
       recordApplied,
       commit,
-    } as const
+    }
   }),
 }) {}
 

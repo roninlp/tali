@@ -76,7 +76,7 @@ export class CredentialVerifier extends Context.Service<CredentialVerifier>()(
       const verifyDummy = (loginKey: LoginKey): Effect.Effect<boolean> =>
         verify(loginKey, DUMMY_CREDENTIAL)
 
-      return { enroll, verify, verifyDummy } as const
+      return { enroll, verify, verifyDummy }
     }),
   },
 ) {}

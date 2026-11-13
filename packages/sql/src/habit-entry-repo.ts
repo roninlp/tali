@@ -225,7 +225,7 @@ export class HabitEntryRepo extends Context.Service<HabitEntryRepo>()(
         insert,
         update,
         insertStatement,
-      } as const
+      }
     }),
   },
 ) {}

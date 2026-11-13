@@ -95,7 +95,7 @@ export class NoteSearchRepo extends Context.Service<NoteSearchRepo>()(
           }))
         })
 
-      return { search } as const
+      return { search }
     }),
   },
 ) {}

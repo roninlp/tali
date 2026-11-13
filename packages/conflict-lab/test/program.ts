@@ -46,6 +46,6 @@ export const TOKEN = {
   duplicatePushB: WRITE_TOKEN_COUNT + 4,
   disjointProbe: WRITE_TOKEN_COUNT + 5,
   lwwProbe: WRITE_TOKEN_COUNT + 6,
-} as const
+}
 
 export const TOKEN_COUNT = WRITE_TOKEN_COUNT + 7

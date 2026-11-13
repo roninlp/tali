@@ -255,8 +255,8 @@ export const overlayCalendarSources = (input: {
   readonly mirror: ReadonlyArray<TaskRow>
   readonly overlayIds: ReadonlySet<string>
 }): ReadonlyArray<CalendarTaskSource> => {
-  const byId = new Map(input.base.map(task => [task.id, task] as const))
-  const mirrorById = new Map(input.mirror.map(row => [row.id, row] as const))
+  const byId = new Map(input.base.map(task => [task.id, task]))
+  const mirrorById = new Map(input.mirror.map(row => [row.id, row]))
 
   for (const id of input.overlayIds) {
     const row = mirrorById.get(id)
@@ -286,12 +286,10 @@ export const overlayOccasionSources = (input: {
   readonly overlayIds: ReadonlySet<string>
   readonly deletedIds?: ReadonlySet<string>
 }): ReadonlyArray<CalendarOccasionSource> => {
-  const byId = new Map(
-    input.base.map(occasion => [occasion.id, occasion] as const),
-  )
+  const byId = new Map(input.base.map(occasion => [occasion.id, occasion]))
 
   const mirrorById = new Map(
-    input.mirror.map(occasion => [occasion.id, occasion] as const),
+    input.mirror.map(occasion => [occasion.id, occasion]),
   )
 
   for (const id of input.overlayIds) {

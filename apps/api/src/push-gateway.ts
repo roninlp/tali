@@ -126,14 +126,14 @@ export const makePushGateway = (
 ): PushGatewayApi => ({
   send: input =>
     Effect.gen(function* () {
-      if (config === null) return { _tag: 'unconfigured' } as const
+      if (config === null) return { _tag: 'unconfigured' }
 
       // The endpoint is client-supplied and this is a server-side POST: an
       // unsafe one is permanent (a different message cannot fix it) and must
       // never reach `fetch`. Registration rejects these too; this is the
       // defence that also covers rows stored before the check existed.
       if (!isSafePushEndpoint(input.subscription.endpoint)) {
-        return { _tag: 'permanent', status: 400 } as const
+        return { _tag: 'permanent', status: 400 }
       }
 
       const keys: VapidKeyPair = config
@@ -147,8 +147,7 @@ export const makePushGateway = (
         catch: cause => new PushCryptoError({ cause }),
       }).pipe(Effect.option)
       // Bad subscription keys are permanent: a different message cannot fix them.
-      if (encrypted._tag === 'None')
-        return { _tag: 'permanent', status: 400 } as const
+      if (encrypted._tag === 'None') return { _tag: 'permanent', status: 400 }
 
       const jwt = yield* Effect.tryPromise({
         try: () =>
@@ -160,8 +159,7 @@ export const makePushGateway = (
           }),
         catch: cause => new PushCryptoError({ cause }),
       }).pipe(Effect.option)
-      if (jwt._tag === 'None')
-        return { _tag: 'transient', status: null } as const
+      if (jwt._tag === 'None') return { _tag: 'transient', status: null }
 
       const response = yield* Effect.tryPromise({
         try: () =>
@@ -186,7 +184,7 @@ export const makePushGateway = (
       }).pipe(Effect.option)
 
       return response._tag === 'None'
-        ? ({ _tag: 'transient', status: null } as const)
+        ? { _tag: 'transient', status: null }
         : classifyPushStatus(response.value.status)
     }),
 })

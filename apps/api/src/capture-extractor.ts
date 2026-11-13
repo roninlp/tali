@@ -258,7 +258,7 @@ export const ExtractorLive = Layer.effect(
             messages: [{ role: 'user', content: input.text }],
             systemPrompts: [captureSystemPrompt(input)],
             tools,
-            stream: false as const,
+            stream: false,
             modelOptions: CAPTURE_MODEL_OPTIONS,
             wrapFetch: captureFetchWrapper({ apiKey, sessionId }),
             // The SDK's error logger prints tool-call `rawArguments`, which are
@@ -305,7 +305,7 @@ export const ExtractorLive = Layer.effect(
         }),
       )
 
-    return { dissect } as const
+    return { dissect }
   }),
 )
 

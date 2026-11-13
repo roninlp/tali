@@ -749,7 +749,7 @@ const spawnedTaskTagJoins = (
       ])
 
 // A completed task beats a concurrent rename, like a checked list item.
-const TASK_COMPLETION = { field: 'status', value: 'done' } as const
+const TASK_COMPLETION = { field: 'status', value: 'done' }
 
 const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'task',
@@ -1241,7 +1241,7 @@ const listItemNormalize = (row: SyncRawRow): Record<string, unknown> =>
     createdAt: encodeText(row.createdAt),
   })
 
-const LIST_ITEM_COMPLETION = { field: 'checked', value: true } as const
+const LIST_ITEM_COMPLETION = { field: 'checked', value: true }
 
 const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
   // `validate` is identity: the scaffold wire shape predates the #33 model and

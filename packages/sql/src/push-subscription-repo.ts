@@ -98,7 +98,7 @@ export class PushSubscriptionRepo extends Context.Service<PushSubscriptionRepo>(
       ): Statement.Statement<unknown> =>
         sql`DELETE FROM push_subscriptions WHERE ${sql.in('id', ids)}`
 
-      return { upsert, listByUser, listByUsers, deleteManyStatement } as const
+      return { upsert, listByUser, listByUsers, deleteManyStatement }
     }),
   },
 ) {}

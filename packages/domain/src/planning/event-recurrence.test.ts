@@ -31,10 +31,10 @@ const HOUSEHOLD = 'household-a' as HouseholdId
 const TEHRAN = 'Asia/Tehran'
 
 const base = {
-  type: 'event' as const,
+  type: 'event',
   ownerId: USER,
   householdId: HOUSEHOLD,
-  visibility: 'shared' as const,
+  visibility: 'shared',
   color: null,
   createdAt: NOW,
   updatedAt: NOW,

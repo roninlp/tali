@@ -108,7 +108,7 @@ export class TodayService extends Context.Service<TodayService>()(
       // design (the same convention as `TaskService` reads). Typed errors on the
       // route are therefore auth-only.
 
-      return { get } as const
+      return { get }
     }),
   },
 ) {}

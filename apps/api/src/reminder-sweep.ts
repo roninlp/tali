@@ -452,7 +452,7 @@ export class ReminderSweep extends Context.Service<ReminderSweep>()(
         cutoff: string,
       ): Effect.Effect<void, SqlError.SqlError> => sync.prune(cutoff)
 
-      return { sweep, pruneFeed } as const
+      return { sweep, pruneFeed }
     }),
   },
 ) {}

@@ -58,7 +58,7 @@ export const ReminderRoutes = HttpRouter.use(router =>
           userId: resolved.context.user.id,
           householdId: resolved.context.householdId,
           timeZone: resolved.preferences.timeZone,
-        } as const
+        }
       })
 
     /**

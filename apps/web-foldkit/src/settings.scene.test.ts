@@ -30,12 +30,11 @@ const newField = label('گذرواژه‌ی تازه')
 const confirmField = label('تکرار گذرواژه‌ی تازه')
 const submitButton = role('button', { name: 'تغییر گذرواژه' })
 
-const fillForm = () =>
-  [
-    type(currentField, 'old password value'),
-    type(newField, 'new password value'),
-    type(confirmField, 'new password value'),
-  ] as const
+const fillForm = () => [
+  type(currentField, 'old password value'),
+  type(newField, 'new password value'),
+  type(confirmField, 'new password value'),
+]
 
 const invalidCredentials: AuthFailure = {
   code: 'InvalidCredentials',

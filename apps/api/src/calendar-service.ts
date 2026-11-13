@@ -263,7 +263,7 @@ export class CalendarService extends Context.Service<CalendarService>()(
           })
         }).pipe(Effect.orDie)
 
-      return { week, month } as const
+      return { week, month }
     }),
   },
 ) {}

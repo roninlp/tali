@@ -205,7 +205,7 @@ export class NoteRepo extends Context.Service<NoteRepo>()('NoteRepo', {
       update,
       detachTagsIfVersion,
       attachTagIfVersion,
-    } as const
+    }
   }),
 }) {}
 

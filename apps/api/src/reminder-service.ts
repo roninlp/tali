@@ -458,7 +458,7 @@ export class ReminderService extends Context.Service<ReminderService>()(
           }
 
           const repeat = yield* decodeRepeat(input.repeat)
-          const link = input.link ?? ({ _tag: 'none' } as const)
+          const link = input.link ?? { _tag: 'none' }
           const timeZone = input.timeZone ?? viewer.timeZone
           const offsetMinutes = input.offsetMinutes ?? 0
           const linkInstant = yield* resolveLink(viewer, link)
@@ -1083,7 +1083,7 @@ export class ReminderService extends Context.Service<ReminderService>()(
         claim,
         claimMany,
         respond,
-      } as const
+      }
     }),
   },
 ) {}

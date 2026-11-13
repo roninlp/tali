@@ -570,7 +570,7 @@ export class TaskRepo extends Context.Service<TaskRepo>()('TaskRepo', {
       insertStatement,
       insertStatementGated,
       insertRecurrenceChildStatement,
-    } as const
+    }
   }),
 }) {}
 

@@ -1484,7 +1484,7 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
       createTag,
       renameTag,
       listTags,
-    } as const
+    }
   }),
 }) {}
 

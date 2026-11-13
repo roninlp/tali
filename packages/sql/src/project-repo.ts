@@ -63,7 +63,7 @@ export class ProjectRepo extends Context.Service<ProjectRepo>()('ProjectRepo', {
         rows => Option.fromUndefinedOr(rows[0]),
       )
 
-    return { findById, listVisible, insert, update } as const
+    return { findById, listVisible, insert, update }
   }),
 }) {}
 

@@ -18,7 +18,7 @@ import { jsonRequest, WEB_ORIGIN, workerFetch } from './support.js'
 const PREFLIGHT = {
   'access-control-request-method': 'POST',
   'access-control-request-headers': 'content-type, if-none-match',
-} as const
+}
 
 describe('CORS with credentials', () => {
   it('answers a preflight for the allowed web origin', async () => {

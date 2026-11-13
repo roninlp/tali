@@ -86,12 +86,12 @@ const run = <A, E>(
   effect.pipe(
     Effect.match({
       onFailure: error => ({
-        ok: false as const,
+        ok: false,
         error: captureFailureOf(
           Option.getOrElse(asCaptureErrorEnvelope(error), () => ({})),
         ),
       }),
-      onSuccess: value => ({ ok: true as const, value }),
+      onSuccess: value => ({ ok: true, value }),
     }),
   )
 

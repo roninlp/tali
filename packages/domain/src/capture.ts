@@ -138,7 +138,7 @@ const draftEnvelope = {
   sourceQuote: SourceQuote,
   /** Fields the text does not supply; a non-empty list blocks the commit. */
   missing: Schema.Array(NeedsInput),
-} as const
+}
 
 /**
  * A proposed task. Fields come from `TaskCreateInput`; `title` and the due
@@ -754,7 +754,7 @@ export const toCreateInput = (
           raw,
           context.draftIndex,
         )
-        return { _tag: 'task' as const, input }
+        return { _tag: 'task', input }
       }
 
       case 'event': {
@@ -793,7 +793,7 @@ export const toCreateInput = (
           raw,
           context.draftIndex,
         )
-        return { _tag: 'event' as const, input }
+        return { _tag: 'event', input }
       }
 
       case 'note': {
@@ -818,7 +818,7 @@ export const toCreateInput = (
           raw,
           context.draftIndex,
         )
-        return { _tag: 'note' as const, input }
+        return { _tag: 'note', input }
       }
 
       case 'habit': {
@@ -845,7 +845,7 @@ export const toCreateInput = (
           raw,
           context.draftIndex,
         )
-        return { _tag: 'habit' as const, input }
+        return { _tag: 'habit', input }
       }
 
       case 'reminder': {
@@ -892,7 +892,7 @@ export const toCreateInput = (
           raw,
           context.draftIndex,
         )
-        return { _tag: 'reminder' as const, input }
+        return { _tag: 'reminder', input }
       }
     }
   })

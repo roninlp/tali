@@ -1270,7 +1270,7 @@ export class SyncService extends Context.Service<SyncService>()('SyncService', {
         const results: Array<SyncPushResult> = plans.map(plan => {
           if (plan.kind === 'rejected') {
             return {
-              _tag: 'rejected' as const,
+              _tag: 'rejected',
               clientMutationId: plan.entry.clientMutationId,
               entityType: plan.entry.entityType,
               entityId: plan.entry.entityId,
@@ -1282,7 +1282,7 @@ export class SyncService extends Context.Service<SyncService>()('SyncService', {
             const rejection = rejectedGroups.get(plan.group)
             if (rejection !== undefined) {
               return {
-                _tag: 'rejected' as const,
+                _tag: 'rejected',
                 clientMutationId: plan.entry.clientMutationId,
                 entityType: plan.entry.entityType,
                 entityId: plan.entry.entityId,
@@ -1300,7 +1300,7 @@ export class SyncService extends Context.Service<SyncService>()('SyncService', {
               : { item: toRow(state) }
           if (plan.kind === 'dedupe') {
             return {
-              _tag: 'alreadyApplied' as const,
+              _tag: 'alreadyApplied',
               clientMutationId: plan.entry.clientMutationId,
               entityType: plan.entry.entityType,
               entityId: plan.entry.entityId,
@@ -1556,7 +1556,7 @@ export class SyncService extends Context.Service<SyncService>()('SyncService', {
         return { items, nextOffset: offset + page.length, hasMore, cursor }
       }).pipe(Effect.orDie)
 
-    return { pull, bootstrap, push } as const
+    return { pull, bootstrap, push }
   }),
 }) {}
 

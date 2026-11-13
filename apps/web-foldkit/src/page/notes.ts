@@ -736,7 +736,7 @@ const flushEditor = (model: Model): CommandReturn => {
 
       const next = modifyFields(model, {
         saveGeneration: () => generation,
-        saveState: () => 'saving' as const,
+        saveState: () => 'saving',
       })
 
       return {
@@ -1003,7 +1003,7 @@ export const update = (
         model: isCurrentNote(model, noteId)
           ? modifyFields(failed, {
               maybeActionError: () => Option.some(message),
-              saveState: () => 'error' as const,
+              saveState: () => 'error',
             })
           : failed,
       }
@@ -1021,7 +1021,7 @@ export const update = (
       return Option.match(maybeNote, {
         onNone: () => ({
           model: modifyFields(model, {
-            loadState: () => 'missing' as const,
+            loadState: () => 'missing',
             isLoadPending: () => false,
             maybeLoadHint: () =>
               Option.some(
@@ -1033,7 +1033,7 @@ export const update = (
         }),
         onSome: note => {
           const next = modifyFields(model, {
-            loadState: () => 'ready' as const,
+            loadState: () => 'ready',
             isLoadPending: () => false,
             maybeLoadHint: () => Option.none(),
             maybeActionError: () => Option.none(),
@@ -1047,7 +1047,7 @@ export const update = (
             isPinned: () => note.isPinned,
             isArchived: () => note.isArchived,
             isTrashed: () => note.isTrashed,
-            saveState: () => 'idle' as const,
+            saveState: () => 'idle',
             saveGeneration: () => 0,
             draftRevision: () =>
               note.isDraftApplied ? model.draftRevision + 1 : 0,
@@ -1083,7 +1083,7 @@ export const update = (
 
       return {
         model: modifyFields(model, {
-          loadState: () => 'missing' as const,
+          loadState: () => 'missing',
           isLoadPending: () => false,
           maybeLoadHint: () =>
             Option.some(message || 'خواندن یادداشت ممکن نشد.'),
@@ -1104,7 +1104,7 @@ export const update = (
         model: modifyFields(model, {
           title: () => value,
           saveRevision: () => model.saveRevision + 1,
-          saveState: () => 'saving' as const,
+          saveState: () => 'saving',
         }),
       }
     },
@@ -1165,7 +1165,7 @@ export const update = (
             model.text === model.savedText
           ) {
             return {
-              model: modifyFields(model, { saveState: () => 'saved' as const }),
+              model: modifyFields(model, { saveState: () => 'saved' }),
             }
           }
 
@@ -1174,7 +1174,7 @@ export const update = (
           return {
             model: modifyFields(model, {
               saveGeneration: () => generation,
-              saveState: () => 'saving' as const,
+              saveState: () => 'saving',
             }),
             commands: [
               SaveNoteContent({
@@ -1217,7 +1217,7 @@ export const update = (
     FailedSaveNote: ({ noteId, generation }) =>
       generation === model.saveGeneration && isCurrentNote(model, noteId)
         ? {
-            model: modifyFields(model, { saveState: () => 'error' as const }),
+            model: modifyFields(model, { saveState: () => 'error' }),
           }
         : { model },
 
@@ -1346,7 +1346,7 @@ export const update = (
 
       return {
         model: modifyFields(clearActionError(model), {
-          saveState: () => 'saving' as const,
+          saveState: () => 'saving',
         }),
         commands: [
           ArchiveEditedNote({
@@ -1365,7 +1365,7 @@ export const update = (
               isArchived: () => true,
               savedTitle: () => title,
               savedText: () => text,
-              saveState: () => 'saved' as const,
+              saveState: () => 'saved',
               announcement: () => 'یادداشت آرشیو شد',
             }),
             outMessage: OutMessage.ArchivedNote({ noteId }),
@@ -1380,7 +1380,7 @@ export const update = (
 
     FailedArchiveNote: () => ({
       model: modifyFields(model, {
-        saveState: () => 'error' as const,
+        saveState: () => 'error',
         maybeActionError: () =>
           Option.some('ذخیره‌ی متن انجام نشد؛ دوباره تلاش کنید.'),
       }),
@@ -1397,7 +1397,7 @@ export const update = (
 
       return {
         model: modifyFields(clearActionError(model), {
-          saveState: () => 'saving' as const,
+          saveState: () => 'saving',
         }),
         commands: [
           TrashEditedNote({
@@ -1578,7 +1578,7 @@ export const enteredNote = (
     maybeNoteId: () => Option.some(options.noteId),
     isEditorActive: () => true,
     isIndexActive: () => false,
-    loadState: () => 'loading' as const,
+    loadState: () => 'loading',
     loadGeneration: () => generation,
     isLoadPending: () => isLoadPending,
     maybeLoadHint: () => Option.none(),
@@ -1595,7 +1595,7 @@ export const enteredNote = (
     isPinned: () => false,
     isArchived: () => false,
     isTrashed: () => false,
-    saveState: () => 'idle' as const,
+    saveState: () => 'idle',
     saveGeneration: () => 0,
     draftRevision: () => 0,
     saveRevision: () => 0,

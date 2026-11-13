@@ -383,7 +383,7 @@ export class AuthService extends Context.Service<AuthService>()('AuthService', {
       meWithRenewal,
       createHousehold,
       joinHousehold,
-    } as const
+    }
   }),
 }) {}
 

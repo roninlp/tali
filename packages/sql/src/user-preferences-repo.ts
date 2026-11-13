@@ -86,7 +86,7 @@ export class UserPreferencesRepo extends Context.Service<UserPreferencesRepo>()(
           rows => toPreferences(rows[0]!),
         )
 
-      return { findByUser, upsert } as const
+      return { findByUser, upsert }
     }),
   },
 ) {}
