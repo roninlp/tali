@@ -1,6 +1,6 @@
 import { Effect, Layer } from 'effect'
 import { HttpServerRequest } from 'effect/http'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import {
   defaultPreferences,
   Unauthorized,

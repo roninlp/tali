@@ -24,7 +24,7 @@ configuration. Two options keep the noise in check:
 
 - `diagnosticSeverity.unstableApiUsage` is `off`: Effect 4 marks much of the
   API this repo builds on as unstable, and
-  `apps/web-foldkit/.oxlintrc.effect.json` opts out of the same rule.
+  `packages/lint-config/oxlint/effect-typed.ts` opts out of the same rule.
 - `ignoreEffectWarningsInTscExitCode` is `true`: Effect warnings appear in
   `pnpm typecheck` output but only Effect errors fail the build.
 

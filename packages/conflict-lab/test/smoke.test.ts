@@ -1,5 +1,5 @@
 import { IDBFactory } from 'fake-indexeddb'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { uuidV7 } from '@tali/domain'
 import { openLocalStore } from '@tali/sync-client'
 import { createSyncEngine } from '@tali/sync-client'

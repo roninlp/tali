@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { Layer, String as Str, Tracer } from 'effect'
 import { D1Client } from '@effect/sql-d1'
 import { HttpRouter } from 'effect/http'

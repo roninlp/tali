@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'vite-plus/test'
 
 import { KDF_PARAMS, deriveKdfSalt } from '@tali/domain'
 

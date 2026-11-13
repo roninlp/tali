@@ -1,7 +1,7 @@
 import { Effect, Option } from 'effect'
 import { Command, given, message, model, story } from 'foldkit/story'
 import { modifyFields } from 'foldkit/struct'
-import { afterEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vite-plus/test'
 
 import type { AuthFailure } from './lib/auth-api'
 import * as Settings from './settings'

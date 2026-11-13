@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { uuidV7 } from '@tali/domain'
 import { jsonRequest, sessionWithHousehold, workerFetch } from './support.js'
 

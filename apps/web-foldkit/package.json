@@ -4,12 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
+    "dev": "vp dev",
+    "build": "vp build",
+    "preview": "vp preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "lint:effect": "effect-tsgo patch --no-typescript --oxlint && oxlint --config .oxlintrc.effect.json --deny-warnings src"
+    "test": "vp test run"
   },
   "dependencies": {
     "@effect/platform-browser": "catalog:",
@@ -23,21 +22,16 @@
     "foldkit": "0.170.0"
   },
   "devDependencies": {
-    "@effect/tsgo": "catalog:",
     "@foldkit/devtools": "0.170.0",
     "@foldkit/devtools-mcp": "0.26.0",
-    "@foldkit/oxlint-plugin": "0.15.4",
     "@foldkit/vite-plugin": "0.29.0",
     "@tailwindcss/vite": "catalog:",
     "fake-indexeddb": "catalog:",
     "happy-dom": "^20.14.5",
-    "oxlint": "catalog:",
-    "oxlint-tsgolint": "7.0.2003",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
-    "vitest": "catalog:",
-    "@tali/lint-config": "workspace:*",
-    "@tali/tsconfig": "workspace:*"
+    "@tali/tsconfig": "workspace:*",
+    "vite-plus": "catalog:"
   }
 }

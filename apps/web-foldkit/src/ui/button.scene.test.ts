@@ -1,6 +1,6 @@
 import type { HtmlBuilder } from 'foldkit/html'
 import { expect, given, role, scene } from 'foldkit/scene'
-import { describe, test } from 'vitest'
+import { describe, test } from 'vite-plus/test'
 
 import { buttonView } from './button'
 

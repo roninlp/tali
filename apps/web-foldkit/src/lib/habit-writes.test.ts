@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'vite-plus/test'
 
 import { uuidV7 } from '@tali/domain'
 import type { LocalStore } from '@tali/sync-client'

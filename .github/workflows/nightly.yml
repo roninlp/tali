@@ -12,7 +12,6 @@ permissions:
   contents: read
 
 env:
-  TURBO_TELEMETRY_DISABLED: "1"
   TZ: UTC
 
 jobs:

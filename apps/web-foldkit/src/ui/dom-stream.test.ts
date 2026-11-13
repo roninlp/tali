@@ -1,6 +1,6 @@
 import { Deferred, Effect, Fiber, Stream } from 'effect'
 import { TestClock } from 'effect/testing'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'vite-plus/test'
 
 import { clockEvents, eventStream } from './dom-stream'
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { Layer } from 'effect'
 import { type HabitFrequency, type HabitId, uuidV7 } from '@tali/domain'
 import {

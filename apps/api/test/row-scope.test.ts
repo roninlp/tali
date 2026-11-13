@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { Cause, Effect, Exit, Option } from 'effect'
 import type { HouseholdId, UserId } from '@tali/domain'
 import {

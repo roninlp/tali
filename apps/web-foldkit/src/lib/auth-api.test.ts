@@ -1,5 +1,5 @@
 import { Effect } from 'effect'
-import { afterEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vite-plus/test'
 
 import { Email, LoginKey } from '@tali/domain'
 

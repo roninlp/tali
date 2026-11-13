@@ -11,7 +11,7 @@ subtree_prompted: true
 ## Project Notes
 
 - **Monorepo location.** This package is `apps/web-foldkit` in the Tali pnpm +
-  Turbo workspace. Run scripts from the repo root with
+  Vite Task workspace. Run scripts from the repo root with
   `pnpm --filter @tali/web-foldkit <script>`, or from this directory.
 - **Vendored Foldkit source.** The Foldkit repository is vendored at the repo
   root as `../../repos/foldkit`, pinned to the installed release. `FOLDKIT.md`

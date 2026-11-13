@@ -67,14 +67,14 @@ pnpm --filter @tali/e2e install:browsers   # Chromium for Playwright
 ### The PR suite (what CI gates a merge on)
 
 ```sh
-pnpm typecheck          # turbo → every package
-pnpm exec turbo run quality   # lint (oxlint + Effect rules) + format
+pnpm typecheck          # Vite Task → every package
+pnpm quality            # lint (Oxlint + Effect rules) + format
 pnpm build
 pnpm test               # unit + service + boundary + bounded conflict lab
 ```
 
 `pnpm test` is the whole fast net; it takes a few minutes cold and reuses the
-Turbo cache after that. The API's two layers are one command with two projects:
+Vite Task cache after that. The API's two layers are one command with two projects:
 
 ```sh
 pnpm --filter @tali/api test                       # both projects

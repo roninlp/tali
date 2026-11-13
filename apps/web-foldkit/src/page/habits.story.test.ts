@@ -9,7 +9,7 @@ import {
   story,
 } from 'foldkit/story'
 import { modifyFields } from 'foldkit/struct'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'vite-plus/test'
 
 import { Animation, Dialog, Toast as UiToast } from '@foldkit/ui'
 import { test as toastTest } from '@foldkit/ui/toast'

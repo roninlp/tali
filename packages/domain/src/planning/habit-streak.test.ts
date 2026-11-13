@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import type { LocalDate } from './common.js'
 import type { HabitEntryStatus, HabitFrequency } from './habit.js'
 import {

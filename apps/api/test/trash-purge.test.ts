@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { Effect, Layer } from 'effect'
 import { D1Client } from '@effect/sql-d1'
 import { type SyncEntityType, TRASH_RETENTION_MS } from '@tali/domain'

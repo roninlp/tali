@@ -1,5 +1,5 @@
 import { Schema } from 'effect'
-import { vi } from 'vitest'
+import { vi } from 'vite-plus/test'
 
 /**
  * The one way a test hands `fetch` back a canned answer.

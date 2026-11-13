@@ -12,7 +12,7 @@ import {
   withViewInputs,
 } from 'foldkit/scene'
 import { modifyFields } from 'foldkit/struct'
-import { describe, test } from 'vitest'
+import { describe, test } from 'vite-plus/test'
 
 import { syncFailureMessage } from '../lib/sync-copy'
 import { emptyMirrorSnapshot } from '../mirror'

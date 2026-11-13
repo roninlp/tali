@@ -30,6 +30,6 @@ pnpm --filter @tali/conflict-lab test:nightly  # longer run: 100 programs × 70 
 ```
 
 The nightly run is scheduled by `.github/workflows/nightly.yml`. The flag is
-resolved in `vitest.config.ts` and injected into workerd (which cannot read the
+resolved in `vite.config.ts` and injected into workerd (which cannot read the
 host `process.env`); `test/harness.test.ts` fails if the injection stops
 tracking the CLI flag.

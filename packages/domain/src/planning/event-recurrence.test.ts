@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { uuidV7 } from '../ids.js'
 import type { HouseholdId, UserId } from '../common.js'
 import type { RecurrenceRule } from '../recurrence.js'

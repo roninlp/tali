@@ -13,7 +13,7 @@ import {
   type,
   within,
 } from 'foldkit/scene'
-import { describe, test } from 'vitest'
+import { describe, test } from 'vite-plus/test'
 
 import { Popover } from '@foldkit/ui'
 import { ListId, NoteId } from '@tali/domain'

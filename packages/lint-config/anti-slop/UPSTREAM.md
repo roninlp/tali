@@ -12,32 +12,29 @@ Source repository and commit: **unknown**. The skill bundle carries no repositor
 
 ## Local adaptations
 
-None to the bundled rule source. Shared configuration lives in `packages/lint-config`:
+None to the bundled rule source. Configuration lives in the root `vite.config.ts`:
 
-- `oxlint/base.json` is the workspace baseline: corrected Oxlint defaults,
-  `no-unused-vars`, and `typescript/no-explicit-any`.
-- `oxlint/strict.json` registers the generic anti-slop plugin and all generic
-  rules, including the native `oxc/no-accumulating-spread` companion rule.
-- `oxlint/effect.json` registers the opt-in Effect plugin and its five rules.
-- The root `.oxlintrc.json` extends `base.json`. Oxlint's nested-config
-  resolution applies it to every package.
-- `apps/web-foldkit/.oxlintrc.json` extends the root config plus `strict`,
-  `effect`, and the Foldkit recommended config. This is the only strict
-  consumer today.
-- `@oxlint/plugins` is pinned to `1.85.0` in this package, matching the
-  `oxlint` catalog version. `@foldkit/oxlint-plugin` independently brings
-  `@oxlint/plugins@1.90.0`; the two versions coexist.
+- The `lint` block owns the base rules, ignores, and the `apps/web-foldkit`
+  override that registers both plugins and enables every generic and Effect
+  anti-slop rule for that package.
+- `packages/lint-config/oxlint/effect-typed.ts` is the separate type-aware
+  Effect pass (`pnpm lint:effect`); it exists because Oxlint's `typeAware`
+  option is root-level and only the app src runs the patched `effecttsgo`
+  plugin.
+- `@oxlint/plugins` is pinned to `1.93.0` in this package, matching the Oxlint
+  version bundled by Vite+.
 
 ## Adoption policy
 
 The base preset applies everywhere. The strict and Effect presets are opt-in so
-a package can be cleaned before it adopts them. Add them to that package's
-nested `.oxlintrc.json`, not to the root config.
+a package can be cleaned before it adopts them. Add them through a
+`lint.overrides` entry in the root `vite.config.ts`, not a nested config file.
 
 ## Verification
 
-- `pnpm exec oxlint --ignore-pattern 'repos/**' --deny-warnings .` loads the
-  plugins through the root and nested configs and reports rule diagnostics.
-- `pnpm exec turbo run quality` runs the root lint and format tasks.
+- `pnpm lint` loads the base rules plus the app override and reports rule
+  diagnostics.
+- `pnpm lint:effect` runs the typed Effect pass after patching Oxlint.
+- `pnpm quality` runs the root lint and format checks.
 - Application cleanup is tracked separately. Enabling a strict preset surfaces
   existing findings rather than suppressing them.

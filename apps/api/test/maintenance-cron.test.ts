@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { TRASH_RETENTION_MS } from '@tali/domain'
 import { CRON } from '@tali/config'
 import worker from '../src/index.js'

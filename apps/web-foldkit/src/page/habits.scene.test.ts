@@ -15,7 +15,7 @@ import {
   withViewInputs,
 } from 'foldkit/scene'
 import { modifyFields } from 'foldkit/struct'
-import { describe, test } from 'vitest'
+import { describe, test } from 'vite-plus/test'
 
 import { Animation, Dialog, Toast as UiToast } from '@foldkit/ui'
 

@@ -12,7 +12,7 @@
 // (`vite build` → dist) uploaded to the web Worker.
 //
 // Paths are resolved from this file, not the working directory, so the stack
-// behaves the same whether it starts under Turbo (`infra/`) or from the repo
+// behaves the same whether it starts from the package (`infra/`) or from the repo
 // root with `--config infra/alchemy.run.ts`.
 import * as Alchemy from 'alchemy'
 import * as Cloudflare from 'alchemy/Cloudflare'
@@ -406,7 +406,9 @@ export default Alchemy.Stack(
       command: 'pnpm run build',
       outdir: 'dist',
       dev: {
-        command: 'pnpm exec vite',
+        // Vite+ owns the dev server now; the `vite` catalog entry is an alias
+        // for its core package and has no `vite` binary of its own.
+        command: 'pnpm exec vp dev',
         url: 'http://localhost:3001',
         // Alchemy's sidecar defaults to NODE_ENV=production, and Vite derives
         // `import.meta.env.DEV` (and its own dev mode) from that. A dev server

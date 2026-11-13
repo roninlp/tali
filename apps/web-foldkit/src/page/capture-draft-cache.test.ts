@@ -1,5 +1,5 @@
 import { Option } from 'effect'
-import { beforeEach, describe, expect, test } from 'vitest'
+import { beforeEach, describe, expect, test } from 'vite-plus/test'
 
 import { loadCaptureText, saveCaptureText } from '../lib/capture-draft-cache'
 import { initialModel } from './capture'

@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'vite-plus/test'
 
 import {
   type SyncBootstrapResponse,

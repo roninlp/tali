@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { Schema } from 'effect'
 import type { HouseholdId, UserId } from '../common.js'
 import { uuidV7 } from '../ids.js'

@@ -6,6 +6,7 @@ This project vendors external repositories under @repos/
 - Prefer examples and patterns from the vendored source code over generated guesses or web search results
 - Do not edit files under @repos/ unless explicitly asked
 - Do not import from @repos/ - application code should continue importing from normal package dependencies
+- `vp migrate` rewrites Vite/Vitest imports across the checkout, including @repos/. Revert any `repos/` changes after a migration run.
 
 When writing Effect code, inspect @repos/effect/ for examples of idiomatic usage, tests, module structure, and API design. Treat it as the source of truth for Effect patterns.
 
@@ -18,6 +19,7 @@ The Solid app has been removed.
 
 - **App:** `apps/web-foldkit` (`@tali/web-foldkit`). Read `apps/web-foldkit/FOLDKIT.md` and `apps/web-foldkit/AGENTS.md` before editing it. The migration record lives in `docs/plans/foldkit-migration.md`.
 - **AI setup:** Foldkit skills are linked in `.agents/skills/`; DevTools MCP is configured in `opencode.json` and `apps/web-foldkit/.mcp.json`. Start the app with `pnpm --filter @tali/web-foldkit dev` (port 3001), open it in a browser, then use the `foldkit_*` MCP tools to inspect the Model and Message history.
+- **Toolchain:** Vite+ (`vp`) owns Vite, Vitest, Oxlint, Oxfmt, and Vite Task; Turborepo is gone. The root `vite.config.ts` holds the `run`, `test`, `lint`, and `fmt` blocks, and `pnpm build|typecheck|test` fan out with `vp run -r --cache`. Run `vp check` for format + lint and `vp test` for the package suites.
 - **Versions:** shared dependency versions are defined once in the pnpm catalog in `pnpm-workspace.yaml` and referenced as `catalog:` in each `package.json`. The whole workspace runs Effect 4.1. Bump shared versions in the catalog, not in individual manifests.
 
 ## TypeScript and Effect diagnostics
@@ -26,7 +28,7 @@ The root `prepare` script patches the workspace TypeScript install with `@effect
 
 - Read Effect diagnostics without an editor: `pnpm exec effect-tsgo diagnostics --project <tsconfig> --format json` (`--file <path>` for one file).
 - `@effect/tsgo` is pinned exactly in the catalog: each release is built against one TypeScript and one Oxlint version. Bump it together with `typescript` / `oxlint`.
-- Effect lint rules are separate and stay with Oxlint: `apps/web-foldkit/.oxlintrc.effect.json`, run by `pnpm --filter @tali/web-foldkit lint:effect`.
+- Effect lint rules are separate and stay with Oxlint: `packages/lint-config/oxlint/effect-typed.ts`, run by `pnpm lint:effect`.
 
 ## Agent skills
 

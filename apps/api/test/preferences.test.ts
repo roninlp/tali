@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { URL, fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { Layer, Schema } from 'effect'
 import { HttpRouter } from 'effect/http'
 import {

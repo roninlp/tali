@@ -154,7 +154,7 @@ export const newTelemetry = (): Telemetry => ({
   pushes: 0,
 })
 
-/** Length settings injected by `vitest.config.ts` (see `mode.ts`). */
+/** Length settings injected by `vite.config.ts` (see `mode.ts`). */
 export const LAB_MODE: LabMode = __CONFLICT_LAB_MODE__
 
 export interface TransportOptions {

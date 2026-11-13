@@ -4,7 +4,7 @@
  *
  * `process.env` is not forwarded into the Workers runtime, so the test module
  * cannot read the flag itself (that bug made the "nightly" run identical to
- * the PR run). `vitest.config.ts` calls `resolveLabMode` and passes the result
+ * the PR run). `vite.config.ts` calls `resolveLabMode` and passes the result
  * through Vite's `define` and a miniflare binding; `harness.ts` exposes the
  * define as `LAB_MODE`, and `harness.test.ts` checks it agrees with the
  * binding.

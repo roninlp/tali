@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { Effect, Layer } from 'effect'
 import { type SyncPullResponse, type SyncPushEntry, uuidV7 } from '@tali/domain'
 import { SyncService, SyncServiceLive } from '../src/sync-service.js'

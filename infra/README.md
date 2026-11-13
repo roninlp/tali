@@ -28,7 +28,7 @@ The purge and backup decisions are in ADR-0009; the restore runbook is
 From the repo root:
 
 ```sh
-pnpm dev              # turbo → alchemy dev (whole app, no Cloudflare account)
+pnpm dev              # Vite Task → alchemy dev (whole app, no Cloudflare account)
 ```
 
 Or directly:
@@ -49,7 +49,7 @@ preflighted requests from) and web `:3001` (the api's `DEV_ORIGIN`).
 
 ## Deploy
 
-The deploy command is `pnpm stack:deploy` (`turbo run deploy` → `alchemy deploy`).
+The deploy command is `pnpm stack:deploy` (`pnpm --filter @tali/infra run deploy` → `alchemy deploy`).
 It reads its credentials from the process environment; none of them live in the
 repository:
 
@@ -67,12 +67,12 @@ repository:
 
 **Why it used to fail out of the box.** Three separate things:
 
-- Turbo 2 runs tasks in strict env mode, so credentials exported in the shell
-  never reached the task. `deploy`, `plan`, `destroy` and `dev` now list the
-  variables above in `turbo.json`'s `passThroughEnv`.
-- The deploy tasks now load a repository-root `.env` when one exists (the
-  package scripts `set -a` it before Alchemy runs), so no manual `export` is
-  needed locally.
+- The deploy, plan, destroy and dev scripts are plain `pnpm --filter` scripts,
+  not cached Vite Task entries, so the process environment reaches them
+  unchanged. (Cached Vite Task tasks run in a clean environment.)
+- The deploy tasks load a repository-root `.env` when one exists (the package
+  scripts `set -a` it before Alchemy runs), so no manual `export` is needed
+  locally.
 - The deploy is deliberately fail-fast: without the VAPID identity or without
   Cloudflare credentials (an Alchemy profile, or `CLOUDFLARE_API_TOKEN` +
   `CLOUDFLARE_ACCOUNT_ID`) it stops instead of shipping an inbox-only app or
@@ -252,7 +252,7 @@ Command spans in memory; the browser still propagates `traceparent`.
 ## Notes
 
 - Paths in `alchemy.run.ts` resolve from the file, not the working directory, so
-  the stack works under Turbo (`infra/`) or from the repo root with
+  the stack works from the package (`infra/`) or from the repo root with
   `--config infra/alchemy.run.ts`.
 - The api is an **async Worker** (plain `{ fetch }` module), not an
   Effect-native one: the app already builds its Effect layer per request around
