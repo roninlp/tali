@@ -17,7 +17,7 @@ not a summary written from memory.
 | Week (Gregorian) | |
 | Users | |
 | Devices (model, OS, browser, installed PWA?) | |
-| Nightly `gate-flows` run | |
+| Nightly `gate-flows` run | [43830221467](https://github.com/roninlp/tali/actions/runs/43830221467) — green on `b22d399` (5 flows + a11y); re-run `gh workflow run nightly.yml` after any mid-week deploy |
 | Accessibility pass | green / red (link) |
 
 ## Daily log
