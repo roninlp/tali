@@ -90,7 +90,7 @@ Locally, copy the example file and deploy — the package script loads it:
 ```sh
 cp .env.example .env        # fill in the values; .env is gitignored
 pnpm stack:plan
-pnpm stack:deploy            # add `-- --yes` to skip the plan approval prompt
+pnpm stack:deploy            # add `--yes` to skip the plan approval prompt
 ```
 
 Without `.env`, authenticate an Alchemy profile once instead (`alchemy profile
@@ -106,7 +106,7 @@ an instance of the same program.
 
 ### Deploy on push (GitHub Actions)
 
-`.github/workflows/deploy.yml` runs `pnpm stack:deploy -- --yes` on every push
+`.github/workflows/deploy.yml` runs `pnpm stack:deploy --yes` on every push
 to `main` and on manual dispatch. The Cloudflare credential is minted by
 Alchemy itself (`infra/github.stack.ts`), so no personal API token is pasted
 into GitHub:

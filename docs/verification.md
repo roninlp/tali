@@ -170,7 +170,7 @@ curl "http://localhost:8787/cdn-cgi/handler/scheduled?cron=47+3+*+*+*&time=$(dat
 | --- | --- | --- |
 | `.github/workflows/ci.yml` | every PR, every push to `main` | typecheck · quality (lint+format) · build · test (unit + service + boundary + bounded conflict lab) |
 | `.github/workflows/nightly.yml` | `17 2 * * *` UTC, and manual | `conflict-lab` (long randomised run, 45 min budget) · `gate-flows` (Playwright: 5 flows + a11y, 20 min budget) |
-| `.github/workflows/deploy.yml` | push to `main`, manual | `pnpm stack:deploy -- --yes` to the pinned `ALCHEMY_STAGE` (default `demo`); skipped with a warning when the Cloudflare/VAPID secrets are absent |
+| `.github/workflows/deploy.yml` | push to `main`, manual | `pnpm stack:deploy --yes` to the pinned `ALCHEMY_STAGE` (default `demo`); skipped with a warning when the Cloudflare/VAPID secrets are absent |
 
 CI pins `TZ=UTC` and sets `CI=true`; the gate flows run one Chromium worker
 against a fresh `e2e` stage.
