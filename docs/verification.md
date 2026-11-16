@@ -265,7 +265,7 @@ this is recorded by hand before sign-off and after any perf change.
 | `/today` server response | — | p50 < 150 ms warm, < 350 ms cold |
 
 **Procedure** (run against the deployed stage, never the local dev server, and
-record every number in `docs/acceptance-week.md` §Performance):
+record every number in `docs/acceptance-week.md` §Performance baseline):
 
 1. Use a real mid-range Android phone (or Chrome DevTools with CPU ×4 and
    "Slow 4G"). Clear site data, sign in, then measure **cold first load**:
@@ -345,6 +345,6 @@ The week counts as signed off when:
 - the metrics in the record meet the Must targets in §5, or the miss is
   written down with a decision to accept it;
 - `docs/acceptance-week.md` is filled in, committed, and linked from
-  [#86](https://github.com/roninlp/tali/issues/86).
+  [#105](https://github.com/roninlp/tali/issues/105).
 
 Anything short of that is a finding, not a sign-off.

@@ -1,7 +1,7 @@
 # Acceptance week — record
 
 Procedure: [`docs/verification.md`](verification.md) §6 · Ticket:
-[#86](https://github.com/roninlp/tali/issues/86)
+[#105](https://github.com/roninlp/tali/issues/105)
 
 Fill this in during the week; do not reconstruct it afterwards. The point is
 evidence that both users planned, tracked, and reviewed a full week in Tali,
@@ -11,13 +11,13 @@ not a summary written from memory.
 
 | Field | Value |
 | --- | --- |
-| Stage / URL | |
-| Commit under test | |
+| Stage / URL | `demo` — https://tali-taliweb-demo-j5iosbwxn4zvh6kn.ronin-lp.workers.dev |
+| Commit under test | `main` at day 1 — take it from the day-1 deploy run; last verified green: `b22d399` |
 | Week (Jalali) | |
 | Week (Gregorian) | |
 | Users | |
 | Devices (model, OS, browser, installed PWA?) | |
-| Nightly `gate-flows` run | |
+| Nightly `gate-flows` run | [43830221467](https://github.com/roninlp/tali/actions/runs/43830221467) — green on `b22d399` (5 flows + a11y); re-run `gh workflow run nightly.yml` after any mid-week deploy |
 | Accessibility pass | green / red (link) |
 
 ## Daily log
@@ -73,6 +73,30 @@ Targets from `docs/must-have-feature-map.html` §10; procedure in
 | Accessibility | WCAG 2.1 A/AA gate green; manual checks pass | | |
 | RTL / 320 px | no horizontal scroll, icons mirrored | | |
 
+## Performance baseline
+
+Numbers recorded by the procedure in [`docs/verification.md`](verification.md)
+§5, against the deployed stage, on a real mid-range phone. Five runs per metric;
+record p50 and worst. These feed the "quick add", "first full load",
+"interaction latency" and `/today` rows above.
+
+| Metric | Run 1 | Run 2 | Run 3 | Run 4 | Run 5 | p50 | Worst |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Cold first load — DOMContentLoaded | | | | | | | |
+| Cold first load — LCP | | | | | | | |
+| Cold first load — time to first interaction (Today composer accepts text) | | | | | | | |
+| In-app navigation — Calendar | | | | | | | |
+| In-app navigation — Today | | | | | | | |
+| In-app navigation — Tasks | | | | | | | |
+| Interaction — complete + undo a task | | | | | | | |
+| Interaction — check a list item | | | | | | | |
+| Interaction — log a habit | | | | | | | |
+| `/health` server response | | | | | | | |
+| `/today` server response | | | | | | | |
+
+Device + throttling used (model, OS, browser, installed PWA, DevTools CPU/network
+if any): ______________________
+
 ## Findings
 
 | Issue | Severity (blocker / known-fix) | Status | Notes |
@@ -86,6 +110,6 @@ Targets from `docs/must-have-feature-map.html` §10; procedure in
 - [ ] Metrics meet targets, or each miss has a written, accepted reason.
 - [ ] Known-fixes filed as issues and listed above.
 - [ ] This file committed and linked from
-      [#86](https://github.com/roninlp/tali/issues/86).
+      [#105](https://github.com/roninlp/tali/issues/105).
 
 Signed off by: ______________________ Date: __________
