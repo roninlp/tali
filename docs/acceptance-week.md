@@ -12,7 +12,7 @@ not a summary written from memory.
 | Field | Value |
 | --- | --- |
 | Stage / URL | `demo` — https://tali-taliweb-demo-j5iosbwxn4zvh6kn.ronin-lp.workers.dev |
-| Commit under test | `b22d399` (bump this whenever a fix deploys mid-week) |
+| Commit under test | `main` at day 1 — take it from the day-1 deploy run; last verified green: `b22d399` |
 | Week (Jalali) | |
 | Week (Gregorian) | |
 | Users | |
