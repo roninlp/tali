@@ -148,6 +148,18 @@ export default defineConfig({
     ],
     overrides: [
       {
+        // Playwright reads fixture signatures from the function source and
+        // rejects any first parameter that is not an object pattern, so a
+        // fixture that needs no other fixture has to be `async ({}, use) =>`.
+        files: ['packages/e2e/tests/**'],
+        rules: {
+          'no-empty-pattern': [
+            'error',
+            { allowObjectPatternsAsParameters: true },
+          ],
+        },
+      },
+      {
         // The old app config ignored `public/` and config files; keep those on
         // the base rules.
         files: ['apps/web-foldkit/src/**', 'apps/web-foldkit/worker.ts'],

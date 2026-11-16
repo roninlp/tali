@@ -68,9 +68,13 @@ jobs:
       # by `pnpm stack:ci` (infra/github.stack.ts), not pasted in by hand.
       # `CI=true` makes Alchemy read environment credentials; `--yes` approves
       # the plan and any state-store upgrade without a prompt.
+      #
+      # Pass the flag directly, with no `--` separator: pnpm forwards a literal
+      # `--` to the script, so `pnpm stack:deploy -- --yes` reaches Alchemy as
+      # `alchemy deploy -- --yes` and `--yes` is read as the `<config>` path.
       - name: Deploy
         if: steps.guard.outputs.skip != 'true'
-        run: pnpm stack:deploy -- --yes
+        run: pnpm stack:deploy --yes
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
