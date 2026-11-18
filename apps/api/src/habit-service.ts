@@ -237,27 +237,18 @@ export class HabitService extends Context.Service<HabitService>()(
         clientMutationId: string,
         expectedId?: HabitId,
       ): Effect.Effect<Option.Option<Habit>, HabitServiceError> =>
-        Effect.gen(function* () {
-          const row = yield* appliedMutation(viewer, clientMutationId)
-          if (Option.isNone(row)) return Option.none()
-          if (
-            kit.reusedMutationId(row.value, {
-              entityType: 'habit',
-              id: expectedId,
-            })
-          ) {
-            return yield* kit.reusedMutationIdError(
-              expectedId ?? row.value.entityId,
-            )
-          }
+        kit.replayGuard({
+          householdId: viewer.householdId,
+          clientMutationId,
+          entityType: 'habit',
+          expectedId,
           // Same household/owner rules as any other read: a mutation id may
           // never hand back another member's private row.
-          const current = yield* readHabit(
-            viewer,
-            row.value.entityId as HabitId,
-            true,
-          )
-          return Option.some(current)
+          read: entityId =>
+            Effect.map(
+              readHabit(viewer, entityId as HabitId, true),
+              Option.some,
+            ),
         })
 
       /**

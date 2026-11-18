@@ -190,9 +190,6 @@ export class EventService extends Context.Service<EventService>()(
       const eventState = (event: Event): SyncEntityState =>
         kit.stateOf('event', event)
 
-      const appliedMutation = (viewer: EventViewer, clientMutationId: string) =>
-        kit.appliedMutation(viewer.householdId, clientMutationId)
-
       /**
        * Read one event with the standard scope rules. A tombstone reads as
        * "gone" unless the caller asks for it (the replay guard does).
@@ -220,27 +217,18 @@ export class EventService extends Context.Service<EventService>()(
         clientMutationId: string,
         expectedId?: EventId,
       ): Effect.Effect<Option.Option<Event>, EventServiceError> =>
-        Effect.gen(function* () {
-          const row = yield* appliedMutation(viewer, clientMutationId)
-          if (Option.isNone(row)) return Option.none()
-          if (
-            kit.reusedMutationId(row.value, {
-              entityType: 'event',
-              id: expectedId,
-            })
-          ) {
-            return yield* kit.reusedMutationIdError(
-              expectedId ?? row.value.entityId,
-            )
-          }
+        kit.replayGuard({
+          householdId: viewer.householdId,
+          clientMutationId,
+          entityType: 'event',
+          expectedId,
           // Same household/owner rules as any other read: a mutation id may
           // never hand back another member's private row.
-          const current = yield* readEvent(
-            viewer,
-            row.value.entityId as EventId,
-            true,
-          )
-          return Option.some(current)
+          read: entityId =>
+            Effect.map(
+              readEvent(viewer, entityId as EventId, true),
+              Option.some,
+            ),
         })
 
       /** Decode + cross-field validate a rule against the one shared contract. */
@@ -778,44 +766,34 @@ export class EventService extends Context.Service<EventService>()(
         EventServiceError
       > =>
         Effect.gen(function* () {
-          const row = yield* appliedMutation(viewer, input.clientMutationId)
-          if (Option.isNone(row)) return Option.none()
-          if (
-            kit.reusedMutationId(row.value, {
-              entityType: 'event',
-              id: input.id,
-            })
-          ) {
-            return yield* kit.reusedMutationIdError(input.id)
-          }
-          const series = yield* readEvent(
-            viewer,
-            row.value.entityId as EventId,
-            true,
-          )
+          const series = yield* kit.replayGuard({
+            householdId: viewer.householdId,
+            clientMutationId: input.clientMutationId,
+            entityType: 'event',
+            expectedId: input.id,
+            read: entityId =>
+              Effect.map(
+                readEvent(viewer, entityId as EventId, true),
+                Option.some,
+              ),
+          })
+          if (Option.isNone(series)) return Option.none()
           let following: Event | null = null
           if (input.followingMutationId !== undefined) {
-            const tail = yield* appliedMutation(
-              viewer,
-              input.followingMutationId,
-            )
-            if (Option.isSome(tail)) {
-              if (
-                kit.reusedMutationId(tail.value, {
-                  entityType: 'event',
-                  id: input.followingId,
-                })
-              ) {
-                return yield* kit.reusedMutationIdError(tail.value.entityId)
-              }
-              following = yield* readEvent(
-                viewer,
-                tail.value.entityId as EventId,
-                true,
-              )
-            }
+            const tail = yield* kit.replayGuard({
+              householdId: viewer.householdId,
+              clientMutationId: input.followingMutationId,
+              entityType: 'event',
+              expectedId: input.followingId,
+              read: entityId =>
+                Effect.map(
+                  readEvent(viewer, entityId as EventId, true),
+                  Option.some,
+                ),
+            })
+            if (Option.isSome(tail)) following = tail.value
           }
-          return Option.some({ series, following })
+          return Option.some({ series: series.value, following })
         })
 
       const editOccurrence = (
