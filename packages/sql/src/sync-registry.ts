@@ -45,6 +45,7 @@ import { reminderFireAt, reminderTierFor } from '@tali/domain/reminder-policy'
 import { insertStatement, selectList, updateStatement } from './columns.js'
 import { LIST_TABLE } from './list-repo.js'
 import { LIST_ITEM_TABLE } from './planning-list-item-repo.js'
+import { NOTE_TABLE } from './note-repo.js'
 import { PROJECT_TABLE } from './project-repo.js'
 import { TAG_TABLE } from './tag-repo.js'
 import { TASK_TABLE } from './task-repo.js'
@@ -1293,11 +1294,6 @@ const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
 
 // ── Note ──────────────────────────────────────────────────────────────────
 
-const NOTE_COLUMNS =
-  `${META_COLUMNS}, type, title, body, plain_text AS plainText, color, ` +
-  `is_pinned AS isPinned, is_archived AS isArchived, tag_ids AS tagIds, ` +
-  `created_at AS createdAt`
-
 const noteCodec = withSchema<Note>(Note, row => ({
   id: String(row.id),
   type: 'note',
@@ -1316,8 +1312,8 @@ const noteCodec = withSchema<Note>(Note, row => ({
 
 const noteDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'note',
-  table: 'notes',
-  select: NOTE_COLUMNS,
+  table: NOTE_TABLE.table,
+  select: selectList(NOTE_TABLE, { syncManaged: true }),
   writable: new Map([
     ['title', isString],
     ['body', isJson],
@@ -1348,36 +1344,17 @@ const noteDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     tagIds: Array.isArray(patch.tagIds) ? patch.tagIds : [],
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
-  insert: state => sql`
-    INSERT INTO notes
-      (id, type, title, body, plain_text, owner_id, household_id, visibility,
-       color, is_pinned, is_archived, tag_ids, created_at, updated_at, version, deleted_at)
-    VALUES
-      (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
-       ${encodeJsonOrNull(state.data.body)},
-       ${encodeText(state.data.plainText)}, ${state.ownerId}, ${state.householdId},
-       ${state.visibility}, ${encodeNullableText(state.data.color)},
-       ${encodeBit(state.data.isPinned)}, ${encodeBit(state.data.isArchived)},
-       ${encodeJson(state.data.tagIds)},
-       ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-       ${state.updatedAt}, ${state.version}, ${state.deletedAt})
-    ON CONFLICT DO NOTHING
-  `,
-  update: (state, expectedVersion) => sql`
-    UPDATE notes SET
-      title = ${encodeText(state.data.title)},
-      body = ${encodeJsonOrNull(state.data.body)},
-      plain_text = ${encodeText(state.data.plainText)},
-      visibility = ${state.visibility},
-      color = ${encodeNullableText(state.data.color)},
-      is_pinned = ${encodeBit(state.data.isPinned)},
-      is_archived = ${encodeBit(state.data.isArchived)},
-      tag_ids = ${encodeJson(state.data.tagIds)},
-      updated_at = ${state.updatedAt},
-      version = ${state.version},
-      deleted_at = ${state.deletedAt}
-    WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `,
+  insert: state =>
+    insertStatement(sql, NOTE_TABLE, {
+      values: syncValues(state),
+      onConflict: true,
+    }),
+  update: (state, expectedVersion) =>
+    updateStatement(sql, NOTE_TABLE, {
+      id: state.entityId,
+      values: syncValues(state),
+      expectedVersion,
+    }),
   /**
    * The note search index (#41).
    *
