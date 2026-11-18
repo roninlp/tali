@@ -8,6 +8,13 @@ import {
   type UserId,
   type Visibility,
 } from '@tali/domain'
+import {
+  type ColumnCodec,
+  column,
+  columnCodecs,
+  defineTable,
+  selectList,
+} from './columns'
 import { visibleScopeSql } from './scope'
 
 /**
@@ -24,12 +31,50 @@ import { visibleScopeSql } from './scope'
  * plus pure date arithmetic (a household has a handful of occasions).
  */
 
+/**
+ * The one place `occasions`' columns is declared (#115): this repo's SELECT
+ * below and the sync registry's projection and statements are generated from
+ * this descriptor. The repo is read-only — occasions are written through the
+ * registry (`sync-write.ts`'s kit), which owns the insert/update lists.
+ */
+
+/** The occasion offset column: `null`, or 0…365 whole days. */
+const advanceDaysCodec: ColumnCodec = value => {
+  const days =
+    typeof value === 'number' && Number.isFinite(value)
+      ? Math.trunc(value)
+      : null
+  return days !== null && days >= 0 && days <= 365 ? days : null
+}
+
+export const OCCASION_TABLE = defineTable('occasions', [
+  column('id', { updatable: false }),
+  column('type', { updatable: false }),
+  column('title', { codec: columnCodecs.text }),
+  column('owner_id', 'ownerId', { updatable: false }),
+  column('household_id', 'householdId', { updatable: false }),
+  column('visibility'),
+  column('color', { codec: columnCodecs.nullableText }),
+  column('origin_date', 'originDate', { codec: columnCodecs.text }),
+  column('time_zone', 'timeZone', { codec: columnCodecs.text }),
+  column('yearly', { codec: columnCodecs.bit }),
+  column('advance_reminder_days', 'advanceReminderDays', {
+    codec: advanceDaysCodec,
+  }),
+  column('preparation_task_id', 'preparationTaskId', {
+    codec: columnCodecs.nullableText,
+  }),
+  column('created_at', 'createdAt', {
+    updatable: false,
+    codec: columnCodecs.text,
+  }),
+  column('updated_at', 'updatedAt', { codec: columnCodecs.text }),
+  column('version', { codec: columnCodecs.int }),
+  column('deleted_at', 'deletedAt', { codec: columnCodecs.nullableText }),
+])
+
 /** The trusted column projection, aliased to the camelCase wire names. */
-export const OCCASION_SELECT =
-  `id, type, title, origin_date AS originDate, time_zone AS timeZone, yearly, ` +
-  `advance_reminder_days AS advanceReminderDays, preparation_task_id AS preparationTaskId, ` +
-  `owner_id AS ownerId, household_id AS householdId, visibility, color, ` +
-  `created_at AS createdAt, updated_at AS updatedAt, version, deleted_at AS deletedAt`
+export const OCCASION_SELECT = selectList(OCCASION_TABLE)
 
 export interface OccasionRow extends Record<string, unknown> {
   readonly id: string

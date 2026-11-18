@@ -49,7 +49,9 @@ import { HABIT_TABLE } from './habit-repo.js'
 import { LIST_TABLE } from './list-repo.js'
 import { LIST_ITEM_TABLE } from './planning-list-item-repo.js'
 import { NOTE_TABLE } from './note-repo.js'
+import { OCCASION_TABLE } from './occasion-repo.js'
 import { PROJECT_TABLE } from './project-repo.js'
+import { REMINDER_TABLE } from './reminder-repo.js'
 import { TAG_TABLE } from './tag-repo.js'
 import { TASK_TABLE } from './task-repo.js'
 
@@ -1792,12 +1794,6 @@ const habitEntryDefinition = (
 
 // ── Reminder ──────────────────────────────────────────────────────────────
 
-const REMINDER_COLUMNS =
-  `${META_COLUMNS}, type, title, note, color, kind, tier, repeat, ` +
-  `offset_minutes AS offsetMinutes, fire_at AS fireAt, ` +
-  `link_type AS linkType, link_id AS linkId, silenced_until AS silencedUntil, ` +
-  `time_zone AS timeZone, created_at AS createdAt`
-
 /**
  * Rebuild the link union from the flattened columns.
  *
@@ -1807,19 +1803,6 @@ const REMINDER_COLUMNS =
  */
 const reminderLinkOf = (type: unknown, id: unknown): ReminderLink =>
   decodeReminderLink(asText(type) ?? 'none', asText(id))
-
-/**
- * Flatten the link union for the two columns.
- *
- * The client patch's `link` is `unknown`, and its only writer is trusted, so a
- * missing or malformed value is written as `none` rather than rejected here.
- */
-const reminderLinkColumns = (
-  data: Record<string, unknown>,
-): ReminderLinkColumns =>
-  encodeReminderLink(
-    Option.getOrElse(asReminderLink(data.link), noReminderLink),
-  )
 
 /** A stored row's repeat; a malformed cell reads as a one-off. */
 const reminderRepeatOf = (value: unknown): ReminderRepeat =>
@@ -1887,12 +1870,25 @@ const REMINDER_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
   ['visibility', isOneOf('private', 'shared')],
 ])
 
+/**
+ * The reminder's write values: the shared state glue plus the two fallbacks
+ * the hand-written statements carried — the tier is derived from the kind (a
+ * patch can never forge it) and a garbage zone keeps the UTC default.
+ */
+const reminderStateValues = (state: SyncEntityState): Record<string, unknown> => ({
+  ...syncValues(state),
+  tier:
+    encodeText(state.data.tier) ||
+    reminderTierFor(state.data.kind as ReminderType),
+  timeZone: encodeText(state.data.timeZone) || 'UTC',
+})
+
 const reminderDefinition = (
   sql: SqlClient.SqlClient,
 ): SyncEntityDefinition => ({
   entityType: 'reminder',
-  table: 'reminders',
-  select: REMINDER_COLUMNS,
+  table: REMINDER_TABLE.table,
+  select: selectList(REMINDER_TABLE, { syncManaged: true }),
   writable: REMINDER_WRITABLE,
   ...reminderCodec,
   defaults: (patch, context) => {
@@ -1977,59 +1973,20 @@ const reminderDefinition = (
       `,
     ]
   },
-  insert: state => {
-    const link = reminderLinkColumns(state.data)
-    return sql`
-      INSERT INTO reminders
-        (id, type, title, note, owner_id, household_id, visibility, color,
-         kind, tier, repeat, offset_minutes, fire_at, link_type, link_id,
-         silenced_until, time_zone, created_at, updated_at, version, deleted_at)
-      VALUES
-        (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
-         ${encodeNullableText(state.data.note)}, ${state.ownerId},
-         ${state.householdId}, ${state.visibility},
-         ${encodeNullableText(state.data.color)}, ${encodeText(state.data.kind)},
-         ${encodeText(state.data.tier) || reminderTierFor(state.data.kind as ReminderType)},
-         ${encodeJson(state.data.repeat)}, ${encodeInt(state.data.offsetMinutes)},
-         ${encodeText(state.data.fireAt)}, ${link.linkType}, ${link.linkId},
-         ${encodeNullableText(state.data.silencedUntil)},
-         ${encodeText(state.data.timeZone) || 'UTC'},
-         ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-         ${state.updatedAt}, ${state.version}, ${state.deletedAt})
-      ON CONFLICT DO NOTHING
-    `
-  },
-  update: (state, expectedVersion) => {
-    const link = reminderLinkColumns(state.data)
-    return sql`
-      UPDATE reminders SET
-        title = ${encodeText(state.data.title)},
-        note = ${encodeNullableText(state.data.note)},
-        visibility = ${state.visibility},
-        color = ${encodeNullableText(state.data.color)},
-        kind = ${encodeText(state.data.kind)},
-        tier = ${encodeText(state.data.tier) || reminderTierFor(state.data.kind as ReminderType)},
-        repeat = ${encodeJson(state.data.repeat)},
-        offset_minutes = ${encodeInt(state.data.offsetMinutes)},
-        fire_at = ${encodeText(state.data.fireAt)},
-        link_type = ${link.linkType},
-        link_id = ${link.linkId},
-        silenced_until = ${encodeNullableText(state.data.silencedUntil)},
-        time_zone = ${encodeText(state.data.timeZone) || 'UTC'},
-        updated_at = ${state.updatedAt},
-        version = ${state.version},
-        deleted_at = ${state.deletedAt}
-      WHERE id = ${state.entityId} AND version = ${expectedVersion}
-    `
-  },
+  insert: state =>
+    insertStatement(sql, REMINDER_TABLE, {
+      values: reminderStateValues(state),
+      onConflict: true,
+    }),
+  update: (state, expectedVersion) =>
+    updateStatement(sql, REMINDER_TABLE, {
+      id: state.entityId,
+      values: reminderStateValues(state),
+      expectedVersion,
+    }),
 })
 
 // ── Occasion ──────────────────────────────────────────────────────────────
-
-const OCCASION_COLUMNS =
-  `${META_COLUMNS}, type, title, origin_date AS originDate, time_zone AS timeZone, ` +
-  `yearly, advance_reminder_days AS advanceReminderDays, ` +
-  `preparation_task_id AS preparationTaskId, color, created_at AS createdAt`
 
 const occasionCodec = withSchema<Occasion>(Occasion, row => ({
   id: String(row.id),
@@ -2060,8 +2017,8 @@ const occasionDefinition = (
   sql: SqlClient.SqlClient,
 ): SyncEntityDefinition => ({
   entityType: 'occasion',
-  table: 'occasions',
-  select: OCCASION_COLUMNS,
+  table: OCCASION_TABLE.table,
+  select: selectList(OCCASION_TABLE, { syncManaged: true }),
   writable: new Map([
     ['title', isString],
     ['originDate', isString],
@@ -2098,38 +2055,17 @@ const occasionDefinition = (
    * origin date is one field: a newer edit may move the annual anchor, and
    * an older one must not.
    */
-  insert: state => sql`
-    INSERT INTO occasions
-      (id, type, title, owner_id, household_id, visibility, color,
-       origin_date, time_zone, yearly, advance_reminder_days,
-       preparation_task_id, created_at, updated_at, version, deleted_at)
-    VALUES
-      (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
-       ${state.ownerId}, ${state.householdId}, ${state.visibility},
-       ${encodeNullableText(state.data.color)},
-       ${encodeText(state.data.originDate)}, ${encodeText(state.data.timeZone)},
-       ${encodeBit(state.data.yearly)},
-       ${encodeAdvanceDays(state.data.advanceReminderDays)},
-       ${encodeNullableText(state.data.preparationTaskId)},
-       ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-       ${state.updatedAt}, ${state.version}, ${state.deletedAt})
-    ON CONFLICT DO NOTHING
-  `,
-  update: (state, expectedVersion) => sql`
-    UPDATE occasions SET
-      title = ${encodeText(state.data.title)},
-      visibility = ${state.visibility},
-      color = ${encodeNullableText(state.data.color)},
-      origin_date = ${encodeText(state.data.originDate)},
-      time_zone = ${encodeText(state.data.timeZone)},
-      yearly = ${encodeBit(state.data.yearly)},
-      advance_reminder_days = ${encodeAdvanceDays(state.data.advanceReminderDays)},
-      preparation_task_id = ${encodeNullableText(state.data.preparationTaskId)},
-      updated_at = ${state.updatedAt},
-      version = ${state.version},
-      deleted_at = ${state.deletedAt}
-    WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `,
+  insert: state =>
+    insertStatement(sql, OCCASION_TABLE, {
+      values: syncValues(state),
+      onConflict: true,
+    }),
+  update: (state, expectedVersion) =>
+    updateStatement(sql, OCCASION_TABLE, {
+      id: state.entityId,
+      values: syncValues(state),
+      expectedVersion,
+    }),
 })
 
 // ── Registry ──────────────────────────────────────────────────────────────
