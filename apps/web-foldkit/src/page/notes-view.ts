@@ -6,6 +6,7 @@ import { buildVariantInsensitivePattern, localizeDigits } from '@tali/domain'
 import type { NoteSearchSegment } from '../lib/note-search'
 import { excerptAroundMatch, markMatches } from '../lib/note-search'
 import type { NoteRow } from '../mirror'
+import { pendingIdsOf } from '../mirror'
 import { notePath, notesTrashRouter } from '../route'
 import { buttonView } from '../ui/button'
 import { pendingBadgeView } from '../ui/feedback'
@@ -20,7 +21,7 @@ import {
 import { pageHeaderView } from '../ui/page'
 import { Message } from './notes'
 import type { Model, SearchHit, ViewInputs } from './notes'
-import { noteSections, pendingNoteIds } from './notes-model'
+import { noteSections } from './notes-model'
 
 /**
  * `/notes` index view, ported from
@@ -298,7 +299,10 @@ const noteRowView = (
   inputs: ViewInputs,
   h: HtmlBuilder<Message>,
 ): Html => {
-  const isPending = Array.contains(pendingNoteIds(inputs.pendingKeys), note.id)
+  const isPending = Array.contains(
+    pendingIdsOf('note', inputs.pendingKeys),
+    note.id,
+  )
 
   return h.keyed('li')(
     note.id,

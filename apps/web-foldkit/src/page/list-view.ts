@@ -11,9 +11,9 @@ import {
   buildListItemsView,
   findListRow,
   listItemsFor,
-  pendingIdsOf,
   writtenByOther,
 } from '../lists-model'
+import { pendingIdsOf } from '../mirror'
 import { listsRouter } from '../route'
 import { buttonView } from '../ui/button'
 import { confirmDialogView } from '../ui/confirm'
@@ -504,7 +504,7 @@ const itemsView = (
 ): Html => {
   const items = listItemsFor(inputs.mirror.listItems, list.id)
   const view = buildListItemsView(list, items)
-  const pendingItemIds = pendingIdsOf(inputs.pendingKeys, 'listItem')
+  const pendingItemIds = pendingIdsOf('listItem', inputs.pendingKeys)
   const isManual = list.sort === 'manual'
 
   return Array.match(view.visible, {
@@ -568,8 +568,8 @@ const detailBodyView = (
 ): Html => {
   const items = listItemsFor(inputs.mirror.listItems, list.id)
   const view = buildListItemsView(list, items)
-  const pendingListIds = pendingIdsOf(inputs.pendingKeys, 'list')
-  const pendingItemIds = pendingIdsOf(inputs.pendingKeys, 'listItem')
+  const pendingListIds = pendingIdsOf('list', inputs.pendingKeys)
+  const pendingItemIds = pendingIdsOf('listItem', inputs.pendingKeys)
 
   const isPending =
     Array.contains(pendingListIds, list.id) ||

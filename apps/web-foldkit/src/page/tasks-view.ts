@@ -7,7 +7,7 @@ import type { Digits, TaskBucketBounds } from '@tali/domain'
 
 import { shareActionOf } from '../lib/visibility-writes'
 import type { TagRow, TaskRow } from '../mirror'
-import { taskKey } from '../mirror'
+import { pendingIdsOf } from '../mirror'
 import { buttonView } from '../ui/button'
 import { inlineAlertView } from '../ui/feedback'
 import { inputControlView, textAreaFieldView, textInputView } from '../ui/field'
@@ -1262,7 +1262,11 @@ const taskMetaView = (
   const overdue = task.dueDate !== null && task.dueDate < view.bounds.today
   const project = projectOf(inputs.mirror.projects, task.projectId)
   const tags = tagsOfTask(inputs.mirror.tags, task.tagIds)
-  const isPending = Array.contains(inputs.pendingKeys, taskKey(task.id))
+
+  const isPending = Array.contains(
+    pendingIdsOf('task', inputs.pendingKeys),
+    task.id,
+  )
 
   return h.div(
     [h.Class('flex min-w-0 flex-wrap items-center gap-1')],

@@ -53,6 +53,7 @@ import {
   mirrorTimeZone,
   mirrorVisibility,
 } from './mirror-field'
+import { overlayRowsById } from './overlay'
 
 const asRecurrenceOption = Schema.decodeUnknownOption(
   JsonField(CalendarRecurrenceRuleSchema),
@@ -227,31 +228,17 @@ export const overlayEventSources = (input: {
   readonly mirror: ReadonlyArray<EventRow>
   readonly overlayIds: ReadonlySet<string>
   readonly deletedIds?: ReadonlySet<string>
-}): ReadonlyArray<CalendarEventSource> => {
-  const byId = new Map(input.base.map(event => [event.id, event]))
-  const mirrorById = new Map(input.mirror.map(row => [row.id, row]))
-
-  for (const id of input.overlayIds) {
-    if (input.deletedIds?.has(id) === true) {
-      byId.delete(id)
-      continue
-    }
-
-    const row = mirrorById.get(id)
-
-    if (row === undefined) {
-      continue
-    }
-
-    const base = byId.get(id)
-    byId.set(
-      id,
-      base === undefined ? eventSourceOf(row) : mergeEventSource(base, row),
-    )
-  }
-
-  return [...byId.values()]
-}
+}): ReadonlyArray<CalendarEventSource> =>
+  overlayRowsById({
+    base: input.base,
+    mirror: input.mirror,
+    overlayIds: input.overlayIds,
+    deletedIds: input.deletedIds,
+    merge: (maybeBase, row) =>
+      maybeBase === undefined
+        ? eventSourceOf(row)
+        : mergeEventSource(maybeBase, row),
+  })
 
 // WRITES
 

@@ -1,10 +1,9 @@
-import { Clock, Duration, Effect, Option, Schema } from 'effect'
+import { Duration, Effect, Option, Schema } from 'effect'
 import { Command, Dom, Submodel, Subscription, Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
 
 import { Listbox } from '@foldkit/ui'
-import { uuidV7 } from '@tali/domain'
 
 import { TimestampMillis } from '../lib/schema-primitives'
 import {
@@ -25,7 +24,12 @@ import type { LocalStoreService } from '../sync/local-store'
 import { clockEvents } from '../ui/dom-stream'
 import { listboxOutMessageFold } from '../ui/fold'
 import * as Picker from '../ui/picker'
-import { currentIso, localWrite, storeFailureMessage } from './local-write'
+import {
+  currentIso,
+  localCreate,
+  localWrite,
+  storeFailureMessage,
+} from './local-write'
 import {
   DEFAULT_TASK_VIEW,
   ProjectFilter,
@@ -478,106 +482,54 @@ export const CreateTask = Command.define('CreateTask', {
     tagIds,
     timeZone,
   }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* Clock.currentTimeMillis
-      const instant = new Date(now).toISOString()
-      const taskId = uuidV7(now)
-
-      yield* Effect.tryPromise({
-        try: () =>
-          createTaskInMirror(
-            store,
-            {
-              title,
-              dueDate: Option.getOrNull(maybeDueDate),
-              priority,
-              projectId: Option.getOrNull(maybeProjectId),
-              tagIds,
-              timeZone: validTimeZone(timeZone),
-            },
-            taskId,
-            instant,
-          ),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedCreateTask({ taskId, title })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedCreateTask({ message: storeFailureMessage(error) }),
+    localCreate({
+      run: (store, { instant, id }) =>
+        createTaskInMirror(
+          store,
+          {
+            title,
+            dueDate: Option.getOrNull(maybeDueDate),
+            priority,
+            projectId: Option.getOrNull(maybeProjectId),
+            tagIds,
+            timeZone: validTimeZone(timeZone),
+          },
+          id,
+          instant,
         ),
-      ),
-    ),
+      onSuccess: taskId => Message.CompletedCreateTask({ taskId, title }),
+      onFailure: message => Message.FailedCreateTask({ message }),
+    }),
 })
 
 export const CreateProject = Command.define('CreateProject', {
   args: { source: CreateSource, title: Schema.String },
   messages: [Message.CompletedCreateProject, Message.FailedCreateProject],
   execute: ({ source, title }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* Clock.currentTimeMillis
-      const projectId = uuidV7(now)
-
-      yield* Effect.tryPromise({
-        try: () =>
-          createProjectInMirror(store, {
-            id: projectId,
-            title,
-            now: new Date(now).toISOString(),
-          }),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedCreateProject({
-        source,
-        projectId,
-        title: title.trim(),
-      })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedCreateProject({
-            source,
-            message: storeFailureMessage(error),
-          }),
-        ),
-      ),
-    ),
+    localCreate({
+      run: (store, { instant, id }) =>
+        createProjectInMirror(store, { id, title, now: instant }),
+      onSuccess: projectId =>
+        Message.CompletedCreateProject({
+          source,
+          projectId,
+          title: title.trim(),
+        }),
+      onFailure: message => Message.FailedCreateProject({ source, message }),
+    }),
 })
 
 export const CreateTag = Command.define('CreateTag', {
   args: { source: CreateSource, name: Schema.String },
   messages: [Message.CompletedCreateTag, Message.FailedCreateTag],
   execute: ({ source, name }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* Clock.currentTimeMillis
-      const tagId = uuidV7(now)
-
-      yield* Effect.tryPromise({
-        try: () =>
-          createTagInMirror(store, {
-            id: tagId,
-            name,
-            now: new Date(now).toISOString(),
-          }),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedCreateTag({ source, tagId, name: name.trim() })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedCreateTag({
-            source,
-            message: storeFailureMessage(error),
-          }),
-        ),
-      ),
-    ),
+    localCreate({
+      run: (store, { instant, id }) =>
+        createTagInMirror(store, { id, name, now: instant }),
+      onSuccess: tagId =>
+        Message.CompletedCreateTag({ source, tagId, name: name.trim() }),
+      onFailure: message => Message.FailedCreateTag({ source, message }),
+    }),
 })
 
 export const SetTaskVisibility = Command.define('SetTaskVisibility', {

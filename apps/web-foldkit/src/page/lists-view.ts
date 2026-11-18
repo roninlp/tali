@@ -10,8 +10,8 @@ import {
   type ListSummary,
   listItemsFor,
   listSummaries,
-  pendingIdsOf,
 } from '../lists-model'
+import { pendingIdsOf } from '../mirror'
 import { listPath } from '../route'
 import { buttonView } from '../ui/button'
 import { confirmDialogView } from '../ui/confirm'
@@ -283,8 +283,8 @@ const allListsSectionView = (
   h: HtmlBuilder<Message>,
 ): Html => {
   const summaries = listSummaries(inputs.mirror.lists, inputs.mirror.listItems)
-  const pendingListIds = pendingIdsOf(inputs.pendingKeys, 'list')
-  const pendingItemIds = pendingIdsOf(inputs.pendingKeys, 'listItem')
+  const pendingListIds = pendingIdsOf('list', inputs.pendingKeys)
+  const pendingItemIds = pendingIdsOf('listItem', inputs.pendingKeys)
   const digits = inputs.display.digits
 
   const listItems = (entry: ListSummary) =>

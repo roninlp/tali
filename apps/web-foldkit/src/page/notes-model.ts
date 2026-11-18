@@ -7,8 +7,8 @@ import type { NoteRow } from '../mirror'
  * `apps/web/src/lib/notes/mirror.ts`.
  *
  * The mirror rows arrive as update/view inputs; these helpers decide section
- * order, the any-of tag filter, the trash order and pending ids, so the
- * Submodel and its views stay declarative.
+ * order, the any-of tag filter and the trash order, so the Submodel and its
+ * views stay declarative.
  */
 
 /** Pinned first, then most recently changed (FR-NOTE-03). */
@@ -68,13 +68,3 @@ export const noteSections = (
     archived,
   }
 }
-
-const NOTE_KEY_PREFIX = 'note\u0000'
-
-/** The note ids with an unsent outbox entry. */
-export const pendingNoteIds = (
-  pendingKeys: ReadonlyArray<string>,
-): ReadonlyArray<string> =>
-  Array.flatMap(pendingKeys, key =>
-    key.startsWith(NOTE_KEY_PREFIX) ? [key.slice(NOTE_KEY_PREFIX.length)] : [],
-  )

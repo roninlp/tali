@@ -75,7 +75,7 @@ import {
   todayIn,
 } from './calendar-model'
 import { calendarPageView } from './calendar-view'
-import { localWrite, storeFailureMessage } from './local-write'
+import { localCreate, localWrite, storeFailureMessage } from './local-write'
 
 /**
  * The `/calendar` screen Submodel, ported from
@@ -506,39 +506,25 @@ export const CreateCalendarTask = Command.define('CreateCalendarTask', {
     Message.FailedCreateCalendarTask,
   ],
   execute: ({ title, date, timeZone }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* Clock.currentTimeMillis
-      const taskId = uuidV7(now)
-
-      yield* Effect.tryPromise({
-        try: () =>
-          createTaskInMirror(
-            store,
-            {
-              title,
-              dueDate: date,
-              priority: 'medium',
-              projectId: null,
-              tagIds: [],
-              timeZone,
-            },
-            taskId,
-            new Date(now).toISOString(),
-          ),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedCreateCalendarTask({ taskId, title, date })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedCreateCalendarTask({
-            message: storeFailureMessage(error),
-          }),
+    localCreate({
+      run: (store, { instant, id }) =>
+        createTaskInMirror(
+          store,
+          {
+            title,
+            dueDate: date,
+            priority: 'medium',
+            projectId: null,
+            tagIds: [],
+            timeZone,
+          },
+          id,
+          instant,
         ),
-      ),
-    ),
+      onSuccess: taskId =>
+        Message.CompletedCreateCalendarTask({ taskId, title, date }),
+      onFailure: message => Message.FailedCreateCalendarTask({ message }),
+    }),
 })
 
 export const CompleteCalendarTask = Command.define('CompleteCalendarTask', {
@@ -602,36 +588,17 @@ export const CreateCalendarEvent = Command.define('CreateCalendarEvent', {
     Message.FailedCreateCalendarEvent,
   ],
   execute: ({ draft, timeZone }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* Clock.currentTimeMillis
-      const eventId = uuidV7(now)
-
-      yield* Effect.tryPromise({
-        try: () =>
-          createEventInMirror(
-            store,
-            { ...draft, timeZone },
-            eventId,
-            new Date(now).toISOString(),
-          ),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedCreateCalendarEvent({
-        eventId,
-        title: draft.title,
-        date: draft.date,
-      })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedCreateCalendarEvent({
-            message: storeFailureMessage(error),
-          }),
-        ),
-      ),
-    ),
+    localCreate({
+      run: (store, { instant, id }) =>
+        createEventInMirror(store, { ...draft, timeZone }, id, instant),
+      onSuccess: eventId =>
+        Message.CompletedCreateCalendarEvent({
+          eventId,
+          title: draft.title,
+          date: draft.date,
+        }),
+      onFailure: message => Message.FailedCreateCalendarEvent({ message }),
+    }),
 })
 
 export const SetCalendarEventVisibility = Command.define(

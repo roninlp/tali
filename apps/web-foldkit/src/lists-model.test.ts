@@ -12,7 +12,6 @@ import {
   movedOrder,
   nextItemOrder,
   orderPatch,
-  pendingIdsOf,
   sortListRows,
   summarizeList,
   toListItemRow,
@@ -167,14 +166,6 @@ describe('index summaries and pending state', () => {
     expect(
       listSummaries([older, newer], []).map(summary => summary.list.id),
     ).toEqual(['list-b', 'list-a'])
-  })
-
-  test('splits pending entries by entity type', () => {
-    const pending = ['list\u0000l1', 'listItem\u0000i1', 'task\u0000t1']
-
-    expect(pendingIdsOf(pending, 'list')).toEqual(['l1'])
-    expect(pendingIdsOf(pending, 'listItem')).toEqual(['i1'])
-    expect(pendingIdsOf(pending, 'task')).toEqual(['t1'])
   })
 
   test('shows the other-writer label only after a real second version', () => {

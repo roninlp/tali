@@ -1,4 +1,4 @@
-import { Array, Clock, Duration, Effect, Option, Schema, Stream } from 'effect'
+import { Array, Duration, Effect, Option, Schema, Stream } from 'effect'
 import { Command, Dom, Submodel, Subscription, Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
@@ -29,7 +29,7 @@ import type { DisplayFields } from '../preferences-model'
 import { LocalStoreResource } from '../sync/local-store'
 import type { LocalStoreService } from '../sync/local-store'
 import { eventStream } from '../ui/dom-stream'
-import { localWrite, storeFailureMessage } from './local-write'
+import { localCreate, localWrite, storeFailureMessage } from './local-write'
 import { noteEditorView } from './note-view'
 import { notesTrashView } from './notes-trash-view'
 import { notesIndexView } from './notes-view'
@@ -417,25 +417,11 @@ export const SearchNotes = Command.define('SearchNotes', {
 
 export const CreateNote = Command.define('CreateNote', {
   messages: [Message.CompletedCreateNote, Message.FailedCreateNote],
-  execute: Effect.gen(function* () {
-    const store = yield* LocalStoreResource.get
-    const now = yield* Clock.currentTimeMillis
-    const noteId = uuidV7(now)
-    const instant = new Date(now).toISOString()
-
-    yield* Effect.tryPromise({
-      try: () => createNoteInMirror(store, noteId, instant),
-      catch: storeFailureMessage,
-    })
-
-    return Message.CompletedCreateNote({ noteId })
-  }).pipe(
-    Effect.catch(error =>
-      Effect.succeed(
-        Message.FailedCreateNote({ message: storeFailureMessage(error) }),
-      ),
-    ),
-  ),
+  execute: localCreate({
+    run: (store, { instant, id }) => createNoteInMirror(store, id, instant),
+    onSuccess: noteId => Message.CompletedCreateNote({ noteId }),
+    onFailure: message => Message.FailedCreateNote({ message }),
+  }),
 })
 
 export const SetNotePinned = Command.define('SetNotePinned', {
