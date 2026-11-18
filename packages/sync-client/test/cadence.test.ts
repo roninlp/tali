@@ -4,10 +4,13 @@ import {
   ACTIVITY_WINDOW_MS,
   ACTIVE_INTERVAL_MS,
   FAILURE_RETRY_MS,
+  FAILED_REFRESH_INTERVAL_MS,
   HIDDEN_INTERVAL_MS,
   IDLE_INTERVAL_MS,
   MAX_RETRY_MS,
+  shouldRefreshFailed,
   syncDelayMs,
+  type FailedScanState,
   type SyncCadenceState,
 } from '../src/sync-cadence'
 
@@ -100,5 +103,49 @@ describe('syncDelayMs', () => {
         noJitter,
       ),
     ).toBe(FAILURE_RETRY_MS * 4)
+  })
+})
+
+const failedScan = (
+  overrides: Partial<FailedScanState> = {},
+): FailedScanState => ({
+  pendingBefore: 0,
+  pendingAfter: 0,
+  lastFailedScan: 10_000 - FAILED_REFRESH_INTERVAL_MS,
+  now: 10_000,
+  ...overrides,
+})
+
+describe('shouldRefreshFailed', () => {
+  it('scans on the first pass, when there is no previous scan', () => {
+    expect(shouldRefreshFailed(failedScan({ lastFailedScan: 0 }))).toBe(true)
+  })
+
+  it('scans again once the interval since the last scan has elapsed', () => {
+    expect(
+      shouldRefreshFailed(
+        failedScan({ lastFailedScan: 10_000 - FAILED_REFRESH_INTERVAL_MS }),
+      ),
+    ).toBe(true)
+    expect(
+      shouldRefreshFailed(
+        failedScan({ lastFailedScan: 10_000 - FAILED_REFRESH_INTERVAL_MS + 1 }),
+      ),
+    ).toBe(false)
+  })
+
+  it('scans when the pass that just ran flushed the outbox', () => {
+    expect(
+      shouldRefreshFailed(failedScan({ pendingBefore: 3, pendingAfter: 2 })),
+    ).toBe(true)
+    expect(
+      shouldRefreshFailed(
+        failedScan({
+          pendingBefore: 2,
+          pendingAfter: 3,
+          lastFailedScan: 10_000,
+        }),
+      ),
+    ).toBe(false)
   })
 })

@@ -2186,7 +2186,10 @@ const notesSubscriptions = Subscription.lift(Notes.subscriptions)<
   Model,
   Message
 >({
-  read: model => Option.some(model.notes),
+  read: model =>
+    AppRoute.isAnyOf(['Notes', 'Note', 'NotesTrash'])(model.route)
+      ? Option.some(model.notes)
+      : Option.none(),
   toParentMessage: toNotesMessage,
 })
 
