@@ -42,6 +42,8 @@ import {
   visibilityPolicyOf,
 } from '@tali/domain'
 import { reminderFireAt, reminderTierFor } from '@tali/domain/reminder-policy'
+import { insertStatement, selectList, updateStatement } from './columns.js'
+import { PROJECT_TABLE } from './project-repo.js'
 
 /**
  * The sync entity registry (ticket #34).
@@ -500,6 +502,31 @@ const stripServerFields = (
   return copy
 }
 
+// ── Registry write glue (#115) ─────────────────────────────────────────────
+
+/**
+ * The registry's field values for one row write.
+ *
+ * The aggregate's own fields come from the already-validated (or
+ * `defaults`-built) data payload; the server-managed identity and
+ * bookkeeping come from the write's state. The per-aggregate helpers below
+ * only add the fallbacks the hand-written statements carried (a missing
+ * `createdAt` anchors to the commit instant, a garbage zone to `UTC`, …);
+ * the descriptor's codecs do the storage encoding for both writers.
+ */
+const syncValues = (state: SyncEntityState): Record<string, unknown> => ({
+  ...state.data,
+  id: state.entityId,
+  type: state.entityType,
+  ownerId: state.ownerId,
+  householdId: state.householdId,
+  visibility: state.visibility,
+  createdAt: asText(state.data.createdAt) ?? state.updatedAt,
+  updatedAt: state.updatedAt,
+  version: state.version,
+  deletedAt: state.deletedAt,
+})
+
 /**
  * Bind an aggregate's real #33 schema as the hydration/decode boundary.
  *
@@ -947,8 +974,6 @@ const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
 
 // ── Project ───────────────────────────────────────────────────────────────
 
-const PROJECT_COLUMNS = `${META_COLUMNS}, type, title, color, created_at AS createdAt`
-
 const projectCodec = withSchema<Project>(Project, row => ({
   id: String(row.id),
   type: 'project',
@@ -962,8 +987,8 @@ const projectCodec = withSchema<Project>(Project, row => ({
 
 const projectDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'project',
-  table: 'projects',
-  select: PROJECT_COLUMNS,
+  table: PROJECT_TABLE.table,
+  select: selectList(PROJECT_TABLE, { syncManaged: true }),
   writable: new Map([
     ['title', isString],
     ['color', isNullableString],
@@ -982,28 +1007,17 @@ const projectDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     color: asText(patch.color),
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
-  insert: state => sql`
-    INSERT INTO projects
-      (id, type, title, owner_id, household_id, visibility, color,
-       created_at, updated_at, version, deleted_at)
-    VALUES
-      (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
-       ${state.ownerId}, ${state.householdId}, ${state.visibility},
-       ${encodeNullableText(state.data.color)},
-       ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-       ${state.updatedAt}, ${state.version}, ${state.deletedAt})
-    ON CONFLICT DO NOTHING
-  `,
-  update: (state, expectedVersion) => sql`
-    UPDATE projects SET
-      title = ${encodeText(state.data.title)},
-      visibility = ${state.visibility},
-      color = ${encodeNullableText(state.data.color)},
-      updated_at = ${state.updatedAt},
-      version = ${state.version},
-      deleted_at = ${state.deletedAt}
-    WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `,
+  insert: state =>
+    insertStatement(sql, PROJECT_TABLE, {
+      values: syncValues(state),
+      onConflict: true,
+    }),
+  update: (state, expectedVersion) =>
+    updateStatement(sql, PROJECT_TABLE, {
+      id: state.entityId,
+      values: syncValues(state),
+      expectedVersion,
+    }),
 })
 
 // ── Tag ───────────────────────────────────────────────────────────────────

@@ -118,6 +118,19 @@ export interface TableDescriptor<Fields extends string = string> {
   readonly columns: ReadonlyArray<ColumnEntry<Fields>>
 }
 
+/** The wire fields a table's descriptor covers. */
+export type TableFields<T extends TableDescriptor<string>> =
+  T extends TableDescriptor<infer Fields> ? Fields : never
+
+/**
+ * Field → wire value for one row write (before the codec); a field absent is
+ * not written. Typing a repo's values helper against this is what catches a
+ * field/key typo at compile time.
+ */
+export type ColumnValues<T extends TableDescriptor<string>> = Readonly<
+  Partial<Record<TableFields<T>, unknown>>
+>
+
 export const defineTable = <Fields extends string>(
   table: string,
   columns: ReadonlyArray<ColumnEntry<Fields>>,
