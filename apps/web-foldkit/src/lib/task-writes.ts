@@ -1,5 +1,6 @@
 import { Schema } from 'effect'
 
+import { defaultVisibilityFor } from '@tali/domain'
 import type { LocalStore } from '@tali/sync-client'
 
 /**
@@ -164,6 +165,80 @@ export const updateTaskInMirror = async (
     patch: record,
     now,
   })
+}
+
+export interface TaskCreateDraft {
+  readonly title: string
+  readonly dueDate: string | null
+  readonly priority: 'high' | 'medium' | 'low'
+  readonly projectId: string | null
+  readonly tagIds: ReadonlyArray<string>
+  readonly timeZone: string
+}
+
+/**
+ * The quick-add path: mint the id offline, commit the registry-shaped mirror
+ * row and outbox entry together, and let the sync engine create the server
+ * row. The id, client edit instant and creation time are supplied by the
+ * caller (a Foldkit Command mints them in `execute`, never while preparing
+ * its args).
+ *
+ * Relocated from the retired `@tali/sync-client` P2.4 placeholder (#124); the
+ * app's own write path owns the shape now.
+ */
+export const createTaskInMirror = async (
+  store: LocalStore,
+  draft: TaskCreateDraft,
+  id: string,
+  now: string,
+): Promise<string> => {
+  const title = draft.title.trim()
+
+  if (title === '') {
+    throw new Error('a task needs a title')
+  }
+
+  await store.writeLocal({
+    entityType: 'task',
+    entityId: id,
+    op: 'upsert',
+    // The owner is known offline so the editor can offer Share/Unshare before
+    // the first ack; the server still stamps the authoritative owner.
+    patch: {
+      id,
+      type: 'task',
+      title,
+      description: null,
+      status: 'todo',
+      priority: draft.priority,
+      dueAt: null,
+      dueDate: draft.dueDate,
+      timeZone: draft.timeZone,
+      projectId: draft.projectId,
+      tagIds: [...draft.tagIds],
+      color: null,
+      visibility: defaultVisibilityFor('task'),
+      createdAt: now,
+      ownerId: store.userId,
+    },
+    now,
+  })
+
+  return id
+}
+
+/** The account's local calendar date, used for the offline quick-add. */
+export const todayInZone = (now: Date, timeZone: string): string => {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(now)
+  } catch {
+    return now.toISOString().slice(0, 10)
+  }
 }
 
 export interface MirrorCreate {

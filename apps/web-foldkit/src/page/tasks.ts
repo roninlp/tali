@@ -5,7 +5,6 @@ import { modifyFields } from 'foldkit/struct'
 
 import { Listbox } from '@foldkit/ui'
 import { uuidV7 } from '@tali/domain'
-import { createTaskInMirror } from '@tali/sync-client'
 
 import { TimestampMillis } from '../lib/schema-primitives'
 import {
@@ -13,6 +12,7 @@ import {
   completeTaskInMirror,
   createProjectInMirror,
   createTagInMirror,
+  createTaskInMirror,
   moveTaskInMirror,
   undoTaskInMirror,
   updateTaskInMirror,

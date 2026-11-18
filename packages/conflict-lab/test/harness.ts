@@ -14,6 +14,7 @@ import {
   type SyncPushResult,
   uuidV7,
 } from '@tali/domain'
+import { makeApiClient } from '@tali/rpc'
 import { openLocalStore } from '@tali/sync-client'
 import type { LocalStore, MirrorRecord } from '@tali/sync-client'
 import {
@@ -22,7 +23,6 @@ import {
   type SyncEngine,
   type SyncTransport,
 } from '@tali/sync-client'
-import { withRpcClient } from '@tali/web-foldkit/src/lib/rpc'
 import type { LabMode } from './mode'
 
 /**
@@ -187,6 +187,15 @@ const decodeBody = async <A>(
   return Schema.decodeSync(schema)(body)
 }
 
+/**
+ * The typed RPC client from `@tali/rpc`, pointed at the test Worker.
+ *
+ * The same factory the web app's `lib/rpc.ts` delegates to (`makeApiClient`),
+ * so the lab runs the production client construction — without importing the
+ * app's source. `withRpc` routes its `fetch` through `exports.default.fetch`.
+ */
+const rpcCall = makeApiClient('http://localhost/rpc')
+
 export const makeTransport = (
   account: Account,
   options: TransportOptions,
@@ -248,16 +257,17 @@ export const makeTransport = (
       return pushOnce(entries)
     },
     /**
-     * The two explicit repair paths the real engine uses. They are the web
-     * client's Effect RPC procedures, pointed at the test Worker by `withRpc`.
+     * The two explicit repair paths the real engine uses. They are the same
+     * Effect RPC procedures the web app's transport calls, built by the
+     * shared `@tali/rpc` client and pointed at the test Worker by `withRpc`.
      */
     logHabitEntry: input =>
       withRpc(account, () =>
-        Effect.runPromise(withRpcClient(client => client.LogHabitEntry(input))),
+        Effect.runPromise(rpcCall(client => client.LogHabitEntry(input))),
       ),
     restoreHabit: input =>
       withRpc(account, () =>
-        Effect.runPromise(withRpcClient(client => client.RestoreHabit(input))),
+        Effect.runPromise(rpcCall(client => client.RestoreHabit(input))),
       ),
   }
 }
@@ -272,7 +282,7 @@ export const makeTransport = (
 let rpcTail: Promise<unknown> = Promise.resolve()
 
 /**
- * Run the web client's Effect RPC stack against the test Worker.
+ * Run the shared `@tali/rpc` client stack against the test Worker.
  *
  * In the browser the cookie rides the session jar and the origin is the real
  * API; inside workerd neither exists. Route `globalThis.fetch` through

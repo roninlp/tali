@@ -52,8 +52,8 @@ export default defineConfig(async () => {
       setupFiles: ['./test/setup.ts'],
       // The pool's warm-module snapshot inlines every transformed module's
       // code (source maps included) into one WebSocket message. This suite
-      // loads the api Worker, the sync client and the Foldkit app's graph, so
-      // the snapshot crosses workerd's 32 MiB limit and a runner dies before
+      // loads the api Worker, the sync client and the `@tali/rpc` client
+      // graph, so the snapshot crosses workerd's 32 MiB limit and a runner dies before
       // its first test with "Message is too large" (1009) — workers-sdk#16349.
       // Without the on-disk transform cache the pool skips the snapshot and
       // fetches modules one at a time instead.
