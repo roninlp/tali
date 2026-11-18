@@ -33,6 +33,7 @@ import * as Reminders from './page/reminders'
 import * as Tasks from './page/tasks'
 import { TaskViewSettings } from './page/tasks-model'
 import * as Today from './page/today'
+import { pageFoldWithOutMessage } from './page-slice'
 import * as Preferences from './preferences'
 import { Preferences as PreferencesRow } from './preferences-model'
 import * as Push from './push'
@@ -291,9 +292,6 @@ const toListsMessage = (message: Lists.Message): Message =>
 const toNotesMessage = (message: Notes.Message): Message =>
   Message.GotNotesMessage({ message })
 
-const toTasksMessage = (message: Tasks.Message): Message =>
-  Message.GotTasksMessage({ message })
-
 const toHabitsMessage = (message: Habits.Message): Message =>
   Message.GotHabitsMessage({ message })
 
@@ -463,7 +461,8 @@ const applyTasksSession = Update.foldChild({
   read: (model: Model) => Option.some(model.tasks),
   write: (model: Model, nextTasks: Tasks.Model) =>
     modifyFields(model, { tasks: () => nextTasks }),
-  toParentMessage: toTasksMessage,
+  toParentMessage: (message: Tasks.Message) =>
+    Message.GotTasksMessage({ message }),
 })
 
 /**
@@ -1155,37 +1154,44 @@ const enterNotesNote = (model: Model, noteId: NoteId): UpdateReturn => {
   }
 }
 
-type TasksFoldInput = Readonly<{
-  message: Tasks.Message
-  inputs: Tasks.Inputs
-}>
+// PAGE TABLE
 
-const foldTasksOutMessage = Tasks.OutMessage.match<
-  Update.Step<Model, Message, Sync.LocalStoreService>
->({
-  WroteLocalData: () => stepModel => foldSyncRefresh(stepModel),
-})
-
-const foldTasks = Update.foldChild({
-  update: (tasks: Tasks.Model, input: TasksFoldInput) =>
-    Tasks.update(tasks, input.message, input.inputs),
-  read: (model: Model) => Option.some(model.tasks),
-  write: (model: Model, nextTasks: Tasks.Model) =>
-    modifyFields(model, { tasks: () => nextTasks }),
-  toParentMessage: toTasksMessage,
-  foldOutMessage: foldTasksOutMessage,
-})
-
-const foldTasksEntered = Update.foldChildStep({
-  update: Tasks.entered,
-  read: (model: Model) => Option.some(model.tasks),
-  write: (model: Model, nextTasks: Tasks.Model) =>
-    modifyFields(model, { tasks: () => nextTasks }),
-  toParentMessage: toTasksMessage,
-})
-
-const foldTasksMessage = (model: Model, message: Tasks.Message): UpdateReturn =>
-  foldTasks(model, { message, inputs: tasksInputs(model) })
+/**
+ * One slice per household screen whose page wiring follows one mold.
+ * `pageFoldWithOutMessage` (or `pageFold`, for a page whose update emits no
+ * OutMessage) turns each slice into the folds and subscriptions the update
+ * arms, route entries, and subscription aggregate consume. The view halves
+ * stay in `pageView`: `Submodel.View` resolves only for concrete Inputs
+ * types, so a generic fold cannot assemble the `h.submodel` call.
+ *
+ * Screens that serve several routes off one Submodel (lists, notes), drive
+ * the session from their OutMessages (login, register, household), take no
+ * Inputs (reminders), or compose a section of several Submodels (settings)
+ * do not fit the slice shape and stay hand-wired below.
+ */
+const pages = {
+  tasks: pageFoldWithOutMessage({
+    field: {
+      field: (model: Model) => model.tasks,
+      setField: (model: Model, nextTasks: Tasks.Model) =>
+        modifyFields(model, { tasks: () => nextTasks }),
+    },
+    toParentMessage: (message: Tasks.Message) =>
+      Message.GotTasksMessage({ message }),
+    update: Tasks.update,
+    inputs: tasksInputs,
+    foldOutMessage: Tasks.OutMessage.match<
+      Update.Step<Model, Message, Sync.LocalStoreService>
+    >({
+      WroteLocalData: () => stepModel => foldSyncRefresh(stepModel),
+    }),
+    entered: Tasks.entered,
+    subscriptions: {
+      child: Tasks.subscriptions,
+      when: (model: Model) => AppRoute.isAnyOf(['Tasks'])(model.route),
+    },
+  }),
+}
 
 type HabitsFoldInput = Readonly<{
   message: Habits.Message
@@ -1393,7 +1399,7 @@ const enterRoute = (
     AppRoute.isAnyOf(['Tasks'])(model.route) &&
     Option.isSome(Transition.entered(transition, 'Tasks'))
   ) {
-    return foldTasksEntered(model)
+    return pages.tasks.foldEntered(model)
   }
 
   if (
@@ -1627,7 +1633,7 @@ export const update = (model: Model, message: Message) =>
     GotTodayMessage: ({ message }) => foldTodayMessage(model, message),
     GotListsMessage: ({ message }) => foldListsMessage(model, message),
     GotNotesMessage: ({ message }) => foldNotesMessage(model, message),
-    GotTasksMessage: ({ message }) => foldTasksMessage(model, message),
+    GotTasksMessage: ({ message }) => pages.tasks.foldMessage(model, message),
     GotHabitsMessage: ({ message }) => foldHabitsMessage(model, message),
     GotCalendarMessage: ({ message }) => foldCalendarMessage(model, message),
     GotRemindersMessage: ({ message }) => foldReminders(model, message),
@@ -1777,15 +1783,6 @@ const todayPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
     view: Today.view,
     viewInputs: todayInputs(model),
     toParentMessage: toTodayMessage,
-  })
-
-const tasksPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
-  h.submodel({
-    slotId: 'tasks-page',
-    model: model.tasks,
-    view: Tasks.view,
-    viewInputs: tasksInputs(model),
-    toParentMessage: toTasksMessage,
   })
 
 const remindersPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
@@ -1943,7 +1940,15 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): Html =>
           viewInputs: notesInputs(model),
           toParentMessage: toNotesMessage,
         }),
-      Tasks: () => tasksPageView(model, h),
+      Tasks: () =>
+        h.submodel({
+          slotId: 'tasks-page',
+          model: model.tasks,
+          view: Tasks.view,
+          viewInputs: tasksInputs(model),
+          toParentMessage: (message: Tasks.Message) =>
+            Message.GotTasksMessage({ message }),
+        }),
       Habits: () =>
         h.submodel({
           slotId: 'habits-page',
@@ -2171,17 +2176,6 @@ const todaySubscriptions = Subscription.lift(Today.subscriptions)<
   toParentMessage: toTodayMessage,
 })
 
-const tasksSubscriptions = Subscription.lift(Tasks.subscriptions)<
-  Model,
-  Message
->({
-  read: model =>
-    AppRoute.isAnyOf(['Tasks'])(model.route)
-      ? Option.some(model.tasks)
-      : Option.none(),
-  toParentMessage: toTasksMessage,
-})
-
 const notesSubscriptions = Subscription.lift(Notes.subscriptions)<
   Model,
   Message
@@ -2226,14 +2220,23 @@ const remindersSubscriptions = Subscription.lift(Reminders.subscriptions)<
   toParentMessage: toRemindersMessage,
 })
 
-export const subscriptions = Subscription.aggregate(
+/** The subscription records the page table carries, when a page owns any. */
+const pageSubscriptionRecords = Array.getSomes(
+  Array.map([pages.tasks], page => Option.fromNullishOr(page.subscriptions)),
+)
+
+export const subscriptions = Subscription.aggregate<
+  Model,
+  Message,
+  Sync.LocalStoreService
+>()(
   syncSubscriptions,
   themeSubscriptions,
   pushSubscriptions,
   todaySubscriptions,
-  tasksSubscriptions,
   notesSubscriptions,
   habitsSubscriptions,
   calendarSubscriptions,
   remindersSubscriptions,
+  ...pageSubscriptionRecords,
 )
