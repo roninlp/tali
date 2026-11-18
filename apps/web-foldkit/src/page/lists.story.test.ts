@@ -571,9 +571,9 @@ describe('list items', () => {
         expect(next.toast.entries).toHaveLength(1)
         expect(next.toast.entries[0]?.payload.text).toBe('تیک خورد: نان')
         expect(next.toast.entries[0]?.payload.maybeUndo).toStrictEqual({
-          kind: 'uncheckItem',
           id: ITEM_ID,
           title: 'نان',
+          maybeStartedAt: Option.none(),
         })
       }),
       expectOutMessage(Lists.OutMessage.WroteLocalData()),
@@ -644,7 +644,11 @@ describe('list items', () => {
       message(
         Lists.Message.ClickedUndoChecked({
           entryId: 'lists-toast-entry-0',
-          undo: { kind: 'uncheckItem', id: ITEM_ID, title: 'نان' },
+          undo: {
+            id: ITEM_ID,
+            title: 'نان',
+            maybeStartedAt: Option.none(),
+          },
         }),
       ),
       expectOutMessage(Lists.OutMessage.WroteLocalData()),

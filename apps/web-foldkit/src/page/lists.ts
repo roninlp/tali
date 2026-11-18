@@ -548,9 +548,9 @@ const shownCheckedToastStep = (
     {
       text: `تیک خورد: ${name}`,
       maybeUndo: {
-        kind: 'uncheckItem',
         id: itemId,
         title: name,
+        maybeStartedAt: Option.none(),
       },
     },
     'Success',
@@ -1149,9 +1149,7 @@ export const update = (
                 Option.match(
                   Array.findFirst(
                     stepModel.toast.entries,
-                    entry =>
-                      entry.payload.maybeUndo?.kind === 'uncheckItem' &&
-                      entry.payload.maybeUndo.id === itemId,
+                    entry => entry.payload.maybeUndo?.id === itemId,
                   ),
                   {
                     onNone: () => ({ model: stepModel }),
