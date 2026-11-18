@@ -24,6 +24,7 @@ export {
   ForbiddenReason,
   HabitEntryId,
   HabitId,
+  ITEM_TYPES,
   ItemType,
   ListCheckedPlacement,
   ListId,

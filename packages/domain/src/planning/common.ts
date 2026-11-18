@@ -121,11 +121,14 @@ export type ReminderDispatchId = Schema.Schema.Type<typeof ReminderDispatchId>
 // ── Enums (docs/domain-model-draft.md §2.3) ───────────────────────────────
 
 /**
- * Discriminator for a syncable entity. Kept identical to the sync wire enum
- * (`SyncEntityType` re-exports this) so the mirror can address every aggregate
- * before its model lands.
+ * Every syncable entity type, as data (#117).
+ *
+ * `ItemType`'s literal union is built **from this array**, so the union and
+ * the list share one source and cannot drift: a consumer needing "all of
+ * them" (the mirror's snapshot reads, the conflict lab's store sweep) iterates
+ * the array instead of re-enumerating the members by hand.
  */
-export const ItemType = Schema.Literals([
+export const ITEM_TYPES = [
   'habit',
   'habitEntry',
   'event',
@@ -137,7 +140,14 @@ export const ItemType = Schema.Literals([
   'list',
   'listItem',
   'project',
-])
+] as const
+
+/**
+ * Discriminator for a syncable entity. Kept identical to the sync wire enum
+ * (`SyncEntityType` re-exports this) so the mirror can address every aggregate
+ * before its model lands.
+ */
+export const ItemType = Schema.Literals(ITEM_TYPES)
 export type ItemType = Schema.Schema.Type<typeof ItemType>
 
 /** Task lifecycle. Transitions stamp `startedAt` / `completedAt` server-side. */

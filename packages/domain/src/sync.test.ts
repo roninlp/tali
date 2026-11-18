@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vite-plus/test'
-import { Option } from 'effect'
-import { decodeErrorEnvelope, entityKey, type EntityRef } from './sync.js'
+import { Option, Schema } from 'effect'
+import { ItemType } from './planning/common.js'
+import {
+  decodeErrorEnvelope,
+  entityKey,
+  SYNC_ENTITY_TYPES,
+  type EntityRef,
+} from './sync.js'
 
 /**
  * The sync identity and the shared error envelope are the two shapes every
@@ -67,5 +73,17 @@ describe('decodeErrorEnvelope', () => {
     expect(decodeErrorEnvelope({ error: { code: 'Forbidden' } })).toEqual(
       Option.none(),
     )
+  })
+})
+
+describe('SYNC_ENTITY_TYPES', () => {
+  it('lists exactly the literals the entity-type schema accepts', () => {
+    // The array is the union's source by construction; this keeps it that way
+    // even if someone later redefines `ItemType`/`SyncEntityType` inline.
+    const asEntityType = Schema.decodeUnknownOption(ItemType)
+    for (const entityType of SYNC_ENTITY_TYPES) {
+      expect(Option.isSome(asEntityType(entityType))).toBe(true)
+    }
+    expect(new Set(SYNC_ENTITY_TYPES).size).toBe(SYNC_ENTITY_TYPES.length)
   })
 })
