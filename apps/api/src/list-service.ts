@@ -5,7 +5,7 @@ import {
   ListCheckedPlacement,
   ListConflict,
   type ListCreateInput,
-  ListEntryNotFound,
+  ListItemNotFound,
   ListForbidden,
   type ListItemCheckInput,
   type ListItemCreateInput,
@@ -21,7 +21,7 @@ import {
   ListValidationError,
   type ListUpdateInput,
   ListNotFound,
-  PlanningListItem as ListItem,
+  ListItem,
   type TagId,
   type UserId,
   resolveCreateVisibility,
@@ -146,18 +146,6 @@ const invalid = (
 const sameTags = (a: ReadonlyArray<TagId>, b: ReadonlyArray<TagId>): boolean =>
   a.length === b.length && a.every((tagId, index) => tagId === b[index])
 
-const itemWire = (item: ListItem): Record<string, unknown> => ({
-  ...item,
-  // Keep both the legacy sync vocabulary and the real #33 field names current
-  // so a pull hydrates whichever one the reader uses.
-  title: item.name,
-  checked: item.done,
-  sortOrder: item.order,
-  name: item.name,
-  done: item.done,
-  ordering: item.order,
-})
-
 interface EntityGroup {
   readonly state: SyncEntityState
   readonly expectedVersion: number | null
@@ -190,7 +178,6 @@ export class ListService extends Context.Service<ListService>()('ListService', {
 
     const itemState = (item: ListItem, writerId: string): SyncEntityState =>
       kit.stateOf('listItem', item, {
-        encode: itemWire,
         decorate: data => ({ ...data, lastWriterId: writerId }),
       })
 
@@ -288,7 +275,7 @@ export class ListService extends Context.Service<ListService>()('ListService', {
           trash: 'first',
           onViolation: violation =>
             violation === 'notFound' || violation === 'trashed'
-              ? new ListEntryNotFound({ id })
+              ? new ListItemNotFound({ id })
               : new ListForbidden({ id, reason: violation }),
         })
         // The parent list's visibility is a second gate: an item can never be

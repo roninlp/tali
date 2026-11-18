@@ -18,10 +18,10 @@ import {
  *
  * Every helper commits the mirror row and its outbox entry in one
  * `writeLocal` transaction before resolving, so the screen is correct offline
- * and the sync engine carries the mutation on reconnect. Patches carry both the
- * legacy wire names (`title`/`checked`/`sortOrder`) and the real aggregate names
- * (`name`/`done`/`ordering`) — the registry accepts either and dual-writes the
- * table columns.
+ * and the sync engine carries the mutation on reconnect. Patches speak the
+ * aggregate's own field names (`name`/`done`/`order`) — the same vocabulary
+ * the registry's `listItem` writable map accepts (#119 retired the scaffold
+ * aliases).
  *
  * Ids and timestamps are supplied by the caller because a Foldkit Command mints
  * them in `execute`, never while preparing its arguments.
@@ -225,12 +225,8 @@ type ListItemCreatePatch = {
   id: string
   type: 'listItem'
   listId: string
-  title: string
   name: string
-  checked: boolean
   done: boolean
-  sortOrder: number
-  ordering: number
   order: number
   checkedAt: null
   color: string | null
@@ -252,12 +248,8 @@ const itemPatch = (
     id,
     type: 'listItem',
     listId,
-    title: name,
     name,
-    checked: false,
     done: false,
-    sortOrder: draft.order,
-    ordering: draft.order,
     order: draft.order,
     checkedAt: null,
     color: draft.color ?? null,
@@ -317,7 +309,6 @@ export const setListItemCheckedInMirror = async (
     entityId: item.id,
     op: 'upsert',
     patch: {
-      checked,
       done: checked,
       checkedAt: checked ? now : null,
     },
@@ -338,7 +329,7 @@ export const uncheckListItemInMirror = async (
     entityType: 'listItem',
     entityId: itemId,
     op: 'upsert',
-    patch: { checked: false, done: false, checkedAt: null },
+    patch: { done: false, checkedAt: null },
     now,
   })
 }
@@ -346,7 +337,6 @@ export const uncheckListItemInMirror = async (
 /** The local mirror patch an item edit accumulates; a type alias, not an interface. */
 type ListItemEditWrite = {
   name?: string
-  title?: string
   color?: string | null
   tagIds?: ReadonlyArray<string>
   visibility?: ListVisibility
@@ -366,9 +356,7 @@ export const updateListItemInMirror = async (
   const record: ListItemEditWrite = {}
 
   if (patch.name !== undefined) {
-    const name = patch.name.trim()
-    record.name = name
-    record.title = name
+    record.name = patch.name.trim()
   }
 
   if (patch.color !== undefined) {

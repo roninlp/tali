@@ -104,19 +104,10 @@ const seedRow = (
     case 'listItem':
       db.prepare(
         `INSERT INTO list_items
-          (id, title, checked, sort_order, version, created_at, updated_at, deleted_at,
-           owner_id, visibility, household_id, type, name, done, ordering, tag_ids)
-         VALUES (?, ?, 0, 0, 1, ?, ?, ?, ?, 'shared', ?, 'listItem', ?, 0, 0, '[]')`,
-      ).run(
-        id,
-        `title-${id}`,
-        createdAt,
-        createdAt,
-        deletedAt,
-        USER,
-        HOUSEHOLD,
-        `title-${id}`,
-      )
+          (id, name, done, ordering, version, created_at, updated_at, deleted_at,
+           owner_id, visibility, household_id, type, tag_ids)
+         VALUES (?, ?, 0, 0, 1, ?, ?, ?, ?, 'shared', ?, 'listItem', '[]')`,
+      ).run(id, `title-${id}`, createdAt, createdAt, deletedAt, USER, HOUSEHOLD)
       return
     case 'note':
       db.prepare(

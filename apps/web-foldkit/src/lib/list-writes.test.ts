@@ -111,12 +111,9 @@ describe('list mirror writes', () => {
 
     const first = await store.get('listItem', ids[0] ?? '')
     expect(first?.data).toMatchObject({
-      title: 'نان',
       name: 'نان',
-      checked: false,
       done: false,
-      sortOrder: 1,
-      ordering: 1,
+      order: 1,
       listId,
     })
 
@@ -197,7 +194,6 @@ describe('list mirror writes', () => {
     expect((await store.pending()).length).toBe(pendingBefore)
     const queued = (await store.pending()).find(entry => entry.entityId === id)
     expect(queued?.patch).toMatchObject({
-      checked: false,
       done: false,
       checkedAt: null,
     })

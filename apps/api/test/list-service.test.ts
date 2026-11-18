@@ -233,7 +233,6 @@ describe('two-device convergence', () => {
       row => row.entityType === 'listItem' && row.entityId === item!.id,
     )
     expect(bItem?.data).toMatchObject({
-      checked: true,
       done: true,
       name: 'شیر',
     })
@@ -296,17 +295,17 @@ describe('two-device convergence', () => {
       entityId: item.id,
       baseVersion: 1,
       op: 'upsert',
-      patch: { checked: false, done: false },
+      patch: { done: false },
       clientUpdatedAt: '2026-10-20T09:31:00.000Z',
     }
     const result = await h.push(USER_B, [entry])
     const outcome = nonRejected(result)
     expect(outcome._tag).toBe('conflict')
-    expect(outcome.item?.data).toMatchObject({ checked: true, done: true })
+    expect(outcome.item?.data).toMatchObject({ done: true })
 
     const pull = await h.pull(USER_B, 0)
     const current = pull.items.find(row => row.entityId === item.id)
-    expect(current?.data).toMatchObject({ checked: true, done: true })
+    expect(current?.data).toMatchObject({ done: true })
   })
 })
 
@@ -400,7 +399,7 @@ describe('sharing and privacy', () => {
 })
 
 describe("offline push (the web client's only write path)", () => {
-  it('persists listId/order/name/checked on insert and update with one feed row each', async () => {
+  it('persists listId/order/name/done on insert and update with one feed row each', async () => {
     const h = makeHarness()
     const listId = uuidV7() as ListId
     const itemId = uuidV7()
@@ -435,12 +434,9 @@ describe("offline push (the web client's only write path)", () => {
         id: itemId,
         type: 'listItem',
         listId,
-        title: 'نان',
         name: 'نان',
-        checked: false,
         done: false,
-        sortOrder: 1,
-        ordering: 1,
+        order: 1,
         createdAt: NOW,
       }),
     ])
@@ -452,19 +448,15 @@ describe("offline push (the web client's only write path)", () => {
 
     const inserted = h.db
       .prepare(
-        `SELECT list_id, name, title, done, checked, ordering, sort_order, version,
-                last_writer_id
+        `SELECT list_id, name, done, ordering, version, last_writer_id
          FROM list_items WHERE id = ?`,
       )
       .get(itemId) as Record<string, unknown>
     expect(inserted).toMatchObject({
       list_id: listId,
       name: 'نان',
-      title: 'نان',
       done: 0,
-      checked: 0,
       ordering: 1,
-      sort_order: 1,
       version: 1,
       last_writer_id: USER_A,
     })
@@ -482,11 +474,8 @@ describe("offline push (the web client's only write path)", () => {
           itemId,
           {
             id: itemId,
-            title: 'نون',
             name: 'نون',
-            sortOrder: 4,
-            ordering: 4,
-            checked: true,
+            order: 4,
             done: true,
           },
           '2026-10-20T09:31:00.000Z',
@@ -499,19 +488,15 @@ describe("offline push (the web client's only write path)", () => {
 
     const updated = h.db
       .prepare(
-        `SELECT list_id, name, title, done, checked, ordering, sort_order,
-                checked_at, version, last_writer_id
+        `SELECT list_id, name, done, ordering, checked_at, version, last_writer_id
          FROM list_items WHERE id = ?`,
       )
       .get(itemId) as Record<string, unknown>
     expect(updated).toMatchObject({
       list_id: listId,
       name: 'نون',
-      title: 'نون',
       done: 1,
-      checked: 1,
       ordering: 4,
-      sort_order: 4,
       version: 2,
       last_writer_id: USER_A,
     })
@@ -523,7 +508,7 @@ describe("offline push (the web client's only write path)", () => {
       {
         ...entry('offline-edit', 'listItem', itemId, {
           name: 'نون',
-          ordering: 4,
+          order: 4,
         }),
         baseVersion: 1,
       },

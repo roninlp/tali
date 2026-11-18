@@ -125,8 +125,8 @@ describe('accessible reorder helpers', () => {
     expect(droppedOrder(rows, 'a', 'c')).toEqual(['b', 'c', 'a'])
   })
 
-  test('writes both field dialects and computes the next append order', () => {
-    expect(orderPatch(2)).toEqual({ order: 3, ordering: 3, sortOrder: 3 })
+  test('writes the real wire field and computes the next append order', () => {
+    expect(orderPatch(2)).toEqual({ order: 3 })
     expect(nextItemOrder(rows)).toBe(4)
     expect(nextItemOrder([])).toBe(1)
   })
@@ -195,17 +195,12 @@ describe('mirror row decoding', () => {
     data,
   })
 
-  test('prefers the real aggregate names but still reads legacy fields', () => {
+  test('reads the aggregate wire names', () => {
     expect(
       toListItemRow(
-        record({ listId: 'l1', name: 'نان', done: true, ordering: 2 }),
+        record({ listId: 'l1', name: 'نان', done: true, order: 2 }),
       ),
     ).toMatchObject({ name: 'نان', done: true, order: 2 })
-    expect(
-      toListItemRow(
-        record({ listId: 'l1', title: 'شیر', checked: false, sortOrder: 1 }),
-      ),
-    ).toMatchObject({ name: 'شیر', done: false, order: 1 })
   })
 
   test('decodes list preferences and ownership', () => {

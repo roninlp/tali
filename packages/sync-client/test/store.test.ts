@@ -9,17 +9,17 @@ const freshUser = (): string => `user-${uuidV7()}`
 const open = async (userId: string): Promise<LocalStore> =>
   openLocalStore(userId)
 
-const writeTitle = (
+const writeName = (
   store: LocalStore,
   entityId: string,
-  title: string,
+  name: string,
   now = new Date().toISOString(),
 ) =>
   store.writeLocal({
     entityType: 'listItem',
     entityId,
     op: 'upsert',
-    patch: { title },
+    patch: { name },
     now,
   })
 
@@ -28,12 +28,12 @@ describe('local store', () => {
     const store = await open(freshUser())
     const id = uuidV7()
 
-    const row = await writeTitle(store, id, 'خرید نان')
+    const row = await writeName(store, id, 'خرید نان')
 
     expect(row.entityId).toBe(id)
     expect(row.version).toBe(0)
     expect(row.deletedAt).toBeNull()
-    expect(row.data).toEqual({ title: 'خرید نان' })
+    expect(row.data).toEqual({ name: 'خرید نان' })
 
     expect(await store.list('listItem')).toHaveLength(1)
     const pending = await store.pending()
@@ -43,7 +43,7 @@ describe('local store', () => {
       entityId: id,
       baseVersion: 0,
       op: 'upsert',
-      patch: { title: 'خرید نان' },
+      patch: { name: 'خرید نان' },
     })
     expect(pending[0]!.clientMutationId).toMatch(/^[0-9a-f-]{36}$/)
 
@@ -55,14 +55,14 @@ describe('local store', () => {
     const id = uuidV7()
 
     const first = await open(userId)
-    await writeTitle(first, id, 'تمرین صبح')
+    await writeName(first, id, 'تمرین صبح')
     first.close()
 
     const second = await open(userId)
     const rows = await second.list('listItem')
     const pending = await second.pending()
 
-    expect(rows.map(row => row.data.title)).toEqual(['تمرین صبح'])
+    expect(rows.map(row => row.data.name)).toEqual(['تمرین صبح'])
     expect(pending).toHaveLength(1)
     expect(pending[0]!.entityId).toBe(id)
     second.close()
@@ -72,19 +72,19 @@ describe('local store', () => {
     const store = await open(freshUser())
     const id = uuidV7()
 
-    await writeTitle(store, id, 'اول', '2026-10-20T09:00:00.000Z')
+    await writeName(store, id, 'اول', '2026-10-20T09:00:00.000Z')
     const [first] = await store.pending()
     await store.writeLocal({
       entityType: 'listItem',
       entityId: id,
       op: 'upsert',
-      patch: { checked: true },
+      patch: { done: true },
       now: '2026-10-20T09:00:01.000Z',
     })
 
     const [row] = await store.list('listItem')
     expect(row!.version).toBe(0)
-    expect(row!.data).toEqual({ title: 'اول', checked: true })
+    expect(row!.data).toEqual({ name: 'اول', done: true })
 
     // Neither write invents a server version: the folded entry still
     // references the last version the client saw (0), and the push engine
@@ -97,7 +97,7 @@ describe('local store', () => {
       clientMutationId: first!.clientMutationId,
       baseVersion: 0,
       op: 'upsert',
-      patch: { title: 'اول', checked: true },
+      patch: { name: 'اول', done: true },
       clientUpdatedAt: '2026-10-20T09:00:01.000Z',
       sent: false,
     })
@@ -107,7 +107,7 @@ describe('local store', () => {
   it('keeps the chain serial once an entry has been sent', async () => {
     const store = await open(freshUser())
     const id = uuidV7()
-    await writeTitle(store, id, 'اول', '2026-10-20T09:00:00.000Z')
+    await writeName(store, id, 'اول', '2026-10-20T09:00:00.000Z')
     const [first] = await store.pending()
 
     // A push may already have applied this entry; its patch is frozen.
@@ -116,7 +116,7 @@ describe('local store', () => {
       entityType: 'listItem',
       entityId: id,
       op: 'upsert',
-      patch: { checked: true },
+      patch: { done: true },
       now: '2026-10-20T09:00:01.000Z',
     })
 
@@ -124,12 +124,12 @@ describe('local store', () => {
     expect(pending).toHaveLength(2)
     expect(pending[0]).toMatchObject({
       clientMutationId: first!.clientMutationId,
-      patch: { title: 'اول' },
+      patch: { name: 'اول' },
       sent: true,
     })
     expect(pending[1]).toMatchObject({
       op: 'upsert',
-      patch: { checked: true },
+      patch: { done: true },
       baseVersion: 0,
       sent: false,
     })
@@ -142,13 +142,13 @@ describe('local store', () => {
     const second = uuidV7()
     const third = uuidV7()
 
-    await writeTitle(store, first, 'اول')
+    await writeName(store, first, 'اول')
     const [sent] = await store.pending()
     await store.markSent([sent!.clientMutationId])
     // A second link for the first entity must not consume one of the slots.
-    await writeTitle(store, first, 'بعدی')
-    await writeTitle(store, second, 'دوم')
-    await writeTitle(store, third, 'سوم')
+    await writeName(store, first, 'بعدی')
+    await writeName(store, second, 'دوم')
+    await writeName(store, third, 'سوم')
 
     const head = await store.pendingBatch(2)
     expect(head.map(entry => entry.entityId)).toEqual([first, second])
@@ -161,7 +161,7 @@ describe('local store', () => {
   it('stops cursor reads at the limit instead of scanning the whole queue', async () => {
     const store = await open(freshUser())
     for (let index = 0; index < 500; index += 1) {
-      await writeTitle(store, uuidV7(), `آیتم ${index}`)
+      await writeName(store, uuidV7(), `آیتم ${index}`)
     }
 
     const continued = vi.spyOn(IDBCursor.prototype, 'continue')
@@ -181,9 +181,9 @@ describe('local store', () => {
     const first = uuidV7()
     const second = uuidV7()
     const third = uuidV7()
-    await writeTitle(store, first, 'اول')
-    await writeTitle(store, second, 'دوم')
-    await writeTitle(store, third, 'سوم')
+    await writeName(store, first, 'اول')
+    await writeName(store, second, 'دوم')
+    await writeName(store, third, 'سوم')
     const [a, b, c] = (await store.pending()).map(
       entry => entry.clientMutationId,
     )
@@ -195,7 +195,7 @@ describe('local store', () => {
     expect(marked[0]).toMatchObject({
       entityId: first,
       op: 'upsert',
-      patch: { title: 'اول' },
+      patch: { name: 'اول' },
       sent: true,
     })
 
@@ -222,14 +222,14 @@ describe('local store', () => {
     const first = uuidV7()
     const second = uuidV7()
 
-    await writeTitle(store, first, 'یکی')
-    await writeTitle(store, second, 'دیگری')
+    await writeName(store, first, 'یکی')
+    await writeName(store, second, 'دیگری')
 
     const pending = await store.pending()
     expect(pending.map(entry => entry.entityId)).toEqual([first, second])
     expect(pending.map(entry => entry.patch)).toEqual([
-      { title: 'یکی' },
-      { title: 'دیگری' },
+      { name: 'یکی' },
+      { name: 'دیگری' },
     ])
     store.close()
   })
@@ -291,7 +291,7 @@ describe('local store', () => {
   it('soft-deletes with a tombstone and hides the row from lists', async () => {
     const store = await open(freshUser())
     const id = uuidV7()
-    await writeTitle(store, id, 'حذف‌شدنی')
+    await writeName(store, id, 'حذف‌شدنی')
 
     const deleted = await store.writeLocal({
       entityType: 'listItem',
@@ -315,15 +315,15 @@ describe('local store', () => {
     const store = await open(freshUser())
     const queued = uuidV7()
     const clean = uuidV7()
-    await writeTitle(store, queued, 'ویرایش محلی')
+    await writeName(store, queued, 'ویرایش محلی')
 
-    const server = (id: string, title: string): ServerRow => ({
+    const server = (id: string, name: string): ServerRow => ({
       entityType: 'listItem',
       entityId: id,
       version: 4,
       updatedAt: new Date().toISOString(),
       deletedAt: null,
-      data: { title },
+      data: { name },
     })
 
     const applied = await store.mergeServer([
@@ -333,10 +333,10 @@ describe('local store', () => {
 
     expect(applied).toBe(1)
     expect((await store.get('listItem', queued))!.data).toEqual({
-      title: 'ویرایش محلی',
+      name: 'ویرایش محلی',
     })
     expect((await store.get('listItem', clean))!.data).toEqual({
-      title: 'از سرور',
+      name: 'از سرور',
     })
     store.close()
   })
@@ -377,7 +377,7 @@ describe('local store', () => {
   it('acks queued mutations and adopts the authoritative row', async () => {
     const store = await open(freshUser())
     const id = uuidV7()
-    await writeTitle(store, id, 'پیش‌نویس')
+    await writeName(store, id, 'پیش‌نویس')
     const [entry] = await store.pending()
 
     const authoritative: ServerRow = {
@@ -386,7 +386,7 @@ describe('local store', () => {
       version: 7,
       updatedAt: '2026-10-19T08:00:00.000Z',
       deletedAt: null,
-      data: { title: 'پیش‌نویس', checked: false, sortOrder: 0 },
+      data: { name: 'پیش‌نویس', done: false, order: 0 },
     }
     await store.ack([entry!.clientMutationId], [authoritative])
 
@@ -406,7 +406,7 @@ describe('local store', () => {
       entityType: 'listItem',
       entityId: id,
       op: 'upsert',
-      patch: { checked: true },
+      patch: { done: true },
     })
     expect((await store.pending())[0]!.baseVersion).toBe(7)
     store.close()
@@ -415,7 +415,7 @@ describe('local store', () => {
   it('marks a rejected push and clears the marker on a later result', async () => {
     const store = await open(freshUser())
     const id = uuidV7()
-    await writeTitle(store, id, 'پیش‌نویس')
+    await writeName(store, id, 'پیش‌نویس')
     const [entry] = await store.pending()
     const at = '2026-10-20T09:00:00.000Z'
 
@@ -427,7 +427,7 @@ describe('local store', () => {
           entityType: 'listItem',
           entityId: id,
           code: 'InvalidPatch',
-          message: 'The patch value for "title" is not valid',
+          message: 'The patch value for "name" is not valid',
           at,
           clientMutationId: entry!.clientMutationId,
         },
@@ -439,7 +439,7 @@ describe('local store', () => {
     expect((await store.listFailed()).map(row => row.entityId)).toEqual([id])
     expect((await store.get('listItem', id))!.syncError).toEqual({
       code: 'InvalidPatch',
-      message: 'The patch value for "title" is not valid',
+      message: 'The patch value for "name" is not valid',
       at,
       clientMutationId: entry!.clientMutationId,
     })
@@ -450,7 +450,7 @@ describe('local store', () => {
       entityType: 'listItem',
       entityId: id,
       op: 'upsert',
-      patch: { checked: true },
+      patch: { done: true },
     })
     expect((await store.get('listItem', id))!.syncError).not.toBeUndefined()
 
@@ -465,7 +465,7 @@ describe('local store', () => {
   it('clears a stale marker when a pull replaces the row', async () => {
     const store = await open(freshUser())
     const id = uuidV7()
-    await writeTitle(store, id, 'محلی')
+    await writeName(store, id, 'محلی')
     const [entry] = await store.pending()
     await store.ack(
       [entry!.clientMutationId],
@@ -490,12 +490,12 @@ describe('local store', () => {
         version: 5,
         updatedAt: '2026-10-20T09:01:00.000Z',
         deletedAt: null,
-        data: { title: 'از سرور', checked: false, sortOrder: 0 },
+        data: { name: 'از سرور', done: false, order: 0 },
       },
     ])
 
     const replaced = await store.get('listItem', id)
-    expect(replaced).toMatchObject({ version: 5, data: { title: 'از سرور' } })
+    expect(replaced).toMatchObject({ version: 5, data: { name: 'از سرور' } })
     expect(replaced!.syncError).toBeUndefined()
     store.close()
   })
@@ -510,7 +510,7 @@ describe('local store', () => {
         version: 4,
         updatedAt: '2026-10-20T09:00:00.000Z',
         deletedAt: null,
-        data: { title: 'مانده', checked: true, sortOrder: 2 },
+        data: { name: 'مانده', done: true, order: 2 },
       },
     ])
     await store.ack(
@@ -539,7 +539,7 @@ describe('local store', () => {
       entityId: id,
       op: 'upsert',
       baseVersion: 4,
-      patch: { title: 'مانده', checked: true, sortOrder: 2 },
+      patch: { name: 'مانده', done: true, order: 2 },
       sent: false,
     })
     expect(pending[0]!.clientMutationId).toMatch(/^[0-9a-f-]{36}$/)
@@ -556,7 +556,7 @@ describe('local store', () => {
         version: 3,
         updatedAt: new Date().toISOString(),
         deletedAt: null,
-        data: { title: 'خصوصی شد' },
+        data: { name: 'خصوصی شد' },
       },
     ])
 
@@ -595,7 +595,7 @@ describe('local store', () => {
     const store = await open(freshUser())
     const id = uuidV7()
 
-    await writeTitle(store, id, 'قابل بازیابی')
+    await writeName(store, id, 'قابل بازیابی')
     await store.writeLocal({
       entityType: 'listItem',
       entityId: id,
@@ -630,7 +630,7 @@ describe('local store', () => {
   it('isolates mirrors per user', async () => {
     const a = await open(freshUser())
     const b = await open(freshUser())
-    await writeTitle(a, uuidV7(), 'کاربر الف')
+    await writeName(a, uuidV7(), 'کاربر الف')
 
     expect(await a.list('listItem')).toHaveLength(1)
     expect(await b.list('listItem')).toHaveLength(0)
@@ -640,7 +640,7 @@ describe('local store', () => {
 
   it('clears every store', async () => {
     const store = await open(freshUser())
-    await writeTitle(store, uuidV7(), 'پاک‌شدنی')
+    await writeName(store, uuidV7(), 'پاک‌شدنی')
     await store.saveDraft('d', 'v')
     await store.setCursor(4)
 

@@ -61,7 +61,7 @@ export const ListItemRow = Schema.Struct({
   listId: Schema.String,
   name: Schema.String,
   done: Schema.Boolean,
-  /** Manual ordering integer (the server's `ordering`/`sortOrder`). */
+  /** Manual ordering integer (the wire field the server calls `order`). */
   order: Schema.Int,
   checkedAt: Schema.NullOr(Schema.String),
   color: Schema.NullOr(Schema.String),
@@ -109,24 +109,18 @@ const asStringArray = Schema.decodeUnknownOption(
 )
 
 const asOrder = (record: MirrorRecord): number => {
-  const candidates = Array.getSomes(
-    Array.map(
-      [record.data.order, record.data.ordering, record.data.sortOrder],
-      value => asFiniteNumber(value),
-    ),
-  )
+  const order = asFiniteNumber(record.data.order)
 
-  return Option.match(Array.head(candidates), {
+  return Option.match(order, {
     onNone: () => 0,
     onSome: value => Math.trunc(value),
   })
 }
 
-const asDone = (record: MirrorRecord): boolean =>
-  record.data.done === true || record.data.checked === true
+const asDone = (record: MirrorRecord): boolean => record.data.done === true
 
 const asName = (record: MirrorRecord): string =>
-  mirrorNonEmpty(record, 'name', mirrorNonEmpty(record, 'title', ''))
+  mirrorNonEmpty(record, 'name', '')
 
 /** Project a mirrored list row into the shape the screens understand. */
 export const toListRow = (record: MirrorRecord): ListRow =>
@@ -294,11 +288,9 @@ export const droppedOrder = (
   return ids
 }
 
-/** The local patch that encodes a new manual position (both field dialects). */
+/** The local patch that encodes a new manual position. */
 export const orderPatch = (index: number) => ({
   order: index + 1,
-  ordering: index + 1,
-  sortOrder: index + 1,
 })
 
 /** The next append position, one past the highest manual order. */

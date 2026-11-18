@@ -84,8 +84,7 @@ export interface SyncAggregateRow {
 /** How a service row becomes the registry's payload. */
 export interface StateShape<A> {
   /**
-   * The wire payload handed to `validate`, when the row is not already it (the
-   * `listItem` legacy vocabulary carries `title`/`checked`/`sortOrder` too).
+   * The wire payload handed to `validate`, when the row is not already it.
    */
   readonly encode?: (row: A) => Record<string, unknown>
   /**

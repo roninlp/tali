@@ -2,8 +2,8 @@ import { Context, Effect, Layer, Option, Schema } from 'effect'
 import { SqlClient } from 'effect/sql'
 import {
   type ListId,
-  PlanningListItem as ListItem,
-  type PlanningListItemId as ListItemId,
+  ListItem,
+  type ListItemId,
   TagId,
   type UserId,
 } from '@tali/domain'
@@ -19,22 +19,21 @@ import {
 import { visibleScopeSql } from './scope'
 
 /**
- * D1-backed repository for the real `ListItem` aggregate (ticket #33;
- * FR-LIST-01/02).
+ * D1-backed repository for the `ListItem` aggregate (ticket #33; FR-LIST-01/02).
  *
- * Migration 0005 extends the Slice 1 `list_items` table in place instead of
- * forking it. The real columns are `name` / `done` / `ordering` / `checked_at`;
- * the scaffold columns (`title` / `checked` / `sort_order`) are written too, as
- * the sync registry (#34) keeps the legacy wire shape and dual-writes both sets
- * so the web mirror needs no change. The legacy reader lives in
- * `list-item-repo.ts` and only sees scaffold rows.
+ * Migration 0005 extended the Slice 1 `list_items` table in place instead of
+ * forking it, and the scaffold columns (`title` / `checked` / `sort_order`)
+ * were dual-written while the sync registry still spoke the scaffold wire
+ * shape (#34). Ticket #119 retired that shape: the registry, this repo and the
+ * web mirror all speak the aggregate's own columns (`name` / `done` /
+ * `ordering`), and migration 0015 dropped the scaffold columns.
  */
 
 /**
- * The one place `list_items`' columns are declared (#115) — including the
- * dual-write shim: each scaffold column carries the real aggregate's column
- * as a **mirror**, so one field writes both physical copies and the
- * descriptor stays honest about the two column sets.
+ * The one place `list_items`' columns are declared (#115).
+ *
+ * `ordering`'s wire field is the aggregate's `order` — `order` is an SQL
+ * keyword, hence the quoted SELECT alias.
  *
  * `last_writer_id` is sync-managed (#39's server attribution): the registry
  * writes and hydrates it; this repo neither reads nor writes it.
@@ -42,17 +41,11 @@ import { visibleScopeSql } from './scope'
 export const LIST_ITEM_TABLE = defineTable('list_items', [
   column('id', { updatable: false }),
   column('type', { updatable: false }),
-  column('title', {
-    codec: columnCodecs.text,
-    mirrors: [{ column: 'name', as: 'name' }],
-  }),
-  column('checked', {
-    codec: columnCodecs.bit,
-    mirrors: [{ column: 'done', as: 'done' }],
-  }),
-  column('sort_order', 'sortOrder', {
+  column('name', { codec: columnCodecs.text }),
+  column('done', { codec: columnCodecs.bit }),
+  column('ordering', 'order', {
+    as: '"order"',
     codec: columnCodecs.int,
-    mirrors: [{ column: 'ordering', as: '"order"' }],
   }),
   column('list_id', 'listId', { codec: columnCodecs.nullableText }),
   column('checked_at', 'checkedAt', { codec: columnCodecs.nullableText }),
@@ -103,19 +96,15 @@ const toListItem = (row: ListItemRow): ListItem =>
     deletedAt: row.deletedAt,
   })
 
-/**
- * The model's column values, bridged into the scaffold wire vocabulary: the
- * real aggregate's `name`/`done`/`order` feed the `title`/`checked`/`sortOrder`
- * fields the descriptor dual-writes to both column sets.
- */
+/** The model's column values, one field per descriptor entry. */
 const listItemValues = (
   item: ListItem,
 ): ColumnValues<typeof LIST_ITEM_TABLE> => ({
   id: item.id,
   type: item.type,
-  title: item.name,
-  checked: item.done,
-  sortOrder: item.order,
+  name: item.name,
+  done: item.done,
+  order: item.order,
   listId: item.listId,
   checkedAt: item.checkedAt,
   color: item.color,

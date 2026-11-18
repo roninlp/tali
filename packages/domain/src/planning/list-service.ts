@@ -16,7 +16,7 @@ import {
   validationFields,
 } from './common.js'
 import { List } from './list.js'
-import { ListItem as PlanningListItem } from './list-item.js'
+import { ListItem } from './list-item.js'
 
 /**
  * ListService contract (ticket #39; FR-LIST-01/02/03).
@@ -38,11 +38,8 @@ export class ListNotFound extends Schema.TaggedError<ListNotFound>()(
   notFoundFields(Schema.String),
 ) {}
 
-/**
- * Named `ListEntryNotFound` in TypeScript because the pre-Slice-2 scaffold
- * still exports a `ListItemNotFound` class; the wire tag stays entity-specific.
- */
-export class ListEntryNotFound extends Schema.TaggedError<ListEntryNotFound>()(
+/** The list item the id names does not exist (or is tombstoned). */
+export class ListItemNotFound extends Schema.TaggedError<ListItemNotFound>()(
   'ListItemNotFound',
   notFoundFields(Schema.String),
 ) {}
@@ -67,7 +64,7 @@ export class ListConflict extends Schema.TaggedError<ListConflict>()(
 
 export const ListServiceError = Schema.Union([
   ListNotFound,
-  ListEntryNotFound,
+  ListItemNotFound,
   ListForbidden,
   ListValidationError,
   ListConflict,
@@ -184,5 +181,5 @@ export type ListItemsQuery = Schema.Schema.Type<typeof ListItemsQuery>
 export const ListResponse = List
 export type ListResponse = Schema.Schema.Type<typeof ListResponse>
 
-export const ListItemResponse = PlanningListItem
+export const ListItemResponse = ListItem
 export type ListItemResponse = Schema.Schema.Type<typeof ListItemResponse>

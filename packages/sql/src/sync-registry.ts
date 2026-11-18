@@ -77,23 +77,16 @@ import { TASK_TABLE } from './task-repo.js'
  * merge — are registry defaults (#115), so a definition states only what
  * actually varies.
  *
- * ## The `listItem` compatibility shim
- *
- * `list_items` is the scaffold table from #1, extended in place by
- * `0005_core_planning.sql` with the real ListItem columns (`name`, `done`,
- * `ordering`, `list_id`, `checked_at`, `color`, `tag_ids`, `type`). Two writers
- * still exist: the scaffold repo (`list-item-repo.ts`) writes only
- * `title`/`checked`/`sort_order`, and the real `PlanningListItemRepo` dual-writes
- * both sets.
- *
- * The web mirror (#17/#18) and `/today` read `data.title` / `data.checked` /
- * `data.sortOrder`, and #34 must not change the web app. So the `listItem`
- * entry stays on the **scaffold wire shape** and every sync write **dual-writes
- * both column sets** — expressed in the descriptor as each scaffold column's
- * mirror of the real one. Reads use the scaffold columns, which every writer
- * keeps current. Ticket #39 additionally accepts and hydrates the real
- * aggregate names (`name`/`done`/`ordering`), so `/lists` can speak the #33
- * vocabulary without breaking the legacy `listItem` wire shape.
+ * ## The `listItem` entity
+
+ * `list_items` was born the Slice 1 scaffold table and later extended in
+ * place by `0005_core_planning.sql` with the real ListItem columns. Two wire
+ * vocabularies coexisted until #39: the scaffold names (`title`/`checked`/
+ * `sortOrder`) and the aggregate's own (`name`/`done`/`order`), with every
+ * sync write dual-writing both column sets. Ticket #119 retired the scaffold:
+ * the entity now speaks the aggregate's field names only, migration 0015
+ * dropped the scaffold columns, and the writable map accepts the real names
+ * alone (`order` is the wire field for the physical `ordering` column).
  */
 
 // ── Row state ─────────────────────────────────────────────────────────────
@@ -1098,93 +1091,37 @@ const listDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     }),
 })
 
-// ── ListItem (legacy wire shape, dual-write) ──────────────────────────────
+// ── ListItem ──────────────────────────────
 
 /**
- * Keep the scaffold wire names (`title`/`checked`/`sortOrder`) and the real
- * #33 names (`name`/`done`/`ordering`) in lockstep. #39 adds the real names to
- * the allowlist so a list screen can speak either vocabulary without breaking
- * the legacy mirror/sync shape.
+ * Hydrate a `list_items` row into the aggregate's own field names. The wire
+ * field for the physical `ordering` column is `order` (the model's name); the
+ * descriptor quotes the SELECT alias because `order` is an SQL keyword.
  */
-const listItemTitle = (data: Record<string, unknown>): string =>
-  typeof data.title === 'string'
-    ? data.title
-    : typeof data.name === 'string'
-      ? data.name
-      : ''
+const listItemNormalize = (row: SyncRawRow): Record<string, unknown> => ({
+  id: String(row.id),
+  type: 'listItem',
+  name: encodeText(row.name),
+  done: asBit(row.done),
+  order: encodeInt(row.order),
+  listId: asText(row.listId),
+  checkedAt: asText(row.checkedAt),
+  color: asText(row.color),
+  tagIds: asStringArray(row.tagIds),
+  lastWriterId: asText(row.lastWriterId),
+  ownerId: encodeText(row.ownerId),
+  visibility: storedVisibility('listItem', row.visibility),
+  createdAt: encodeText(row.createdAt),
+})
 
-const listItemChecked = (data: Record<string, unknown>): boolean =>
-  typeof data.checked === 'boolean' ? data.checked : data.done === true
-
-const listItemOrder = (data: Record<string, unknown>): number =>
-  typeof data.sortOrder === 'number' && Number.isInteger(data.sortOrder)
-    ? data.sortOrder
-    : encodeInt(data.ordering)
-
-const normalizeListItem = (
-  data: Record<string, unknown>,
-): Record<string, unknown> => {
-  const title = listItemTitle(data)
-  const checked = listItemChecked(data)
-  const order = listItemOrder(data)
-  return {
-    ...data,
-    title,
-    name: title,
-    checked,
-    done: checked,
-    sortOrder: order,
-    ordering: order,
-  }
-}
-
-/**
- * Translate the #39 aliases into the canonical wire fields **before** the merge
- * runs, so done-wins still sees `checked: true` even when a client wrote
- * `done: true`.
- */
-const normalizeListItemPatch = (
-  patch: Record<string, unknown>,
-): Record<string, unknown> => {
-  const next = { ...patch }
-  if (next.title === undefined && typeof next.name === 'string')
-    next.title = next.name
-  if (next.checked === undefined && typeof next.done === 'boolean')
-    next.checked = next.done
-  if (next.sortOrder === undefined && typeof next.ordering === 'number') {
-    next.sortOrder = next.ordering
-  }
-  return next
-}
-
-/**
- * The scaffold columns are authoritative for the wire shape: every writer
- * (scaffold repo, real repo, sync) keeps `title`/`checked`/`sort_order` current.
- * The real ListItem columns are carried alongside so the dual-write preserves
- * them (`listId`, `checkedAt`, `color`, `tagIds`).
- */
-const listItemNormalize = (row: SyncRawRow): Record<string, unknown> =>
-  normalizeListItem({
-    id: String(row.id),
-    type: 'listItem',
-    title: encodeText(row.title),
-    checked: asBit(row.checked),
-    sortOrder: encodeInt(row.sortOrder),
-    listId: asText(row.listId),
-    checkedAt: asText(row.checkedAt),
-    color: asText(row.color),
-    tagIds: asStringArray(row.tagIds),
-    lastWriterId: asText(row.lastWriterId),
-    ownerId: encodeText(row.ownerId),
-    visibility: storedVisibility('listItem', row.visibility),
-    createdAt: encodeText(row.createdAt),
-  })
-
-const LIST_ITEM_COMPLETION = { field: 'checked', value: true }
+const LIST_ITEM_COMPLETION = { field: 'done', value: true }
 
 const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
-  // `validate` is identity: the scaffold wire shape predates the #33 model and
-  // its rows may not have a `list_id` (see the compatibility note above).
+  // `validate` is identity: the wire predates strict aggregate validation, and
+  // rows the engine must still accept do not satisfy the #33 model — a
+  // delete-only tombstone has no `name`, and a pre-#39 orphan row has no
+  // `listId` (the parent link below stays optional for both). The value
+  // guards live in the writable map and `defaults` instead.
   const validateIdentity = (
     data: Record<string, unknown>,
   ): Record<string, unknown> => data
@@ -1193,13 +1130,9 @@ const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
     table: LIST_ITEM_TABLE.table,
     select: selectList(LIST_ITEM_TABLE, { syncManaged: true }),
     writable: new Map([
-      ['title', isString],
-      ['checked', isBoolean],
-      ['sortOrder', isInt],
-      // #39 real-aggregate aliases; both vocabularies are accepted.
       ['name', isString],
       ['done', isBoolean],
-      ['ordering', isInt],
+      ['order', isInt],
       ['listId', isNullableString],
       ['color', isNullableString],
       ['tagIds', isStringArray],
@@ -1208,9 +1141,10 @@ const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
     // Checklist done-wins: "I ticked it" beats "I renamed it" (§6.3).
     completion: LIST_ITEM_COMPLETION,
     // Items inherit the list's visibility but may be narrower (ADR-0011). The
-    // legacy wire shape may omit `listId`, so the parent link is optional;
-    // when it is absent the sync service forces the item private (owner-only)
-    // rather than letting a missing parent choose a visibility.
+    // parent link stays optional: a delete-only tombstone patch carries no
+    // `listId`, and the pre-#39 orphan rows never had one. When it is absent
+    // the sync service forces the item private (owner-only) rather than
+    // letting a missing parent choose a visibility.
     parent: {
       entityType: 'list',
       field: 'listId',
@@ -1221,47 +1155,37 @@ const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
     },
     purge: purgeItemTagJoins(sql, 'listItem', 'list_items'),
     defaults: (patch, context) => {
-      const raw = normalizeListItemPatch(patch)
-      const title = listItemTitle(raw)
-      const checked = listItemChecked(raw)
-      const order = listItemOrder(raw)
-      return normalizeListItem({
+      const done = patch.done === true
+      return {
         id: context.entityId,
         type: 'listItem',
-        title,
-        checked,
-        sortOrder: order,
-        listId: asText(raw.listId),
-        checkedAt: checked ? context.now : null,
-        color: asText(raw.color),
-        tagIds: Array.isArray(raw.tagIds) ? raw.tagIds : [],
+        name: encodeText(patch.name),
+        done,
+        order: encodeInt(patch.order),
+        listId: asText(patch.listId),
+        checkedAt: done ? context.now : null,
+        color: asText(patch.color),
+        tagIds: Array.isArray(patch.tagIds) ? patch.tagIds : [],
         lastWriterId: context.userId,
         ownerId: context.userId,
-        visibility: createdVisibility('listItem', raw.visibility),
-        createdAt: asText(raw.createdAt) ?? context.clientUpdatedAt,
-      })
+        visibility: createdVisibility('listItem', patch.visibility),
+        createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
+      }
     },
     hydrate: row => listItemNormalize(row),
     validate: validateIdentity,
     merge: input => {
-      const current = normalizeListItem(input.current)
-      const patch = normalizeListItemPatch(input.patch)
-      const next = mergeFields(
-        { completion: LIST_ITEM_COMPLETION },
-        { ...input, current, patch },
-      )
-      // Mirror the checked flag onto the real completion audit column. On a
-      // ticked-wins conflict the original `checkedAt` is preserved.
+      const next = mergeFields({ completion: LIST_ITEM_COMPLETION }, input)
+      // The completion audit column follows the done flag. On a ticked-wins
+      // conflict the original `checkedAt` is preserved.
       next.checkedAt =
-        next.checked === true
-          ? current.checked === true
-            ? (current.checkedAt ?? null)
+        next.done === true
+          ? input.current.done === true
+            ? (input.current.checkedAt ?? null)
             : input.now
           : null
-      return normalizeListItem(next)
+      return next
     },
-    // Dual-write: the descriptor's mirrors write the scaffold columns (wire
-    // shape) and the real ListItem columns (#33/#39) from the same fields.
     insert: state =>
       insertStatement(sql, LIST_ITEM_TABLE, {
         values: syncValues(state),
