@@ -283,9 +283,6 @@ const toPreferencesMessage = (message: Preferences.Message): Message =>
 const toPushMessage = (message: Push.Message): Message =>
   Message.GotPushMessage({ message })
 
-const toTodayMessage = (message: Today.Message): Message =>
-  Message.GotTodayMessage({ message })
-
 const toListsMessage = (message: Lists.Message): Message =>
   Message.GotListsMessage({ message })
 
@@ -808,11 +805,6 @@ const foldSync = Update.foldChild({
     Message.GotSyncMessage({ message }),
 })
 
-type TodayFoldInput = Readonly<{
-  message: Today.Message
-  inputs: Today.Inputs
-}>
-
 const foldSyncRefresh = Update.foldChildStep({
   update: Sync.refreshMirror,
   read: (model: Model) => Option.some(model.sync),
@@ -830,45 +822,16 @@ const foldPreferencesSaved = Update.foldChild({
   toParentMessage: toPreferencesMessage,
 })
 
-const foldTodayOutMessage = Today.OutMessage.match<
-  Update.Step<Model, Message, Sync.LocalStoreService>
->({
-  WroteLocalData: () => stepModel => foldSyncRefresh(stepModel),
-
-  SavedSectionOrder:
-    ({ preferences }) =>
-    stepModel =>
-      foldPreferencesSaved(stepModel, preferences),
-})
-
-const foldToday = Update.foldChild({
-  update: (today: Today.Model, input: TodayFoldInput) =>
-    Today.update(today, input.message, input.inputs),
-  read: (model: Model) => Option.some(model.today),
-  write: (model: Model, nextToday: Today.Model) =>
-    modifyFields(model, { today: () => nextToday }),
-  toParentMessage: toTodayMessage,
-  foldOutMessage: foldTodayOutMessage,
-})
-
-const foldTodayEntered = Update.foldChild({
-  update: Today.entered,
-  read: (model: Model) => Option.some(model.today),
-  write: (model: Model, nextToday: Today.Model) =>
-    modifyFields(model, { today: () => nextToday }),
-  toParentMessage: toTodayMessage,
-})
-
+/** A completed sync drain is the moment Today re-reads the server read
+ *  model. `foldSyncMessage` runs this when the drain settles on /today. */
 const foldTodaySyncSettled = Update.foldChild({
   update: Today.syncSettled,
   read: (model: Model) => Option.some(model.today),
   write: (model: Model, nextToday: Today.Model) =>
     modifyFields(model, { today: () => nextToday }),
-  toParentMessage: toTodayMessage,
+  toParentMessage: (message: Today.Message) =>
+    Message.GotTodayMessage({ message }),
 })
-
-const foldTodayMessage = (model: Model, message: Today.Message): UpdateReturn =>
-  foldToday(model, { message, inputs: todayInputs(model) })
 
 type ListsFoldInput = Readonly<{
   message: Lists.Message
@@ -1123,6 +1086,33 @@ const enterNotesNote = (model: Model, noteId: NoteId): UpdateReturn =>
  * do not fit the slice shape and stay hand-wired below.
  */
 const pages = {
+  today: pageFoldWithOutMessage({
+    field: {
+      field: (model: Model) => model.today,
+      setField: (model: Model, nextToday: Today.Model) =>
+        modifyFields(model, { today: () => nextToday }),
+    },
+    toParentMessage: (message: Today.Message) =>
+      Message.GotTodayMessage({ message }),
+    update: Today.update,
+    inputs: todayInputs,
+    foldOutMessage: Today.OutMessage.match<
+      Update.Step<Model, Message, Sync.LocalStoreService>
+    >({
+      WroteLocalData: () => stepModel => foldSyncRefresh(stepModel),
+
+      SavedSectionOrder:
+        ({ preferences }) =>
+        stepModel =>
+          foldPreferencesSaved(stepModel, preferences),
+    }),
+    entered: Today.entered,
+    subscriptions: {
+      child: Today.subscriptions,
+      when: (model: Model) => AppRoute.isAnyOf(['Today'])(model.route),
+    },
+  }),
+
   tasks: pageFoldWithOutMessage({
     field: {
       field: (model: Model) => model.tasks,
@@ -1322,7 +1312,7 @@ const enterRoute = (
     AppRoute.isAnyOf(['Today'])(model.route) &&
     Option.isSome(Transition.entered(transition, 'Today'))
   ) {
-    return foldTodayEntered(model, todayInputs(model))
+    return pages.today.foldEntered(model)
   }
 
   if (
@@ -1560,7 +1550,7 @@ export const update = (model: Model, message: Message) =>
     GotPreferencesMessage: ({ message }) => foldPreferences(model, message),
     GotPushMessage: ({ message }) => foldPush(model, message),
     GotSyncMessage: ({ message }) => foldSyncMessage(model, message),
-    GotTodayMessage: ({ message }) => foldTodayMessage(model, message),
+    GotTodayMessage: ({ message }) => pages.today.foldMessage(model, message),
     GotListsMessage: ({ message }) => foldListsMessage(model, message),
     GotNotesMessage: ({ message }) => foldNotesMessage(model, message),
     GotTasksMessage: ({ message }) => pages.tasks.foldMessage(model, message),
@@ -1706,15 +1696,6 @@ const notFoundView = (h: HtmlBuilder<Message>): Html =>
     ],
   )
 
-const todayPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
-  h.submodel({
-    slotId: 'today-page',
-    model: model.today,
-    view: Today.view,
-    viewInputs: todayInputs(model),
-    toParentMessage: toTodayMessage,
-  })
-
 const remindersPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.section(
     [h.Class('page-wrap grid grid-cols-1 max-w-3xl gap-4')],
@@ -1829,7 +1810,15 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): Html =>
           },
           toParentMessage: message => Message.GotHouseholdMessage({ message }),
         }),
-      Today: () => todayPageView(model, h),
+      Today: () =>
+        h.submodel({
+          slotId: 'today-page',
+          model: model.today,
+          view: Today.view,
+          viewInputs: todayInputs(model),
+          toParentMessage: (message: Today.Message) =>
+            Message.GotTodayMessage({ message }),
+        }),
       Lists: () =>
         h.submodel({
           slotId: 'lists-index',
@@ -2096,17 +2085,6 @@ const pushSubscriptions = Subscription.lift(Push.subscriptions)<Model, Message>(
   },
 )
 
-const todaySubscriptions = Subscription.lift(Today.subscriptions)<
-  Model,
-  Message
->({
-  read: model =>
-    AppRoute.isAnyOf(['Today'])(model.route)
-      ? Option.some(model.today)
-      : Option.none(),
-  toParentMessage: toTodayMessage,
-})
-
 const notesSubscriptions = Subscription.lift(Notes.subscriptions)<
   Model,
   Message
@@ -2143,7 +2121,7 @@ const remindersSubscriptions = Subscription.lift(Reminders.subscriptions)<
 /** The subscription records the page table carries, when a page owns any. */
 const pageSubscriptionRecords = Array.getSomes(
   Array.map(
-    [pages.tasks, pages.habits],
+    [pages.today, pages.tasks, pages.habits],
     page => Option.fromNullishOr(page.subscriptions),
   ),
 )
@@ -2156,7 +2134,6 @@ export const subscriptions = Subscription.aggregate<
   syncSubscriptions,
   themeSubscriptions,
   pushSubscriptions,
-  todaySubscriptions,
   notesSubscriptions,
   calendarSubscriptions,
   remindersSubscriptions,
