@@ -289,9 +289,6 @@ const toListsMessage = (message: Lists.Message): Message =>
 const toNotesMessage = (message: Notes.Message): Message =>
   Message.GotNotesMessage({ message })
 
-const toCalendarMessage = (message: Calendar.Message): Message =>
-  Message.GotCalendarMessage({ message })
-
 const toRemindersMessage = (message: Reminders.Message): Message =>
   Message.GotRemindersMessage({ message })
 
@@ -1156,48 +1153,41 @@ const pages = {
       when: (model: Model) => AppRoute.isAnyOf(['Habits'])(model.route),
     },
   }),
+
+  calendar: pageFoldWithOutMessage({
+    field: {
+      field: (model: Model) => model.calendar,
+      setField: (model: Model, nextCalendar: Calendar.Model) =>
+        modifyFields(model, { calendar: () => nextCalendar }),
+    },
+    toParentMessage: (message: Calendar.Message) =>
+      Message.GotCalendarMessage({ message }),
+    update: Calendar.update,
+    inputs: calendarInputs,
+    foldOutMessage: Calendar.OutMessage.match<
+      Update.Step<Model, Message, Sync.LocalStoreService>
+    >({
+      WroteLocalData: () => stepModel => foldSyncRefresh(stepModel),
+    }),
+    entered: Calendar.entered,
+    subscriptions: {
+      child: Calendar.subscriptions,
+      when: (model: Model) => AppRoute.isAnyOf(['Calendar'])(model.route),
+    },
+  }),
 }
 
-type CalendarFoldInput = Readonly<{
-  message: Calendar.Message
-  inputs: Calendar.Inputs
-}>
-
-const foldCalendar = Update.foldChild({
-  update: (calendar: Calendar.Model, input: CalendarFoldInput) =>
-    Calendar.update(calendar, input.message, input.inputs),
-  read: (model: Model) => Option.some(model.calendar),
-  write: (model: Model, nextCalendar: Calendar.Model) =>
-    modifyFields(model, { calendar: () => nextCalendar }),
-  toParentMessage: toCalendarMessage,
-  foldOutMessage: Calendar.OutMessage.match<
-    Update.Step<Model, Message, Sync.LocalStoreService>
-  >({
-    WroteLocalData: () => stepModel => foldSyncRefresh(stepModel),
-  }),
-})
-
-const foldCalendarEntered = Update.foldChild({
-  update: Calendar.entered,
-  read: (model: Model) => Option.some(model.calendar),
-  write: (model: Model, nextCalendar: Calendar.Model) =>
-    modifyFields(model, { calendar: () => nextCalendar }),
-  toParentMessage: toCalendarMessage,
-})
-
+/** A completed sync drain is the moment the calendar re-reads the server
+ *  read model. `foldSyncMessage` runs this when the drain settles on
+ *  /calendar. */
 const foldCalendarSyncSettled = Update.foldChild({
   update: Calendar.syncSettled,
   read: (model: Model) => Option.some(model.calendar),
   write: (model: Model, nextCalendar: Calendar.Model) =>
     modifyFields(model, { calendar: () => nextCalendar }),
-  toParentMessage: toCalendarMessage,
+  toParentMessage: (message: Calendar.Message) =>
+    Message.GotCalendarMessage({ message }),
 })
-
-const foldCalendarMessage = (
-  model: Model,
-  message: Calendar.Message,
-): UpdateReturn =>
-  foldCalendar(model, { message, inputs: calendarInputs(model) })
 
 const foldRemindersOutMessage = Reminders.OutMessage.match<
   Update.Step<Model, Message, Sync.LocalStoreService>
@@ -1293,10 +1283,6 @@ const rereadMirror = (entered: UpdateReturn): UpdateReturn => {
   }
 }
 
-/** Enter `/calendar` and re-read the mirror it renders from. */
-const enterCalendarPage = (model: Model): UpdateReturn =>
-  rereadMirror(foldCalendarEntered(model, calendarInputs(model)))
-
 /** Run the entry capability of whichever page the transition landed on. */
 const enterRoute = (
   model: Model,
@@ -1340,7 +1326,7 @@ const enterRoute = (
     AppRoute.isAnyOf(['Calendar'])(model.route) &&
     Option.isSome(Transition.entered(transition, 'Calendar'))
   ) {
-    return enterCalendarPage(model)
+    return rereadMirror(pages.calendar.foldEntered(model))
   }
 
   if (
@@ -1555,7 +1541,8 @@ export const update = (model: Model, message: Message) =>
     GotNotesMessage: ({ message }) => foldNotesMessage(model, message),
     GotTasksMessage: ({ message }) => pages.tasks.foldMessage(model, message),
     GotHabitsMessage: ({ message }) => pages.habits.foldMessage(model, message),
-    GotCalendarMessage: ({ message }) => foldCalendarMessage(model, message),
+    GotCalendarMessage: ({ message }) =>
+      pages.calendar.foldMessage(model, message),
     GotRemindersMessage: ({ message }) => foldReminders(model, message),
     GotCaptureMessage: ({ message }) => foldCaptureMessage(model, message),
     GotSettingsMessage: ({ message }) => foldSettingsMessage(model, message),
@@ -1883,7 +1870,8 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): Html =>
           model: model.calendar,
           view: Calendar.view,
           viewInputs: calendarInputs(model),
-          toParentMessage: toCalendarMessage,
+          toParentMessage: (message: Calendar.Message) =>
+            Message.GotCalendarMessage({ message }),
         }),
       Reminders: () => remindersPageView(model, h),
       Capture: () =>
@@ -2096,17 +2084,6 @@ const notesSubscriptions = Subscription.lift(Notes.subscriptions)<
   toParentMessage: toNotesMessage,
 })
 
-const calendarSubscriptions = Subscription.lift(Calendar.subscriptions)<
-  Model,
-  Message
->({
-  read: model =>
-    AppRoute.isAnyOf(['Calendar'])(model.route)
-      ? Option.some(model.calendar)
-      : Option.none(),
-  toParentMessage: toCalendarMessage,
-})
-
 const remindersSubscriptions = Subscription.lift(Reminders.subscriptions)<
   Model,
   Message
@@ -2121,7 +2098,7 @@ const remindersSubscriptions = Subscription.lift(Reminders.subscriptions)<
 /** The subscription records the page table carries, when a page owns any. */
 const pageSubscriptionRecords = Array.getSomes(
   Array.map(
-    [pages.today, pages.tasks, pages.habits],
+    [pages.today, pages.tasks, pages.habits, pages.calendar],
     page => Option.fromNullishOr(page.subscriptions),
   ),
 )
@@ -2135,7 +2112,6 @@ export const subscriptions = Subscription.aggregate<
   themeSubscriptions,
   pushSubscriptions,
   notesSubscriptions,
-  calendarSubscriptions,
   remindersSubscriptions,
   ...pageSubscriptionRecords,
 )
