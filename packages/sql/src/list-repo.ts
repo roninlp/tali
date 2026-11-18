@@ -1,6 +1,15 @@
 import { Context, Effect, Layer, Option } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { List, type ListId, type UserId } from '@tali/domain'
+import {
+  type ColumnValues,
+  column,
+  columnCodecs,
+  defineTable,
+  insertStatement,
+  selectList,
+  updateStatement,
+} from './columns'
 import { visibleScopeSql } from './scope'
 
 /**
@@ -10,10 +19,61 @@ import { visibleScopeSql } from './scope'
  * items live in `list_items` with a manual `ordering` integer.
  */
 
-const LIST_COLUMNS =
-  `id, type, title, description, owner_id AS ownerId, household_id AS householdId, ` +
-  `visibility, color, icon, sort, checked_placement AS checkedPlacement, ` +
-  `created_at AS createdAt, updated_at AS updatedAt, version, deleted_at AS deletedAt`
+/**
+ * The one place `lists`' columns are declared (#115): the repo's SELECT,
+ * INSERT and UPDATE lists below, and the sync registry's projection and
+ * statements, are all generated from this descriptor.
+ *
+ * `last_writer_id` is sync-managed (#39's server attribution): the registry
+ * writes and hydrates it, the repo neither reads nor writes it.
+ */
+export const LIST_TABLE = defineTable('lists', [
+  column('id', { updatable: false }),
+  column('type', { updatable: false }),
+  column('title', { codec: columnCodecs.text }),
+  column('description', { codec: columnCodecs.nullableText }),
+  column('owner_id', 'ownerId', { updatable: false }),
+  column('household_id', 'householdId', { updatable: false }),
+  column('visibility'),
+  column('color', { codec: columnCodecs.nullableText }),
+  column('icon', { codec: columnCodecs.nullableText }),
+  column('sort', { codec: columnCodecs.text }),
+  column('checked_placement', 'checkedPlacement', {
+    codec: columnCodecs.text,
+  }),
+  column('last_writer_id', 'lastWriterId', {
+    codec: columnCodecs.nullableText,
+    syncManaged: true,
+  }),
+  column('created_at', 'createdAt', {
+    updatable: false,
+    codec: columnCodecs.text,
+  }),
+  column('updated_at', 'updatedAt', { codec: columnCodecs.text }),
+  column('version', { codec: columnCodecs.int }),
+  column('deleted_at', 'deletedAt', { codec: columnCodecs.nullableText }),
+])
+
+const LIST_SELECT = selectList(LIST_TABLE)
+
+/** The model's column values; the descriptor's codecs do the encoding. */
+const listValues = (list: List): ColumnValues<typeof LIST_TABLE> => ({
+  id: list.id,
+  type: list.type,
+  title: list.title,
+  description: list.description,
+  ownerId: list.ownerId,
+  householdId: list.householdId,
+  visibility: list.visibility,
+  color: list.color,
+  icon: list.icon,
+  sort: list.sort,
+  checkedPlacement: list.checkedPlacement,
+  createdAt: list.createdAt,
+  updatedAt: list.updatedAt,
+  version: list.version,
+  deletedAt: list.deletedAt,
+})
 
 export class ListRepo extends Context.Service<ListRepo>()('ListRepo', {
   make: Effect.gen(function* () {
@@ -21,7 +81,7 @@ export class ListRepo extends Context.Service<ListRepo>()('ListRepo', {
 
     const findById = (id: ListId) =>
       Effect.map(
-        sql<List>`SELECT ${sql.literal(LIST_COLUMNS)} FROM lists WHERE id = ${id}`,
+        sql<List>`SELECT ${sql.literal(LIST_SELECT)} FROM lists WHERE id = ${id}`,
         rows => Option.fromUndefinedOr(rows[0]),
       )
 
@@ -31,7 +91,7 @@ export class ListRepo extends Context.Service<ListRepo>()('ListRepo', {
     }) =>
       Effect.map(
         sql<List>`
-          SELECT ${sql.literal(LIST_COLUMNS)} FROM lists
+          SELECT ${sql.literal(LIST_SELECT)} FROM lists
           WHERE ${visibleScopeSql(sql, input)}
           ORDER BY updated_at DESC, id ASC
         `,
@@ -40,37 +100,20 @@ export class ListRepo extends Context.Service<ListRepo>()('ListRepo', {
 
     const insert = (list: List) =>
       Effect.map(
-        sql<List>`
-          INSERT INTO lists
-            (id, type, title, description, owner_id, household_id, visibility,
-             color, icon, sort, checked_placement, created_at, updated_at, version, deleted_at)
-          VALUES
-            (${list.id}, ${list.type}, ${list.title}, ${list.description},
-             ${list.ownerId}, ${list.householdId}, ${list.visibility}, ${list.color},
-             ${list.icon}, ${list.sort}, ${list.checkedPlacement}, ${list.createdAt},
-             ${list.updatedAt}, ${list.version}, ${list.deletedAt})
-          RETURNING ${sql.literal(LIST_COLUMNS)}
-        `,
+        insertStatement<List>(sql, LIST_TABLE, {
+          values: listValues(list),
+          returning: LIST_SELECT,
+        }),
         rows => rows[0]!,
       )
 
     const update = (list: List) =>
       Effect.map(
-        sql<List>`
-          UPDATE lists SET
-            title = ${list.title},
-            description = ${list.description},
-            visibility = ${list.visibility},
-            color = ${list.color},
-            icon = ${list.icon},
-            sort = ${list.sort},
-            checked_placement = ${list.checkedPlacement},
-            updated_at = ${list.updatedAt},
-            version = ${list.version},
-            deleted_at = ${list.deletedAt}
-          WHERE id = ${list.id}
-          RETURNING ${sql.literal(LIST_COLUMNS)}
-        `,
+        updateStatement<List>(sql, LIST_TABLE, {
+          id: list.id,
+          values: listValues(list),
+          returning: LIST_SELECT,
+        }),
         rows => Option.fromUndefinedOr(rows[0]),
       )
 

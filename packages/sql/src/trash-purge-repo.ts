@@ -4,7 +4,7 @@ import { SqlClient, SqlError, Statement } from 'effect/sql'
 import { TRASH_RETENTION_MS, type SyncEntityType } from '@tali/domain'
 import {
   makeSyncRegistry,
-  type SyncEntityDefinition,
+  type ResolvedSyncEntityDefinition,
   type SyncRegistry,
 } from './sync-registry.js'
 
@@ -80,11 +80,11 @@ const chunked = <A>(
 /** Child aggregates first, derived from the registry's `parent` metadata. */
 const parentDepth = (
   registry: SyncRegistry,
-  definition: SyncEntityDefinition,
+  definition: ResolvedSyncEntityDefinition,
 ): number => {
   const seen = new Set<SyncEntityType>()
   let depth = 0
-  let current: SyncEntityDefinition | undefined = definition
+  let current: ResolvedSyncEntityDefinition | undefined = definition
   while (current?.parent !== undefined && !seen.has(current.entityType)) {
     seen.add(current.entityType)
     const parent = registry.get(current.parent.entityType)
@@ -95,16 +95,18 @@ const parentDepth = (
   return depth
 }
 
-const ordered = (registry: SyncRegistry): ReadonlyArray<SyncEntityDefinition> =>
+const ordered = (
+  registry: SyncRegistry,
+): ReadonlyArray<ResolvedSyncEntityDefinition> =>
   [...registry.all()].sort((a, b) => {
     const depth = parentDepth(registry, b) - parentDepth(registry, a)
     return depth !== 0 ? depth : a.entityType.localeCompare(b.entityType)
   })
 
 const childrenOf = (
-  definitions: ReadonlyArray<SyncEntityDefinition>,
-  parent: SyncEntityDefinition,
-): ReadonlyArray<SyncEntityDefinition> =>
+  definitions: ReadonlyArray<ResolvedSyncEntityDefinition>,
+  parent: ResolvedSyncEntityDefinition,
+): ReadonlyArray<ResolvedSyncEntityDefinition> =>
   definitions.filter(
     definition =>
       definition.parent?.entityType === parent.entityType &&
@@ -127,7 +129,7 @@ export class TrashPurgeRepo extends Context.Service<TrashPurgeRepo>()(
        * child aggregate cannot drift.
        */
       const planChunk = (
-        definition: SyncEntityDefinition,
+        definition: ResolvedSyncEntityDefinition,
         ids: ReadonlyArray<string>,
         now: string,
         cutoff: string,

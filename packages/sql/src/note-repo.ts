@@ -1,6 +1,15 @@
 import { Context, Effect, Layer, Option, Schema } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { Note, type NoteId, TagId, type UserId } from '@tali/domain'
+import {
+  type ColumnValues,
+  column,
+  columnCodecs,
+  defineTable,
+  insertStatement,
+  selectList,
+  updateStatement,
+} from './columns'
 import { visibleScopeSql } from './scope'
 
 /**
@@ -11,11 +20,34 @@ import { visibleScopeSql } from './scope'
  * common soft delete. True FTS5 indexing lands with #41.
  */
 
-const NOTE_COLUMNS =
-  `id, type, title, body, plain_text AS plainText, owner_id AS ownerId, ` +
-  `household_id AS householdId, visibility, is_pinned AS isPinned, ` +
-  `is_archived AS isArchived, tag_ids AS tagIds, color, ` +
-  `created_at AS createdAt, updated_at AS updatedAt, version, deleted_at AS deletedAt`
+/**
+ * The one place `notes`' columns are declared (#115): the repo's SELECT, INSERT
+ * and UPDATE lists below, and the sync registry's projection and statements,
+ * are all generated from this descriptor.
+ */
+export const NOTE_TABLE = defineTable('notes', [
+  column('id', { updatable: false }),
+  column('type', { updatable: false }),
+  column('title', { codec: columnCodecs.text }),
+  column('body', { codec: columnCodecs.jsonOrNull }),
+  column('plain_text', 'plainText', { codec: columnCodecs.text }),
+  column('owner_id', 'ownerId', { updatable: false }),
+  column('household_id', 'householdId', { updatable: false }),
+  column('visibility'),
+  column('color', { codec: columnCodecs.nullableText }),
+  column('is_pinned', 'isPinned', { codec: columnCodecs.bit }),
+  column('is_archived', 'isArchived', { codec: columnCodecs.bit }),
+  column('tag_ids', 'tagIds', { codec: columnCodecs.json }),
+  column('created_at', 'createdAt', {
+    updatable: false,
+    codec: columnCodecs.text,
+  }),
+  column('updated_at', 'updatedAt', { codec: columnCodecs.text }),
+  column('version', { codec: columnCodecs.int }),
+  column('deleted_at', 'deletedAt', { codec: columnCodecs.nullableText }),
+])
+
+const NOTE_SELECT = selectList(NOTE_TABLE)
 
 interface NoteRow extends Omit<
   Note,
@@ -26,9 +58,6 @@ interface NoteRow extends Omit<
   readonly isArchived: number | boolean
   readonly tagIds: string
 }
-
-const bit = (value: boolean): number => (value ? 1 : 0)
-const encodeTagIds = (ids: ReadonlyArray<TagId>): string => JSON.stringify(ids)
 
 const asBody = Schema.decodeOption(Schema.fromJsonString(Schema.Json))
 
@@ -43,13 +72,33 @@ const toNote = (row: NoteRow): Note =>
     tagIds: Option.getOrElse(asTagIds(row.tagIds), () => []),
   })
 
+/** The model's column values; the descriptor's codecs do the encoding. */
+const noteValues = (note: Note): ColumnValues<typeof NOTE_TABLE> => ({
+  id: note.id,
+  type: note.type,
+  title: note.title,
+  body: note.body,
+  plainText: note.plainText,
+  ownerId: note.ownerId,
+  householdId: note.householdId,
+  visibility: note.visibility,
+  color: note.color,
+  isPinned: note.isPinned,
+  isArchived: note.isArchived,
+  tagIds: note.tagIds,
+  createdAt: note.createdAt,
+  updatedAt: note.updatedAt,
+  version: note.version,
+  deletedAt: note.deletedAt,
+})
+
 export class NoteRepo extends Context.Service<NoteRepo>()('NoteRepo', {
   make: Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
 
     const findById = (id: NoteId) =>
       Effect.map(
-        sql<NoteRow>`SELECT ${sql.literal(NOTE_COLUMNS)} FROM notes WHERE id = ${id}`,
+        sql<NoteRow>`SELECT ${sql.literal(NOTE_SELECT)} FROM notes WHERE id = ${id}`,
         rows => Option.map(Option.fromUndefinedOr(rows[0]), toNote),
       )
 
@@ -59,7 +108,7 @@ export class NoteRepo extends Context.Service<NoteRepo>()('NoteRepo', {
     }) =>
       Effect.map(
         sql<NoteRow>`
-          SELECT ${sql.literal(NOTE_COLUMNS)} FROM notes
+          SELECT ${sql.literal(NOTE_SELECT)} FROM notes
           WHERE ${visibleScopeSql(sql, input)}
           ORDER BY is_pinned DESC, updated_at DESC, id ASC
         `,
@@ -73,7 +122,7 @@ export class NoteRepo extends Context.Service<NoteRepo>()('NoteRepo', {
     }) =>
       Effect.map(
         sql<NoteRow>`
-          SELECT ${sql.literal(NOTE_COLUMNS)} FROM notes
+          SELECT ${sql.literal(NOTE_SELECT)} FROM notes
           WHERE ${visibleScopeSql(sql, input)}
             AND is_archived = 0
           ORDER BY is_pinned DESC, updated_at DESC, id ASC
@@ -91,7 +140,7 @@ export class NoteRepo extends Context.Service<NoteRepo>()('NoteRepo', {
     }) =>
       Effect.map(
         sql<NoteRow>`
-          SELECT ${sql.literal(NOTE_COLUMNS)} FROM notes
+          SELECT ${sql.literal(NOTE_SELECT)} FROM notes
           WHERE ${visibleScopeSql(sql, input, { trash: 'only' })}
           ORDER BY deleted_at DESC, id ASC
         `,
@@ -105,7 +154,7 @@ export class NoteRepo extends Context.Service<NoteRepo>()('NoteRepo', {
     }) =>
       Effect.map(
         sql<NoteRow>`
-          SELECT ${sql.literal(NOTE_COLUMNS)} FROM notes
+          SELECT ${sql.literal(NOTE_SELECT)} FROM notes
           WHERE ${visibleScopeSql(sql, input)}
             AND is_pinned = 1
             AND is_archived = 0
@@ -116,18 +165,10 @@ export class NoteRepo extends Context.Service<NoteRepo>()('NoteRepo', {
 
     const insert = (note: Note) =>
       Effect.map(
-        sql<NoteRow>`
-          INSERT INTO notes
-            (id, type, title, body, plain_text, owner_id, household_id, visibility,
-             is_pinned, is_archived, tag_ids, color, created_at, updated_at, version, deleted_at)
-          VALUES
-            (${note.id}, ${note.type}, ${note.title},
-             ${note.body === null ? null : JSON.stringify(note.body)}, ${note.plainText},
-             ${note.ownerId}, ${note.householdId}, ${note.visibility},
-             ${bit(note.isPinned)}, ${bit(note.isArchived)}, ${encodeTagIds(note.tagIds)},
-             ${note.color}, ${note.createdAt}, ${note.updatedAt}, ${note.version}, ${note.deletedAt})
-          RETURNING ${sql.literal(NOTE_COLUMNS)}
-        `,
+        insertStatement<NoteRow>(sql, NOTE_TABLE, {
+          values: noteValues(note),
+          returning: NOTE_SELECT,
+        }),
         rows => toNote(rows[0]!),
       )
 
@@ -176,22 +217,11 @@ export class NoteRepo extends Context.Service<NoteRepo>()('NoteRepo', {
 
     const update = (note: Note) =>
       Effect.map(
-        sql<NoteRow>`
-          UPDATE notes SET
-            title = ${note.title},
-            body = ${note.body === null ? null : JSON.stringify(note.body)},
-            plain_text = ${note.plainText},
-            visibility = ${note.visibility},
-            is_pinned = ${bit(note.isPinned)},
-            is_archived = ${bit(note.isArchived)},
-            tag_ids = ${encodeTagIds(note.tagIds)},
-            color = ${note.color},
-            updated_at = ${note.updatedAt},
-            version = ${note.version},
-            deleted_at = ${note.deletedAt}
-          WHERE id = ${note.id}
-          RETURNING ${sql.literal(NOTE_COLUMNS)}
-        `,
+        updateStatement<NoteRow>(sql, NOTE_TABLE, {
+          id: note.id,
+          values: noteValues(note),
+          returning: NOTE_SELECT,
+        }),
         rows => Option.map(Option.fromUndefinedOr(rows[0]), toNote),
       )
 

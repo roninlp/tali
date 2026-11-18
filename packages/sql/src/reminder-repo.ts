@@ -19,8 +19,19 @@ import {
   type Visibility,
   decodeReminderLink,
   encodeReminderLink,
+  noReminderLink,
   onceReminderRepeat,
 } from '@tali/domain'
+import {
+  type ColumnCodec,
+  type ColumnValues,
+  column,
+  columnCodecs,
+  defineTable,
+  insertStatement,
+  selectList,
+  updateStatement,
+} from './columns'
 import { visibleScopeSql, type VisibleScopeOptions } from './scope'
 
 /**
@@ -39,13 +50,66 @@ import { visibleScopeSql, type VisibleScopeOptions } from './scope'
  * state "linked to two things" is not representable.
  */
 
+const asLink = Schema.decodeUnknownOption(ReminderLink)
+
+/**
+ * The link union, decoded defensively; a malformed value reads as unlinked,
+ * exactly like the registry's hand-written statements did.
+ */
+const reminderLinkOf = (value: unknown): ReminderLink =>
+  Option.getOrElse(asLink(value), noReminderLink)
+
+/**
+ * The link union's two physical columns, as per-column codecs on the one
+ * `link` field (#115): the flattened pair is always consistent — a row can
+ * never claim two links.
+ */
+const linkTypeCodec: ColumnCodec = value =>
+  encodeReminderLink(reminderLinkOf(value)).linkType
+const linkIdCodec: ColumnCodec = value =>
+  encodeReminderLink(reminderLinkOf(value)).linkId
+
+/**
+ * The one place `reminders`' columns are declared (#115): the repo's SELECT,
+ * INSERT and UPDATE lists below, and the sync registry's projection and
+ * statements, are all generated from this descriptor. The dispatch ledger
+ * (`reminder_dispatches`) is server-written only and not a synced aggregate;
+ * its statements stay hand-written below.
+ */
+export const REMINDER_TABLE = defineTable('reminders', [
+  column('id', { updatable: false }),
+  column('type', { updatable: false }),
+  column('title', { codec: columnCodecs.text }),
+  column('note', { codec: columnCodecs.nullableText }),
+  column('owner_id', 'ownerId', { updatable: false }),
+  column('household_id', 'householdId', { updatable: false }),
+  column('visibility'),
+  column('color', { codec: columnCodecs.nullableText }),
+  column('kind', { codec: columnCodecs.text }),
+  column('tier', { codec: columnCodecs.text }),
+  column('repeat', { codec: columnCodecs.json }),
+  column('offset_minutes', 'offsetMinutes', { codec: columnCodecs.int }),
+  column('fire_at', 'fireAt', { codec: columnCodecs.text }),
+  column('link_type', 'link', {
+    as: 'linkType',
+    codec: linkTypeCodec,
+    mirrors: [{ column: 'link_id', as: 'linkId', codec: linkIdCodec }],
+  }),
+  column('silenced_until', 'silencedUntil', {
+    codec: columnCodecs.nullableText,
+  }),
+  column('time_zone', 'timeZone', { codec: columnCodecs.text }),
+  column('created_at', 'createdAt', {
+    updatable: false,
+    codec: columnCodecs.text,
+  }),
+  column('updated_at', 'updatedAt', { codec: columnCodecs.text }),
+  column('version', { codec: columnCodecs.int }),
+  column('deleted_at', 'deletedAt', { codec: columnCodecs.nullableText }),
+])
+
 /** The trusted column projection, aliased to the camelCase wire names. */
-export const REMINDER_SELECT =
-  `id, type, title, note, owner_id AS ownerId, household_id AS householdId, visibility, color, ` +
-  `kind, tier, repeat, offset_minutes AS offsetMinutes, fire_at AS fireAt, ` +
-  `link_type AS linkType, link_id AS linkId, silenced_until AS silencedUntil, ` +
-  `time_zone AS timeZone, created_at AS createdAt, updated_at AS updatedAt, ` +
-  `version, deleted_at AS deletedAt`
+export const REMINDER_SELECT = selectList(REMINDER_TABLE)
 
 const dispatchColumns = (prefix: string): string =>
   `${prefix}id, ${prefix}reminder_id AS reminderId, ${prefix}user_id AS userId, ` +
@@ -165,7 +229,31 @@ export const toReminderDispatch = (
 export const linkColumns: (link: ReminderLink) => ReminderLinkColumns =
   encodeReminderLink
 
-const encodeRepeat = (repeat: ReminderRepeat): string => JSON.stringify(repeat)
+/** The model's column values; the descriptor's codecs do the encoding. */
+const reminderValues = (
+  reminder: Reminder,
+): ColumnValues<typeof REMINDER_TABLE> => ({
+  id: reminder.id,
+  type: reminder.type,
+  title: reminder.title,
+  note: reminder.note,
+  ownerId: reminder.ownerId,
+  householdId: reminder.householdId,
+  visibility: reminder.visibility,
+  color: reminder.color,
+  kind: reminder.kind,
+  tier: reminder.tier,
+  repeat: reminder.repeat,
+  offsetMinutes: reminder.offsetMinutes,
+  fireAt: reminder.fireAt,
+  link: reminder.link,
+  silencedUntil: reminder.silencedUntil,
+  timeZone: reminder.timeZone,
+  createdAt: reminder.createdAt,
+  updatedAt: reminder.updatedAt,
+  version: reminder.version,
+  deletedAt: reminder.deletedAt,
+})
 
 export class ReminderRepo extends Context.Service<ReminderRepo>()(
   'ReminderRepo',
@@ -272,60 +360,29 @@ export class ReminderRepo extends Context.Service<ReminderRepo>()(
           rows => rows.map(toReminder),
         )
 
-      const insert = (reminder: Reminder) => {
-        const link = linkColumns(reminder.link)
-        return Effect.map(
-          sql<ReminderRow>`
-          INSERT INTO reminders
-            (id, type, title, note, owner_id, household_id, visibility, color,
-             kind, tier, repeat, offset_minutes, fire_at, link_type, link_id,
-             silenced_until, time_zone, created_at, updated_at, version, deleted_at)
-          VALUES
-            (${reminder.id}, ${reminder.type}, ${reminder.title}, ${reminder.note},
-             ${reminder.ownerId}, ${reminder.householdId}, ${reminder.visibility},
-             ${reminder.color}, ${reminder.kind}, ${reminder.tier},
-             ${encodeRepeat(reminder.repeat)}, ${reminder.offsetMinutes},
-             ${reminder.fireAt}, ${link.linkType}, ${link.linkId},
-             ${reminder.silencedUntil}, ${reminder.timeZone}, ${reminder.createdAt},
-             ${reminder.updatedAt}, ${reminder.version}, ${reminder.deletedAt})
-          RETURNING ${sql.literal(REMINDER_SELECT)}
-        `,
+      const insert = (reminder: Reminder) =>
+        Effect.map(
+          insertStatement<ReminderRow>(sql, REMINDER_TABLE, {
+            values: reminderValues(reminder),
+            returning: REMINDER_SELECT,
+          }),
           rows => toReminder(rows[0]!),
         )
-      }
 
       /**
        * Full-row update. The caller owns the version CAS (`WHERE id AND
        * version = base`) in the sync path; this primitive is for service writes
        * that already hold the row.
        */
-      const update = (reminder: Reminder) => {
-        const link = linkColumns(reminder.link)
-        return Effect.map(
-          sql<ReminderRow>`
-          UPDATE reminders SET
-            title = ${reminder.title},
-            note = ${reminder.note},
-            visibility = ${reminder.visibility},
-            color = ${reminder.color},
-            kind = ${reminder.kind},
-            tier = ${reminder.tier},
-            repeat = ${encodeRepeat(reminder.repeat)},
-            offset_minutes = ${reminder.offsetMinutes},
-            fire_at = ${reminder.fireAt},
-            link_type = ${link.linkType},
-            link_id = ${link.linkId},
-            silenced_until = ${reminder.silencedUntil},
-            time_zone = ${reminder.timeZone},
-            updated_at = ${reminder.updatedAt},
-            version = ${reminder.version},
-            deleted_at = ${reminder.deletedAt}
-          WHERE id = ${reminder.id}
-          RETURNING ${sql.literal(REMINDER_SELECT)}
-        `,
+      const update = (reminder: Reminder) =>
+        Effect.map(
+          updateStatement<ReminderRow>(sql, REMINDER_TABLE, {
+            id: reminder.id,
+            values: reminderValues(reminder),
+            returning: REMINDER_SELECT,
+          }),
           rows => Option.map(Option.fromUndefinedOr(rows[0]), toReminder),
         )
-      }
 
       return {
         findById,

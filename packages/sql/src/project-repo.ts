@@ -1,13 +1,61 @@
 import { Context, Effect, Layer, Option } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { Project, type ProjectId, type UserId } from '@tali/domain'
+import {
+  type ColumnValues,
+  column,
+  columnCodecs,
+  defineTable,
+  insertStatement,
+  selectList,
+  updateStatement,
+} from './columns'
 import { visibleScopeSql } from './scope'
 
-/** D1-backed repository for `Project` (ticket #33; FR-TASK-02). Pure persistence. */
+/**
+ * D1-backed repository for `Project` (ticket #33; FR-TASK-02). Pure persistence.
+ */
 
-const PROJECT_COLUMNS =
-  `id, type, title, owner_id AS ownerId, household_id AS householdId, visibility, ` +
-  `color, created_at AS createdAt, updated_at AS updatedAt, version, deleted_at AS deletedAt`
+/**
+ * The one place `projects`' columns are declared (#115): the repo's SELECT,
+ * INSERT and UPDATE lists below, and the sync registry's projection and
+ * statements, are all generated from this descriptor.
+ */
+export const PROJECT_TABLE = defineTable('projects', [
+  column('id', { updatable: false }),
+  column('type', { updatable: false }),
+  column('title', { codec: columnCodecs.text }),
+  column('owner_id', 'ownerId', { updatable: false }),
+  column('household_id', 'householdId', { updatable: false }),
+  column('visibility'),
+  column('color', { codec: columnCodecs.nullableText }),
+  column('created_at', 'createdAt', {
+    updatable: false,
+    codec: columnCodecs.text,
+  }),
+  column('updated_at', 'updatedAt', { codec: columnCodecs.text }),
+  column('version', { codec: columnCodecs.int }),
+  column('deleted_at', 'deletedAt', { codec: columnCodecs.nullableText }),
+])
+
+const PROJECT_SELECT = selectList(PROJECT_TABLE)
+
+/** The model's column values; the descriptor's codecs do the encoding. */
+const projectValues = (
+  project: Project,
+): ColumnValues<typeof PROJECT_TABLE> => ({
+  id: project.id,
+  type: project.type,
+  title: project.title,
+  ownerId: project.ownerId,
+  householdId: project.householdId,
+  visibility: project.visibility,
+  color: project.color,
+  createdAt: project.createdAt,
+  updatedAt: project.updatedAt,
+  version: project.version,
+  deletedAt: project.deletedAt,
+})
 
 export class ProjectRepo extends Context.Service<ProjectRepo>()('ProjectRepo', {
   make: Effect.gen(function* () {
@@ -15,7 +63,7 @@ export class ProjectRepo extends Context.Service<ProjectRepo>()('ProjectRepo', {
 
     const findById = (id: ProjectId) =>
       Effect.map(
-        sql<Project>`SELECT ${sql.literal(PROJECT_COLUMNS)} FROM projects WHERE id = ${id}`,
+        sql<Project>`SELECT ${sql.literal(PROJECT_SELECT)} FROM projects WHERE id = ${id}`,
         rows => Option.fromUndefinedOr(rows[0]),
       )
 
@@ -25,7 +73,7 @@ export class ProjectRepo extends Context.Service<ProjectRepo>()('ProjectRepo', {
     }) =>
       Effect.map(
         sql<Project>`
-          SELECT ${sql.literal(PROJECT_COLUMNS)} FROM projects
+          SELECT ${sql.literal(PROJECT_SELECT)} FROM projects
           WHERE ${visibleScopeSql(sql, input)}
           ORDER BY title ASC, id ASC
         `,
@@ -34,32 +82,20 @@ export class ProjectRepo extends Context.Service<ProjectRepo>()('ProjectRepo', {
 
     const insert = (project: Project) =>
       Effect.map(
-        sql<Project>`
-          INSERT INTO projects
-            (id, type, title, owner_id, household_id, visibility, color,
-             created_at, updated_at, version, deleted_at)
-          VALUES
-            (${project.id}, ${project.type}, ${project.title}, ${project.ownerId},
-             ${project.householdId}, ${project.visibility}, ${project.color},
-             ${project.createdAt}, ${project.updatedAt}, ${project.version}, ${project.deletedAt})
-          RETURNING ${sql.literal(PROJECT_COLUMNS)}
-        `,
+        insertStatement<Project>(sql, PROJECT_TABLE, {
+          values: projectValues(project),
+          returning: PROJECT_SELECT,
+        }),
         rows => rows[0]!,
       )
 
     const update = (project: Project) =>
       Effect.map(
-        sql<Project>`
-          UPDATE projects SET
-            title = ${project.title},
-            visibility = ${project.visibility},
-            color = ${project.color},
-            updated_at = ${project.updatedAt},
-            version = ${project.version},
-            deleted_at = ${project.deletedAt}
-          WHERE id = ${project.id}
-          RETURNING ${sql.literal(PROJECT_COLUMNS)}
-        `,
+        updateStatement<Project>(sql, PROJECT_TABLE, {
+          id: project.id,
+          values: projectValues(project),
+          returning: PROJECT_SELECT,
+        }),
         rows => Option.fromUndefinedOr(rows[0]),
       )
 

@@ -18,15 +18,12 @@ import {
   Project,
   Reminder,
   ReminderLink,
-  type ReminderLinkColumns,
   ReminderRepeat,
   type ReminderType,
   TimestampUtc,
   allDayEventTiming,
   dailyHabitFrequency,
   decodeReminderLink,
-  encodeReminderLink,
-  isAllDayEventTiming,
   noReminderLink,
   onceReminderRepeat,
   sameHabitFrequency,
@@ -42,27 +39,43 @@ import {
   visibilityPolicyOf,
 } from '@tali/domain'
 import { reminderFireAt, reminderTierFor } from '@tali/domain/reminder-policy'
+import { insertStatement, selectList, updateStatement } from './columns.js'
+import { EVENT_TABLE } from './event-repo.js'
+import { HABIT_ENTRY_TABLE } from './habit-entry-repo.js'
+import { HABIT_TABLE } from './habit-repo.js'
+import { LIST_TABLE } from './list-repo.js'
+import { LIST_ITEM_TABLE } from './planning-list-item-repo.js'
+import { NOTE_TABLE } from './note-repo.js'
+import { OCCASION_TABLE } from './occasion-repo.js'
+import { PROJECT_TABLE } from './project-repo.js'
+import { REMINDER_TABLE } from './reminder-repo.js'
+import { TAG_TABLE } from './tag-repo.js'
+import { TASK_TABLE } from './task-repo.js'
 
 /**
- * The sync entity registry (ticket #34).
+ * The sync entity registry (ticket #34; column descriptors #115).
  *
  * Before this module the sync engine hard-coded `list_items` for its table,
  * writable fields and hydration. The registry is the single place that maps a
  * `SyncEntityType` to:
  *
- * - the D1 **table** and its trusted column projection (never client input);
+ * - the D1 **table** and its trusted column projection — both generated from
+ *   the aggregate's **column descriptor** (`columns.ts`, #115), the one place
+ *   each synced table's physical columns are declared; a repo and its
+ *   registry entry can no longer drift apart;
  * - the **writable-field allowlist** a client patch may set, with a value
  *   guard per field;
  * - the **hydration codec** (the aggregate's real `Model.Class` from #33, so
  *   the wire payload is validated against the same contract as the repos);
- * - the **household/owner visibility** columns (`household_id`, `owner_id`,
- *   `visibility`) every aggregate shares;
- * - the **soft-delete** column (`deleted_at`);
- * - the `INSERT`/`UPDATE` statement builders the push batch uses.
+ * - the `INSERT`/`UPDATE` statements the push batch uses, also generated
+ *   from the descriptor, with every value bound as a parameter so a client
+ *   can never choose a column name.
  *
- * Units are pure metadata plus two statement builders per aggregate. The
- * builders take the row's trusted table/columns from this file and bind every
- * value as a parameter, so a client can never choose a column name.
+ * Units are pure metadata plus the per-aggregate write glue. The fields every
+ * aggregate shares — the scope columns (`household_id`, `owner_id`,
+ * `visibility`), the soft-delete column (`deleted_at`) and the no-op LWW
+ * merge — are registry defaults (#115), so a definition states only what
+ * actually varies.
  *
  * ## The `listItem` compatibility shim
  *
@@ -76,10 +89,11 @@ import { reminderFireAt, reminderTierFor } from '@tali/domain/reminder-policy'
  * The web mirror (#17/#18) and `/today` read `data.title` / `data.checked` /
  * `data.sortOrder`, and #34 must not change the web app. So the `listItem`
  * entry stays on the **scaffold wire shape** and every sync write **dual-writes
- * both column sets**. Reads use the scaffold columns, which every writer keeps
- * current. Ticket #39 additionally accepts and hydrates the real aggregate
- * names (`name`/`done`/`ordering`), so `/lists` can speak the #33 vocabulary
- * without breaking the legacy `listItem` wire shape.
+ * both column sets** — expressed in the descriptor as each scaffold column's
+ * mirror of the real one. Reads use the scaffold columns, which every writer
+ * keeps current. Ticket #39 additionally accepts and hydrates the real
+ * aggregate names (`name`/`done`/`ordering`), so `/lists` can speak the #33
+ * vocabulary without breaking the legacy `listItem` wire shape.
  */
 
 // ── Row state ─────────────────────────────────────────────────────────────
@@ -152,10 +166,16 @@ export interface SyncEntityDefinition {
   readonly table: string
   /** Trusted SELECT list: physical columns aliased to the camelCase wire names. */
   readonly select: string
-  /** Household/owner scoping columns (identical across aggregates today). */
-  readonly scope: SyncScopeColumns
-  /** Soft-delete tombstone column (`deleted_at` across aggregates today). */
-  readonly softDeleteColumn: string
+  /**
+   * Household/owner scoping columns (pull/bootstrap filtering). Optional: the
+   * registry defaults every aggregate to the shared set below.
+   */
+  readonly scope?: SyncScopeColumns
+  /**
+   * Soft-delete tombstone column. Optional: the registry defaults to
+   * `deleted_at`.
+   */
+  readonly softDeleteColumn?: string
   /** Client-patchable fields and their value guards. */
   readonly writable: ReadonlyMap<string, SyncFieldGuard>
   /**
@@ -179,8 +199,12 @@ export interface SyncEntityDefinition {
     data: Record<string, unknown>,
     meta: SyncEntityMeta,
   ) => Record<string, unknown>
-  /** Merge a patch into the stored data (§6 LWW + completion). */
-  readonly merge: (input: SyncMergeInput) => Record<string, unknown>
+  /**
+   * Merge a patch into the stored data (§6 LWW + completion). Optional: the
+   * registry defaults to the shared `mergeFields` LWW, which already honours
+   * this definition's `completion` rule.
+   */
+  readonly merge?: (input: SyncMergeInput) => Record<string, unknown>
   readonly insert: (state: SyncEntityState) => Statement.Statement<unknown>
   readonly update: (
     state: SyncEntityState,
@@ -310,23 +334,46 @@ export interface SyncSpawn {
 }
 
 export interface SyncRegistry {
-  readonly get: (entityType: SyncEntityType) => SyncEntityDefinition | undefined
-  readonly all: () => ReadonlyArray<SyncEntityDefinition>
+  readonly get: (
+    entityType: SyncEntityType,
+  ) => ResolvedSyncEntityDefinition | undefined
+  readonly all: () => ReadonlyArray<ResolvedSyncEntityDefinition>
 }
 
-// ── Value codecs (D1 has no boolean/nullable types beyond SQLite's affinity) ─
+/**
+ * A definition with the registry's defaults applied — what the sync engine,
+ * the purge and the services see.
+ *
+ * Authoring a definition only states what actually varies (`entityType`,
+ * `table`, `select`, the allowlist, the codecs and hooks); `makeSyncRegistry`
+ * fills in the fields every aggregate shares (#115).
+ */
+export type ResolvedSyncEntityDefinition = SyncEntityDefinition &
+  Required<Pick<SyncEntityDefinition, 'scope' | 'softDeleteColumn' | 'merge'>>
 
-/** A JSON array/object column or a JSON scalar; stored as TEXT. */
-const encodeJson = (value: unknown): string => JSON.stringify(value ?? null)
+/** The tombstone column every aggregate shares. */
+const SOFT_DELETE_COLUMN = 'deleted_at'
+
+/** Fill in the fields every aggregate carries the same way. */
+const withRegistryDefaults = (
+  definition: SyncEntityDefinition,
+): ResolvedSyncEntityDefinition => ({
+  ...definition,
+  scope: definition.scope ?? SYNC_SCOPE_COLUMNS,
+  softDeleteColumn: definition.softDeleteColumn ?? SOFT_DELETE_COLUMN,
+  // The shared field-level LWW already honours this definition's
+  // done-wins rule through its `completion`.
+  merge: definition.merge ?? (input => mergeFields(definition, input)),
+})
+
+// ── Value codecs (D1 has no boolean/nullable types beyond SQLite's affinity) ─
+// The write-side codecs live with the descriptors (`columns.ts`); the ones
+// here are the read-side normalisers the hydration paths share.
+
 const encodeText = (value: unknown): string =>
   typeof value === 'string' ? value : ''
-const encodeNullableText = (value: unknown): string | null =>
-  typeof value === 'string' ? value : null
 const encodeInt = (value: unknown): number =>
   typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : 0
-const encodeBit = (value: unknown): number => (value === true ? 1 : 0)
-const encodeJsonOrNull = (value: unknown): string | null =>
-  value === null || value === undefined ? null : encodeJson(value)
 
 const asBit = (value: unknown): boolean => value === true || value === 1
 const asText = (value: unknown): string | null =>
@@ -385,11 +432,6 @@ const asStringArray = (value: unknown): ReadonlyArray<string> => {
 }
 const asNullableInt = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : null
-/** The occasion offset column: `null`, or 0…365 whole days. */
-const encodeAdvanceDays = (value: unknown): number | null => {
-  const days = asNullableInt(value)
-  return days !== null && days >= 0 && days <= 365 ? days : null
-}
 
 // ── Field guards (client patches) ─────────────────────────────────────────
 
@@ -459,6 +501,31 @@ const stripServerFields = (
   delete copy.deletedAt
   return copy
 }
+
+// ── Registry write glue (#115) ─────────────────────────────────────────────
+
+/**
+ * The registry's field values for one row write.
+ *
+ * The aggregate's own fields come from the already-validated (or
+ * `defaults`-built) data payload; the server-managed identity and
+ * bookkeeping come from the write's state. The per-aggregate helpers below
+ * only add the fallbacks the hand-written statements carried (a missing
+ * `createdAt` anchors to the commit instant, a garbage zone to `UTC`, …);
+ * the descriptor's codecs do the storage encoding for both writers.
+ */
+const syncValues = (state: SyncEntityState): Record<string, unknown> => ({
+  ...state.data,
+  id: state.entityId,
+  type: state.entityType,
+  ownerId: state.ownerId,
+  householdId: state.householdId,
+  visibility: state.visibility,
+  createdAt: asText(state.data.createdAt) ?? state.updatedAt,
+  updatedAt: state.updatedAt,
+  version: state.version,
+  deletedAt: state.deletedAt,
+})
 
 /**
  * Bind an aggregate's real #33 schema as the hydration/decode boundary.
@@ -628,20 +695,7 @@ const purgeProjectReferences =
     ]
   }
 
-// ── Shared column projection ──────────────────────────────────────────────
-
-const META_COLUMNS =
-  `id, owner_id AS ownerId, household_id AS householdId, visibility, version, ` +
-  `updated_at AS updatedAt, deleted_at AS deletedAt`
-
 // ── Task ──────────────────────────────────────────────────────────────────
-
-const TASK_COLUMNS =
-  `${META_COLUMNS}, type, title, description, status, priority, ` +
-  `due_at AS dueAt, due_date AS dueDate, time_zone AS timeZone, ` +
-  `project_id AS projectId, tag_ids AS tagIds, color, ` +
-  `recurrence, recurrence_mode AS recurrenceMode, ` +
-  `started_at AS startedAt, completed_at AS completedAt, created_at AS createdAt`
 
 const taskCodec = withSchema<Task>(Task, row => ({
   id: String(row.id),
@@ -678,34 +732,20 @@ const insertSpawnedTask = (
   state: SyncEntityState,
   parentId: string,
   parentVersion: number,
-) => sql`
-  INSERT INTO tasks
-    (id, type, title, description, owner_id, household_id, visibility,
-     status, priority, due_at, due_date, time_zone, project_id, tag_ids,
-     color, recurrence, recurrence_mode, recurrence_parent_id,
-     started_at, completed_at, created_at, updated_at, version, deleted_at)
-  SELECT
-    ${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
-    ${encodeNullableText(state.data.description)}, ${state.ownerId},
-    ${state.householdId}, ${state.visibility}, ${encodeText(state.data.status)},
-    ${encodeText(state.data.priority)}, ${encodeNullableText(state.data.dueAt)},
-    ${encodeNullableText(state.data.dueDate)}, ${encodeText(state.data.timeZone)},
-    ${encodeNullableText(state.data.projectId)}, ${encodeJson(state.data.tagIds)},
-    ${encodeNullableText(state.data.color)},
-    ${encodeJsonOrNull(state.data.recurrence)},
-    ${encodeNullableText(state.data.recurrenceMode)}, ${parentId},
-    ${encodeNullableText(state.data.startedAt)},
-    ${encodeNullableText(state.data.completedAt)},
-    ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-    ${state.updatedAt}, ${state.version}, ${state.deletedAt}
-  WHERE EXISTS (
-    SELECT 1 FROM tasks
-    WHERE id = ${parentId}
-      AND version = ${parentVersion}
-      AND status = 'done'
-  )
-  ON CONFLICT DO NOTHING
-`
+) =>
+  insertStatement(sql, TASK_TABLE, {
+    values: syncValues(state),
+    extra: [{ column: 'recurrence_parent_id', value: parentId }],
+    gate: sql`
+      EXISTS (
+        SELECT 1 FROM tasks
+        WHERE id = ${parentId}
+          AND version = ${parentVersion}
+          AND status = 'done'
+      )
+    `,
+    onConflict: true,
+  })
 
 const TASK_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
   ['title', isString],
@@ -752,10 +792,8 @@ const TASK_COMPLETION = { field: 'status', value: 'done' }
 
 const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'task',
-  table: 'tasks',
-  select: TASK_COLUMNS,
-  scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: 'deleted_at',
+  table: TASK_TABLE.table,
+  select: selectList(TASK_TABLE, { syncManaged: true }),
   writable: TASK_WRITABLE,
   completion: TASK_COMPLETION,
   purge: purgeItemTagJoins(sql, 'task', 'tasks'),
@@ -861,55 +899,20 @@ const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
       joins: childState => spawnedTaskTagJoins(sql, childState),
     }
   },
-  insert: state => sql`
-    INSERT INTO tasks
-      (id, type, title, description, owner_id, household_id, visibility,
-       status, priority, due_at, due_date, time_zone, project_id, tag_ids,
-       color, recurrence, recurrence_mode, started_at, completed_at,
-       created_at, updated_at, version, deleted_at)
-    VALUES
-      (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
-       ${encodeNullableText(state.data.description)}, ${state.ownerId},
-       ${state.householdId}, ${state.visibility}, ${encodeText(state.data.status)},
-       ${encodeText(state.data.priority)}, ${encodeNullableText(state.data.dueAt)},
-       ${encodeNullableText(state.data.dueDate)}, ${encodeText(state.data.timeZone)},
-       ${encodeNullableText(state.data.projectId)}, ${encodeJson(state.data.tagIds)},
-       ${encodeNullableText(state.data.color)},
-       ${encodeJsonOrNull(state.data.recurrence)},
-       ${encodeNullableText(state.data.recurrenceMode)},
-       ${encodeNullableText(state.data.startedAt)},
-       ${encodeNullableText(state.data.completedAt)},
-       ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-       ${state.updatedAt}, ${state.version}, ${state.deletedAt})
-    ON CONFLICT DO NOTHING
-  `,
-  update: (state, expectedVersion) => sql`
-    UPDATE tasks SET
-      title = ${encodeText(state.data.title)},
-      description = ${encodeNullableText(state.data.description)},
-      visibility = ${state.visibility},
-      status = ${encodeText(state.data.status)},
-      priority = ${encodeText(state.data.priority)},
-      due_at = ${encodeNullableText(state.data.dueAt)},
-      due_date = ${encodeNullableText(state.data.dueDate)},
-      time_zone = ${encodeText(state.data.timeZone)},
-      project_id = ${encodeNullableText(state.data.projectId)},
-      tag_ids = ${encodeJson(state.data.tagIds)},
-      color = ${encodeNullableText(state.data.color)},
-      recurrence = ${encodeJsonOrNull(state.data.recurrence)},
-      recurrence_mode = ${encodeNullableText(state.data.recurrenceMode)},
-      started_at = ${encodeNullableText(state.data.startedAt)},
-      completed_at = ${encodeNullableText(state.data.completedAt)},
-      updated_at = ${state.updatedAt},
-      version = ${state.version},
-      deleted_at = ${state.deletedAt}
-    WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `,
+  insert: state =>
+    insertStatement(sql, TASK_TABLE, {
+      values: syncValues(state),
+      onConflict: true,
+    }),
+  update: (state, expectedVersion) =>
+    updateStatement(sql, TASK_TABLE, {
+      id: state.entityId,
+      values: syncValues(state),
+      expectedVersion,
+    }),
 })
 
 // ── Project ───────────────────────────────────────────────────────────────
-
-const PROJECT_COLUMNS = `${META_COLUMNS}, type, title, color, created_at AS createdAt`
 
 const projectCodec = withSchema<Project>(Project, row => ({
   id: String(row.id),
@@ -924,10 +927,8 @@ const projectCodec = withSchema<Project>(Project, row => ({
 
 const projectDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'project',
-  table: 'projects',
-  select: PROJECT_COLUMNS,
-  scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: 'deleted_at',
+  table: PROJECT_TABLE.table,
+  select: selectList(PROJECT_TABLE, { syncManaged: true }),
   writable: new Map([
     ['title', isString],
     ['color', isNullableString],
@@ -946,34 +947,20 @@ const projectDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     color: asText(patch.color),
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
-  merge: input => mergeFields({}, input),
-  insert: state => sql`
-    INSERT INTO projects
-      (id, type, title, owner_id, household_id, visibility, color,
-       created_at, updated_at, version, deleted_at)
-    VALUES
-      (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
-       ${state.ownerId}, ${state.householdId}, ${state.visibility},
-       ${encodeNullableText(state.data.color)},
-       ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-       ${state.updatedAt}, ${state.version}, ${state.deletedAt})
-    ON CONFLICT DO NOTHING
-  `,
-  update: (state, expectedVersion) => sql`
-    UPDATE projects SET
-      title = ${encodeText(state.data.title)},
-      visibility = ${state.visibility},
-      color = ${encodeNullableText(state.data.color)},
-      updated_at = ${state.updatedAt},
-      version = ${state.version},
-      deleted_at = ${state.deletedAt}
-    WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `,
+  insert: state =>
+    insertStatement(sql, PROJECT_TABLE, {
+      values: syncValues(state),
+      onConflict: true,
+    }),
+  update: (state, expectedVersion) =>
+    updateStatement(sql, PROJECT_TABLE, {
+      id: state.entityId,
+      values: syncValues(state),
+      expectedVersion,
+    }),
 })
 
 // ── Tag ───────────────────────────────────────────────────────────────────
-
-const TAG_COLUMNS = `${META_COLUMNS}, type, name, color, created_at AS createdAt`
 
 const tagCodec = withSchema<Tag>(Tag, row => ({
   id: String(row.id),
@@ -988,10 +975,8 @@ const tagCodec = withSchema<Tag>(Tag, row => ({
 
 const tagDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'tag',
-  table: 'tags',
-  select: TAG_COLUMNS,
-  scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: 'deleted_at',
+  table: TAG_TABLE.table,
+  select: selectList(TAG_TABLE, { syncManaged: true }),
   writable: new Map([
     ['name', isString],
     ['color', isNullableString],
@@ -1018,37 +1003,20 @@ const tagDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     color: asText(patch.color),
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
-  merge: input => mergeFields({}, input),
-  insert: state => sql`
-    INSERT INTO tags
-      (id, type, name, owner_id, household_id, visibility, color,
-       created_at, updated_at, version, deleted_at)
-    VALUES
-      (${state.entityId}, ${state.entityType}, ${encodeText(state.data.name)},
-       ${state.ownerId}, ${state.householdId}, ${state.visibility},
-       ${encodeNullableText(state.data.color)},
-       ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-       ${state.updatedAt}, ${state.version}, ${state.deletedAt})
-    ON CONFLICT DO NOTHING
-  `,
-  update: (state, expectedVersion) => sql`
-    UPDATE tags SET
-      name = ${encodeText(state.data.name)},
-      visibility = ${state.visibility},
-      color = ${encodeNullableText(state.data.color)},
-      updated_at = ${state.updatedAt},
-      version = ${state.version},
-      deleted_at = ${state.deletedAt}
-    WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `,
+  insert: state =>
+    insertStatement(sql, TAG_TABLE, {
+      values: syncValues(state),
+      onConflict: true,
+    }),
+  update: (state, expectedVersion) =>
+    updateStatement(sql, TAG_TABLE, {
+      id: state.entityId,
+      values: syncValues(state),
+      expectedVersion,
+    }),
 })
 
 // ── List ──────────────────────────────────────────────────────────────────
-
-const LIST_COLUMNS =
-  `${META_COLUMNS}, type, title, description, color, icon, sort, ` +
-  `checked_placement AS checkedPlacement, last_writer_id AS lastWriterId, ` +
-  `created_at AS createdAt`
 
 const listSchemaCodec = withSchema<List>(List, row => ({
   id: String(row.id),
@@ -1090,10 +1058,8 @@ const listCodec = {
 
 const listDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'list',
-  table: 'lists',
-  select: LIST_COLUMNS,
-  scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: 'deleted_at',
+  table: LIST_TABLE.table,
+  select: selectList(LIST_TABLE, { syncManaged: true }),
   writable: new Map([
     ['title', isString],
     ['description', isNullableString],
@@ -1119,46 +1085,20 @@ const listDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     lastWriterId: context.userId,
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
-  merge: input => mergeFields({}, input),
-  insert: state => sql`
-    INSERT INTO lists
-      (id, type, title, description, owner_id, household_id, visibility,
-       color, icon, sort, checked_placement, last_writer_id,
-       created_at, updated_at, version, deleted_at)
-    VALUES
-      (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
-       ${encodeNullableText(state.data.description)}, ${state.ownerId},
-       ${state.householdId}, ${state.visibility},
-       ${encodeNullableText(state.data.color)}, ${encodeNullableText(state.data.icon)},
-       ${encodeText(state.data.sort)}, ${encodeText(state.data.checkedPlacement)},
-       ${encodeNullableText(state.data.lastWriterId)},
-       ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-       ${state.updatedAt}, ${state.version}, ${state.deletedAt})
-    ON CONFLICT DO NOTHING
-  `,
-  update: (state, expectedVersion) => sql`
-    UPDATE lists SET
-      title = ${encodeText(state.data.title)},
-      description = ${encodeNullableText(state.data.description)},
-      visibility = ${state.visibility},
-      color = ${encodeNullableText(state.data.color)},
-      icon = ${encodeNullableText(state.data.icon)},
-      sort = ${encodeText(state.data.sort)},
-      checked_placement = ${encodeText(state.data.checkedPlacement)},
-      last_writer_id = ${encodeNullableText(state.data.lastWriterId)},
-      updated_at = ${state.updatedAt},
-      version = ${state.version},
-      deleted_at = ${state.deletedAt}
-    WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `,
+  insert: state =>
+    insertStatement(sql, LIST_TABLE, {
+      values: syncValues(state),
+      onConflict: true,
+    }),
+  update: (state, expectedVersion) =>
+    updateStatement(sql, LIST_TABLE, {
+      id: state.entityId,
+      values: syncValues(state),
+      expectedVersion,
+    }),
 })
 
 // ── ListItem (legacy wire shape, dual-write) ──────────────────────────────
-
-const LIST_ITEM_COLUMNS =
-  `${META_COLUMNS}, type, title, checked, sort_order AS sortOrder, list_id AS listId, ` +
-  `checked_at AS checkedAt, color, tag_ids AS tagIds, ` +
-  `last_writer_id AS lastWriterId, created_at AS createdAt`
 
 /**
  * Keep the scaffold wire names (`title`/`checked`/`sortOrder`) and the real
@@ -1250,10 +1190,8 @@ const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
   ): Record<string, unknown> => data
   return {
     entityType: 'listItem',
-    table: 'list_items',
-    select: LIST_ITEM_COLUMNS,
-    scope: SYNC_SCOPE_COLUMNS,
-    softDeleteColumn: 'deleted_at',
+    table: LIST_ITEM_TABLE.table,
+    select: selectList(LIST_ITEM_TABLE, { syncManaged: true }),
     writable: new Map([
       ['title', isString],
       ['checked', isBoolean],
@@ -1322,53 +1260,23 @@ const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
           : null
       return normalizeListItem(next)
     },
-    // Dual-write: scaffold columns (wire) + real ListItem columns (#33/#39).
-    insert: state => sql`
-      INSERT INTO list_items
-        (id, title, checked, sort_order, version, created_at, updated_at, deleted_at,
-         owner_id, visibility, household_id,
-         type, list_id, name, done, ordering, checked_at, color, tag_ids, last_writer_id)
-      VALUES
-        (${state.entityId}, ${encodeText(state.data.title)},
-         ${encodeBit(state.data.checked)}, ${encodeInt(state.data.sortOrder)},
-         ${state.version}, ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-         ${state.updatedAt}, ${state.deletedAt}, ${state.ownerId}, ${state.visibility},
-         ${state.householdId}, ${state.entityType},
-         ${encodeNullableText(state.data.listId)}, ${encodeText(state.data.title)},
-         ${encodeBit(state.data.checked)}, ${encodeInt(state.data.sortOrder)},
-         ${encodeNullableText(state.data.checkedAt)},
-         ${encodeNullableText(state.data.color)}, ${encodeJson(state.data.tagIds)},
-         ${encodeNullableText(state.data.lastWriterId)})
-      ON CONFLICT DO NOTHING
-    `,
-    update: (state, expectedVersion) => sql`
-      UPDATE list_items SET
-        title = ${encodeText(state.data.title)},
-        checked = ${encodeBit(state.data.checked)},
-        sort_order = ${encodeInt(state.data.sortOrder)},
-        visibility = ${state.visibility},
-        version = ${state.version},
-        updated_at = ${state.updatedAt},
-        deleted_at = ${state.deletedAt},
-        list_id = ${encodeNullableText(state.data.listId)},
-        name = ${encodeText(state.data.title)},
-        done = ${encodeBit(state.data.checked)},
-        ordering = ${encodeInt(state.data.sortOrder)},
-        checked_at = ${encodeNullableText(state.data.checkedAt)},
-        color = ${encodeNullableText(state.data.color)},
-        tag_ids = ${encodeJson(state.data.tagIds)},
-        last_writer_id = ${encodeNullableText(state.data.lastWriterId)}
-      WHERE id = ${state.entityId} AND version = ${expectedVersion}
-    `,
+    // Dual-write: the descriptor's mirrors write the scaffold columns (wire
+    // shape) and the real ListItem columns (#33/#39) from the same fields.
+    insert: state =>
+      insertStatement(sql, LIST_ITEM_TABLE, {
+        values: syncValues(state),
+        onConflict: true,
+      }),
+    update: (state, expectedVersion) =>
+      updateStatement(sql, LIST_ITEM_TABLE, {
+        id: state.entityId,
+        values: syncValues(state),
+        expectedVersion,
+      }),
   }
 }
 
 // ── Note ──────────────────────────────────────────────────────────────────
-
-const NOTE_COLUMNS =
-  `${META_COLUMNS}, type, title, body, plain_text AS plainText, color, ` +
-  `is_pinned AS isPinned, is_archived AS isArchived, tag_ids AS tagIds, ` +
-  `created_at AS createdAt`
 
 const noteCodec = withSchema<Note>(Note, row => ({
   id: String(row.id),
@@ -1388,10 +1296,8 @@ const noteCodec = withSchema<Note>(Note, row => ({
 
 const noteDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'note',
-  table: 'notes',
-  select: NOTE_COLUMNS,
-  scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: 'deleted_at',
+  table: NOTE_TABLE.table,
+  select: selectList(NOTE_TABLE, { syncManaged: true }),
   writable: new Map([
     ['title', isString],
     ['body', isJson],
@@ -1422,37 +1328,17 @@ const noteDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     tagIds: Array.isArray(patch.tagIds) ? patch.tagIds : [],
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
-  merge: input => mergeFields({}, input),
-  insert: state => sql`
-    INSERT INTO notes
-      (id, type, title, body, plain_text, owner_id, household_id, visibility,
-       color, is_pinned, is_archived, tag_ids, created_at, updated_at, version, deleted_at)
-    VALUES
-      (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
-       ${encodeJsonOrNull(state.data.body)},
-       ${encodeText(state.data.plainText)}, ${state.ownerId}, ${state.householdId},
-       ${state.visibility}, ${encodeNullableText(state.data.color)},
-       ${encodeBit(state.data.isPinned)}, ${encodeBit(state.data.isArchived)},
-       ${encodeJson(state.data.tagIds)},
-       ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-       ${state.updatedAt}, ${state.version}, ${state.deletedAt})
-    ON CONFLICT DO NOTHING
-  `,
-  update: (state, expectedVersion) => sql`
-    UPDATE notes SET
-      title = ${encodeText(state.data.title)},
-      body = ${encodeJsonOrNull(state.data.body)},
-      plain_text = ${encodeText(state.data.plainText)},
-      visibility = ${state.visibility},
-      color = ${encodeNullableText(state.data.color)},
-      is_pinned = ${encodeBit(state.data.isPinned)},
-      is_archived = ${encodeBit(state.data.isArchived)},
-      tag_ids = ${encodeJson(state.data.tagIds)},
-      updated_at = ${state.updatedAt},
-      version = ${state.version},
-      deleted_at = ${state.deletedAt}
-    WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `,
+  insert: state =>
+    insertStatement(sql, NOTE_TABLE, {
+      values: syncValues(state),
+      onConflict: true,
+    }),
+  update: (state, expectedVersion) =>
+    updateStatement(sql, NOTE_TABLE, {
+      id: state.entityId,
+      values: syncValues(state),
+      expectedVersion,
+    }),
   /**
    * The note search index (#41).
    *
@@ -1501,12 +1387,6 @@ const noteDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
 })
 
 // ── Event ─────────────────────────────────────────────────────────────────
-
-const EVENT_COLUMNS =
-  `${META_COLUMNS}, type, title, description, location, category, people, color, ` +
-  `start_at AS startAt, end_at AS endAt, all_day_date AS allDayDate, ` +
-  `time_zone AS timeZone, recurrence, exceptions, occasion_id AS occasionId, ` +
-  `created_at AS createdAt`
 
 /**
  * The row's timing union.
@@ -1587,30 +1467,14 @@ const EVENT_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
  * The event's timing columns.
  *
  * The union is one field on the wire, so it maps to either the two instants
- * or the local date — never to both.
+ * or the local date — never to both. The descriptor carries these as the
+ * `timing` field's mirrors (`event-repo.ts`), with a codec per column.
  */
-const eventTimingColumns = (
-  data: Record<string, unknown>,
-): {
-  readonly startAt: string | null
-  readonly endAt: string | null
-  readonly allDayDate: string | null
-} => {
-  const timing = Option.getOrNull(asEventTiming(data.timing))
-
-  if (timing === null) return { startAt: null, endAt: null, allDayDate: null }
-
-  return isAllDayEventTiming(timing)
-    ? { startAt: null, endAt: null, allDayDate: timing.date }
-    : { startAt: timing.start, endAt: timing.end, allDayDate: null }
-}
 
 const eventDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'event',
-  table: 'events',
-  select: EVENT_COLUMNS,
-  scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: 'deleted_at',
+  table: EVENT_TABLE.table,
+  select: selectList(EVENT_TABLE, { syncManaged: true }),
   writable: EVENT_WRITABLE,
   ...eventCodec,
   defaults: (patch, context) => ({
@@ -1633,8 +1497,8 @@ const eventDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
   /**
-   * The shared field-level LWW merge — the same one every other aggregate
-   * uses (`docs/sync-protocol-draft.md` §6).
+   * The merge is the registry's default — the shared field-level LWW every
+   * aggregate uses (`docs/sync-protocol-draft.md` §6).
    *
    * The timing is one unit: a patch that carries a timing replaces the whole
    * union (the merge applies the patch field by field, and `timing` is one
@@ -1646,65 +1510,20 @@ const eventDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
    * would let a stale offline device move an event to another day, which is
    * exactly the data loss the LWW rule exists to prevent.
    */
-  merge: input => mergeFields({}, input),
-  insert: state => {
-    const timing = eventTimingColumns(state.data)
-    return sql`
-      INSERT INTO events
-        (id, type, title, description, location, category, people,
-         owner_id, household_id, visibility, color, start_at, end_at,
-         all_day_date, time_zone, recurrence, exceptions, occasion_id,
-         created_at, updated_at, version, deleted_at)
-      VALUES
-        (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
-         ${encodeNullableText(state.data.description)},
-         ${encodeNullableText(state.data.location)},
-         ${encodeNullableText(state.data.category)},
-         ${encodeJson(state.data.people)},
-         ${state.ownerId}, ${state.householdId}, ${state.visibility},
-         ${encodeNullableText(state.data.color)},
-         ${timing.startAt}, ${timing.endAt}, ${timing.allDayDate},
-         ${encodeText(state.data.timeZone)},
-         ${encodeJsonOrNull(state.data.recurrence)},
-         ${encodeJson(state.data.exceptions)},
-         ${encodeNullableText(state.data.occasionId)},
-         ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-         ${state.updatedAt}, ${state.version}, ${state.deletedAt})
-      ON CONFLICT DO NOTHING
-    `
-  },
-  update: (state, expectedVersion) => {
-    const timing = eventTimingColumns(state.data)
-    return sql`
-      UPDATE events SET
-        title = ${encodeText(state.data.title)},
-        description = ${encodeNullableText(state.data.description)},
-        location = ${encodeNullableText(state.data.location)},
-        category = ${encodeNullableText(state.data.category)},
-        people = ${encodeJson(state.data.people)},
-        visibility = ${state.visibility},
-        color = ${encodeNullableText(state.data.color)},
-        start_at = ${timing.startAt},
-        end_at = ${timing.endAt},
-        all_day_date = ${timing.allDayDate},
-        time_zone = ${encodeText(state.data.timeZone)},
-        recurrence = ${encodeJsonOrNull(state.data.recurrence)},
-        exceptions = ${encodeJson(state.data.exceptions)},
-        occasion_id = ${encodeNullableText(state.data.occasionId)},
-        updated_at = ${state.updatedAt},
-        version = ${state.version},
-        deleted_at = ${state.deletedAt}
-      WHERE id = ${state.entityId} AND version = ${expectedVersion}
-    `
-  },
+  insert: state =>
+    insertStatement(sql, EVENT_TABLE, {
+      values: syncValues(state),
+      onConflict: true,
+    }),
+  update: (state, expectedVersion) =>
+    updateStatement(sql, EVENT_TABLE, {
+      id: state.entityId,
+      values: syncValues(state),
+      expectedVersion,
+    }),
 })
 
 // ── Habit + HabitEntry (ticket #63; FR-HAB-01/02) ─────────────────────────
-
-const HABIT_COLUMNS =
-  `${META_COLUMNS}, type, title, description, icon, color, started_on AS startedOn, ` +
-  `frequency, frequency_history AS frequencyHistory, reminder_time AS reminderTime, ` +
-  `time_zone AS timeZone, created_at AS createdAt`
 
 const habitCodec = withSchema<Habit>(Habit, row => {
   const history = parseJson(row.frequencyHistory)
@@ -1755,10 +1574,8 @@ const habitFrequencyOfPatch = (value: unknown): unknown =>
 
 const habitDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'habit',
-  table: 'habits',
-  select: HABIT_COLUMNS,
-  scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: 'deleted_at',
+  table: HABIT_TABLE.table,
+  select: selectList(HABIT_TABLE, { syncManaged: true }),
   writable: HABIT_WRITABLE,
   ...habitCodec,
   defaults: (patch, context) => {
@@ -1837,47 +1654,26 @@ const habitDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     }
     return next
   },
-  insert: state => sql`
-    INSERT INTO habits
-      (id, type, title, description, icon, owner_id, household_id, visibility,
-       color, started_on, frequency, frequency_history, reminder_time, time_zone,
-       created_at, updated_at, version, deleted_at)
-    VALUES
-      (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
-       ${encodeNullableText(state.data.description)},
-       ${encodeNullableText(state.data.icon)}, ${state.ownerId},
-       ${state.householdId}, ${state.visibility},
-       ${encodeNullableText(state.data.color)},
-       ${encodeText(state.data.startedOn)},
-       ${encodeJson(state.data.frequency)},
-       ${encodeJson(state.data.frequencyHistory)},
-       ${encodeNullableText(state.data.reminderTime)},
-       ${encodeText(state.data.timeZone) || 'UTC'},
-       ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-       ${state.updatedAt}, ${state.version}, ${state.deletedAt})
-    ON CONFLICT DO NOTHING
-  `,
-  update: (state, expectedVersion) => sql`
-    UPDATE habits SET
-      title = ${encodeText(state.data.title)},
-      description = ${encodeNullableText(state.data.description)},
-      icon = ${encodeNullableText(state.data.icon)},
-      visibility = ${state.visibility},
-      color = ${encodeNullableText(state.data.color)},
-      frequency = ${encodeJson(state.data.frequency)},
-      frequency_history = ${encodeJson(state.data.frequencyHistory)},
-      reminder_time = ${encodeNullableText(state.data.reminderTime)},
-      time_zone = ${encodeText(state.data.timeZone) || 'UTC'},
-      updated_at = ${state.updatedAt},
-      version = ${state.version},
-      deleted_at = ${state.deletedAt}
-    WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `,
+  // The habit's zone is authoritative: a garbage cell keeps the UTC default,
+  // exactly like the hand-written statements did.
+  insert: state =>
+    insertStatement(sql, HABIT_TABLE, {
+      values: {
+        ...syncValues(state),
+        timeZone: encodeText(state.data.timeZone) || 'UTC',
+      },
+      onConflict: true,
+    }),
+  update: (state, expectedVersion) =>
+    updateStatement(sql, HABIT_TABLE, {
+      id: state.entityId,
+      values: {
+        ...syncValues(state),
+        timeZone: encodeText(state.data.timeZone) || 'UTC',
+      },
+      expectedVersion,
+    }),
 })
-
-const HABIT_ENTRY_COLUMNS =
-  `${META_COLUMNS}, habit_id AS habitId, local_date AS localDate, ` +
-  `time_zone AS timeZone, status, created_at AS createdAt`
 
 const habitEntryCodec = withSchema<HabitEntry>(HabitEntry, row => ({
   id: String(row.id),
@@ -1904,10 +1700,8 @@ const habitEntryDefinition = (
   sql: SqlClient.SqlClient,
 ): SyncEntityDefinition => ({
   entityType: 'habitEntry',
-  table: 'habit_entries',
-  select: HABIT_ENTRY_COLUMNS,
-  scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: 'deleted_at',
+  table: HABIT_ENTRY_TABLE.table,
+  select: selectList(HABIT_ENTRY_TABLE, { syncManaged: true }),
   writable: HABIT_ENTRY_WRITABLE,
   parent: {
     entityType: 'habit',
@@ -1946,9 +1740,10 @@ const habitEntryDefinition = (
     }
   },
   /**
-   * Plain field LWW. A logged day has no "completion wins" rule of its own:
-   * the later status the user chose is the one that stands, and `deletedAt`
-   * keeps the shared tombstone-wins rule from `mergeFields`.
+   * The merge is the registry's default: plain field LWW. A logged day has
+   * no "completion wins" rule of its own: the later status the user chose is
+   * the one that stands, and `deletedAt` keeps the shared tombstone-wins
+   * rule from `mergeFields`.
    *
    * That tombstone-wins rule is deliberate for the **offline sync** path, but
    * it is not how a tap re-logs a cleared day. #64's tap goes through
@@ -1957,40 +1752,26 @@ const habitEntryDefinition = (
    * a tombstone here is recovered by that explicit mutation (the client sync
    * engine calls it on a `tombstone`/`UniqueViolation` result).
    */
-  merge: input => mergeFields({}, input),
-  insert: state => sql`
-    INSERT INTO habit_entries
-      (id, habit_id, owner_id, household_id, visibility, local_date,
-       time_zone, status, created_at, updated_at, version, deleted_at)
-    VALUES
-      (${state.entityId}, ${encodeText(state.data.habitId)}, ${state.ownerId},
-       ${state.householdId}, ${state.visibility},
-       ${encodeText(state.data.localDate)},
-       ${encodeText(state.data.timeZone) || 'UTC'},
-       ${encodeText(state.data.status)},
-       ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-       ${state.updatedAt}, ${state.version}, ${state.deletedAt})
-    ON CONFLICT DO NOTHING
-  `,
-  update: (state, expectedVersion) => sql`
-    UPDATE habit_entries SET
-      visibility = ${state.visibility},
-      time_zone = ${encodeText(state.data.timeZone) || 'UTC'},
-      status = ${encodeText(state.data.status)},
-      updated_at = ${state.updatedAt},
-      version = ${state.version},
-      deleted_at = ${state.deletedAt}
-    WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `,
+  insert: state =>
+    insertStatement(sql, HABIT_ENTRY_TABLE, {
+      values: {
+        ...syncValues(state),
+        timeZone: encodeText(state.data.timeZone) || 'UTC',
+      },
+      onConflict: true,
+    }),
+  update: (state, expectedVersion) =>
+    updateStatement(sql, HABIT_ENTRY_TABLE, {
+      id: state.entityId,
+      values: {
+        ...syncValues(state),
+        timeZone: encodeText(state.data.timeZone) || 'UTC',
+      },
+      expectedVersion,
+    }),
 })
 
 // ── Reminder ──────────────────────────────────────────────────────────────
-
-const REMINDER_COLUMNS =
-  `${META_COLUMNS}, type, title, note, color, kind, tier, repeat, ` +
-  `offset_minutes AS offsetMinutes, fire_at AS fireAt, ` +
-  `link_type AS linkType, link_id AS linkId, silenced_until AS silencedUntil, ` +
-  `time_zone AS timeZone, created_at AS createdAt`
 
 /**
  * Rebuild the link union from the flattened columns.
@@ -2001,19 +1782,6 @@ const REMINDER_COLUMNS =
  */
 const reminderLinkOf = (type: unknown, id: unknown): ReminderLink =>
   decodeReminderLink(asText(type) ?? 'none', asText(id))
-
-/**
- * Flatten the link union for the two columns.
- *
- * The client patch's `link` is `unknown`, and its only writer is trusted, so a
- * missing or malformed value is written as `none` rather than rejected here.
- */
-const reminderLinkColumns = (
-  data: Record<string, unknown>,
-): ReminderLinkColumns =>
-  encodeReminderLink(
-    Option.getOrElse(asReminderLink(data.link), noReminderLink),
-  )
 
 /** A stored row's repeat; a malformed cell reads as a one-off. */
 const reminderRepeatOf = (value: unknown): ReminderRepeat =>
@@ -2081,14 +1849,27 @@ const REMINDER_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
   ['visibility', isOneOf('private', 'shared')],
 ])
 
+/**
+ * The reminder's write values: the shared state glue plus the two fallbacks
+ * the hand-written statements carried — the tier is derived from the kind (a
+ * patch can never forge it) and a garbage zone keeps the UTC default.
+ */
+const reminderStateValues = (
+  state: SyncEntityState,
+): Record<string, unknown> => ({
+  ...syncValues(state),
+  tier:
+    encodeText(state.data.tier) ||
+    reminderTierFor(state.data.kind as ReminderType),
+  timeZone: encodeText(state.data.timeZone) || 'UTC',
+})
+
 const reminderDefinition = (
   sql: SqlClient.SqlClient,
 ): SyncEntityDefinition => ({
   entityType: 'reminder',
-  table: 'reminders',
-  select: REMINDER_COLUMNS,
-  scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: 'deleted_at',
+  table: REMINDER_TABLE.table,
+  select: selectList(REMINDER_TABLE, { syncManaged: true }),
   writable: REMINDER_WRITABLE,
   ...reminderCodec,
   defaults: (patch, context) => {
@@ -2173,59 +1954,20 @@ const reminderDefinition = (
       `,
     ]
   },
-  insert: state => {
-    const link = reminderLinkColumns(state.data)
-    return sql`
-      INSERT INTO reminders
-        (id, type, title, note, owner_id, household_id, visibility, color,
-         kind, tier, repeat, offset_minutes, fire_at, link_type, link_id,
-         silenced_until, time_zone, created_at, updated_at, version, deleted_at)
-      VALUES
-        (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
-         ${encodeNullableText(state.data.note)}, ${state.ownerId},
-         ${state.householdId}, ${state.visibility},
-         ${encodeNullableText(state.data.color)}, ${encodeText(state.data.kind)},
-         ${encodeText(state.data.tier) || reminderTierFor(state.data.kind as ReminderType)},
-         ${encodeJson(state.data.repeat)}, ${encodeInt(state.data.offsetMinutes)},
-         ${encodeText(state.data.fireAt)}, ${link.linkType}, ${link.linkId},
-         ${encodeNullableText(state.data.silencedUntil)},
-         ${encodeText(state.data.timeZone) || 'UTC'},
-         ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-         ${state.updatedAt}, ${state.version}, ${state.deletedAt})
-      ON CONFLICT DO NOTHING
-    `
-  },
-  update: (state, expectedVersion) => {
-    const link = reminderLinkColumns(state.data)
-    return sql`
-      UPDATE reminders SET
-        title = ${encodeText(state.data.title)},
-        note = ${encodeNullableText(state.data.note)},
-        visibility = ${state.visibility},
-        color = ${encodeNullableText(state.data.color)},
-        kind = ${encodeText(state.data.kind)},
-        tier = ${encodeText(state.data.tier) || reminderTierFor(state.data.kind as ReminderType)},
-        repeat = ${encodeJson(state.data.repeat)},
-        offset_minutes = ${encodeInt(state.data.offsetMinutes)},
-        fire_at = ${encodeText(state.data.fireAt)},
-        link_type = ${link.linkType},
-        link_id = ${link.linkId},
-        silenced_until = ${encodeNullableText(state.data.silencedUntil)},
-        time_zone = ${encodeText(state.data.timeZone) || 'UTC'},
-        updated_at = ${state.updatedAt},
-        version = ${state.version},
-        deleted_at = ${state.deletedAt}
-      WHERE id = ${state.entityId} AND version = ${expectedVersion}
-    `
-  },
+  insert: state =>
+    insertStatement(sql, REMINDER_TABLE, {
+      values: reminderStateValues(state),
+      onConflict: true,
+    }),
+  update: (state, expectedVersion) =>
+    updateStatement(sql, REMINDER_TABLE, {
+      id: state.entityId,
+      values: reminderStateValues(state),
+      expectedVersion,
+    }),
 })
 
 // ── Occasion ──────────────────────────────────────────────────────────────
-
-const OCCASION_COLUMNS =
-  `${META_COLUMNS}, type, title, origin_date AS originDate, time_zone AS timeZone, ` +
-  `yearly, advance_reminder_days AS advanceReminderDays, ` +
-  `preparation_task_id AS preparationTaskId, color, created_at AS createdAt`
 
 const occasionCodec = withSchema<Occasion>(Occasion, row => ({
   id: String(row.id),
@@ -2256,10 +1998,8 @@ const occasionDefinition = (
   sql: SqlClient.SqlClient,
 ): SyncEntityDefinition => ({
   entityType: 'occasion',
-  table: 'occasions',
-  select: OCCASION_COLUMNS,
-  scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: 'deleted_at',
+  table: OCCASION_TABLE.table,
+  select: selectList(OCCASION_TABLE, { syncManaged: true }),
   writable: new Map([
     ['title', isString],
     ['originDate', isString],
@@ -2292,42 +2032,21 @@ const occasionDefinition = (
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
   /**
-   * The shared field-level LWW merge. The origin date is one field: a newer
-   * edit may move the annual anchor, and an older one must not.
+   * The merge is the registry's default — the shared field-level LWW. The
+   * origin date is one field: a newer edit may move the annual anchor, and
+   * an older one must not.
    */
-  merge: input => mergeFields({}, input),
-  insert: state => sql`
-    INSERT INTO occasions
-      (id, type, title, owner_id, household_id, visibility, color,
-       origin_date, time_zone, yearly, advance_reminder_days,
-       preparation_task_id, created_at, updated_at, version, deleted_at)
-    VALUES
-      (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
-       ${state.ownerId}, ${state.householdId}, ${state.visibility},
-       ${encodeNullableText(state.data.color)},
-       ${encodeText(state.data.originDate)}, ${encodeText(state.data.timeZone)},
-       ${encodeBit(state.data.yearly)},
-       ${encodeAdvanceDays(state.data.advanceReminderDays)},
-       ${encodeNullableText(state.data.preparationTaskId)},
-       ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-       ${state.updatedAt}, ${state.version}, ${state.deletedAt})
-    ON CONFLICT DO NOTHING
-  `,
-  update: (state, expectedVersion) => sql`
-    UPDATE occasions SET
-      title = ${encodeText(state.data.title)},
-      visibility = ${state.visibility},
-      color = ${encodeNullableText(state.data.color)},
-      origin_date = ${encodeText(state.data.originDate)},
-      time_zone = ${encodeText(state.data.timeZone)},
-      yearly = ${encodeBit(state.data.yearly)},
-      advance_reminder_days = ${encodeAdvanceDays(state.data.advanceReminderDays)},
-      preparation_task_id = ${encodeNullableText(state.data.preparationTaskId)},
-      updated_at = ${state.updatedAt},
-      version = ${state.version},
-      deleted_at = ${state.deletedAt}
-    WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `,
+  insert: state =>
+    insertStatement(sql, OCCASION_TABLE, {
+      values: syncValues(state),
+      onConflict: true,
+    }),
+  update: (state, expectedVersion) =>
+    updateStatement(sql, OCCASION_TABLE, {
+      id: state.entityId,
+      values: syncValues(state),
+      expectedVersion,
+    }),
 })
 
 // ── Registry ──────────────────────────────────────────────────────────────
@@ -2368,8 +2087,8 @@ export const makeSyncRegistry = (sql: SqlClient.SqlClient): SyncRegistry => {
     habitEntryDefinition(sql),
     reminderDefinition(sql),
     occasionDefinition(sql),
-  ]
-  const byType = new Map<SyncEntityType, SyncEntityDefinition>(
+  ].map(withRegistryDefaults)
+  const byType = new Map<SyncEntityType, ResolvedSyncEntityDefinition>(
     definitions.map(definition => [definition.entityType, definition]),
   )
   return {

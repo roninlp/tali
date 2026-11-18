@@ -10,6 +10,15 @@ import {
   type TaskStatus,
   type UserId,
 } from '@tali/domain'
+import {
+  type ColumnValues,
+  column,
+  columnCodecs,
+  defineTable,
+  insertStatement,
+  selectList,
+  updateStatement,
+} from './columns'
 import { visibleScopeSql } from './scope'
 
 /**
@@ -33,13 +42,45 @@ import { visibleScopeSql } from './scope'
  * source of truth. The mapper parses it so the domain model stays an array.
  */
 
-const TASK_COLUMNS =
-  `id, type, title, description, owner_id AS ownerId, household_id AS householdId, ` +
-  `visibility, status, priority, due_at AS dueAt, due_date AS dueDate, ` +
-  `time_zone AS timeZone, project_id AS projectId, tag_ids AS tagIds, color, ` +
-  `recurrence, recurrence_mode AS recurrenceMode, ` +
-  `started_at AS startedAt, completed_at AS completedAt, created_at AS createdAt, ` +
-  `updated_at AS updatedAt, version, deleted_at AS deletedAt`
+/**
+ * The one place `tasks`' columns are declared (#115): the repo's SELECT,
+ * INSERT and UPDATE lists below, and the sync registry's projection and
+ * statements (spawned successors included), are all generated from this
+ * descriptor. `recurrence_parent_id` is not here — it is a spawn-only column,
+ * bound as an `extra` by the statements that write it.
+ */
+export const TASK_TABLE = defineTable('tasks', [
+  column('id', { updatable: false }),
+  column('type', { updatable: false }),
+  column('title', { codec: columnCodecs.text }),
+  column('description', { codec: columnCodecs.nullableText }),
+  column('owner_id', 'ownerId', { updatable: false }),
+  column('household_id', 'householdId', { updatable: false }),
+  column('visibility'),
+  column('status', { codec: columnCodecs.text }),
+  column('priority', { codec: columnCodecs.text }),
+  column('due_at', 'dueAt', { codec: columnCodecs.nullableText }),
+  column('due_date', 'dueDate', { codec: columnCodecs.nullableText }),
+  column('time_zone', 'timeZone', { codec: columnCodecs.text }),
+  column('project_id', 'projectId', { codec: columnCodecs.nullableText }),
+  column('tag_ids', 'tagIds', { codec: columnCodecs.json }),
+  column('color', { codec: columnCodecs.nullableText }),
+  column('recurrence', { codec: columnCodecs.jsonOrNull }),
+  column('recurrence_mode', 'recurrenceMode', {
+    codec: columnCodecs.nullableText,
+  }),
+  column('started_at', 'startedAt', { codec: columnCodecs.nullableText }),
+  column('completed_at', 'completedAt', { codec: columnCodecs.nullableText }),
+  column('created_at', 'createdAt', {
+    updatable: false,
+    codec: columnCodecs.text,
+  }),
+  column('updated_at', 'updatedAt', { codec: columnCodecs.text }),
+  column('version', { codec: columnCodecs.int }),
+  column('deleted_at', 'deletedAt', { codec: columnCodecs.nullableText }),
+])
+
+const TASK_SELECT = selectList(TASK_TABLE)
 
 interface TaskRow extends Omit<Task, 'tagIds' | 'recurrence'> {
   readonly tagIds: string
@@ -63,11 +104,32 @@ const toTask = (row: TaskRow): Task =>
         : Option.getOrThrow(asRecurrence(row.recurrence)),
   })
 
-const encodeTagIds = (ids: ReadonlyArray<TagId>): string => JSON.stringify(ids)
-
-/** Rules are JSON text, `NULL` for a one-off task. */
-const encodeRecurrence = (rule: Task['recurrence']): string | null =>
-  rule === null ? null : JSON.stringify(rule)
+/** The model's column values; the descriptor's codecs do the encoding. */
+const taskValues = (task: Task): ColumnValues<typeof TASK_TABLE> => ({
+  id: task.id,
+  type: task.type,
+  title: task.title,
+  description: task.description,
+  ownerId: task.ownerId,
+  householdId: task.householdId,
+  visibility: task.visibility,
+  status: task.status,
+  priority: task.priority,
+  dueAt: task.dueAt,
+  dueDate: task.dueDate,
+  timeZone: task.timeZone,
+  projectId: task.projectId,
+  tagIds: task.tagIds,
+  color: task.color,
+  recurrence: task.recurrence,
+  recurrenceMode: task.recurrenceMode,
+  startedAt: task.startedAt,
+  completedAt: task.completedAt,
+  createdAt: task.createdAt,
+  updatedAt: task.updatedAt,
+  version: task.version,
+  deletedAt: task.deletedAt,
+})
 
 export interface TaskQuery {
   readonly householdId: string
@@ -142,7 +204,7 @@ export class TaskRepo extends Context.Service<TaskRepo>()('TaskRepo', {
 
     const findById = (id: TaskId) =>
       Effect.map(
-        sql<TaskRow>`SELECT ${sql.literal(TASK_COLUMNS)} FROM tasks WHERE id = ${id}`,
+        sql<TaskRow>`SELECT ${sql.literal(TASK_SELECT)} FROM tasks WHERE id = ${id}`,
         rows => Option.map(Option.fromUndefinedOr(rows[0]), toTask),
       )
 
@@ -156,7 +218,7 @@ export class TaskRepo extends Context.Service<TaskRepo>()('TaskRepo', {
     }) =>
       Effect.map(
         sql<TaskRow>`
-          SELECT ${sql.literal(TASK_COLUMNS)} FROM tasks
+          SELECT ${sql.literal(TASK_SELECT)} FROM tasks
           WHERE ${visibleScope(input)}
           ORDER BY due_date IS NULL, due_date ASC, due_at ASC, updated_at DESC
         `,
@@ -251,7 +313,7 @@ export class TaskRepo extends Context.Service<TaskRepo>()('TaskRepo', {
         }
 
         const rows = yield* sql<TaskRow>`
-          SELECT ${sql.literal(TASK_COLUMNS)} FROM tasks
+          SELECT ${sql.literal(TASK_SELECT)} FROM tasks
           WHERE ${sql.and(conditions)}
           ORDER BY ${sql.literal(orderBy(input.sort ?? { by: 'dueDate', direction: 'asc' }))}
         `
@@ -275,7 +337,7 @@ export class TaskRepo extends Context.Service<TaskRepo>()('TaskRepo', {
         if (input.before !== undefined)
           bounds.push(sql`due_date < ${input.before}`)
         const rows = yield* sql<TaskRow>`
-          SELECT ${sql.literal(TASK_COLUMNS)} FROM tasks
+          SELECT ${sql.literal(TASK_SELECT)} FROM tasks
           WHERE ${visibleScope(input)}
             AND status != 'done'
             AND ${sql.and(bounds)}
@@ -301,7 +363,7 @@ export class TaskRepo extends Context.Service<TaskRepo>()('TaskRepo', {
         if (input.before !== undefined)
           bounds.push(sql`due_at < ${input.before}`)
         const rows = yield* sql<TaskRow>`
-          SELECT ${sql.literal(TASK_COLUMNS)} FROM tasks
+          SELECT ${sql.literal(TASK_SELECT)} FROM tasks
           WHERE ${visibleScope(input)}
             AND status != 'done'
             AND ${sql.and(bounds)}
@@ -317,7 +379,7 @@ export class TaskRepo extends Context.Service<TaskRepo>()('TaskRepo', {
     }) =>
       Effect.map(
         sql<TaskRow>`
-          SELECT ${sql.literal(TASK_COLUMNS)} FROM tasks
+          SELECT ${sql.literal(TASK_SELECT)} FROM tasks
           WHERE ${visibleScope(input)}
             AND status != 'done'
             AND due_at IS NULL AND due_date IS NULL
@@ -340,7 +402,7 @@ export class TaskRepo extends Context.Service<TaskRepo>()('TaskRepo', {
     }) =>
       Effect.map(
         sql<TaskRow>`
-          SELECT ${sql.literal(TASK_COLUMNS)} FROM tasks
+          SELECT ${sql.literal(TASK_SELECT)} FROM tasks
           WHERE ${visibleScope(input)}
             AND status != 'done'
             AND recurrence IS NOT NULL
@@ -363,7 +425,7 @@ export class TaskRepo extends Context.Service<TaskRepo>()('TaskRepo', {
     }) =>
       Effect.map(
         sql<TaskRow>`
-          SELECT ${sql.literal(TASK_COLUMNS)} FROM tasks
+          SELECT ${sql.literal(TASK_SELECT)} FROM tasks
           WHERE ${visibleScope(input)}
             AND due_date = ${input.dueDate}
           ORDER BY
@@ -376,22 +438,10 @@ export class TaskRepo extends Context.Service<TaskRepo>()('TaskRepo', {
 
     const insert = (task: Task) =>
       Effect.map(
-        sql<TaskRow>`
-          INSERT INTO tasks
-            (id, type, title, description, owner_id, household_id, visibility,
-             status, priority, due_at, due_date, time_zone, project_id, tag_ids,
-             color, recurrence, recurrence_mode, started_at, completed_at,
-             created_at, updated_at, version, deleted_at)
-          VALUES
-            (${task.id}, ${task.type}, ${task.title}, ${task.description},
-             ${task.ownerId}, ${task.householdId}, ${task.visibility},
-             ${task.status}, ${task.priority}, ${task.dueAt}, ${task.dueDate},
-             ${task.timeZone}, ${task.projectId}, ${encodeTagIds(task.tagIds)},
-             ${task.color}, ${encodeRecurrence(task.recurrence)},
-             ${task.recurrenceMode}, ${task.startedAt}, ${task.completedAt},
-             ${task.createdAt}, ${task.updatedAt}, ${task.version}, ${task.deletedAt})
-          RETURNING ${sql.literal(TASK_COLUMNS)}
-        `,
+        insertStatement<TaskRow>(sql, TASK_TABLE, {
+          values: taskValues(task),
+          returning: TASK_SELECT,
+        }),
         rows => toTask(rows[0]!),
       )
 
@@ -402,29 +452,11 @@ export class TaskRepo extends Context.Service<TaskRepo>()('TaskRepo', {
      */
     const update = (task: Task) =>
       Effect.map(
-        sql<TaskRow>`
-          UPDATE tasks SET
-            title = ${task.title},
-            description = ${task.description},
-            visibility = ${task.visibility},
-            status = ${task.status},
-            priority = ${task.priority},
-            due_at = ${task.dueAt},
-            due_date = ${task.dueDate},
-            time_zone = ${task.timeZone},
-            project_id = ${task.projectId},
-            tag_ids = ${encodeTagIds(task.tagIds)},
-            color = ${task.color},
-            recurrence = ${encodeRecurrence(task.recurrence)},
-            recurrence_mode = ${task.recurrenceMode},
-            started_at = ${task.startedAt},
-            completed_at = ${task.completedAt},
-            updated_at = ${task.updatedAt},
-            version = ${task.version},
-            deleted_at = ${task.deletedAt}
-          WHERE id = ${task.id}
-          RETURNING ${sql.literal(TASK_COLUMNS)}
-        `,
+        updateStatement<TaskRow>(sql, TASK_TABLE, {
+          id: task.id,
+          values: taskValues(task),
+          returning: TASK_SELECT,
+        }),
         rows => Option.map(Option.fromUndefinedOr(rows[0]), toTask),
       )
 
@@ -471,22 +503,11 @@ export class TaskRepo extends Context.Service<TaskRepo>()('TaskRepo', {
       `
 
     /** Statement form so the sync engine can put the write in one batch. */
-    const insertStatement = (task: Task) => sql`
-      INSERT INTO tasks
-        (id, type, title, description, owner_id, household_id, visibility,
-         status, priority, due_at, due_date, time_zone, project_id, tag_ids,
-         color, recurrence, recurrence_mode, started_at, completed_at,
-         created_at, updated_at, version, deleted_at)
-      VALUES
-        (${task.id}, ${task.type}, ${task.title}, ${task.description},
-         ${task.ownerId}, ${task.householdId}, ${task.visibility},
-         ${task.status}, ${task.priority}, ${task.dueAt}, ${task.dueDate},
-         ${task.timeZone}, ${task.projectId}, ${encodeTagIds(task.tagIds)},
-         ${task.color}, ${encodeRecurrence(task.recurrence)},
-         ${task.recurrenceMode}, ${task.startedAt}, ${task.completedAt},
-         ${task.createdAt}, ${task.updatedAt}, ${task.version}, ${task.deletedAt})
-      ON CONFLICT DO NOTHING
-    `
+    const insertStatementFor = (task: Task) =>
+      insertStatement(sql, TASK_TABLE, {
+        values: taskValues(task),
+        onConflict: true,
+      })
 
     /**
      * A statement-form insert that only lands when `gate` holds.
@@ -496,23 +517,12 @@ export class TaskRepo extends Context.Service<TaskRepo>()('TaskRepo', {
      * occasion version and link, so a lost CAS cannot leave an orphan task. The
      * caller owns the gate fragment; it binds only parameters.
      */
-    const insertStatementGated = (task: Task, gate: Statement.Fragment) => sql`
-      INSERT INTO tasks
-        (id, type, title, description, owner_id, household_id, visibility,
-         status, priority, due_at, due_date, time_zone, project_id, tag_ids,
-         color, recurrence, recurrence_mode, started_at, completed_at,
-         created_at, updated_at, version, deleted_at)
-      SELECT
-        ${task.id}, ${task.type}, ${task.title}, ${task.description},
-        ${task.ownerId}, ${task.householdId}, ${task.visibility},
-        ${task.status}, ${task.priority}, ${task.dueAt}, ${task.dueDate},
-        ${task.timeZone}, ${task.projectId}, ${encodeTagIds(task.tagIds)},
-        ${task.color}, ${encodeRecurrence(task.recurrence)},
-        ${task.recurrenceMode}, ${task.startedAt}, ${task.completedAt},
-        ${task.createdAt}, ${task.updatedAt}, ${task.version}, ${task.deletedAt}
-      WHERE ${gate}
-      ON CONFLICT DO NOTHING
-    `
+    const insertStatementGated = (task: Task, gate: Statement.Fragment) =>
+      insertStatement(sql, TASK_TABLE, {
+        values: taskValues(task),
+        gate,
+        onConflict: true,
+      })
 
     /**
      * The next occurrence of a recurring task (ticket #38), inserted in the
@@ -529,30 +539,20 @@ export class TaskRepo extends Context.Service<TaskRepo>()('TaskRepo', {
       readonly task: Task
       readonly parentId: TaskId
       readonly parentVersion: number
-    }) => sql`
-      INSERT INTO tasks
-        (id, type, title, description, owner_id, household_id, visibility,
-         status, priority, due_at, due_date, time_zone, project_id, tag_ids,
-         color, recurrence, recurrence_mode, recurrence_parent_id,
-         started_at, completed_at, created_at, updated_at, version, deleted_at)
-      SELECT
-        ${input.task.id}, ${input.task.type}, ${input.task.title},
-        ${input.task.description}, ${input.task.ownerId}, ${input.task.householdId},
-        ${input.task.visibility}, ${input.task.status}, ${input.task.priority},
-        ${input.task.dueAt}, ${input.task.dueDate}, ${input.task.timeZone},
-        ${input.task.projectId}, ${encodeTagIds(input.task.tagIds)},
-        ${input.task.color}, ${encodeRecurrence(input.task.recurrence)},
-        ${input.task.recurrenceMode}, ${input.parentId},
-        ${input.task.startedAt}, ${input.task.completedAt}, ${input.task.createdAt},
-        ${input.task.updatedAt}, ${input.task.version}, ${input.task.deletedAt}
-      WHERE EXISTS (
-        SELECT 1 FROM tasks
-        WHERE id = ${input.parentId}
-          AND version = ${input.parentVersion}
-          AND status = 'done'
-      )
-      ON CONFLICT DO NOTHING
-    `
+    }) =>
+      insertStatement(sql, TASK_TABLE, {
+        values: taskValues(input.task),
+        extra: [{ column: 'recurrence_parent_id', value: input.parentId }],
+        gate: sql`
+          EXISTS (
+            SELECT 1 FROM tasks
+            WHERE id = ${input.parentId}
+              AND version = ${input.parentVersion}
+              AND status = 'done'
+          )
+        `,
+        onConflict: true,
+      })
 
     return {
       findById,
@@ -567,7 +567,7 @@ export class TaskRepo extends Context.Service<TaskRepo>()('TaskRepo', {
       attachTagIfVersion,
       insert,
       update,
-      insertStatement,
+      insertStatement: insertStatementFor,
       insertStatementGated,
       insertRecurrenceChildStatement,
     }

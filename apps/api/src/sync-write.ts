@@ -7,7 +7,7 @@ import type {
   AppliedWrite,
   EntityWrite,
   FeedWrite,
-  SyncEntityDefinition,
+  ResolvedSyncEntityDefinition,
   SyncEntityState,
 } from '@tali/sql'
 
@@ -48,7 +48,7 @@ import type {
 export interface SyncWriteRepo {
   readonly definition: (
     entityType: SyncEntityType,
-  ) => SyncEntityDefinition | undefined
+  ) => ResolvedSyncEntityDefinition | undefined
   readonly findApplied: (input: {
     readonly householdId: string
     readonly clientMutationIds: ReadonlyArray<string>
@@ -190,7 +190,9 @@ export const makeSyncKit = <E>(config: SyncKitConfig<E>) => {
     sync.findApplied({ householdId, clientMutationIds: ids }).pipe(Effect.orDie)
 
   /** The registry's definition, or a defect: an unregistered type is a bug. */
-  const definition = (entityType: SyncEntityType): SyncEntityDefinition => {
+  const definition = (
+    entityType: SyncEntityType,
+  ): ResolvedSyncEntityDefinition => {
     const def = sync.definition(entityType)
     if (def === undefined) {
       throw new Error(`sync entity type is not registered: ${entityType}`)
