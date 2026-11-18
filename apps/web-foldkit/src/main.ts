@@ -292,9 +292,6 @@ const toListsMessage = (message: Lists.Message): Message =>
 const toNotesMessage = (message: Notes.Message): Message =>
   Message.GotNotesMessage({ message })
 
-const toHabitsMessage = (message: Habits.Message): Message =>
-  Message.GotHabitsMessage({ message })
-
 const toCalendarMessage = (message: Calendar.Message): Message =>
   Message.GotCalendarMessage({ message })
 
@@ -956,23 +953,13 @@ const foldListsMirrorSettled = Update.foldChild({
 const enterListsPage = (
   model: Model,
   maybeListId: Option.Option<ListId>,
-): UpdateReturn => {
-  const entered = Option.match(maybeListId, {
-    onNone: () => foldListsEnteredIndex(model, undefined),
-    onSome: listId => foldListsEnteredDetail(model, { listId }),
-  })
-
-  if (!Sync.isStoreReady(entered.model.sync)) {
-    return entered
-  }
-
-  const refreshed = foldSyncRefresh(entered.model)
-
-  return {
-    model: refreshed.model,
-    commands: [...(entered.commands ?? []), ...(refreshed.commands ?? [])],
-  }
-}
+): UpdateReturn =>
+  rereadMirror(
+    Option.match(maybeListId, {
+      onNone: () => foldListsEnteredIndex(model, undefined),
+      onSome: listId => foldListsEnteredDetail(model, { listId }),
+    }),
+  )
 
 const foldListsMessage = (model: Model, message: Lists.Message): UpdateReturn =>
   foldLists(model, { message, inputs: listsInputs(model) })
@@ -1104,55 +1091,21 @@ const foldNotesMessage = (model: Model, message: Notes.Message): UpdateReturn =>
   foldNotes(model, { message, inputs: notesInputs(model) })
 
 /** Enter `/notes` and re-read the mirror the screen renders from. */
-const enterNotesIndex = (model: Model): UpdateReturn => {
-  const entered = foldNotesEnteredIndex(model)
-
-  if (!Sync.isStoreReady(entered.model.sync)) {
-    return entered
-  }
-
-  const refreshed = foldSyncRefresh(entered.model)
-
-  return {
-    model: refreshed.model,
-    commands: [...(entered.commands ?? []), ...(refreshed.commands ?? [])],
-  }
-}
+const enterNotesIndex = (model: Model): UpdateReturn =>
+  rereadMirror(foldNotesEnteredIndex(model))
 
 /** Enter `/notes/trash` and re-read the mirror it renders from. */
-const enterNotesTrash = (model: Model): UpdateReturn => {
-  const entered = foldNotesEnteredTrash(model)
-
-  if (!Sync.isStoreReady(entered.model.sync)) {
-    return entered
-  }
-
-  const refreshed = foldSyncRefresh(entered.model)
-
-  return {
-    model: refreshed.model,
-    commands: [...(entered.commands ?? []), ...(refreshed.commands ?? [])],
-  }
-}
+const enterNotesTrash = (model: Model): UpdateReturn =>
+  rereadMirror(foldNotesEnteredTrash(model))
 
 /** Enter one note editor, loading it from the mirror and its crash draft. */
-const enterNotesNote = (model: Model, noteId: NoteId): UpdateReturn => {
-  const entered = foldNotesEnteredNote(model, {
-    noteId,
-    isStoreReady: Sync.isStoreReady(model.sync),
-  })
-
-  if (!Sync.isStoreReady(entered.model.sync)) {
-    return entered
-  }
-
-  const refreshed = foldSyncRefresh(entered.model)
-
-  return {
-    model: refreshed.model,
-    commands: [...(entered.commands ?? []), ...(refreshed.commands ?? [])],
-  }
-}
+const enterNotesNote = (model: Model, noteId: NoteId): UpdateReturn =>
+  rereadMirror(
+    foldNotesEnteredNote(model, {
+      noteId,
+      isStoreReady: Sync.isStoreReady(model.sync),
+    }),
+  )
 
 // PAGE TABLE
 
@@ -1191,39 +1144,29 @@ const pages = {
       when: (model: Model) => AppRoute.isAnyOf(['Tasks'])(model.route),
     },
   }),
-}
 
-type HabitsFoldInput = Readonly<{
-  message: Habits.Message
-  inputs: Habits.Inputs
-}>
-
-const foldHabits = Update.foldChild({
-  update: (habits: Habits.Model, input: HabitsFoldInput) =>
-    Habits.update(habits, input.message, input.inputs),
-  read: (model: Model) => Option.some(model.habits),
-  write: (model: Model, nextHabits: Habits.Model) =>
-    modifyFields(model, { habits: () => nextHabits }),
-  toParentMessage: toHabitsMessage,
-  foldOutMessage: Habits.OutMessage.match<
-    Update.Step<Model, Message, Sync.LocalStoreService>
-  >({
-    WroteLocalData: () => stepModel => foldSyncRefresh(stepModel),
+  habits: pageFoldWithOutMessage({
+    field: {
+      field: (model: Model) => model.habits,
+      setField: (model: Model, nextHabits: Habits.Model) =>
+        modifyFields(model, { habits: () => nextHabits }),
+    },
+    toParentMessage: (message: Habits.Message) =>
+      Message.GotHabitsMessage({ message }),
+    update: Habits.update,
+    inputs: habitsInputs,
+    foldOutMessage: Habits.OutMessage.match<
+      Update.Step<Model, Message, Sync.LocalStoreService>
+    >({
+      WroteLocalData: () => stepModel => foldSyncRefresh(stepModel),
+    }),
+    entered: Habits.entered,
+    subscriptions: {
+      child: Habits.subscriptions,
+      when: (model: Model) => AppRoute.isAnyOf(['Habits'])(model.route),
+    },
   }),
-})
-
-const foldHabitsEntered = Update.foldChild({
-  update: Habits.entered,
-  read: (model: Model) => Option.some(model.habits),
-  write: (model: Model, nextHabits: Habits.Model) =>
-    modifyFields(model, { habits: () => nextHabits }),
-  toParentMessage: toHabitsMessage,
-})
-
-const foldHabitsMessage = (
-  model: Model,
-  message: Habits.Message,
-): UpdateReturn => foldHabits(model, { message, inputs: habitsInputs(model) })
+}
 
 type CalendarFoldInput = Readonly<{
   message: Calendar.Message
@@ -1345,10 +1288,9 @@ const foldSettingsReset = Update.foldChildStep({
   toParentMessage: toSettingsMessage,
 })
 
-/** Enter `/habits` and re-read the mirror it renders from. */
-const enterHabitsPage = (model: Model): UpdateReturn => {
-  const entered = foldHabitsEntered(model, undefined)
-
+/** Re-read the mirror a screen renders from after its entry fold, when the
+ *  local store is ready to be read. */
+const rereadMirror = (entered: UpdateReturn): UpdateReturn => {
   if (!Sync.isStoreReady(entered.model.sync)) {
     return entered
   }
@@ -1362,20 +1304,8 @@ const enterHabitsPage = (model: Model): UpdateReturn => {
 }
 
 /** Enter `/calendar` and re-read the mirror it renders from. */
-const enterCalendarPage = (model: Model): UpdateReturn => {
-  const entered = foldCalendarEntered(model, calendarInputs(model))
-
-  if (!Sync.isStoreReady(entered.model.sync)) {
-    return entered
-  }
-
-  const refreshed = foldSyncRefresh(entered.model)
-
-  return {
-    model: refreshed.model,
-    commands: [...(entered.commands ?? []), ...(refreshed.commands ?? [])],
-  }
-}
+const enterCalendarPage = (model: Model): UpdateReturn =>
+  rereadMirror(foldCalendarEntered(model, calendarInputs(model)))
 
 /** Run the entry capability of whichever page the transition landed on. */
 const enterRoute = (
@@ -1406,7 +1336,7 @@ const enterRoute = (
     AppRoute.isAnyOf(['Habits'])(model.route) &&
     Option.isSome(Transition.entered(transition, 'Habits'))
   ) {
-    return enterHabitsPage(model)
+    return rereadMirror(pages.habits.foldEntered(model))
   }
 
   if (
@@ -1634,7 +1564,7 @@ export const update = (model: Model, message: Message) =>
     GotListsMessage: ({ message }) => foldListsMessage(model, message),
     GotNotesMessage: ({ message }) => foldNotesMessage(model, message),
     GotTasksMessage: ({ message }) => pages.tasks.foldMessage(model, message),
-    GotHabitsMessage: ({ message }) => foldHabitsMessage(model, message),
+    GotHabitsMessage: ({ message }) => pages.habits.foldMessage(model, message),
     GotCalendarMessage: ({ message }) => foldCalendarMessage(model, message),
     GotRemindersMessage: ({ message }) => foldReminders(model, message),
     GotCaptureMessage: ({ message }) => foldCaptureMessage(model, message),
@@ -1955,7 +1885,8 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): Html =>
           model: model.habits,
           view: Habits.view,
           viewInputs: habitsInputs(model),
-          toParentMessage: toHabitsMessage,
+          toParentMessage: (message: Habits.Message) =>
+            Message.GotHabitsMessage({ message }),
         }),
       Calendar: () =>
         h.submodel({
@@ -2187,17 +2118,6 @@ const notesSubscriptions = Subscription.lift(Notes.subscriptions)<
   toParentMessage: toNotesMessage,
 })
 
-const habitsSubscriptions = Subscription.lift(Habits.subscriptions)<
-  Model,
-  Message
->({
-  read: model =>
-    AppRoute.isAnyOf(['Habits'])(model.route)
-      ? Option.some(model.habits)
-      : Option.none(),
-  toParentMessage: toHabitsMessage,
-})
-
 const calendarSubscriptions = Subscription.lift(Calendar.subscriptions)<
   Model,
   Message
@@ -2222,7 +2142,10 @@ const remindersSubscriptions = Subscription.lift(Reminders.subscriptions)<
 
 /** The subscription records the page table carries, when a page owns any. */
 const pageSubscriptionRecords = Array.getSomes(
-  Array.map([pages.tasks], page => Option.fromNullishOr(page.subscriptions)),
+  Array.map(
+    [pages.tasks, pages.habits],
+    page => Option.fromNullishOr(page.subscriptions),
+  ),
 )
 
 export const subscriptions = Subscription.aggregate<
@@ -2235,7 +2158,6 @@ export const subscriptions = Subscription.aggregate<
   pushSubscriptions,
   todaySubscriptions,
   notesSubscriptions,
-  habitsSubscriptions,
   calendarSubscriptions,
   remindersSubscriptions,
   ...pageSubscriptionRecords,
