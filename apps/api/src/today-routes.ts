@@ -6,9 +6,9 @@ import {
   TodayReadModel,
 } from '@tali/domain'
 import { AuthService } from './auth-service.js'
-import { conditionalJson, fail } from './http-envelope.js'
+import { conditionalJson, fail, noHouseholdFailure } from './http-envelope.js'
 import { PreferencesService } from './preferences-service.js'
-import { principalResolver } from './principal.js'
+import { principalResolver, requireHousehold } from './principal.js'
 import { TodayService, type TodayViewer } from './today-service.js'
 
 /**
@@ -42,12 +42,10 @@ export const TodayRoutes = HttpRouter.use(router =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
         const resolved = yield* principal(request)
-        if (resolved.context.householdId === null) {
-          return yield* fail(403, 'Forbidden', 'Join a household to see Today')
-        }
+        const householdId = yield* requireHousehold(resolved.context)
         const viewer: TodayViewer = {
           userId: resolved.context.user.id,
-          householdId: resolved.context.householdId,
+          householdId,
           timeZone: resolved.preferences.timeZone,
         }
         const sectionOrder = normalizeDashboardSectionOrder(
@@ -63,6 +61,7 @@ export const TodayRoutes = HttpRouter.use(router =>
         Effect.catchTags(
           {
             Unauthorized: () => fail(401, 'Unauthorized', 'No active session'),
+            NoHousehold: noHouseholdFailure,
           },
           // Encoding a bad payload is a server bug, not client input: 500.
           () => fail(500, 'InternalError', 'Unexpected server error', true),

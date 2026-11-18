@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test'
 import {
   jsonRequest,
+  register,
   seedDispatch,
   sessionWithHousehold,
   workerFetch,
@@ -63,6 +64,20 @@ describe('GET /reminders/inbox', () => {
   it('is 401 without a session', async () => {
     const response = await workerFetch('/reminders/inbox')
     expect(response.status).toBe(401)
+  })
+
+  it('answers the shared 409 NoHousehold for an account without a household', async () => {
+    // `register()` alone leaves the account household-less: the session is
+    // valid, so the one "requires household" verdict answers `409 NoHousehold`
+    // — not the old `401`, which claimed the session was missing.
+    const { cookie } = await register()
+    const response = await workerFetch('/reminders/inbox', {
+      headers: { cookie },
+    })
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({
+      error: { code: 'NoHousehold' },
+    })
   })
 })
 

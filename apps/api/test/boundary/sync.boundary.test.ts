@@ -1,7 +1,12 @@
 import { env } from 'cloudflare:workers'
 import { describe, expect, it } from 'vite-plus/test'
 import { uuidV7 } from '@tali/domain'
-import { jsonRequest, sessionWithHousehold, workerFetch } from './support.js'
+import {
+  jsonRequest,
+  register,
+  sessionWithHousehold,
+  workerFetch,
+} from './support.js'
 
 /**
  * `/sync/pull|push|bootstrap` through the Worker.
@@ -87,6 +92,19 @@ describe('GET /sync/pull', () => {
   it('is 401 without a session', async () => {
     const response = await workerFetch('/sync/pull?cursor=0')
     expect(response.status).toBe(401)
+  })
+
+  it('answers the shared 409 NoHousehold for an account without a household', async () => {
+    // The one "requires household" code every transport answers with; pinned
+    // here because the sync routes are where the code was first minted.
+    const { cookie } = await register()
+    const response = await workerFetch('/sync/pull?cursor=0', {
+      headers: { cookie },
+    })
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({
+      error: { code: 'NoHousehold' },
+    })
   })
 })
 

@@ -14,10 +14,12 @@ import {
 import { AuthService } from '../src/auth-service.js'
 import { PreferencesService } from '../src/preferences-service.js'
 import {
+  NoHousehold,
   principalFromToken,
   principalOf,
   principalResolver,
   profileDefaults,
+  requireHousehold,
   sessionFromToken,
   sessionOf,
   sessionResolver,
@@ -256,5 +258,19 @@ describe('bound resolvers', () => {
       sessionResolver(authStub())(requestWith(VALID_TOKEN)),
     )
     expect(context).toEqual(CONTEXT)
+  })
+})
+
+describe('requireHousehold', () => {
+  it('resolves the household the rest of the request runs against', async () => {
+    expect(await Effect.runPromise(requireHousehold(CONTEXT))).toBe(HOUSEHOLD)
+  })
+
+  it('fails with the one typed NoHousehold verdict when the account has none', async () => {
+    const error = await Effect.runPromise(
+      Effect.flip(requireHousehold({ ...CONTEXT, householdId: null })),
+    )
+    expect(error).toBeInstanceOf(NoHousehold)
+    expect(error._tag).toBe('NoHousehold')
   })
 })

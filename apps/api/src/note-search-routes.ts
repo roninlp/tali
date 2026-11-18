@@ -6,8 +6,8 @@ import {
   NoteSearchService,
   type NoteSearchViewer,
 } from './note-search-service.js'
-import { sessionResolver } from './principal.js'
-import { fail, json, requestUrl } from './http-envelope.js'
+import { sessionResolver, requireHousehold } from './principal.js'
+import { fail, json, noHouseholdFailure, requestUrl } from './http-envelope.js'
 
 /**
  * `GET /search/notes?q=…` — Persian full-text note search (ticket #41;
@@ -41,13 +41,7 @@ export const NoteSearchRoutes = HttpRouter.use(router =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
         const context = yield* sessionResolver(auth)(request)
-        if (context.householdId === null) {
-          return yield* fail(
-            403,
-            'Forbidden',
-            'Join a household to search notes',
-          )
-        }
+        const householdId = yield* requireHousehold(context)
 
         const url = requestUrl(request)
         const query = url.searchParams.get('q') ?? ''
@@ -57,7 +51,7 @@ export const NoteSearchRoutes = HttpRouter.use(router =>
 
         const viewer: NoteSearchViewer = {
           userId: context.user.id,
-          householdId: context.householdId,
+          householdId,
         }
 
         const model = yield* search.search(
@@ -73,6 +67,7 @@ export const NoteSearchRoutes = HttpRouter.use(router =>
         Effect.catchTags(
           {
             Unauthorized: () => fail(401, 'Unauthorized', 'No active session'),
+            NoHousehold: noHouseholdFailure,
           },
           // Encoding a bad payload is a server bug, not client input: 500.
           () => fail(500, 'InternalError', 'Unexpected server error', true),

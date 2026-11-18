@@ -1,6 +1,7 @@
-import { Effect } from 'effect'
+import { Data, Effect } from 'effect'
 import type { HttpServerRequest } from 'effect/http'
 import {
+  type HouseholdId,
   type PreferenceDefaults,
   type SessionContext,
   Unauthorized,
@@ -20,9 +21,12 @@ import { PreferencesService } from './preferences-service.js'
  * parsing, the `Unauthorized` failure and the preferences fallback live here
  * instead of being re-implemented per route.
  *
- * Authorization stays with the caller: whether a missing household is a `403`,
- * a `401`, a `409` or a type-specific forbidden error is a property of the
- * aggregate's contract, not of principal resolution.
+ * One rule is shared by every authenticated data edge — the account must have
+ * a household — so it lives here too, as a typed verdict
+ * (`requireHousehold`). Each transport decides only how to serialize that
+ * verdict: the RPC edge translates it into the aggregate's own forbidden tag
+ * (`reason: 'noHousehold'`), the plain-HTTP routes answer the shared
+ * `409 NoHousehold` envelope code.
  */
 
 /** A resolved session plus the preferences that shape its view of the data. */
@@ -92,6 +96,26 @@ export const principalFromToken = (
     const preferences = yield* preferencesOf(context)
     return { context, preferences }
   })
+
+/**
+ * The session's account has no household yet. One verdict, because one
+ * condition — "this request needs a household" — means the same thing on
+ * every edge; the transports differ only in how they serialize it.
+ */
+export class NoHousehold extends Data.TaggedError('NoHousehold') {}
+
+/**
+ * The one "requires household" rule: either the household the rest of the
+ * request runs against, or the shared `NoHousehold` verdict. Routes yield it
+ * right after principal resolution, so the condition is stated once instead
+ * of being re-worded per aggregate (`403 Forbidden`, `401 Unauthorized`, …).
+ */
+export const requireHousehold = (
+  context: SessionContext,
+): Effect.Effect<HouseholdId, NoHousehold> =>
+  context.householdId === null
+    ? Effect.fail(new NoHousehold())
+    : Effect.succeed(context.householdId)
 
 /**
  * The implementations a plain-HTTP route captures at layer scope.

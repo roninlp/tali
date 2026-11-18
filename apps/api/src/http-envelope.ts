@@ -59,6 +59,18 @@ export const fail = (
 ): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
   json(status, { error: { code, message, retryable, details } })
 
+/**
+ * The typed `NoHousehold` verdict (`principal.ts`) as the one plain-HTTP
+ * answer. A missing household is a state conflict, not an authorization
+ * failure: the session is valid, the account just has not joined or created
+ * a household yet. So the status is `409` and the code is the stable
+ * `NoHousehold` from `SYNC_ERROR_CODES` — the same answer every transport
+ * gives for "join or create a household first".
+ */
+export const noHouseholdFailure =
+  (): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
+    fail(409, 'NoHousehold', 'Join or create a household first')
+
 /** A request the client got wrong: 400 with the route's own message. */
 export const malformed =
   (

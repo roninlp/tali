@@ -776,8 +776,8 @@ describe('GET /week', () => {
       token: TOKEN_NO_HOUSEHOLD,
       anchor: ANCHOR,
     })
-    expect(noHousehold.status).toBe(403)
-    expect(noHousehold.body).toMatchObject({ error: { code: 'Forbidden' } })
+    expect(noHousehold.status).toBe(409)
+    expect(noHousehold.body).toMatchObject({ error: { code: 'NoHousehold' } })
 
     const bad = await week(h, { token: TOKEN_A, anchor: '2026-02-30' })
     expect(bad.status).toBe(400)
@@ -1128,7 +1128,8 @@ describe('GET /month', () => {
       token: TOKEN_NO_HOUSEHOLD,
       anchor: '2026-03-21',
     })
-    expect(noHousehold.status).toBe(403)
+    expect(noHousehold.status).toBe(409)
+    expect(noHousehold.body).toMatchObject({ error: { code: 'NoHousehold' } })
   })
 })
 
