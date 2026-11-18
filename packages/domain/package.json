@@ -19,6 +19,7 @@
     "temporal-polyfill": "^1.0.6"
   },
   "devDependencies": {
+    "fast-check": "^4.10.2",
     "typescript": "catalog:",
     "@tali/tsconfig": "workspace:*",
     "vite-plus": "catalog:"
