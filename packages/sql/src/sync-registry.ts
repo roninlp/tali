@@ -43,6 +43,7 @@ import {
 } from '@tali/domain'
 import { reminderFireAt, reminderTierFor } from '@tali/domain/reminder-policy'
 import { insertStatement, selectList, updateStatement } from './columns.js'
+import { LIST_TABLE } from './list-repo.js'
 import { PROJECT_TABLE } from './project-repo.js'
 import { TAG_TABLE } from './tag-repo.js'
 import { TASK_TABLE } from './task-repo.js'
@@ -1031,11 +1032,6 @@ const tagDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
 
 // ── List ──────────────────────────────────────────────────────────────────
 
-const LIST_COLUMNS =
-  `${META_COLUMNS}, type, title, description, color, icon, sort, ` +
-  `checked_placement AS checkedPlacement, last_writer_id AS lastWriterId, ` +
-  `created_at AS createdAt`
-
 const listSchemaCodec = withSchema<List>(List, row => ({
   id: String(row.id),
   type: 'list',
@@ -1076,8 +1072,8 @@ const listCodec = {
 
 const listDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'list',
-  table: 'lists',
-  select: LIST_COLUMNS,
+  table: LIST_TABLE.table,
+  select: selectList(LIST_TABLE, { syncManaged: true }),
   writable: new Map([
     ['title', isString],
     ['description', isNullableString],
@@ -1103,37 +1099,17 @@ const listDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     lastWriterId: context.userId,
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
-  insert: state => sql`
-    INSERT INTO lists
-      (id, type, title, description, owner_id, household_id, visibility,
-       color, icon, sort, checked_placement, last_writer_id,
-       created_at, updated_at, version, deleted_at)
-    VALUES
-      (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
-       ${encodeNullableText(state.data.description)}, ${state.ownerId},
-       ${state.householdId}, ${state.visibility},
-       ${encodeNullableText(state.data.color)}, ${encodeNullableText(state.data.icon)},
-       ${encodeText(state.data.sort)}, ${encodeText(state.data.checkedPlacement)},
-       ${encodeNullableText(state.data.lastWriterId)},
-       ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-       ${state.updatedAt}, ${state.version}, ${state.deletedAt})
-    ON CONFLICT DO NOTHING
-  `,
-  update: (state, expectedVersion) => sql`
-    UPDATE lists SET
-      title = ${encodeText(state.data.title)},
-      description = ${encodeNullableText(state.data.description)},
-      visibility = ${state.visibility},
-      color = ${encodeNullableText(state.data.color)},
-      icon = ${encodeNullableText(state.data.icon)},
-      sort = ${encodeText(state.data.sort)},
-      checked_placement = ${encodeText(state.data.checkedPlacement)},
-      last_writer_id = ${encodeNullableText(state.data.lastWriterId)},
-      updated_at = ${state.updatedAt},
-      version = ${state.version},
-      deleted_at = ${state.deletedAt}
-    WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `,
+  insert: state =>
+    insertStatement(sql, LIST_TABLE, {
+      values: syncValues(state),
+      onConflict: true,
+    }),
+  update: (state, expectedVersion) =>
+    updateStatement(sql, LIST_TABLE, {
+      id: state.entityId,
+      values: syncValues(state),
+      expectedVersion,
+    }),
 })
 
 // ── ListItem (legacy wire shape, dual-write) ──────────────────────────────
