@@ -12,7 +12,7 @@ import {
 } from '@tali/domain'
 import {
   makeSyncRegistry,
-  type SyncEntityDefinition,
+  type ResolvedSyncEntityDefinition,
   type SyncEntityState,
   type SyncIndexInput,
   type SyncRegistry,
@@ -148,7 +148,7 @@ export class SyncRepo extends Context.Service<SyncRepo>()('SyncRepo', {
 
     const definition = (
       entityType: SyncEntityType,
-    ): SyncEntityDefinition | undefined => registry.get(entityType)
+    ): ResolvedSyncEntityDefinition | undefined => registry.get(entityType)
 
     /**
      * Batch-hydrate entity rows behind feed/push references. Rows live in

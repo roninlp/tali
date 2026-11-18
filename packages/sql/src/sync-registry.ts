@@ -152,10 +152,16 @@ export interface SyncEntityDefinition {
   readonly table: string
   /** Trusted SELECT list: physical columns aliased to the camelCase wire names. */
   readonly select: string
-  /** Household/owner scoping columns (identical across aggregates today). */
-  readonly scope: SyncScopeColumns
-  /** Soft-delete tombstone column (`deleted_at` across aggregates today). */
-  readonly softDeleteColumn: string
+  /**
+   * Household/owner scoping columns (pull/bootstrap filtering). Optional: the
+   * registry defaults every aggregate to the shared set below.
+   */
+  readonly scope?: SyncScopeColumns
+  /**
+   * Soft-delete tombstone column. Optional: the registry defaults to
+   * `deleted_at`.
+   */
+  readonly softDeleteColumn?: string
   /** Client-patchable fields and their value guards. */
   readonly writable: ReadonlyMap<string, SyncFieldGuard>
   /**
@@ -179,8 +185,12 @@ export interface SyncEntityDefinition {
     data: Record<string, unknown>,
     meta: SyncEntityMeta,
   ) => Record<string, unknown>
-  /** Merge a patch into the stored data (§6 LWW + completion). */
-  readonly merge: (input: SyncMergeInput) => Record<string, unknown>
+  /**
+   * Merge a patch into the stored data (§6 LWW + completion). Optional: the
+   * registry defaults to the shared `mergeFields` LWW, which already honours
+   * this definition's `completion` rule.
+   */
+  readonly merge?: (input: SyncMergeInput) => Record<string, unknown>
   readonly insert: (state: SyncEntityState) => Statement.Statement<unknown>
   readonly update: (
     state: SyncEntityState,
@@ -310,9 +320,39 @@ export interface SyncSpawn {
 }
 
 export interface SyncRegistry {
-  readonly get: (entityType: SyncEntityType) => SyncEntityDefinition | undefined
-  readonly all: () => ReadonlyArray<SyncEntityDefinition>
+  readonly get: (
+    entityType: SyncEntityType,
+  ) => ResolvedSyncEntityDefinition | undefined
+  readonly all: () => ReadonlyArray<ResolvedSyncEntityDefinition>
 }
+
+/**
+ * A definition with the registry's defaults applied — what the sync engine,
+ * the purge and the services see.
+ *
+ * Authoring a definition only states what actually varies (`entityType`,
+ * `table`, `select`, the allowlist, the codecs and hooks); `makeSyncRegistry`
+ * fills in the fields every aggregate shares (#115).
+ */
+export type ResolvedSyncEntityDefinition = SyncEntityDefinition &
+  Required<
+    Pick<SyncEntityDefinition, 'scope' | 'softDeleteColumn' | 'merge'>
+  >
+
+/** The tombstone column every aggregate shares. */
+const SOFT_DELETE_COLUMN = 'deleted_at'
+
+/** Fill in the fields every aggregate carries the same way. */
+const withRegistryDefaults = (
+  definition: SyncEntityDefinition,
+): ResolvedSyncEntityDefinition => ({
+  ...definition,
+  scope: definition.scope ?? SYNC_SCOPE_COLUMNS,
+  softDeleteColumn: definition.softDeleteColumn ?? SOFT_DELETE_COLUMN,
+  // The shared field-level LWW already honours this definition's
+  // done-wins rule through its `completion`.
+  merge: definition.merge ?? (input => mergeFields(definition, input)),
+})
 
 // ── Value codecs (D1 has no boolean/nullable types beyond SQLite's affinity) ─
 
@@ -754,8 +794,6 @@ const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'task',
   table: 'tasks',
   select: TASK_COLUMNS,
-  scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: 'deleted_at',
   writable: TASK_WRITABLE,
   completion: TASK_COMPLETION,
   purge: purgeItemTagJoins(sql, 'task', 'tasks'),
@@ -926,8 +964,6 @@ const projectDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'project',
   table: 'projects',
   select: PROJECT_COLUMNS,
-  scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: 'deleted_at',
   writable: new Map([
     ['title', isString],
     ['color', isNullableString],
@@ -946,7 +982,6 @@ const projectDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     color: asText(patch.color),
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
-  merge: input => mergeFields({}, input),
   insert: state => sql`
     INSERT INTO projects
       (id, type, title, owner_id, household_id, visibility, color,
@@ -990,8 +1025,6 @@ const tagDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'tag',
   table: 'tags',
   select: TAG_COLUMNS,
-  scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: 'deleted_at',
   writable: new Map([
     ['name', isString],
     ['color', isNullableString],
@@ -1018,7 +1051,6 @@ const tagDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     color: asText(patch.color),
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
-  merge: input => mergeFields({}, input),
   insert: state => sql`
     INSERT INTO tags
       (id, type, name, owner_id, household_id, visibility, color,
@@ -1092,8 +1124,6 @@ const listDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'list',
   table: 'lists',
   select: LIST_COLUMNS,
-  scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: 'deleted_at',
   writable: new Map([
     ['title', isString],
     ['description', isNullableString],
@@ -1119,7 +1149,6 @@ const listDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     lastWriterId: context.userId,
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
-  merge: input => mergeFields({}, input),
   insert: state => sql`
     INSERT INTO lists
       (id, type, title, description, owner_id, household_id, visibility,
@@ -1252,8 +1281,6 @@ const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
     entityType: 'listItem',
     table: 'list_items',
     select: LIST_ITEM_COLUMNS,
-    scope: SYNC_SCOPE_COLUMNS,
-    softDeleteColumn: 'deleted_at',
     writable: new Map([
       ['title', isString],
       ['checked', isBoolean],
@@ -1390,8 +1417,6 @@ const noteDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'note',
   table: 'notes',
   select: NOTE_COLUMNS,
-  scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: 'deleted_at',
   writable: new Map([
     ['title', isString],
     ['body', isJson],
@@ -1422,7 +1447,6 @@ const noteDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     tagIds: Array.isArray(patch.tagIds) ? patch.tagIds : [],
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
-  merge: input => mergeFields({}, input),
   insert: state => sql`
     INSERT INTO notes
       (id, type, title, body, plain_text, owner_id, household_id, visibility,
@@ -1609,8 +1633,6 @@ const eventDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'event',
   table: 'events',
   select: EVENT_COLUMNS,
-  scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: 'deleted_at',
   writable: EVENT_WRITABLE,
   ...eventCodec,
   defaults: (patch, context) => ({
@@ -1633,8 +1655,8 @@ const eventDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
   /**
-   * The shared field-level LWW merge — the same one every other aggregate
-   * uses (`docs/sync-protocol-draft.md` §6).
+   * The merge is the registry's default — the shared field-level LWW every
+   * aggregate uses (`docs/sync-protocol-draft.md` §6).
    *
    * The timing is one unit: a patch that carries a timing replaces the whole
    * union (the merge applies the patch field by field, and `timing` is one
@@ -1646,7 +1668,6 @@ const eventDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
    * would let a stale offline device move an event to another day, which is
    * exactly the data loss the LWW rule exists to prevent.
    */
-  merge: input => mergeFields({}, input),
   insert: state => {
     const timing = eventTimingColumns(state.data)
     return sql`
@@ -1757,8 +1778,6 @@ const habitDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'habit',
   table: 'habits',
   select: HABIT_COLUMNS,
-  scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: 'deleted_at',
   writable: HABIT_WRITABLE,
   ...habitCodec,
   defaults: (patch, context) => {
@@ -1906,8 +1925,6 @@ const habitEntryDefinition = (
   entityType: 'habitEntry',
   table: 'habit_entries',
   select: HABIT_ENTRY_COLUMNS,
-  scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: 'deleted_at',
   writable: HABIT_ENTRY_WRITABLE,
   parent: {
     entityType: 'habit',
@@ -1946,9 +1963,10 @@ const habitEntryDefinition = (
     }
   },
   /**
-   * Plain field LWW. A logged day has no "completion wins" rule of its own:
-   * the later status the user chose is the one that stands, and `deletedAt`
-   * keeps the shared tombstone-wins rule from `mergeFields`.
+   * The merge is the registry's default: plain field LWW. A logged day has
+   * no "completion wins" rule of its own: the later status the user chose is
+   * the one that stands, and `deletedAt` keeps the shared tombstone-wins
+   * rule from `mergeFields`.
    *
    * That tombstone-wins rule is deliberate for the **offline sync** path, but
    * it is not how a tap re-logs a cleared day. #64's tap goes through
@@ -1957,7 +1975,6 @@ const habitEntryDefinition = (
    * a tombstone here is recovered by that explicit mutation (the client sync
    * engine calls it on a `tombstone`/`UniqueViolation` result).
    */
-  merge: input => mergeFields({}, input),
   insert: state => sql`
     INSERT INTO habit_entries
       (id, habit_id, owner_id, household_id, visibility, local_date,
@@ -2087,8 +2104,6 @@ const reminderDefinition = (
   entityType: 'reminder',
   table: 'reminders',
   select: REMINDER_COLUMNS,
-  scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: 'deleted_at',
   writable: REMINDER_WRITABLE,
   ...reminderCodec,
   defaults: (patch, context) => {
@@ -2258,8 +2273,6 @@ const occasionDefinition = (
   entityType: 'occasion',
   table: 'occasions',
   select: OCCASION_COLUMNS,
-  scope: SYNC_SCOPE_COLUMNS,
-  softDeleteColumn: 'deleted_at',
   writable: new Map([
     ['title', isString],
     ['originDate', isString],
@@ -2292,10 +2305,10 @@ const occasionDefinition = (
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
   /**
-   * The shared field-level LWW merge. The origin date is one field: a newer
-   * edit may move the annual anchor, and an older one must not.
+   * The merge is the registry's default — the shared field-level LWW. The
+   * origin date is one field: a newer edit may move the annual anchor, and
+   * an older one must not.
    */
-  merge: input => mergeFields({}, input),
   insert: state => sql`
     INSERT INTO occasions
       (id, type, title, owner_id, household_id, visibility, color,
@@ -2368,8 +2381,8 @@ export const makeSyncRegistry = (sql: SqlClient.SqlClient): SyncRegistry => {
     habitEntryDefinition(sql),
     reminderDefinition(sql),
     occasionDefinition(sql),
-  ]
-  const byType = new Map<SyncEntityType, SyncEntityDefinition>(
+  ].map(withRegistryDefaults)
+  const byType = new Map<SyncEntityType, ResolvedSyncEntityDefinition>(
     definitions.map(definition => [definition.entityType, definition]),
   )
   return {

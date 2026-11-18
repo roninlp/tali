@@ -30,7 +30,7 @@ import {
   type AppliedMutation,
   type EntityRef,
   type FeedRow,
-  type SyncEntityDefinition,
+  type ResolvedSyncEntityDefinition,
   type SyncEntityMeta,
   type SyncEntityState,
 } from '@tali/sql'
@@ -361,7 +361,7 @@ const sameData = (
  * when replaying an offline insert, but it can never rewrite it later.
  */
 const sanitizePatch = (
-  definition: SyncEntityDefinition,
+  definition: ResolvedSyncEntityDefinition,
   patch: Record<string, unknown>,
   options: { readonly allowCreatedAt: boolean },
 ): Record<string, unknown> => {
@@ -535,7 +535,7 @@ export class SyncService extends Context.Service<SyncService>()('SyncService', {
 
         /** Strict decode boundary for client-authored data. */
         const validate = (
-          definition: SyncEntityDefinition,
+          definition: ResolvedSyncEntityDefinition,
           data: Record<string, unknown>,
           meta: SyncEntityMeta,
           entry: PushEntry,
@@ -569,7 +569,7 @@ export class SyncService extends Context.Service<SyncService>()('SyncService', {
          * other entries in the push still apply and this one is rejected.
          */
         const validateEntry = (
-          definition: SyncEntityDefinition,
+          definition: ResolvedSyncEntityDefinition,
           data: Record<string, unknown>,
           meta: SyncEntityMeta,
           entry: PushEntry,
@@ -673,7 +673,7 @@ export class SyncService extends Context.Service<SyncService>()('SyncService', {
 
         /** Insert data for an offline create, validated against the aggregate. */
         const insertData = (
-          definition: SyncEntityDefinition,
+          definition: ResolvedSyncEntityDefinition,
           entry: PushEntry,
           patch: Record<string, unknown>,
         ): Effect.Effect<Record<string, unknown>, SyncInvalidPatch> =>
