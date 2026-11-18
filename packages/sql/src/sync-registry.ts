@@ -44,6 +44,7 @@ import {
 import { reminderFireAt, reminderTierFor } from '@tali/domain/reminder-policy'
 import { insertStatement, selectList, updateStatement } from './columns.js'
 import { LIST_TABLE } from './list-repo.js'
+import { LIST_ITEM_TABLE } from './planning-list-item-repo.js'
 import { PROJECT_TABLE } from './project-repo.js'
 import { TAG_TABLE } from './tag-repo.js'
 import { TASK_TABLE } from './task-repo.js'
@@ -1114,11 +1115,6 @@ const listDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
 
 // ── ListItem (legacy wire shape, dual-write) ──────────────────────────────
 
-const LIST_ITEM_COLUMNS =
-  `${META_COLUMNS}, type, title, checked, sort_order AS sortOrder, list_id AS listId, ` +
-  `checked_at AS checkedAt, color, tag_ids AS tagIds, ` +
-  `last_writer_id AS lastWriterId, created_at AS createdAt`
-
 /**
  * Keep the scaffold wire names (`title`/`checked`/`sortOrder`) and the real
  * #33 names (`name`/`done`/`ordering`) in lockstep. #39 adds the real names to
@@ -1209,8 +1205,8 @@ const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
   ): Record<string, unknown> => data
   return {
     entityType: 'listItem',
-    table: 'list_items',
-    select: LIST_ITEM_COLUMNS,
+    table: LIST_ITEM_TABLE.table,
+    select: selectList(LIST_ITEM_TABLE, { syncManaged: true }),
     writable: new Map([
       ['title', isString],
       ['checked', isBoolean],
@@ -1279,44 +1275,19 @@ const listItemDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => {
           : null
       return normalizeListItem(next)
     },
-    // Dual-write: scaffold columns (wire) + real ListItem columns (#33/#39).
-    insert: state => sql`
-      INSERT INTO list_items
-        (id, title, checked, sort_order, version, created_at, updated_at, deleted_at,
-         owner_id, visibility, household_id,
-         type, list_id, name, done, ordering, checked_at, color, tag_ids, last_writer_id)
-      VALUES
-        (${state.entityId}, ${encodeText(state.data.title)},
-         ${encodeBit(state.data.checked)}, ${encodeInt(state.data.sortOrder)},
-         ${state.version}, ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-         ${state.updatedAt}, ${state.deletedAt}, ${state.ownerId}, ${state.visibility},
-         ${state.householdId}, ${state.entityType},
-         ${encodeNullableText(state.data.listId)}, ${encodeText(state.data.title)},
-         ${encodeBit(state.data.checked)}, ${encodeInt(state.data.sortOrder)},
-         ${encodeNullableText(state.data.checkedAt)},
-         ${encodeNullableText(state.data.color)}, ${encodeJson(state.data.tagIds)},
-         ${encodeNullableText(state.data.lastWriterId)})
-      ON CONFLICT DO NOTHING
-    `,
-    update: (state, expectedVersion) => sql`
-      UPDATE list_items SET
-        title = ${encodeText(state.data.title)},
-        checked = ${encodeBit(state.data.checked)},
-        sort_order = ${encodeInt(state.data.sortOrder)},
-        visibility = ${state.visibility},
-        version = ${state.version},
-        updated_at = ${state.updatedAt},
-        deleted_at = ${state.deletedAt},
-        list_id = ${encodeNullableText(state.data.listId)},
-        name = ${encodeText(state.data.title)},
-        done = ${encodeBit(state.data.checked)},
-        ordering = ${encodeInt(state.data.sortOrder)},
-        checked_at = ${encodeNullableText(state.data.checkedAt)},
-        color = ${encodeNullableText(state.data.color)},
-        tag_ids = ${encodeJson(state.data.tagIds)},
-        last_writer_id = ${encodeNullableText(state.data.lastWriterId)}
-      WHERE id = ${state.entityId} AND version = ${expectedVersion}
-    `,
+    // Dual-write: the descriptor's mirrors write the scaffold columns (wire
+    // shape) and the real ListItem columns (#33/#39) from the same fields.
+    insert: state =>
+      insertStatement(sql, LIST_ITEM_TABLE, {
+        values: syncValues(state),
+        onConflict: true,
+      }),
+    update: (state, expectedVersion) =>
+      updateStatement(sql, LIST_ITEM_TABLE, {
+        id: state.entityId,
+        values: syncValues(state),
+        expectedVersion,
+      }),
   }
 }
 
