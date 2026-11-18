@@ -8,8 +8,8 @@ import {
   type UserId,
   isEventCaptureDraft,
   localDateIn,
-  reminderFireAt,
 } from '@tali/domain'
+import { reminderFireAt } from '@tali/domain/reminder-policy'
 import {
   CaptureService,
   CaptureServiceLive,

@@ -1,7 +1,6 @@
 import { Context, Effect, Layer } from 'effect'
 import { SqlError } from 'effect/sql'
 import {
-  DELIVERY_HORIZON_MINUTES,
   DEFAULT_NOTIFICATION_SNOOZE_MINUTES,
   REMINDER_KIND_LABELS,
   type LocalDate,
@@ -11,6 +10,7 @@ import {
   type ReminderId,
   type UserId,
 } from '@tali/domain'
+import { DELIVERY_HORIZON_MINUTES } from '@tali/domain/reminder-policy'
 import type { PushSubscription } from '@tali/domain'
 import { PushSubscriptionRepo, ReminderDispatchRepo, SyncRepo } from '@tali/sql'
 import { pushTopic, pushTtlSeconds } from './push-crypto.js'

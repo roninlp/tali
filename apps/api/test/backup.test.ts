@@ -8,7 +8,7 @@ import {
   makeBackupManifest,
   parseBackupManifest,
   planBackupRetention,
-} from '@tali/domain'
+} from '@tali/domain/backup'
 import { runD1Backup, sha256Hex } from '../src/d1-backup.js'
 import { renderSqlDump } from '../src/d1-dump.js'
 import { FakeD1 } from './fake-d1.js'
