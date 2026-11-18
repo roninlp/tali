@@ -113,30 +113,25 @@ export type PageSliceWithOutMessage<
 
 /** The folds and subscriptions one slice produces: the shape the root's
  *  `update` arms, route entries, and subscription aggregate consume. */
-export type PageWiring<
-  ParentModel,
-  ParentMessage,
-  ChildMessage,
-  Requirements,
-> = Readonly<{
-  /** The page's `update` with its Inputs bound; reads as the old
-   *  `fold*Message` arms. */
-  foldMessage: (
-    model: ParentModel,
-    message: ChildMessage,
-  ) => Update.Return<ParentModel, ParentMessage, Requirements>
-  /** The page's entry capability with its Inputs bound, run on route
-   *  entry. */
-  foldEntered: (
-    model: ParentModel,
-  ) => Update.Return<ParentModel, ParentMessage, Requirements>
-  /** The child's subscriptions, gated by the slice's condition, if the page
-   *  owns any. */
-  subscriptions: Subscription.Subscriptions<
-    ParentModel,
-    ParentMessage
-  > | undefined
-}>
+export type PageWiring<ParentModel, ParentMessage, ChildMessage, Requirements> =
+  Readonly<{
+    /** The page's `update` with its Inputs bound; reads as the old
+     *  `fold*Message` arms. */
+    foldMessage: (
+      model: ParentModel,
+      message: ChildMessage,
+    ) => Update.Return<ParentModel, ParentMessage, Requirements>
+    /** The page's entry capability with its Inputs bound, run on route
+     *  entry. */
+    foldEntered: (
+      model: ParentModel,
+    ) => Update.Return<ParentModel, ParentMessage, Requirements>
+    /** The child's subscriptions, gated by the slice's condition, if the page
+     *  owns any. */
+    subscriptions:
+      | Subscription.Subscriptions<ParentModel, ParentMessage>
+      | undefined
+  }>
 
 // FOLD
 
@@ -148,7 +143,9 @@ const pageSubscriptions = <
 >(
   field: ChildField<ParentModel, ChildModel>,
   toParentMessage: (message: ChildMessage) => ParentMessage,
-  pageSubs: PageSlotSubscriptions<ParentModel, ChildModel, ChildMessage> | undefined,
+  pageSubs:
+    | PageSlotSubscriptions<ParentModel, ChildModel, ChildMessage>
+    | undefined,
 ): Subscription.Subscriptions<ParentModel, ParentMessage> | undefined => {
   if (pageSubs === undefined) {
     return undefined
@@ -156,9 +153,7 @@ const pageSubscriptions = <
 
   return Subscription.lift(pageSubs.child)<ParentModel, ParentMessage>({
     read: (model: ParentModel) =>
-      pageSubs.when(model)
-        ? Option.some(field.field(model))
-        : Option.none(),
+      pageSubs.when(model) ? Option.some(field.field(model)) : Option.none(),
     toParentMessage,
   })
 }
@@ -182,6 +177,7 @@ export const pageFold = <
   >,
 ): PageWiring<ParentModel, ParentMessage, ChildMessage, ChildRequirements> => {
   type MessageInput = Readonly<{ message: ChildMessage; inputs: ChildInputs }>
+
   type EnteredInput = Readonly<{ inputs: ChildInputs }>
 
   const foldPage = Update.foldChild({
@@ -242,6 +238,7 @@ export const pageFoldWithOutMessage = <
   ChildRequirements | OutStepRequirements
 > => {
   type MessageInput = Readonly<{ message: ChildMessage; inputs: ChildInputs }>
+
   type EnteredInput = Readonly<{ inputs: ChildInputs }>
 
   const foldPage = Update.foldChild({

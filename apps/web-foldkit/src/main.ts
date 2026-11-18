@@ -20,6 +20,7 @@ import * as Auth from './auth'
 import { GuardDecision, guardRoute, landingPath, landingRoute } from './guard'
 import { PushEnvironment } from './lib/push/service-worker'
 import { TimestampMillis } from './lib/schema-primitives'
+import { pageFold, pageFoldWithOutMessage } from './page-slice'
 import * as Calendar from './page/calendar'
 import { todayIn } from './page/calendar-model'
 import * as Capture from './page/capture'
@@ -33,7 +34,6 @@ import * as Reminders from './page/reminders'
 import * as Tasks from './page/tasks'
 import { TaskViewSettings } from './page/tasks-model'
 import * as Today from './page/today'
-import { pageFold, pageFoldWithOutMessage } from './page-slice'
 import * as Preferences from './preferences'
 import { Preferences as PreferencesRow } from './preferences-model'
 import * as Push from './push'
@@ -1075,9 +1075,9 @@ const enterNotesNote = (model: Model, noteId: NoteId): UpdateReturn =>
  * types, so a generic fold cannot assemble the `h.submodel` call.
  *
  * Screens that serve several routes off one Submodel (lists, notes), drive
- * the session from their OutMessages (login, register, household), take no
- * Inputs (reminders), or compose a section of several Submodels (settings)
- * do not fit the slice shape and stay hand-wired below.
+ * the session from their OutMessages (login, register, household), or
+ * compose a section of several Submodels (reminders, settings) do not fit
+ * the slice shape and stay hand-wired below.
  */
 const pages = {
   today: pageFoldWithOutMessage({
