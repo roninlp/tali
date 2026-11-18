@@ -341,18 +341,18 @@ export class ListService extends Context.Service<ListService>()('ListService', {
       clientMutationId: string,
       expectedId?: List['id'],
     ): Effect.Effect<Option.Option<List>, ListServiceError> =>
-      Effect.gen(function* () {
-        const prior = yield* appliedMutations(viewer, [clientMutationId])
-        const row = prior.get(clientMutationId)
-        if (row === undefined) return Option.none()
-        if (kit.reusedMutationId(row, { entityType: 'list', id: expectedId })) {
-          return yield* kit.reusedMutationIdError(expectedId ?? row.entityId)
-        }
+      kit.replayGuard({
+        householdId: viewer.householdId,
+        clientMutationId,
+        entityType: 'list',
+        expectedId,
         // Same household/owner rules as any read, but a delete replay needs
         // the stored tombstone back.
-        return Option.some(
-          yield* readList(viewer, row.entityId as List['id'], true),
-        )
+        read: entityId =>
+          Effect.map(
+            readList(viewer, entityId as List['id'], true),
+            Option.some,
+          ),
       })
 
     const replayItem = (
@@ -360,18 +360,16 @@ export class ListService extends Context.Service<ListService>()('ListService', {
       clientMutationId: string,
       expectedId?: ListItem['id'],
     ): Effect.Effect<Option.Option<ListItem>, ListServiceError> =>
-      Effect.gen(function* () {
-        const prior = yield* appliedMutations(viewer, [clientMutationId])
-        const row = prior.get(clientMutationId)
-        if (row === undefined) return Option.none()
-        if (
-          kit.reusedMutationId(row, { entityType: 'listItem', id: expectedId })
-        ) {
-          return yield* kit.reusedMutationIdError(expectedId ?? row.entityId)
-        }
-        return Option.some(
-          yield* readItem(viewer, row.entityId as ListItem['id'], true),
-        )
+      kit.replayGuard({
+        householdId: viewer.householdId,
+        clientMutationId,
+        entityType: 'listItem',
+        expectedId,
+        read: entityId =>
+          Effect.map(
+            readItem(viewer, entityId as ListItem['id'], true),
+            Option.some,
+          ),
       })
 
     const listItems = (

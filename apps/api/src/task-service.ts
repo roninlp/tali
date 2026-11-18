@@ -285,13 +285,6 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
     const tagState = (tag: Tag): SyncEntityState => kit.stateOf('tag', tag)
 
     /**
-     * The ledger row for one mutation id, if this household already applied it.
-     * Household-scoped exactly like the sync push (`findApplied`).
-     */
-    const appliedMutation = (viewer: TaskViewer, clientMutationId: string) =>
-      kit.appliedMutation(viewer.householdId, clientMutationId)
-
-    /**
      * One entity mutation: the CAS entity write, gated feed append, gated
      * ledger row, tag-join statements and the #38 recurrence successor — one D1
      * batch. Returns whether this `clientMutationId` is now recorded, i.e. the
@@ -410,26 +403,15 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
       clientMutationId: string,
       expectedId?: Task['id'],
     ): Effect.Effect<Option.Option<Task>, TaskServiceError> =>
-      Effect.gen(function* () {
-        const row = yield* appliedMutation(viewer, clientMutationId)
-        if (Option.isNone(row)) return Option.none()
-        if (
-          kit.reusedMutationId(row.value, {
-            entityType: 'task',
-            id: expectedId,
-          })
-        ) {
-          return yield* kit.reusedMutationIdError(
-            expectedId ?? row.value.entityId,
-          )
-        }
+      kit.replayGuard({
+        householdId: viewer.householdId,
+        clientMutationId,
+        entityType: 'task',
+        expectedId,
         // Same household/owner rules as any other read: a mutation id must
         // never hand back another member's private row.
-        const current = yield* loadTask(
-          viewer,
-          row.value.entityId as Task['id'],
-        )
-        return Option.some(current)
+        read: entityId =>
+          Effect.map(loadTask(viewer, entityId as Task['id']), Option.some),
       })
 
     const loadTask = (
@@ -459,35 +441,30 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
       clientMutationId: string,
       expectedId?: Project['id'],
     ): Effect.Effect<Option.Option<Project>, TaskServiceError> =>
-      Effect.gen(function* () {
-        const row = yield* appliedMutation(viewer, clientMutationId)
-        if (Option.isNone(row)) return Option.none()
-        if (
-          kit.reusedMutationId(row.value, {
-            entityType: 'project',
-            id: expectedId,
-          })
-        ) {
-          return yield* kit.reusedMutationIdError(
-            expectedId ?? row.value.entityId,
-          )
-        }
-        const id = row.value.entityId as Project['id']
-        const found = yield* projects.findById(id).pipe(Effect.orDie)
-        if (Option.isNone(found) || found.value.deletedAt !== null) {
-          return yield* new ProjectNotFound({ id })
-        }
-        const project = found.value
-        if (project.householdId !== viewer.householdId) {
-          return yield* new TaskForbidden({ id, reason: 'household' })
-        }
-        if (
-          project.visibility === 'private' &&
-          project.ownerId !== viewer.userId
-        ) {
-          return yield* new TaskForbidden({ id, reason: 'private' })
-        }
-        return Option.some(project)
+      kit.replayGuard({
+        householdId: viewer.householdId,
+        clientMutationId,
+        entityType: 'project',
+        expectedId,
+        read: entityId =>
+          Effect.gen(function* () {
+            const id = entityId as Project['id']
+            const found = yield* projects.findById(id).pipe(Effect.orDie)
+            if (Option.isNone(found) || found.value.deletedAt !== null) {
+              return yield* new ProjectNotFound({ id })
+            }
+            const project = found.value
+            if (project.householdId !== viewer.householdId) {
+              return yield* new TaskForbidden({ id, reason: 'household' })
+            }
+            if (
+              project.visibility === 'private' &&
+              project.ownerId !== viewer.userId
+            ) {
+              return yield* new TaskForbidden({ id, reason: 'private' })
+            }
+            return Option.some(project)
+          }),
       })
 
     const replayTag = (
@@ -495,29 +472,27 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
       clientMutationId: string,
       expectedId?: Tag['id'],
     ): Effect.Effect<Option.Option<Tag>, TaskServiceError> =>
-      Effect.gen(function* () {
-        const row = yield* appliedMutation(viewer, clientMutationId)
-        if (Option.isNone(row)) return Option.none()
-        if (
-          kit.reusedMutationId(row.value, { entityType: 'tag', id: expectedId })
-        ) {
-          return yield* kit.reusedMutationIdError(
-            expectedId ?? row.value.entityId,
-          )
-        }
-        const id = row.value.entityId as Tag['id']
-        const found = yield* tags.findById(id).pipe(Effect.orDie)
-        if (Option.isNone(found) || found.value.deletedAt !== null) {
-          return yield* new TagNotFound({ id })
-        }
-        const tag = found.value
-        if (tag.householdId !== viewer.householdId) {
-          return yield* new TaskForbidden({ id, reason: 'household' })
-        }
-        if (tag.visibility === 'private' && tag.ownerId !== viewer.userId) {
-          return yield* new TaskForbidden({ id, reason: 'private' })
-        }
-        return Option.some(tag)
+      kit.replayGuard({
+        householdId: viewer.householdId,
+        clientMutationId,
+        entityType: 'tag',
+        expectedId,
+        read: entityId =>
+          Effect.gen(function* () {
+            const id = entityId as Tag['id']
+            const found = yield* tags.findById(id).pipe(Effect.orDie)
+            if (Option.isNone(found) || found.value.deletedAt !== null) {
+              return yield* new TagNotFound({ id })
+            }
+            const tag = found.value
+            if (tag.householdId !== viewer.householdId) {
+              return yield* new TaskForbidden({ id, reason: 'household' })
+            }
+            if (tag.visibility === 'private' && tag.ownerId !== viewer.userId) {
+              return yield* new TaskForbidden({ id, reason: 'private' })
+            }
+            return Option.some(tag)
+          }),
       })
 
     const requireProject = (

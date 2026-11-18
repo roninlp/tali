@@ -226,11 +226,6 @@ export class ReminderService extends Context.Service<ReminderService>()(
       const reminderState = (reminder: Reminder): SyncEntityState =>
         kit.stateOf('reminder', reminder)
 
-      const appliedMutation = (
-        viewer: ReminderViewer,
-        clientMutationId: string,
-      ) => kit.appliedMutation(viewer.householdId, clientMutationId)
-
       /** Read one reminder with the standard scope rules. */
       const readReminder = (
         viewer: ReminderViewer,
@@ -255,25 +250,16 @@ export class ReminderService extends Context.Service<ReminderService>()(
         clientMutationId: string,
         expectedId?: ReminderId,
       ): Effect.Effect<Option.Option<Reminder>, ReminderServiceError> =>
-        Effect.gen(function* () {
-          const row = yield* appliedMutation(viewer, clientMutationId)
-          if (Option.isNone(row)) return Option.none()
-          if (
-            kit.reusedMutationId(row.value, {
-              entityType: 'reminder',
-              id: expectedId,
-            })
-          ) {
-            return yield* kit.reusedMutationIdError(
-              expectedId ?? row.value.entityId,
-            )
-          }
-          const current = yield* readReminder(
-            viewer,
-            row.value.entityId as ReminderId,
-            true,
-          )
-          return Option.some(current)
+        kit.replayGuard({
+          householdId: viewer.householdId,
+          clientMutationId,
+          entityType: 'reminder',
+          expectedId,
+          read: entityId =>
+            Effect.map(
+              readReminder(viewer, entityId as ReminderId, true),
+              Option.some,
+            ),
         })
 
       /**

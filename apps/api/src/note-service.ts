@@ -169,9 +169,6 @@ export class NoteService extends Context.Service<NoteService>()('NoteService', {
     /** The aggregate through the same validation boundary the sync push uses. */
     const noteState = (note: Note): SyncEntityState => kit.stateOf('note', note)
 
-    const appliedMutation = (viewer: NoteViewer, clientMutationId: string) =>
-      kit.appliedMutation(viewer.householdId, clientMutationId)
-
     /**
      * One note mutation: CAS entity write, gated feed append, gated ledger row,
      * the search index and then tag-join statements — one D1 batch. Returns true
@@ -257,25 +254,13 @@ export class NoteService extends Context.Service<NoteService>()('NoteService', {
       clientMutationId: string,
       expectedId?: NoteId,
     ): Effect.Effect<Option.Option<Note>, NoteServiceError> =>
-      Effect.gen(function* () {
-        const row = yield* appliedMutation(viewer, clientMutationId)
-        if (Option.isNone(row)) return Option.none()
-        if (
-          kit.reusedMutationId(row.value, {
-            entityType: 'note',
-            id: expectedId,
-          })
-        ) {
-          return yield* kit.reusedMutationIdError(
-            expectedId ?? row.value.entityId,
-          )
-        }
-        const current = yield* readNote(
-          viewer,
-          row.value.entityId as NoteId,
-          true,
-        )
-        return Option.some(current)
+      kit.replayGuard({
+        householdId: viewer.householdId,
+        clientMutationId,
+        entityType: 'note',
+        expectedId,
+        read: entityId =>
+          Effect.map(readNote(viewer, entityId as NoteId, true), Option.some),
       })
 
     const create = (

@@ -33,6 +33,10 @@ import type {
  * one) would have been silently skipped by the service path. The kit always
  * asks the registry.
  *
+ * The kit also owns the read side of a replay (`replayGuard`): ledger row for
+ * the mutation id, reuse refusal, then the service's scoped re-read of the row
+ * it recorded — the same shape every aggregate service carried privately.
+ *
  * The gating rules it preserves are the ones the primitives document: the feed
  * row is appended only when the entity write changed a row (`changes() = 1`),
  * the ledger row is gated on the feed append (its `seq` is the feed row just
@@ -160,6 +164,24 @@ export interface CommitOneInput {
   ) => ReadonlyArray<Statement.Statement<unknown>>
 }
 
+/** One replay guard query: what the caller knows, and how it re-reads. */
+export interface ReplayGuardInput<A, E> {
+  readonly householdId: string
+  readonly clientMutationId: string
+  /** The aggregate the mutation must have written. */
+  readonly entityType: SyncEntityType
+  /** The row the mutation must have written, when the caller knows it. */
+  readonly expectedId?: string
+  /**
+   * Re-read the committed row through the service's scoped read, so a replay
+   * answers with current state under the caller's visibility rules — a
+   * mutation id may never hand back another member's private row. `none` means
+   * the row is gone for this caller (a hard-purged linked task), so the caller
+   * can retry instead of failing forever.
+   */
+  readonly read: (entityId: string) => Effect.Effect<Option.Option<A>, E>
+}
+
 export const makeSyncKit = <E>(config: SyncKitConfig<E>) => {
   const { sync, invalid } = config
 
@@ -233,6 +255,37 @@ export const makeSyncKit = <E>(config: SyncKitConfig<E>) => {
       'clientMutationId',
       'this mutation id was already applied to a different change',
     )
+
+  /**
+   * The replay guard: the same mutation id already committed (lost response).
+   *
+   * Every aggregate service carried a private copy of this shape; folded here:
+   * read the ledger row for the id, refuse an id that names another aggregate
+   * or row (`reusedMutationId`), then re-read the row it recorded through the
+   * service's scoped read, so a retry after a lost response reads exactly
+   * like the original call.
+   */
+  const replayGuard = <A>(
+    input: ReplayGuardInput<A, E>,
+  ): Effect.Effect<Option.Option<A>, E> =>
+    Effect.gen(function* () {
+      const row = yield* appliedMutation(
+        input.householdId,
+        input.clientMutationId,
+      )
+      if (Option.isNone(row)) return Option.none()
+      if (
+        reusedMutationId(row.value, {
+          entityType: input.entityType,
+          id: input.expectedId,
+        })
+      ) {
+        return yield* reusedMutationIdError(
+          input.expectedId ?? row.value.entityId,
+        )
+      }
+      return yield* input.read(row.value.entityId)
+    })
 
   /**
    * The statements for a set of entries, in batch order.
@@ -427,6 +480,7 @@ export const makeSyncKit = <E>(config: SyncKitConfig<E>) => {
     appliedMutation,
     reusedMutationId,
     reusedMutationIdError,
+    replayGuard,
     entryStatements,
     commitEntries,
     tryCommitEntries,

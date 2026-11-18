@@ -850,26 +850,27 @@ export class OccasionService extends Context.Service<OccasionService>()(
         Option.Option<OccasionPreparationShape>,
         OccasionServiceError
       > =>
-        Effect.gen(function* () {
-          const row = yield* appliedMutation(viewer, input.clientMutationId)
-          if (Option.isNone(row)) return Option.none()
-          if (kit.reusedMutationId(row.value, { entityType: 'task' })) {
-            return yield* kit.reusedMutationIdError(row.value.entityId)
-          }
-          const occasion = yield* readOccasion(viewer, input.id, true)
-          const taskId = (occasion.preparationTaskId ??
-            row.value.entityId) as TaskId
-          const found = yield* tasks.findById(taskId).pipe(Effect.orDie)
-          if (Option.isNone(found)) {
-            // The linked task was hard-purged; treat it as absent so the caller
-            // can prepare again instead of failing the retry forever.
-            return Option.none()
-          }
-          return Option.some({
-            occasion,
-            task: found.value,
-            created: false,
-          })
+        kit.replayGuard({
+          householdId: viewer.householdId,
+          clientMutationId: input.clientMutationId,
+          entityType: 'task',
+          read: entityId =>
+            Effect.gen(function* () {
+              const occasion = yield* readOccasion(viewer, input.id, true)
+              const taskId = (occasion.preparationTaskId ?? entityId) as TaskId
+              const found = yield* tasks.findById(taskId).pipe(Effect.orDie)
+              if (Option.isNone(found)) {
+                // The linked task was hard-purged; treat it as absent so the
+                // caller can prepare again instead of failing the retry
+                // forever.
+                return Option.none()
+              }
+              return Option.some({
+                occasion,
+                task: found.value,
+                created: false,
+              })
+            }),
         })
 
       const prepareTask = (
