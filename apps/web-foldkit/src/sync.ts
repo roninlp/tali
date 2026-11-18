@@ -20,9 +20,9 @@ import { defineTaggedUnion } from 'foldkit/schema'
 import { modifyFields } from 'foldkit/struct'
 
 import {
-  FAILED_REFRESH_INTERVAL_MS,
   SyncRejected,
   createSyncEngine,
+  shouldRefreshFailed,
   syncDelayMs,
 } from '@tali/sync-client'
 
@@ -167,16 +167,6 @@ const tryStore = <A>(run: () => Promise<A>): Effect.Effect<A, string> =>
     catch: cause => storeErrorMessage(cause),
   })
 
-const shouldRefreshFailed = (
-  pendingBefore: number,
-  pendingAfter: number,
-  failedRefreshedAt: number,
-  now: number,
-): boolean =>
-  failedRefreshedAt === 0 ||
-  pendingAfter < pendingBefore ||
-  now - failedRefreshedAt >= FAILED_REFRESH_INTERVAL_MS
-
 export const ReadMirror = Command.define('ReadMirror', {
   args: { pendingBefore: Schema.Int, failedRefreshedAt: TimestampMillis },
   messages: [Message.SucceededReadMirror, Message.FailedReadMirror],
@@ -186,12 +176,12 @@ export const ReadMirror = Command.define('ReadMirror', {
       const pending = yield* tryStore(() => store.pendingCount())
       const now = yield* Clock.currentTimeMillis
 
-      const maybeFailed = shouldRefreshFailed(
+      const maybeFailed = shouldRefreshFailed({
         pendingBefore,
-        pending,
-        failedRefreshedAt,
+        pendingAfter: pending,
+        lastFailedScan: failedRefreshedAt,
         now,
-      )
+      })
         ? Option.some(yield* tryStore(() => store.failedCount()))
         : Option.none()
 
@@ -234,12 +224,12 @@ export const RunSyncPass = Command.define('RunSyncPass', {
       const pending = yield* tryStore(() => store.pendingCount())
       const now = yield* Clock.currentTimeMillis
 
-      const maybeFailed = shouldRefreshFailed(
+      const maybeFailed = shouldRefreshFailed({
         pendingBefore,
-        pending,
-        failedRefreshedAt,
+        pendingAfter: pending,
+        lastFailedScan: failedRefreshedAt,
         now,
-      )
+      })
         ? Option.some(yield* tryStore(() => store.failedCount()))
         : Option.none()
 

@@ -19,7 +19,8 @@
  * The Foldkit runtime owns the timer chain: a Subscription restarts its sleep
  * whenever the Model's cadence dependencies change, and the `tick` counter
  * makes every emitted pass restart the cycle. This module only derives the
- * delay, so the table is testable without a clock or a browser.
+ * delay and the failed-scan rule, so both are testable without a clock or a
+ * browser.
  */
 
 export type SyncVisibility = 'visible' | 'hidden'
@@ -48,6 +49,16 @@ export interface SyncCadenceState {
   readonly now: number
 }
 
+export interface FailedScanState {
+  /** Outbox size before the pass that just ran. */
+  readonly pendingBefore: number
+  /** Outbox size after the pass that just ran. */
+  readonly pendingAfter: number
+  /** Epoch ms of the last failed re-scan; 0 when never scanned. */
+  readonly lastFailedScan: number
+  readonly now: number
+}
+
 /** The failure delay before jitter: 1s, 2s, 4s, … capped at 30s. */
 const failureBaseMs = (failures: number): number =>
   Math.min(MAX_RETRY_MS, FAILURE_RETRY_MS * 2 ** (failures - 1))
@@ -72,3 +83,14 @@ export const syncDelayMs = (
   const active = state.now - state.lastActivity < ACTIVITY_WINDOW_MS
   return active ? ACTIVE_INTERVAL_MS : IDLE_INTERVAL_MS
 }
+
+/**
+ * Whether the pass that just ran may re-scan the mirror for rejected rows.
+ * Failure counts are advisory, so the scan is worth its cost only on the first
+ * pass, after a pass flushed the outbox (rejections surface as writes land),
+ * or once the interval has elapsed. Pure like the delay table above.
+ */
+export const shouldRefreshFailed = (state: FailedScanState): boolean =>
+  state.lastFailedScan === 0 ||
+  state.pendingAfter < state.pendingBefore ||
+  state.now - state.lastFailedScan >= FAILED_REFRESH_INTERVAL_MS
