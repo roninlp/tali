@@ -20,6 +20,7 @@ import * as Auth from './auth'
 import { GuardDecision, guardRoute, landingPath, landingRoute } from './guard'
 import { PushEnvironment } from './lib/push/service-worker'
 import { TimestampMillis } from './lib/schema-primitives'
+import { pageFold, pageFoldWithOutMessage } from './page-slice'
 import * as Calendar from './page/calendar'
 import { todayIn } from './page/calendar-model'
 import * as Capture from './page/capture'
@@ -282,29 +283,14 @@ const toPreferencesMessage = (message: Preferences.Message): Message =>
 const toPushMessage = (message: Push.Message): Message =>
   Message.GotPushMessage({ message })
 
-const toTodayMessage = (message: Today.Message): Message =>
-  Message.GotTodayMessage({ message })
-
 const toListsMessage = (message: Lists.Message): Message =>
   Message.GotListsMessage({ message })
 
 const toNotesMessage = (message: Notes.Message): Message =>
   Message.GotNotesMessage({ message })
 
-const toTasksMessage = (message: Tasks.Message): Message =>
-  Message.GotTasksMessage({ message })
-
-const toHabitsMessage = (message: Habits.Message): Message =>
-  Message.GotHabitsMessage({ message })
-
-const toCalendarMessage = (message: Calendar.Message): Message =>
-  Message.GotCalendarMessage({ message })
-
 const toRemindersMessage = (message: Reminders.Message): Message =>
   Message.GotRemindersMessage({ message })
-
-const toCaptureMessage = (message: Capture.Message): Message =>
-  Message.GotCaptureMessage({ message })
 
 const toSettingsMessage = (message: Settings.Message): Message =>
   Message.GotSettingsMessage({ message })
@@ -463,7 +449,8 @@ const applyTasksSession = Update.foldChild({
   read: (model: Model) => Option.some(model.tasks),
   write: (model: Model, nextTasks: Tasks.Model) =>
     modifyFields(model, { tasks: () => nextTasks }),
-  toParentMessage: toTasksMessage,
+  toParentMessage: (message: Tasks.Message) =>
+    Message.GotTasksMessage({ message }),
 })
 
 /**
@@ -812,11 +799,6 @@ const foldSync = Update.foldChild({
     Message.GotSyncMessage({ message }),
 })
 
-type TodayFoldInput = Readonly<{
-  message: Today.Message
-  inputs: Today.Inputs
-}>
-
 const foldSyncRefresh = Update.foldChildStep({
   update: Sync.refreshMirror,
   read: (model: Model) => Option.some(model.sync),
@@ -834,45 +816,16 @@ const foldPreferencesSaved = Update.foldChild({
   toParentMessage: toPreferencesMessage,
 })
 
-const foldTodayOutMessage = Today.OutMessage.match<
-  Update.Step<Model, Message, Sync.LocalStoreService>
->({
-  WroteLocalData: () => stepModel => foldSyncRefresh(stepModel),
-
-  SavedSectionOrder:
-    ({ preferences }) =>
-    stepModel =>
-      foldPreferencesSaved(stepModel, preferences),
-})
-
-const foldToday = Update.foldChild({
-  update: (today: Today.Model, input: TodayFoldInput) =>
-    Today.update(today, input.message, input.inputs),
-  read: (model: Model) => Option.some(model.today),
-  write: (model: Model, nextToday: Today.Model) =>
-    modifyFields(model, { today: () => nextToday }),
-  toParentMessage: toTodayMessage,
-  foldOutMessage: foldTodayOutMessage,
-})
-
-const foldTodayEntered = Update.foldChild({
-  update: Today.entered,
-  read: (model: Model) => Option.some(model.today),
-  write: (model: Model, nextToday: Today.Model) =>
-    modifyFields(model, { today: () => nextToday }),
-  toParentMessage: toTodayMessage,
-})
-
+/** A completed sync drain is the moment Today re-reads the server read
+ *  model. `foldSyncMessage` runs this when the drain settles on /today. */
 const foldTodaySyncSettled = Update.foldChild({
   update: Today.syncSettled,
   read: (model: Model) => Option.some(model.today),
   write: (model: Model, nextToday: Today.Model) =>
     modifyFields(model, { today: () => nextToday }),
-  toParentMessage: toTodayMessage,
+  toParentMessage: (message: Today.Message) =>
+    Message.GotTodayMessage({ message }),
 })
-
-const foldTodayMessage = (model: Model, message: Today.Message): UpdateReturn =>
-  foldToday(model, { message, inputs: todayInputs(model) })
 
 type ListsFoldInput = Readonly<{
   message: Lists.Message
@@ -957,23 +910,13 @@ const foldListsMirrorSettled = Update.foldChild({
 const enterListsPage = (
   model: Model,
   maybeListId: Option.Option<ListId>,
-): UpdateReturn => {
-  const entered = Option.match(maybeListId, {
-    onNone: () => foldListsEnteredIndex(model, undefined),
-    onSome: listId => foldListsEnteredDetail(model, { listId }),
-  })
-
-  if (!Sync.isStoreReady(entered.model.sync)) {
-    return entered
-  }
-
-  const refreshed = foldSyncRefresh(entered.model)
-
-  return {
-    model: refreshed.model,
-    commands: [...(entered.commands ?? []), ...(refreshed.commands ?? [])],
-  }
-}
+): UpdateReturn =>
+  rereadMirror(
+    Option.match(maybeListId, {
+      onNone: () => foldListsEnteredIndex(model, undefined),
+      onSome: listId => foldListsEnteredDetail(model, { listId }),
+    }),
+  )
 
 const foldListsMessage = (model: Model, message: Lists.Message): UpdateReturn =>
   foldLists(model, { message, inputs: listsInputs(model) })
@@ -1105,160 +1048,156 @@ const foldNotesMessage = (model: Model, message: Notes.Message): UpdateReturn =>
   foldNotes(model, { message, inputs: notesInputs(model) })
 
 /** Enter `/notes` and re-read the mirror the screen renders from. */
-const enterNotesIndex = (model: Model): UpdateReturn => {
-  const entered = foldNotesEnteredIndex(model)
-
-  if (!Sync.isStoreReady(entered.model.sync)) {
-    return entered
-  }
-
-  const refreshed = foldSyncRefresh(entered.model)
-
-  return {
-    model: refreshed.model,
-    commands: [...(entered.commands ?? []), ...(refreshed.commands ?? [])],
-  }
-}
+const enterNotesIndex = (model: Model): UpdateReturn =>
+  rereadMirror(foldNotesEnteredIndex(model))
 
 /** Enter `/notes/trash` and re-read the mirror it renders from. */
-const enterNotesTrash = (model: Model): UpdateReturn => {
-  const entered = foldNotesEnteredTrash(model)
-
-  if (!Sync.isStoreReady(entered.model.sync)) {
-    return entered
-  }
-
-  const refreshed = foldSyncRefresh(entered.model)
-
-  return {
-    model: refreshed.model,
-    commands: [...(entered.commands ?? []), ...(refreshed.commands ?? [])],
-  }
-}
+const enterNotesTrash = (model: Model): UpdateReturn =>
+  rereadMirror(foldNotesEnteredTrash(model))
 
 /** Enter one note editor, loading it from the mirror and its crash draft. */
-const enterNotesNote = (model: Model, noteId: NoteId): UpdateReturn => {
-  const entered = foldNotesEnteredNote(model, {
-    noteId,
-    isStoreReady: Sync.isStoreReady(model.sync),
-  })
+const enterNotesNote = (model: Model, noteId: NoteId): UpdateReturn =>
+  rereadMirror(
+    foldNotesEnteredNote(model, {
+      noteId,
+      isStoreReady: Sync.isStoreReady(model.sync),
+    }),
+  )
 
-  if (!Sync.isStoreReady(entered.model.sync)) {
-    return entered
-  }
+// PAGE TABLE
 
-  const refreshed = foldSyncRefresh(entered.model)
+/**
+ * One slice per household screen whose page wiring follows one mold.
+ * `pageFoldWithOutMessage` (or `pageFold`, for a page whose update emits no
+ * OutMessage) turns each slice into the folds and subscriptions the update
+ * arms, route entries, and subscription aggregate consume. The view halves
+ * stay in `pageView`: `Submodel.View` resolves only for concrete Inputs
+ * types, so a generic fold cannot assemble the `h.submodel` call.
+ *
+ * Screens that serve several routes off one Submodel (lists, notes), drive
+ * the session from their OutMessages (login, register, household), or
+ * compose a section of several Submodels (reminders, settings) do not fit
+ * the slice shape and stay hand-wired below.
+ */
+const pages = {
+  today: pageFoldWithOutMessage({
+    field: {
+      field: (model: Model) => model.today,
+      setField: (model: Model, nextToday: Today.Model) =>
+        modifyFields(model, { today: () => nextToday }),
+    },
+    toParentMessage: (message: Today.Message) =>
+      Message.GotTodayMessage({ message }),
+    update: Today.update,
+    inputs: todayInputs,
+    foldOutMessage: Today.OutMessage.match<
+      Update.Step<Model, Message, Sync.LocalStoreService>
+    >({
+      WroteLocalData: () => stepModel => foldSyncRefresh(stepModel),
 
-  return {
-    model: refreshed.model,
-    commands: [...(entered.commands ?? []), ...(refreshed.commands ?? [])],
-  }
+      SavedSectionOrder:
+        ({ preferences }) =>
+        stepModel =>
+          foldPreferencesSaved(stepModel, preferences),
+    }),
+    entered: Today.entered,
+    subscriptions: {
+      child: Today.subscriptions,
+      when: (model: Model) => AppRoute.isAnyOf(['Today'])(model.route),
+    },
+  }),
+
+  tasks: pageFoldWithOutMessage({
+    field: {
+      field: (model: Model) => model.tasks,
+      setField: (model: Model, nextTasks: Tasks.Model) =>
+        modifyFields(model, { tasks: () => nextTasks }),
+    },
+    toParentMessage: (message: Tasks.Message) =>
+      Message.GotTasksMessage({ message }),
+    update: Tasks.update,
+    inputs: tasksInputs,
+    foldOutMessage: Tasks.OutMessage.match<
+      Update.Step<Model, Message, Sync.LocalStoreService>
+    >({
+      WroteLocalData: () => stepModel => foldSyncRefresh(stepModel),
+    }),
+    entered: Tasks.entered,
+    subscriptions: {
+      child: Tasks.subscriptions,
+      when: (model: Model) => AppRoute.isAnyOf(['Tasks'])(model.route),
+    },
+  }),
+
+  habits: pageFoldWithOutMessage({
+    field: {
+      field: (model: Model) => model.habits,
+      setField: (model: Model, nextHabits: Habits.Model) =>
+        modifyFields(model, { habits: () => nextHabits }),
+    },
+    toParentMessage: (message: Habits.Message) =>
+      Message.GotHabitsMessage({ message }),
+    update: Habits.update,
+    inputs: habitsInputs,
+    foldOutMessage: Habits.OutMessage.match<
+      Update.Step<Model, Message, Sync.LocalStoreService>
+    >({
+      WroteLocalData: () => stepModel => foldSyncRefresh(stepModel),
+    }),
+    entered: Habits.entered,
+    subscriptions: {
+      child: Habits.subscriptions,
+      when: (model: Model) => AppRoute.isAnyOf(['Habits'])(model.route),
+    },
+  }),
+
+  calendar: pageFoldWithOutMessage({
+    field: {
+      field: (model: Model) => model.calendar,
+      setField: (model: Model, nextCalendar: Calendar.Model) =>
+        modifyFields(model, { calendar: () => nextCalendar }),
+    },
+    toParentMessage: (message: Calendar.Message) =>
+      Message.GotCalendarMessage({ message }),
+    update: Calendar.update,
+    inputs: calendarInputs,
+    foldOutMessage: Calendar.OutMessage.match<
+      Update.Step<Model, Message, Sync.LocalStoreService>
+    >({
+      WroteLocalData: () => stepModel => foldSyncRefresh(stepModel),
+    }),
+    entered: Calendar.entered,
+    subscriptions: {
+      child: Calendar.subscriptions,
+      when: (model: Model) => AppRoute.isAnyOf(['Calendar'])(model.route),
+    },
+  }),
+
+  capture: pageFold({
+    field: {
+      field: (model: Model) => model.capture,
+      setField: (model: Model, nextCapture: Capture.Model) =>
+        modifyFields(model, { capture: () => nextCapture }),
+    },
+    toParentMessage: (message: Capture.Message) =>
+      Message.GotCaptureMessage({ message }),
+    update: Capture.update,
+    inputs: captureInputs,
+    entered: Capture.entered,
+  }),
 }
 
-type TasksFoldInput = Readonly<{
-  message: Tasks.Message
-  inputs: Tasks.Inputs
-}>
-
-const foldTasksOutMessage = Tasks.OutMessage.match<
-  Update.Step<Model, Message, Sync.LocalStoreService>
->({
-  WroteLocalData: () => stepModel => foldSyncRefresh(stepModel),
-})
-
-const foldTasks = Update.foldChild({
-  update: (tasks: Tasks.Model, input: TasksFoldInput) =>
-    Tasks.update(tasks, input.message, input.inputs),
-  read: (model: Model) => Option.some(model.tasks),
-  write: (model: Model, nextTasks: Tasks.Model) =>
-    modifyFields(model, { tasks: () => nextTasks }),
-  toParentMessage: toTasksMessage,
-  foldOutMessage: foldTasksOutMessage,
-})
-
-const foldTasksEntered = Update.foldChildStep({
-  update: Tasks.entered,
-  read: (model: Model) => Option.some(model.tasks),
-  write: (model: Model, nextTasks: Tasks.Model) =>
-    modifyFields(model, { tasks: () => nextTasks }),
-  toParentMessage: toTasksMessage,
-})
-
-const foldTasksMessage = (model: Model, message: Tasks.Message): UpdateReturn =>
-  foldTasks(model, { message, inputs: tasksInputs(model) })
-
-type HabitsFoldInput = Readonly<{
-  message: Habits.Message
-  inputs: Habits.Inputs
-}>
-
-const foldHabits = Update.foldChild({
-  update: (habits: Habits.Model, input: HabitsFoldInput) =>
-    Habits.update(habits, input.message, input.inputs),
-  read: (model: Model) => Option.some(model.habits),
-  write: (model: Model, nextHabits: Habits.Model) =>
-    modifyFields(model, { habits: () => nextHabits }),
-  toParentMessage: toHabitsMessage,
-  foldOutMessage: Habits.OutMessage.match<
-    Update.Step<Model, Message, Sync.LocalStoreService>
-  >({
-    WroteLocalData: () => stepModel => foldSyncRefresh(stepModel),
-  }),
-})
-
-const foldHabitsEntered = Update.foldChild({
-  update: Habits.entered,
-  read: (model: Model) => Option.some(model.habits),
-  write: (model: Model, nextHabits: Habits.Model) =>
-    modifyFields(model, { habits: () => nextHabits }),
-  toParentMessage: toHabitsMessage,
-})
-
-const foldHabitsMessage = (
-  model: Model,
-  message: Habits.Message,
-): UpdateReturn => foldHabits(model, { message, inputs: habitsInputs(model) })
-
-type CalendarFoldInput = Readonly<{
-  message: Calendar.Message
-  inputs: Calendar.Inputs
-}>
-
-const foldCalendar = Update.foldChild({
-  update: (calendar: Calendar.Model, input: CalendarFoldInput) =>
-    Calendar.update(calendar, input.message, input.inputs),
-  read: (model: Model) => Option.some(model.calendar),
-  write: (model: Model, nextCalendar: Calendar.Model) =>
-    modifyFields(model, { calendar: () => nextCalendar }),
-  toParentMessage: toCalendarMessage,
-  foldOutMessage: Calendar.OutMessage.match<
-    Update.Step<Model, Message, Sync.LocalStoreService>
-  >({
-    WroteLocalData: () => stepModel => foldSyncRefresh(stepModel),
-  }),
-})
-
-const foldCalendarEntered = Update.foldChild({
-  update: Calendar.entered,
-  read: (model: Model) => Option.some(model.calendar),
-  write: (model: Model, nextCalendar: Calendar.Model) =>
-    modifyFields(model, { calendar: () => nextCalendar }),
-  toParentMessage: toCalendarMessage,
-})
-
+/** A completed sync drain is the moment the calendar re-reads the server
+ *  read model. `foldSyncMessage` runs this when the drain settles on
+ *  /calendar. */
 const foldCalendarSyncSettled = Update.foldChild({
   update: Calendar.syncSettled,
   read: (model: Model) => Option.some(model.calendar),
   write: (model: Model, nextCalendar: Calendar.Model) =>
     modifyFields(model, { calendar: () => nextCalendar }),
-  toParentMessage: toCalendarMessage,
+  toParentMessage: (message: Calendar.Message) =>
+    Message.GotCalendarMessage({ message }),
 })
-
-const foldCalendarMessage = (
-  model: Model,
-  message: Calendar.Message,
-): UpdateReturn =>
-  foldCalendar(model, { message, inputs: calendarInputs(model) })
 
 const foldRemindersOutMessage = Reminders.OutMessage.match<
   Update.Step<Model, Message, Sync.LocalStoreService>
@@ -1282,33 +1221,6 @@ const foldRemindersEntered = Update.foldChildStep({
     modifyFields(model, { reminders: () => nextReminders }),
   toParentMessage: toRemindersMessage,
   foldOutMessage: foldRemindersOutMessage,
-})
-
-type CaptureFoldInput = Readonly<{
-  message: Capture.Message
-  inputs: Capture.Inputs
-}>
-
-const foldCapture = Update.foldChild({
-  update: (capture: Capture.Model, input: CaptureFoldInput) =>
-    Capture.update(capture, input.message, input.inputs),
-  read: (model: Model) => Option.some(model.capture),
-  write: (model: Model, nextCapture: Capture.Model) =>
-    modifyFields(model, { capture: () => nextCapture }),
-  toParentMessage: toCaptureMessage,
-})
-
-const foldCaptureMessage = (
-  model: Model,
-  message: Capture.Message,
-): UpdateReturn => foldCapture(model, { message, inputs: captureInputs(model) })
-
-const foldCaptureEntered = Update.foldChildStep({
-  update: Capture.entered,
-  read: (model: Model) => Option.some(model.capture),
-  write: (model: Model, nextCapture: Capture.Model) =>
-    modifyFields(model, { capture: () => nextCapture }),
-  toParentMessage: toCaptureMessage,
 })
 
 type SettingsFoldInput = Readonly<{
@@ -1339,26 +1251,9 @@ const foldSettingsReset = Update.foldChildStep({
   toParentMessage: toSettingsMessage,
 })
 
-/** Enter `/habits` and re-read the mirror it renders from. */
-const enterHabitsPage = (model: Model): UpdateReturn => {
-  const entered = foldHabitsEntered(model, undefined)
-
-  if (!Sync.isStoreReady(entered.model.sync)) {
-    return entered
-  }
-
-  const refreshed = foldSyncRefresh(entered.model)
-
-  return {
-    model: refreshed.model,
-    commands: [...(entered.commands ?? []), ...(refreshed.commands ?? [])],
-  }
-}
-
-/** Enter `/calendar` and re-read the mirror it renders from. */
-const enterCalendarPage = (model: Model): UpdateReturn => {
-  const entered = foldCalendarEntered(model, calendarInputs(model))
-
+/** Re-read the mirror a screen renders from after its entry fold, when the
+ *  local store is ready to be read. */
+const rereadMirror = (entered: UpdateReturn): UpdateReturn => {
   if (!Sync.isStoreReady(entered.model.sync)) {
     return entered
   }
@@ -1386,21 +1281,21 @@ const enterRoute = (
     AppRoute.isAnyOf(['Today'])(model.route) &&
     Option.isSome(Transition.entered(transition, 'Today'))
   ) {
-    return foldTodayEntered(model, todayInputs(model))
+    return pages.today.foldEntered(model)
   }
 
   if (
     AppRoute.isAnyOf(['Tasks'])(model.route) &&
     Option.isSome(Transition.entered(transition, 'Tasks'))
   ) {
-    return foldTasksEntered(model)
+    return pages.tasks.foldEntered(model)
   }
 
   if (
     AppRoute.isAnyOf(['Habits'])(model.route) &&
     Option.isSome(Transition.entered(transition, 'Habits'))
   ) {
-    return enterHabitsPage(model)
+    return rereadMirror(pages.habits.foldEntered(model))
   }
 
   if (
@@ -1414,7 +1309,7 @@ const enterRoute = (
     AppRoute.isAnyOf(['Calendar'])(model.route) &&
     Option.isSome(Transition.entered(transition, 'Calendar'))
   ) {
-    return enterCalendarPage(model)
+    return rereadMirror(pages.calendar.foldEntered(model))
   }
 
   if (
@@ -1428,7 +1323,7 @@ const enterRoute = (
     AppRoute.isAnyOf(['Capture'])(model.route) &&
     Option.isSome(Transition.entered(transition, 'Capture'))
   ) {
-    return foldCaptureEntered(model)
+    return pages.capture.foldEntered(model)
   }
 
   if (AppRoute.isAnyOf(['List'])(model.route)) {
@@ -1624,14 +1519,16 @@ export const update = (model: Model, message: Message) =>
     GotPreferencesMessage: ({ message }) => foldPreferences(model, message),
     GotPushMessage: ({ message }) => foldPush(model, message),
     GotSyncMessage: ({ message }) => foldSyncMessage(model, message),
-    GotTodayMessage: ({ message }) => foldTodayMessage(model, message),
+    GotTodayMessage: ({ message }) => pages.today.foldMessage(model, message),
     GotListsMessage: ({ message }) => foldListsMessage(model, message),
     GotNotesMessage: ({ message }) => foldNotesMessage(model, message),
-    GotTasksMessage: ({ message }) => foldTasksMessage(model, message),
-    GotHabitsMessage: ({ message }) => foldHabitsMessage(model, message),
-    GotCalendarMessage: ({ message }) => foldCalendarMessage(model, message),
+    GotTasksMessage: ({ message }) => pages.tasks.foldMessage(model, message),
+    GotHabitsMessage: ({ message }) => pages.habits.foldMessage(model, message),
+    GotCalendarMessage: ({ message }) =>
+      pages.calendar.foldMessage(model, message),
     GotRemindersMessage: ({ message }) => foldReminders(model, message),
-    GotCaptureMessage: ({ message }) => foldCaptureMessage(model, message),
+    GotCaptureMessage: ({ message }) =>
+      pages.capture.foldMessage(model, message),
     GotSettingsMessage: ({ message }) => foldSettingsMessage(model, message),
     GotMorePopoverMessage: ({ message }) => foldMorePopover(model, message),
   })
@@ -1770,24 +1667,6 @@ const notFoundView = (h: HtmlBuilder<Message>): Html =>
     ],
   )
 
-const todayPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
-  h.submodel({
-    slotId: 'today-page',
-    model: model.today,
-    view: Today.view,
-    viewInputs: todayInputs(model),
-    toParentMessage: toTodayMessage,
-  })
-
-const tasksPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
-  h.submodel({
-    slotId: 'tasks-page',
-    model: model.tasks,
-    view: Tasks.view,
-    viewInputs: tasksInputs(model),
-    toParentMessage: toTasksMessage,
-  })
-
 const remindersPageView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.section(
     [h.Class('page-wrap grid grid-cols-1 max-w-3xl gap-4')],
@@ -1902,7 +1781,15 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): Html =>
           },
           toParentMessage: message => Message.GotHouseholdMessage({ message }),
         }),
-      Today: () => todayPageView(model, h),
+      Today: () =>
+        h.submodel({
+          slotId: 'today-page',
+          model: model.today,
+          view: Today.view,
+          viewInputs: todayInputs(model),
+          toParentMessage: (message: Today.Message) =>
+            Message.GotTodayMessage({ message }),
+        }),
       Lists: () =>
         h.submodel({
           slotId: 'lists-index',
@@ -1943,14 +1830,23 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): Html =>
           viewInputs: notesInputs(model),
           toParentMessage: toNotesMessage,
         }),
-      Tasks: () => tasksPageView(model, h),
+      Tasks: () =>
+        h.submodel({
+          slotId: 'tasks-page',
+          model: model.tasks,
+          view: Tasks.view,
+          viewInputs: tasksInputs(model),
+          toParentMessage: (message: Tasks.Message) =>
+            Message.GotTasksMessage({ message }),
+        }),
       Habits: () =>
         h.submodel({
           slotId: 'habits-page',
           model: model.habits,
           view: Habits.view,
           viewInputs: habitsInputs(model),
-          toParentMessage: toHabitsMessage,
+          toParentMessage: (message: Habits.Message) =>
+            Message.GotHabitsMessage({ message }),
         }),
       Calendar: () =>
         h.submodel({
@@ -1958,7 +1854,8 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): Html =>
           model: model.calendar,
           view: Calendar.view,
           viewInputs: calendarInputs(model),
-          toParentMessage: toCalendarMessage,
+          toParentMessage: (message: Calendar.Message) =>
+            Message.GotCalendarMessage({ message }),
         }),
       Reminders: () => remindersPageView(model, h),
       Capture: () =>
@@ -1967,7 +1864,8 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): Html =>
           model: model.capture,
           view: Capture.view,
           viewInputs: captureInputs(model),
-          toParentMessage: toCaptureMessage,
+          toParentMessage: (message: Capture.Message) =>
+            Message.GotCaptureMessage({ message }),
         }),
       Settings: () => settingsPageView(model, h),
       PushHealth: () => pushHealthPageView(model, h),
@@ -2160,28 +2058,6 @@ const pushSubscriptions = Subscription.lift(Push.subscriptions)<Model, Message>(
   },
 )
 
-const todaySubscriptions = Subscription.lift(Today.subscriptions)<
-  Model,
-  Message
->({
-  read: model =>
-    AppRoute.isAnyOf(['Today'])(model.route)
-      ? Option.some(model.today)
-      : Option.none(),
-  toParentMessage: toTodayMessage,
-})
-
-const tasksSubscriptions = Subscription.lift(Tasks.subscriptions)<
-  Model,
-  Message
->({
-  read: model =>
-    AppRoute.isAnyOf(['Tasks'])(model.route)
-      ? Option.some(model.tasks)
-      : Option.none(),
-  toParentMessage: toTasksMessage,
-})
-
 const notesSubscriptions = Subscription.lift(Notes.subscriptions)<
   Model,
   Message
@@ -2191,28 +2067,6 @@ const notesSubscriptions = Subscription.lift(Notes.subscriptions)<
       ? Option.some(model.notes)
       : Option.none(),
   toParentMessage: toNotesMessage,
-})
-
-const habitsSubscriptions = Subscription.lift(Habits.subscriptions)<
-  Model,
-  Message
->({
-  read: model =>
-    AppRoute.isAnyOf(['Habits'])(model.route)
-      ? Option.some(model.habits)
-      : Option.none(),
-  toParentMessage: toHabitsMessage,
-})
-
-const calendarSubscriptions = Subscription.lift(Calendar.subscriptions)<
-  Model,
-  Message
->({
-  read: model =>
-    AppRoute.isAnyOf(['Calendar'])(model.route)
-      ? Option.some(model.calendar)
-      : Option.none(),
-  toParentMessage: toCalendarMessage,
 })
 
 const remindersSubscriptions = Subscription.lift(Reminders.subscriptions)<
@@ -2226,14 +2080,23 @@ const remindersSubscriptions = Subscription.lift(Reminders.subscriptions)<
   toParentMessage: toRemindersMessage,
 })
 
-export const subscriptions = Subscription.aggregate(
+/** The subscription records the page table carries, when a page owns any. */
+const pageSubscriptionRecords = Array.getSomes(
+  Array.map(
+    [pages.today, pages.tasks, pages.habits, pages.calendar, pages.capture],
+    page => Option.fromNullishOr(page.subscriptions),
+  ),
+)
+
+export const subscriptions = Subscription.aggregate<
+  Model,
+  Message,
+  Sync.LocalStoreService
+>()(
   syncSubscriptions,
   themeSubscriptions,
   pushSubscriptions,
-  todaySubscriptions,
-  tasksSubscriptions,
   notesSubscriptions,
-  habitsSubscriptions,
-  calendarSubscriptions,
   remindersSubscriptions,
+  ...pageSubscriptionRecords,
 )
