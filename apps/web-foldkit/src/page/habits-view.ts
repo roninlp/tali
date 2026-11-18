@@ -387,10 +387,26 @@ const colorFieldView = (model: Model, h: HtmlBuilder<Message>): Html =>
     ],
   )
 
-const formView = (
+export const habitPickerDialogView = (
   model: Model,
   inputs: ViewInputs,
   h: HtmlBuilder<Message>,
+): Html =>
+  pickerDialogView(
+    {
+      model: model.picker,
+      toParentMessage: message => Message.GotPickerMessage({ message }),
+      digits: inputs.display.digits,
+      weekStart: inputs.display.weekStart,
+    },
+    h,
+  )
+
+export const habitFormView = (
+  model: Model,
+  inputs: ViewInputs,
+  h: HtmlBuilder<Message>,
+  options: Readonly<{ showHeading?: boolean }> = {},
 ): Html => {
   const digits = inputs.display.digits
 
@@ -416,7 +432,9 @@ const formView = (
       h.OnSubmit(Message.SubmittedHabitForm()),
     ],
     [
-      h.h2([h.Class('m-0 text-[0.95rem] font-semibold')], [heading]),
+      ...(options.showHeading === false
+        ? []
+        : [h.h2([h.Class('m-0 text-[0.95rem] font-semibold')], [heading])]),
       titleFieldView(model, inputs, h),
       descriptionFieldView(model, inputs, h),
       frequencyFieldView(model, digits, h),
@@ -849,7 +867,7 @@ export const habitsPageView = (
                 : []),
             ],
           ),
-          formView(model, inputs, h),
+          habitFormView(model, inputs, h),
           pageErrorView(model, inputs, h),
           listSectionView(model, inputs, h),
           h.p(
@@ -858,15 +876,7 @@ export const habitsPageView = (
           ),
           habitsToastView(model, h),
           habitsConfirmDialogView(model, h),
-          pickerDialogView(
-            {
-              model: model.picker,
-              toParentMessage: message => Message.GotPickerMessage({ message }),
-              digits: inputs.display.digits,
-              weekStart: inputs.display.weekStart,
-            },
-            h,
-          ),
+          habitPickerDialogView(model, inputs, h),
         ],
       ),
     ],

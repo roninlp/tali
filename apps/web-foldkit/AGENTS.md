@@ -40,8 +40,24 @@ subtree_prompted: true
   `vite.config.ts` keeps `effect/schema` out of the dev dependency optimizer:
   bundling `effect` and `effect/schema` as separate entries crashes the
   optimizer in Vite 8.3.4.
-- **Frontend layout.** `src/shell.ts` holds the chrome plus the desktop section
-  menu, mobile tab bar, display name, and account slot; `src/theme.ts` the
+- **Frontend layout.** `src/shell.ts` holds the chrome plus the collapsible
+  desktop sidebar, mobile tab bar, display name, and account slot; the sidebar
+  collapses to an icon rail through the root Model's `isSidebarCollapsed` flag.
+  `src/create.ts` and `src/create-view.ts` hold the Today floating create
+  button, its action popover, and the dialog that hosts one standalone create
+  form. The forms themselves live on their page Submodels and are exported as
+  branded views from `src/form/views.ts` (`TaskCreateFormView`,
+  `HabitCreateFormView`, `EventCreateFormView`, `OccasionCreateFormView`), so
+  a dialog and its page share one draft and one write path. Each create dialog
+  also mounts that page's picker dialog (`TaskPickerDialogView`, and the like)
+  so its date and time triggers open above the create dialog, and the `+`
+  menu's Popover uses `contentFocus` plus its backdrop so a second tap on the
+  trigger closes it. The menu keeps its z-index on the portaled panel itself
+  (`z-[60]`), with the backdrop at `z-[45]`: above the sticky chrome, below the
+  FAB's `z-50` wrapper, so the trigger stays clickable. The mobile `بیشتر`
+  popover uses the same panel-owned stacking (`z-[55]`), which puts it above
+  the FAB without covering the create menu. `src/form/note-form.ts`
+  is the one create form with no page counterpart. `src/theme.ts` the
   persistent gallery + light/dark/system
   Submodel; `src/route.ts` the `AppRoute` union and typed routers; `src/auth.ts`
   the session Submodel with restore, sign-out, and cache Commands;

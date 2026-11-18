@@ -395,7 +395,7 @@ const taskQuickAdd = (
   )
 }
 
-const eventQuickAdd = (
+export const eventQuickAddFormView = (
   model: Model,
   inputs: ViewInputs,
   date: string,
@@ -405,6 +405,119 @@ const eventQuickAdd = (
   const draft = quickEventOf(model, date)
   const today = todayIn(inputs.display.timeZone, new Date(model.now))
   const digits = inputs.display.digits
+
+  return h.form(
+    [
+      h.Class(
+        'grid min-w-0 gap-2 rounded-xl border border-base-300 bg-base-200/50 p-2',
+      ),
+      h.OnSubmit(Message.SubmittedEventQuickAdd({ date })),
+    ],
+    [
+      inputControlView(
+        {
+          id: `quick-event-title-${date}`,
+          label: `عنوان رویداد برای ${label}`,
+          value: draft.title,
+          placeholder: 'رویداد تازه…',
+          isDisabled: !inputs.isStoreReady,
+          onInput: value => Message.UpdatedQuickEventTitle({ date, value }),
+        },
+        h,
+      ),
+      Checkbox.view(
+        {
+          id: `quick-event-all-day-${date}`,
+          isChecked: draft.allDay,
+          onToggle: allDay => Message.ToggledQuickEventAllDay({ date, allDay }),
+          toView: attributes =>
+            h.div(
+              [
+                h.Class(
+                  'inline-flex items-center gap-1.5 text-[0.72rem] leading-6 text-base-content/70',
+                ),
+              ],
+              [
+                h.button([...attributes.checkbox, h.Class('form-check')]),
+                h.span([...attributes.label], ['تمام روز']),
+              ],
+            ),
+        },
+        h,
+      ),
+      draft.allDay
+        ? h.p(
+            [h.Class('m-0 text-[0.68rem] leading-6 text-base-content/70')],
+            ['بدون ساعت'],
+          )
+        : h.span(
+            [h.Class('grid min-w-0 gap-1.5')],
+            [
+              pickerField(
+                {
+                  id: `quick-event-start-${date}`,
+                  label: 'از',
+                  target: `quick:${date}:startTime`,
+                  mode: 'time',
+                  value: draft.startTime,
+                  today,
+                },
+                digits,
+                h,
+              ),
+              pickerField(
+                {
+                  id: `quick-event-end-${date}`,
+                  label: 'تا',
+                  target: `quick:${date}:endTime`,
+                  mode: 'time',
+                  value: draft.endTime,
+                  today,
+                },
+                digits,
+                h,
+              ),
+            ],
+          ),
+      h.button(
+        [
+          h.Type('submit'),
+          h.Class(`${PRIMARY_BUTTON_CLASS} w-full`),
+          h.Disabled(
+            !inputs.isStoreReady ||
+              model.isEventBusy ||
+              draft.title.trim() === '',
+          ),
+        ],
+        [model.isEventBusy ? 'در حال ذخیره…' : 'افزودن رویداد'],
+      ),
+    ],
+  )
+}
+
+export const calendarPickerDialogView = (
+  model: Model,
+  inputs: ViewInputs,
+  h: HtmlBuilder<Message>,
+): Html =>
+  pickerDialogView(
+    {
+      model: model.picker,
+      toParentMessage: message => Message.GotPickerMessage({ message }),
+      digits: inputs.display.digits,
+      weekStart: inputs.display.weekStart,
+    },
+    h,
+  )
+
+const eventQuickAdd = (
+  model: Model,
+  inputs: ViewInputs,
+  date: string,
+  label: string,
+  h: HtmlBuilder<Message>,
+): Html => {
+  const draft = quickEventOf(model, date)
 
   return h.keyed('details')(
     `${date}:${draft.open ? 'open' : 'closed'}`,
@@ -426,101 +539,9 @@ const eventQuickAdd = (
       ),
       ...(draft.open
         ? [
-            h.form(
-              [
-                h.Class(
-                  'mt-1 grid min-w-0 gap-2 rounded-xl border border-base-300 bg-base-200/50 p-2',
-                ),
-                h.OnSubmit(Message.SubmittedEventQuickAdd({ date })),
-              ],
-              [
-                inputControlView(
-                  {
-                    id: `quick-event-title-${date}`,
-                    label: `عنوان رویداد برای ${label}`,
-                    value: draft.title,
-                    placeholder: 'رویداد تازه…',
-                    isDisabled: !inputs.isStoreReady,
-                    onInput: value =>
-                      Message.UpdatedQuickEventTitle({ date, value }),
-                  },
-                  h,
-                ),
-                Checkbox.view(
-                  {
-                    id: `quick-event-all-day-${date}`,
-                    isChecked: draft.allDay,
-                    onToggle: allDay =>
-                      Message.ToggledQuickEventAllDay({ date, allDay }),
-                    toView: attributes =>
-                      h.div(
-                        [
-                          h.Class(
-                            'inline-flex items-center gap-1.5 text-[0.72rem] leading-6 text-base-content/70',
-                          ),
-                        ],
-                        [
-                          h.button([
-                            ...attributes.checkbox,
-                            h.Class('form-check'),
-                          ]),
-                          h.span([...attributes.label], ['تمام روز']),
-                        ],
-                      ),
-                  },
-                  h,
-                ),
-                draft.allDay
-                  ? h.p(
-                      [
-                        h.Class(
-                          'm-0 text-[0.68rem] leading-6 text-base-content/70',
-                        ),
-                      ],
-                      ['بدون ساعت'],
-                    )
-                  : h.span(
-                      [h.Class('grid min-w-0 gap-1.5')],
-                      [
-                        pickerField(
-                          {
-                            id: `quick-event-start-${date}`,
-                            label: 'از',
-                            target: `quick:${date}:startTime`,
-                            mode: 'time',
-                            value: draft.startTime,
-                            today,
-                          },
-                          digits,
-                          h,
-                        ),
-                        pickerField(
-                          {
-                            id: `quick-event-end-${date}`,
-                            label: 'تا',
-                            target: `quick:${date}:endTime`,
-                            mode: 'time',
-                            value: draft.endTime,
-                            today,
-                          },
-                          digits,
-                          h,
-                        ),
-                      ],
-                    ),
-                h.button(
-                  [
-                    h.Type('submit'),
-                    h.Class(`${PRIMARY_BUTTON_CLASS} w-full`),
-                    h.Disabled(
-                      !inputs.isStoreReady ||
-                        model.isEventBusy ||
-                        draft.title.trim() === '',
-                    ),
-                  ],
-                  [model.isEventBusy ? 'در حال ذخیره…' : 'افزودن رویداد'],
-                ),
-              ],
+            h.div(
+              [h.Class('mt-1')],
+              [eventQuickAddFormView(model, inputs, date, label, h)],
             ),
           ]
         : []),
@@ -1834,7 +1855,7 @@ const occasionRowView = (
   )
 }
 
-const occasionsPreview = (value: string, digits: Digits): string => {
+export const occasionsPreview = (value: string, digits: Digits): string => {
   if (value === '') {
     return ''
   }
@@ -1847,6 +1868,160 @@ const occasionsPreview = (value: string, digits: Digits): string => {
   } catch {
     return ''
   }
+}
+
+export type OccasionFormConfig = Readonly<{
+  isEditing: boolean
+  today: string
+  preview: string
+  canShare: boolean
+  busy: boolean
+  editingVisibility: 'private' | 'shared'
+  slotId: string
+}>
+
+export const occasionFormView = (
+  model: Model,
+  inputs: ViewInputs,
+  config: OccasionFormConfig,
+  h: HtmlBuilder<Message>,
+): Html => {
+  const digits = inputs.display.digits
+
+  return h.form(
+    [
+      h.Class('grid min-w-0 items-end gap-3 sm:grid-cols-2'),
+      h.OnSubmit(Message.SubmittedOccasion()),
+    ],
+    [
+      h.div(
+        [h.Class(`${FIELD_CLASS} min-w-0 sm:col-span-2`)],
+        [
+          h.label(
+            [h.For('occasion-title'), h.Class(FIELD_LABEL_CLASS)],
+            ['عنوان'],
+          ),
+          inputControlView(
+            {
+              id: 'occasion-title',
+              label: 'عنوان مناسبت',
+              value: model.occasionTitle,
+              placeholder: 'تولد، سالگرد…',
+              onInput: value => Message.UpdatedOccasionTitle({ value }),
+            },
+            h,
+          ),
+        ],
+      ),
+      h.div(
+        [h.Class(FIELD_CLASS)],
+        [
+          pickerField(
+            {
+              id: 'occasion-origin',
+              label: 'تاریخ شروع',
+              target: 'occasion:originDate',
+              mode: 'date',
+              value: model.occasionOriginDate,
+              today: config.today,
+            },
+            digits,
+            h,
+          ),
+          ...(config.preview === ''
+            ? []
+            : [h.span([h.Class(META_CLASS)], [config.preview])]),
+        ],
+      ),
+      h.div(
+        [h.Class(FIELD_CLASS)],
+        [
+          h.label(
+            [
+              h.For(Listbox.buttonId(model.occasionAdvanceListbox.id)),
+              h.Class(FIELD_LABEL_CLASS),
+            ],
+            ['یادآوری پیش از موعد'],
+          ),
+          h.submodel({
+            slotId: config.slotId,
+            model: model.occasionAdvanceListbox,
+            view: OccasionAdvanceListbox.view,
+            viewInputs: listboxViewInputs({
+              items: ADVANCE_OPTIONS,
+              maybeSelectedValue: Option.some(model.occasionAdvance),
+              h,
+            }),
+            toParentMessage: message =>
+              Message.GotOccasionAdvanceListboxMessage({ message }),
+          }),
+        ],
+      ),
+      Checkbox.view(
+        {
+          id: 'occasion-yearly-check',
+          isChecked: model.occasionYearly,
+          onToggle: yearly => Message.ToggledOccasionYearly({ yearly }),
+          toView: attributes =>
+            h.div(
+              [
+                h.Class(
+                  'inline-flex items-center gap-2 text-[0.8rem] text-base-content/70 sm:col-span-2',
+                ),
+              ],
+              [
+                h.button([...attributes.checkbox, h.Class('form-check')]),
+                h.span([...attributes.label], ['هر سال تکرار شود']),
+              ],
+            ),
+        },
+        h,
+      ),
+      h.div(
+        [h.Class('flex flex-wrap items-center gap-1.5 sm:col-span-2')],
+        [
+          h.button(
+            [
+              h.Type('submit'),
+              h.Class(PRIMARY_BUTTON_CLASS),
+              h.Disabled(
+                !inputs.isStoreReady ||
+                  Option.contains(model.maybeOccasionBusy, 'save') ||
+                  model.occasionTitle.trim() === '' ||
+                  model.occasionOriginDate === '',
+              ),
+            ],
+            [config.isEditing ? 'ذخیرهٔ ویرایش' : 'افزودن مناسبت'],
+          ),
+          ...(config.isEditing
+            ? [
+                ...(config.canShare
+                  ? [
+                      h.button(
+                        [
+                          h.Type('button'),
+                          h.Class(SMALL_BUTTON_CLASS),
+                          h.Disabled(config.busy),
+                          h.OnClick(Message.ClickedToggleOccasionVisibility()),
+                        ],
+                        [shareActionOf(config.editingVisibility).label],
+                      ),
+                    ]
+                  : []),
+                h.button(
+                  [
+                    h.Type('button'),
+                    h.Class(SMALL_BUTTON_CLASS),
+                    h.OnClick(Message.ClickedCancelOccasionEdit()),
+                  ],
+                  ['انصراف'],
+                ),
+              ]
+            : []),
+        ],
+      ),
+    ],
+  )
 }
 
 const occasionsPanel = (
@@ -1902,141 +2077,19 @@ const occasionsPanel = (
           'تاریخ‌های مهمی که هر سال در تقویم شمسی تکرار می‌شوند؛ تاریخ میلادی هم کنارشان نمایش داده می‌شود.',
         ],
       ),
-      h.form(
-        [
-          h.Class('grid min-w-0 items-end gap-3 sm:grid-cols-2'),
-          h.OnSubmit(Message.SubmittedOccasion()),
-        ],
-        [
-          h.div(
-            [h.Class(`${FIELD_CLASS} min-w-0 sm:col-span-2`)],
-            [
-              h.label(
-                [h.For('occasion-title'), h.Class(FIELD_LABEL_CLASS)],
-                ['عنوان'],
-              ),
-              inputControlView(
-                {
-                  id: 'occasion-title',
-                  label: 'عنوان مناسبت',
-                  value: model.occasionTitle,
-                  placeholder: 'تولد، سالگرد…',
-                  onInput: value => Message.UpdatedOccasionTitle({ value }),
-                },
-                h,
-              ),
-            ],
-          ),
-          h.div(
-            [h.Class(FIELD_CLASS)],
-            [
-              pickerField(
-                {
-                  id: 'occasion-origin',
-                  label: 'تاریخ شروع',
-                  target: 'occasion:originDate',
-                  mode: 'date',
-                  value: model.occasionOriginDate,
-                  today: view.today,
-                },
-                digits,
-                h,
-              ),
-              ...(preview === ''
-                ? []
-                : [h.span([h.Class(META_CLASS)], [preview])]),
-            ],
-          ),
-          h.div(
-            [h.Class(FIELD_CLASS)],
-            [
-              h.label(
-                [
-                  h.For(Listbox.buttonId(model.occasionAdvanceListbox.id)),
-                  h.Class(FIELD_LABEL_CLASS),
-                ],
-                ['یادآوری پیش از موعد'],
-              ),
-              h.submodel({
-                slotId: model.occasionAdvanceListbox.id,
-                model: model.occasionAdvanceListbox,
-                view: OccasionAdvanceListbox.view,
-                viewInputs: listboxViewInputs({
-                  items: ADVANCE_OPTIONS,
-                  maybeSelectedValue: Option.some(model.occasionAdvance),
-                  h,
-                }),
-                toParentMessage: message =>
-                  Message.GotOccasionAdvanceListboxMessage({ message }),
-              }),
-            ],
-          ),
-          Checkbox.view(
-            {
-              id: 'occasion-yearly-check',
-              isChecked: model.occasionYearly,
-              onToggle: yearly => Message.ToggledOccasionYearly({ yearly }),
-              toView: attributes =>
-                h.div(
-                  [
-                    h.Class(
-                      'inline-flex items-center gap-2 text-[0.8rem] text-base-content/70 sm:col-span-2',
-                    ),
-                  ],
-                  [
-                    h.button([...attributes.checkbox, h.Class('form-check')]),
-                    h.span([...attributes.label], ['هر سال تکرار شود']),
-                  ],
-                ),
-            },
-            h,
-          ),
-          h.div(
-            [h.Class('flex flex-wrap items-center gap-1.5 sm:col-span-2')],
-            [
-              h.button(
-                [
-                  h.Type('submit'),
-                  h.Class(PRIMARY_BUTTON_CLASS),
-                  h.Disabled(
-                    !inputs.isStoreReady ||
-                      Option.contains(model.maybeOccasionBusy, 'save') ||
-                      model.occasionTitle.trim() === '' ||
-                      model.occasionOriginDate === '',
-                  ),
-                ],
-                [isEditing ? 'ذخیرهٔ ویرایش' : 'افزودن مناسبت'],
-              ),
-              ...(isEditing
-                ? [
-                    ...(canShare
-                      ? [
-                          h.button(
-                            [
-                              h.Type('button'),
-                              h.Class(SMALL_BUTTON_CLASS),
-                              h.Disabled(busy),
-                              h.OnClick(
-                                Message.ClickedToggleOccasionVisibility(),
-                              ),
-                            ],
-                            [shareActionOf(editingVisibility).label],
-                          ),
-                        ]
-                      : []),
-                    h.button(
-                      [
-                        h.Type('button'),
-                        h.Class(SMALL_BUTTON_CLASS),
-                        h.OnClick(Message.ClickedCancelOccasionEdit()),
-                      ],
-                      ['انصراف'],
-                    ),
-                  ]
-                : []),
-            ],
-          ),
-        ],
+      occasionFormView(
+        model,
+        inputs,
+        {
+          isEditing,
+          today: view.today,
+          preview,
+          canShare,
+          busy,
+          editingVisibility,
+          slotId: model.occasionAdvanceListbox.id,
+        },
+        h,
       ),
       ...(Array.isReadonlyArrayEmpty(ordered)
         ? [
@@ -2672,15 +2725,7 @@ export const calendarPageView = (
       inlineAlertView(model.maybePageError, h),
       eventEditorView(model, inputs, h),
       scopePromptView(model, inputs, h),
-      pickerDialogView(
-        {
-          model: model.picker,
-          toParentMessage: message => Message.GotPickerMessage({ message }),
-          digits: inputs.display.digits,
-          weekStart: inputs.display.weekStart,
-        },
-        h,
-      ),
+      calendarPickerDialogView(model, inputs, h),
       h.p(
         [
           h.Class('sr-only'),

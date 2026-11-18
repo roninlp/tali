@@ -417,6 +417,11 @@ const resetForm = (model: Model): Model =>
     maybeFormError: () => Option.none(),
   })
 
+/** Leave edit mode and clear the create form. */
+export const cancelEdit = (model: Model): Update.Return<Model, Message> => ({
+  model: modifyFields(resetForm(model), { isSaving: () => false }),
+})
+
 const beginEdit = (model: Model, habit: HabitRow): Model =>
   modifyFields(model, {
     maybeEditingId: () => Option.some(habit.id),
@@ -671,9 +676,7 @@ export const update = (
 
     CompletedFocusHabitTitle: () => ({ model }),
 
-    ClickedCancelEdit: () => ({
-      model: modifyFields(resetForm(model), { isSaving: () => false }),
-    }),
+    ClickedCancelEdit: () => cancelEdit(model),
 
     CompletedUpdateHabit: ({ title }) => ({
       model: modifyFields(resetForm(model), {

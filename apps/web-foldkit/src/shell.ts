@@ -19,6 +19,8 @@ import {
 import { classNames } from './ui/class-names'
 import {
   calendarIcon,
+  chevronLeftIcon,
+  chevronRightIcon,
   habitsIcon,
   listsIcon,
   notesIcon,
@@ -34,7 +36,8 @@ import {
  *
  * Both navigation landmarks are built on the Foldkit UI `Nav` helper, which
  * marks the current destination with `aria-current="page"`; the markup and
- * classes stay local. Phones get a fixed bottom tab bar with the four primary
+ * classes stay local. Wide screens get a collapsible sidebar with every
+ * destination; phones keep the fixed bottom tab bar with the four primary
  * destinations plus the "more" popover rendered by the application shell.
  */
 
@@ -183,7 +186,77 @@ const brandView = <Message>(h: HtmlBuilder<Message>): Html =>
     ],
   )
 
-const desktopNavView = (maybeActiveSection: Option.Option<AppSection>): Html =>
+const sidebarBrandView = <Message>(
+  isCollapsed: boolean,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.a(
+    [
+      h.Href(todayRouter()),
+      h.AriaLabel('تالی — امروز'),
+      h.Class(
+        classNames(
+          'flex min-w-0 shrink-0 items-center gap-2 rounded-xl px-1 py-1',
+          isCollapsed ? 'justify-center' : undefined,
+        ),
+      ),
+    ],
+    [
+      h.span(
+        [
+          h.Class(
+            'grid size-8 flex-none place-items-center rounded-xl bg-primary text-sm font-black text-primary-content',
+          ),
+        ],
+        ['ت'],
+      ),
+      isCollapsed
+        ? h.empty
+        : h.span(
+            [
+              h.Class(
+                'hidden truncate text-[0.95rem] font-bold tracking-tight sm:inline',
+              ),
+            ],
+            ['تالی'],
+          ),
+    ],
+  )
+
+const sidebarLinkView = <Message>(
+  render: Nav.ItemInfo<AppSection>,
+  isCollapsed: boolean,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.a(
+    [
+      ...render.link,
+      h.Class(
+        classNames(
+          'flex min-h-10 items-center rounded-lg text-[0.84rem] font-medium transition-colors',
+          isCollapsed ? 'justify-center px-0' : 'gap-2.5 px-3',
+          render.isCurrent
+            ? 'bg-primary/12 text-primary'
+            : 'text-base-content/70 hover:bg-base-content/[0.04] hover:text-base-content',
+        ),
+      ),
+      ...(isCollapsed
+        ? [
+            h.AriaLabel(NAV_ITEMS[render.value].label),
+            h.Title(NAV_ITEMS[render.value].label),
+          ]
+        : []),
+    ],
+    [
+      NAV_ITEMS[render.value].icon('size-[1.15rem] flex-none'),
+      ...(isCollapsed ? [] : [NAV_ITEMS[render.value].label]),
+    ],
+  )
+
+const sidebarNavView = (
+  maybeActiveSection: Option.Option<AppSection>,
+  isCollapsed: boolean,
+): Html =>
   Nav.view({
     items: DESKTOP_SECTIONS,
     ariaLabel: 'بخش‌های تالی',
@@ -191,38 +264,100 @@ const desktopNavView = (maybeActiveSection: Option.Option<AppSection>): Html =>
     isItemCurrent: section => isActiveSection(maybeActiveSection, section),
     toView: render =>
       ih.nav(
-        [...render.nav, ih.Class('mx-auto hidden lg:block')],
+        [
+          ...render.nav,
+          ih.Class(
+            classNames(
+              'min-h-0 flex-1 overflow-y-auto py-3',
+              isCollapsed ? 'px-2' : 'px-2.5',
+            ),
+          ),
+        ],
         [
           ih.ul(
-            [ih.Class('flex items-center gap-0.5')],
+            [ih.Class('grid gap-1')],
             Array.map(render.items, item =>
-              ih.li(
-                [],
-                [
-                  ih.a(
-                    [
-                      ...item.link,
-                      ih.Class(
-                        classNames(
-                          'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[0.82rem] font-medium transition-colors',
-                          item.isCurrent
-                            ? 'bg-primary/12 text-primary'
-                            : 'text-base-content/70 hover:bg-base-content/[0.04] hover:text-base-content',
-                        ),
-                      ),
-                    ],
-                    [
-                      NAV_ITEMS[item.value].icon('size-4'),
-                      NAV_ITEMS[item.value].label,
-                    ],
-                  ),
-                ],
-              ),
+              ih.li([], [sidebarLinkView(item, isCollapsed, ih)]),
             ),
           ),
         ],
       ),
   })
+
+const sidebarToggleView = <Message>(
+  isCollapsed: boolean,
+  onToggle: Message,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.button(
+    [
+      h.Type('button'),
+      h.Class(
+        'grid size-8 flex-none place-items-center rounded-lg text-base-content/70 transition-colors hover:bg-base-content/5 hover:text-base-content',
+      ),
+      h.AriaLabel(isCollapsed ? 'باز کردن نوار کنار' : 'بستن نوار کنار'),
+      h.AriaExpanded(!isCollapsed),
+      h.OnClick(onToggle),
+    ],
+    [isCollapsed ? chevronLeftIcon('size-4') : chevronRightIcon('size-4')],
+  )
+
+const sidebarView = <Message>(
+  config: ShellConfig<Message>,
+  h: HtmlBuilder<Message>,
+): Html => {
+  const isCollapsed = config.isSidebarCollapsed
+
+  return h.aside(
+    [
+      h.AriaLabel('نوار کنار تالی'),
+      h.Class(
+        classNames(
+          'hidden shrink-0 flex-col border-e border-base-300/70 bg-base-100 transition-[width] duration-200 lg:sticky lg:top-0 lg:flex lg:h-dvh',
+          isCollapsed ? 'lg:w-[4.5rem]' : 'lg:w-[16rem]',
+        ),
+      ),
+    ],
+    [
+      h.div(
+        [
+          h.Class(
+            classNames(
+              'flex flex-none items-center border-b border-base-300/60 px-3',
+              isCollapsed
+                ? 'min-h-16 flex-col justify-center gap-1.5 py-2'
+                : 'h-16 justify-between gap-2',
+            ),
+          ),
+        ],
+        [
+          sidebarBrandView(isCollapsed, h),
+          sidebarToggleView(isCollapsed, config.onToggleSidebar, h),
+        ],
+      ),
+      sidebarNavView(config.maybeActiveSection, isCollapsed),
+      Option.match(config.maybeDisplayName, {
+        onNone: () => h.empty,
+        onSome: displayName =>
+          isCollapsed
+            ? h.empty
+            : h.div(
+                [h.Class('flex-none border-t border-base-300/60 px-4 py-3')],
+                [
+                  h.p(
+                    [
+                      h.Class(
+                        'm-0 truncate text-[0.72rem] leading-6 text-base-content/70',
+                      ),
+                    ],
+                    [displayName],
+                  ),
+                ],
+              ),
+      }),
+    ],
+  )
+}
 
 const mobileLinkView = <Message>(
   item: NavItem,
@@ -319,69 +454,92 @@ const mobileNavView = <Message>(
 const configNavItems = (): ReadonlyArray<NavItem> =>
   Array.map(MOBILE_PRIMARY_SECTIONS, section => NAV_ITEMS[section])
 
-export type ShellConfig = Readonly<{
+export type ShellConfig<Message = never> = Readonly<{
   /** Header actions, rendered at the inline-end of the top bar. */
   actions: Html
   /** The active route's content. */
   content: Html
+  /** The floating layer (the Today create button and its dialog). */
+  floating?: Html
+  /** Whether the wide-screen sidebar is collapsed to its icon rail. */
+  isSidebarCollapsed: boolean
   /** The section the navigation highlights, if the route belongs to one. */
   maybeActiveSection: Option.Option<AppSection>
   /** The signed-in user's name, shown beside the brand on wide screens. */
   maybeDisplayName: Option.Option<string>
   /** The mobile "more" popover element, rendered in the last tab slot. */
   moreMenu: Html
+  /** Toggles the wide-screen sidebar between its full and icon widths. */
+  onToggleSidebar: Message
 }>
 
 export const view = <Message>(
-  config: ShellConfig,
+  config: ShellConfig<Message>,
   h: HtmlBuilder<Message>,
 ): Html =>
   h.div(
-    [h.Class('grid min-h-dvh grid-rows-[auto_1fr] bg-base-200')],
+    [h.Class('min-h-dvh bg-base-200 lg:flex')],
     [
-      h.header(
+      sidebarView(config, h),
+      h.div(
         [
           h.Class(
-            'sticky inset-x-0 top-0 z-40 border-b border-base-300/70 bg-base-100/80 backdrop-blur-xl',
+            'grid min-h-dvh grid-rows-[auto_1fr] lg:min-h-dvh lg:min-w-0 lg:flex-1',
           ),
         ],
         [
-          h.div(
+          h.header(
             [
               h.Class(
-                'mx-auto flex h-14 w-full max-w-7xl items-center gap-2 px-3 sm:h-16 sm:px-6',
+                'sticky inset-x-0 top-0 z-40 border-b border-base-300/70 bg-base-100/80 backdrop-blur-xl',
               ),
             ],
             [
-              brandView(h),
-              Option.match(config.maybeDisplayName, {
-                onNone: () => h.empty,
-                onSome: displayName =>
-                  h.span(
-                    [
-                      h.Class(
-                        'me-1 hidden max-w-32 truncate text-[0.72rem] text-base-content/70 lg:inline',
-                      ),
-                    ],
-                    [displayName],
-                  ),
-              }),
-              desktopNavView(config.maybeActiveSection),
               h.div(
-                [h.Class('ms-auto flex items-center gap-1 lg:ms-0')],
-                [config.actions],
+                [
+                  h.Class(
+                    'mx-auto flex h-14 w-full max-w-7xl items-center gap-2 px-3 sm:h-16 sm:px-6',
+                  ),
+                ],
+                [
+                  h.div([h.Class('lg:hidden')], [brandView(h)]),
+                  Option.match(config.maybeDisplayName, {
+                    onNone: () => h.empty,
+                    onSome: displayName =>
+                      h.span(
+                        [
+                          h.Class(
+                            'me-1 hidden max-w-40 truncate text-[0.72rem] text-base-content/70 lg:inline',
+                          ),
+                        ],
+                        [displayName],
+                      ),
+                  }),
+                  h.div(
+                    [h.Class('ms-auto flex items-center gap-1')],
+                    [config.actions],
+                  ),
+                ],
               ),
             ],
           ),
+          h.main([], [config.content]),
+          ...(config.floating === undefined
+            ? []
+            : [
+                h.div(
+                  [h.Class('pointer-events-none fixed inset-0 z-50')],
+                  [config.floating],
+                ),
+              ]),
+          mobileNavView(
+            {
+              maybeActiveSection: config.maybeActiveSection,
+              moreMenu: config.moreMenu,
+            },
+            h,
+          ),
         ],
-      ),
-      h.main([], [config.content]),
-      mobileNavView(
-        {
-          maybeActiveSection: config.maybeActiveSection,
-          moreMenu: config.moreMenu,
-        },
-        h,
       ),
     ],
   )

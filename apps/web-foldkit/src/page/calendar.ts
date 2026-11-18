@@ -302,6 +302,7 @@ export const Message = defineMessageUnion({
   },
   FailedMoveCalendarTask: { message: Schema.String },
   ToggledEventQuickAdd: { date: Schema.String, isOpen: Schema.Boolean },
+  ResetQuickEvent: { date: Schema.String },
   UpdatedQuickEventTitle: { date: Schema.String, value: Schema.String },
   ToggledQuickEventAllDay: { date: Schema.String, allDay: Schema.Boolean },
   UpdatedQuickEventStart: { date: Schema.String, value: Schema.String },
@@ -1246,6 +1247,17 @@ const quickEventField = (
 ): ReadonlyArray<CalendarQuickEventDraft> =>
   setQuickEvent(model.quickEvents, update(quickEventOf(model, date)))
 
+/** Clear one day's inline event draft. */
+export const resetQuickEvent = (
+  model: Model,
+  date: string,
+): Update.Return<Model, Message> => ({
+  model: modifyFields(model, {
+    quickEvents: () =>
+      setQuickEvent(model.quickEvents, defaultQuickEvent(date)),
+  }),
+})
+
 const seriesOf = (
   inputs: Inputs,
   occurrence: CalendarEventOccurrence,
@@ -1304,6 +1316,14 @@ const resetOccasionForm = (model: Model, today: string): Model =>
     occasionAdvance: () => '7',
     maybeOccasionError: () => Option.none(),
   })
+
+/** Leave occasion edit mode and clear the create form. */
+export const cancelOccasionEdit = (
+  model: Model,
+  inputs: Inputs,
+): Update.Return<Model, Message> => ({
+  model: resetOccasionForm(model, occasionToday(model, inputs)),
+})
 
 const parsedAdvance = (value: string): Option.Option<number> => {
   if (value === '') {
@@ -1832,6 +1852,8 @@ export const update = (
           quickEventField(model, date, draft => ({ ...draft, open: isOpen })),
       }),
     }),
+
+    ResetQuickEvent: ({ date }) => resetQuickEvent(model, date),
 
     UpdatedQuickEventTitle: ({ date, value }) => ({
       model: modifyFields(model, {
@@ -2369,9 +2391,7 @@ export const update = (
       }),
     }),
 
-    ClickedCancelOccasionEdit: () => ({
-      model: resetOccasionForm(model, occasionToday(model, inputs)),
-    }),
+    ClickedCancelOccasionEdit: () => cancelOccasionEdit(model, inputs),
 
     CompletedSaveOccasion: ({ title, isEdit }) => ({
       model: modifyFields(

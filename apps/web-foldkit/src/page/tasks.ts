@@ -244,6 +244,11 @@ const initialToast = () =>
     defaultDuration: COMPLETION_TOAST_DURATION_MILLIS,
   })
 
+/** Clear the quick-add draft without going through a Message. */
+export const resetQuickAdd = (model: Model): Update.Return<Model, Message> => ({
+  model: updateQuickAdd(model, () => initialQuickAdd()),
+})
+
 export const initialModel = (options: InitOptions): Model =>
   Model.make({
     now: options.now,
@@ -349,6 +354,7 @@ export const Message = defineMessageUnion({
   UpdatedQuickAddNewProject: { value: Schema.String },
   UpdatedQuickAddNewTag: { value: Schema.String },
   SubmittedQuickAdd: {},
+  ResetQuickAdd: {},
   SubmittedQuickAddProject: { title: Schema.String },
   SubmittedQuickAddTag: { name: Schema.String },
   CompletedCreateTask: { taskId: Schema.String, title: Schema.String },
@@ -1450,6 +1456,8 @@ export const update = (
         modifyFields(draft, { newTagName: () => value }),
       ),
     }),
+
+    ResetQuickAdd: () => resetQuickAdd(model),
 
     SubmittedQuickAdd: () => {
       const title = model.quickAdd.title.trim()

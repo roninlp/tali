@@ -15,7 +15,7 @@ import {
 } from 'foldkit/scene'
 import { describe, test } from 'vite-plus/test'
 
-import { Popover } from '@foldkit/ui'
+import { Animation, Dialog, Popover } from '@foldkit/ui'
 import { ListId, NoteId } from '@tali/domain'
 
 import * as Auth from './auth'
@@ -283,6 +283,150 @@ describe('guard', () => {
         }),
       ),
       expect(role('heading', { name: 'امروز' })).toExist(),
+    )
+  })
+})
+
+describe('sidebar', () => {
+  test('collapses to an icon rail and expands again', () => {
+    scene(
+      { update, view },
+      given(modelAt(AppRoute.Today())),
+      expect(role('button', { name: 'بستن نوار کنار' })).toExist(),
+      click(role('button', { name: 'بستن نوار کنار' })),
+      expect(role('button', { name: 'باز کردن نوار کنار' })).toExist(),
+      click(role('button', { name: 'باز کردن نوار کنار' })),
+      expect(role('button', { name: 'بستن نوار کنار' })).toExist(),
+    )
+  })
+})
+
+const createCases = [
+  ['task', 'کار تازه', 'افزودن'],
+  ['habit', 'عادت تازه', 'افزودن عادت'],
+  ['event', 'رویداد تازه', 'افزودن رویداد'],
+  ['occasion', 'مناسبت تازه', 'افزودن مناسبت'],
+  ['note', 'یادداشت تازه', 'ساختن یادداشت'],
+] as const
+
+describe('create flow', () => {
+  test.each(createCases)(
+    'the Today + opens the %s form',
+    (_kind, label, submitLabel) => {
+      scene(
+        { update, view },
+        given(modelAt(AppRoute.Today())),
+        click(role('button', { name: 'ساختن چیز تازه' })),
+        Mount.resolve(
+          Popover.AnchorPopover,
+          Popover.Message.CompletedAnchorPopover(),
+        ),
+        Mount.resolve(
+          Popover.PortalPopoverBackdrop,
+          Popover.Message.CompletedPortalPopoverBackdrop(),
+        ),
+        click(role('button', { name: label })),
+        Mount.expectEnded(Popover.AnchorPopover),
+        Mount.expectEnded(Popover.PortalPopoverBackdrop),
+        Command.resolve(
+          Popover.FocusButton,
+          Popover.Message.CompletedFocusButton(),
+        ),
+        Mount.resolve(
+          Dialog.AcquireResources,
+          Dialog.Message.SucceededAcquireResources(),
+        ),
+        Command.resolve(
+          Dialog.ShowDialog,
+          Dialog.Message.SucceededShowDialog(),
+        ),
+        expect(role('dialog')).toExist(),
+        expect(role('heading', { name: label })).toExist(),
+        expect(role('button', { name: submitLabel })).toExist(),
+      )
+    },
+  )
+
+  test('the + toggles the create menu closed', () => {
+    scene(
+      { update, view },
+      given(modelAt(AppRoute.Today())),
+      click(role('button', { name: 'ساختن چیز تازه' })),
+      Mount.resolve(
+        Popover.AnchorPopover,
+        Popover.Message.CompletedAnchorPopover(),
+      ),
+      Mount.resolve(
+        Popover.PortalPopoverBackdrop,
+        Popover.Message.CompletedPortalPopoverBackdrop(),
+      ),
+      expect(role('button', { name: 'کار تازه' })).toExist(),
+      click(role('button', { name: 'ساختن چیز تازه' })),
+      Mount.expectEnded(Popover.AnchorPopover),
+      Mount.expectEnded(Popover.PortalPopoverBackdrop),
+      Command.resolve(
+        Popover.FocusButton,
+        Popover.Message.CompletedFocusButton(),
+      ),
+      expect(role('button', { name: 'کار تازه' })).toBeAbsent(),
+    )
+  })
+
+  test('a task date opens the picker dialog inside the create dialog', () => {
+    scene(
+      { update, view },
+      given(modelAt(AppRoute.Today())),
+      click(role('button', { name: 'ساختن چیز تازه' })),
+      Mount.resolve(
+        Popover.AnchorPopover,
+        Popover.Message.CompletedAnchorPopover(),
+      ),
+      Mount.resolve(
+        Popover.PortalPopoverBackdrop,
+        Popover.Message.CompletedPortalPopoverBackdrop(),
+      ),
+      click(role('button', { name: 'کار تازه' })),
+      Mount.expectEnded(Popover.AnchorPopover),
+      Mount.expectEnded(Popover.PortalPopoverBackdrop),
+      Command.resolve(
+        Popover.FocusButton,
+        Popover.Message.CompletedFocusButton(),
+      ),
+      Mount.resolve(
+        Dialog.AcquireResources,
+        Dialog.Message.SucceededAcquireResources(),
+      ),
+      Command.resolve(Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()),
+      click(role('button', { name: /^موعد: / })),
+      click(role('button', { name: /^تاریخ دلخواه/ })),
+      Mount.resolve(
+        Dialog.AcquireResources,
+        Dialog.Message.SucceededAcquireResources(),
+      ),
+      Command.resolve(Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()),
+      Command.resolveAll(
+        [
+          Animation.WaitForPaint,
+          Animation.Message.CompletedWaitForPaint({ generation: 1 }),
+        ],
+        [
+          Animation.WaitForPaint,
+          Animation.Message.CompletedWaitForPaint({ generation: 1 }),
+        ],
+      ),
+      Command.resolve(
+        Animation.WaitForAnimationSettled,
+        Animation.Message.EndedAnimation({ generation: 1 }),
+      ),
+      expect(role('dialog', { name: 'انتخاب تاریخ' })).toExist(),
+    )
+  })
+
+  test('the create button stays off the other sections', () => {
+    scene(
+      { update, view },
+      given(modelAt(AppRoute.Tasks())),
+      expect(role('button', { name: 'ساختن چیز تازه' })).toBeAbsent(),
     )
   })
 })

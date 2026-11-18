@@ -3,6 +3,7 @@ import { Match, Option } from 'effect'
 import { Listbox, Menu, Popover, RadioGroup } from '@foldkit/ui'
 
 import * as Auth from './auth'
+import * as Create from './create'
 import type { AuthFailure } from './lib/auth-api'
 import { Model } from './main'
 import { emptyMirrorSnapshot } from './mirror'
@@ -148,6 +149,8 @@ export const modelAt = (
 ): Model =>
   Model.make({
     route,
+    isSidebarCollapsed: false,
+    create: Create.init(),
     theme: Theme.Model.make({
       theme,
       mode,

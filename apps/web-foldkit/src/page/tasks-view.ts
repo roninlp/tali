@@ -200,7 +200,7 @@ const quickAddDueLabel = (
 const quickAddPanelView = (
   model: Model,
   inputs: ViewInputs,
-  view: TaskView,
+  bounds: TaskBucketBounds,
   h: HtmlBuilder<Message>,
 ): Html => {
   const draft = model.quickAdd
@@ -210,11 +210,11 @@ const quickAddPanelView = (
     readonly label: string
     readonly value: Option.Option<string>
   }> = [
-    { label: 'امروز', value: Option.some(view.bounds.today) },
-    { label: 'فردا', value: Option.some(shiftLocalDate(view.bounds.today, 1)) },
+    { label: 'امروز', value: Option.some(bounds.today) },
+    { label: 'فردا', value: Option.some(shiftLocalDate(bounds.today, 1)) },
     {
       label: 'هفتهٔ بعد',
-      value: Option.some(shiftLocalDate(view.bounds.today, 7)),
+      value: Option.some(shiftLocalDate(bounds.today, 7)),
     },
     { label: 'بدون تاریخ', value: Option.none() },
   ]
@@ -255,7 +255,7 @@ const quickAddPanelView = (
                 target: 'quickAdd:due',
                 mode: 'date',
                 value: dueValue,
-                today: view.bounds.today,
+                today: bounds.today,
                 digits: inputs.display.digits,
                 toParentMessage: message =>
                   Message.GotPickerMessage({ message }),
@@ -476,10 +476,25 @@ const quickAddStatusView = (
         : h.empty,
   })
 
-const quickAddView = (
+export const taskPickerDialogView = (
   model: Model,
   inputs: ViewInputs,
-  view: TaskView,
+  h: HtmlBuilder<Message>,
+): Html =>
+  pickerDialogView(
+    {
+      model: model.picker,
+      toParentMessage: message => Message.GotPickerMessage({ message }),
+      digits: inputs.display.digits,
+      weekStart: inputs.display.weekStart,
+    },
+    h,
+  )
+
+export const taskQuickAddView = (
+  model: Model,
+  inputs: ViewInputs,
+  bounds: TaskBucketBounds,
   h: HtmlBuilder<Message>,
 ): Html => {
   const draft = model.quickAdd
@@ -552,7 +567,7 @@ const quickAddView = (
               h.AriaControls('tasks-quick-add-due'),
               h.OnClick(Message.ClickedToggleQuickAddPanel({ panel: 'due' })),
             ],
-            [`موعد: ${quickAddDueLabel(model, inputs, view.bounds, digits)}`],
+            [`موعد: ${quickAddDueLabel(model, inputs, bounds, digits)}`],
           ),
           h.button(
             [
@@ -615,7 +630,7 @@ const quickAddView = (
           ),
         ],
       ),
-      quickAddPanelView(model, inputs, view, h),
+      quickAddPanelView(model, inputs, bounds, h),
       quickAddStatusView(draft, h),
     ],
   )
@@ -1755,7 +1770,7 @@ export const tasksPageView = (
             [h.Class('grid min-w-0 gap-4 lg:col-start-2 lg:row-start-1')],
             [
               headerView(inputs, h),
-              quickAddView(model, inputs, view, h),
+              taskQuickAddView(model, inputs, view.bounds, h),
               inlineAlertView(model.maybeError, h),
               inputs.isStoreReady
                 ? h.div(
@@ -1798,15 +1813,7 @@ export const tasksPageView = (
         [h.Class('sr-only'), h.Role('status'), h.AriaLive('polite')],
         [model.announcement],
       ),
-      pickerDialogView(
-        {
-          model: model.picker,
-          toParentMessage: message => Message.GotPickerMessage({ message }),
-          digits: inputs.display.digits,
-          weekStart: inputs.display.weekStart,
-        },
-        h,
-      ),
+      taskPickerDialogView(model, inputs, h),
       toastView(model, h),
     ],
   )

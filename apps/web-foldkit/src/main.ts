@@ -13,16 +13,29 @@ import { Transition } from 'foldkit/route'
 import { modifyFields } from 'foldkit/struct'
 import { Url, toString as urlToString } from 'foldkit/url'
 
-import { Popover } from '@foldkit/ui'
+import { Dialog, Popover } from '@foldkit/ui'
 import { type ListId, type NoteId } from '@tali/domain'
 
 import * as Auth from './auth'
+import * as Create from './create'
+import * as CreateView from './create-view'
+import {
+  CalendarPickerDialogView,
+  EventCreateFormView,
+  HabitCreateFormView,
+  HabitPickerDialogView,
+  NoteCreateFormView,
+  OccasionCreateFormView,
+  TaskCreateFormView,
+  TaskPickerDialogView,
+} from './form/views'
 import { GuardDecision, guardRoute, landingPath, landingRoute } from './guard'
 import { PushEnvironment } from './lib/push/service-worker'
 import { TimestampMillis } from './lib/schema-primitives'
 import { pageFold, pageFoldWithOutMessage } from './page-slice'
 import * as Calendar from './page/calendar'
 import { todayIn } from './page/calendar-model'
+import { occasionsPreview } from './page/calendar-view'
 import * as Capture from './page/capture'
 import * as Habits from './page/habits'
 import * as Household from './page/household'
@@ -32,7 +45,7 @@ import * as Notes from './page/notes'
 import * as Register from './page/register'
 import * as Reminders from './page/reminders'
 import * as Tasks from './page/tasks'
-import { TaskViewSettings } from './page/tasks-model'
+import { TaskViewSettings, boundsFor } from './page/tasks-model'
 import * as Today from './page/today'
 import * as Preferences from './preferences'
 import { Preferences as PreferencesRow } from './preferences-model'
@@ -61,6 +74,8 @@ import { pageHeaderView } from './ui/page'
 
 export const Model = Schema.Struct({
   route: AppRoute,
+  isSidebarCollapsed: Schema.Boolean,
+  create: Create.Model,
   theme: Theme.Model,
   auth: Auth.Model,
   login: Login.Model,
@@ -103,6 +118,8 @@ export type Flags = typeof Flags.Type
 export const Message = defineMessageUnion({
   ChangedUrl: { url: Url },
   ClickedLink: { request: UrlRequest },
+  ToggledSidebar: {},
+  GotCreateMessage: { message: Create.Message },
   CompletedNavigateInternal: {},
   CompletedReplaceUrl: {},
   CompletedLoadExternal: {},
@@ -189,6 +206,8 @@ export const init: Runtime.RoutingApplicationInit<
 
   const model = Model.make({
     route,
+    isSidebarCollapsed: false,
+    create: Create.init(),
     theme: themeInit.model,
     auth: authInit.model,
     login: Login.initialModel(),
@@ -282,6 +301,15 @@ const toPreferencesMessage = (message: Preferences.Message): Message =>
 
 const toPushMessage = (message: Push.Message): Message =>
   Message.GotPushMessage({ message })
+
+const toTasksMessage = (message: Tasks.Message): Message =>
+  Message.GotTasksMessage({ message })
+
+const toHabitsMessage = (message: Habits.Message): Message =>
+  Message.GotHabitsMessage({ message })
+
+const toCalendarMessage = (message: Calendar.Message): Message =>
+  Message.GotCalendarMessage({ message })
 
 const toListsMessage = (message: Lists.Message): Message =>
   Message.GotListsMessage({ message })
@@ -553,6 +581,150 @@ const closeMorePopover = (model: Model): UpdateReturn => {
     ),
   }
 }
+
+/** Today's Gregorian date in the viewer's display time zone. */
+const createEventDate = (model: Model): string =>
+  todayIn(
+    Preferences.currentDisplayFields(model.preferences).timeZone,
+    new Date(model.today.now),
+  )
+
+/** Reset the form a just-opened create dialog mounts. */
+const foldTasksResetQuickAdd = Update.foldChildStep({
+  update: Tasks.resetQuickAdd,
+  read: (model: Model) => Option.some(model.tasks),
+  write: (model: Model, nextTasks: Tasks.Model) =>
+    modifyFields(model, { tasks: () => nextTasks }),
+  toParentMessage: toTasksMessage,
+})
+
+const foldHabitsCancelEdit = Update.foldChildStep({
+  update: Habits.cancelEdit,
+  read: (model: Model) => Option.some(model.habits),
+  write: (model: Model, nextHabits: Habits.Model) =>
+    modifyFields(model, { habits: () => nextHabits }),
+  toParentMessage: toHabitsMessage,
+})
+
+const foldCalendarResetQuickEvent = Update.foldChild({
+  update: (calendar: Calendar.Model, date: string) =>
+    Calendar.resetQuickEvent(calendar, date),
+  read: (model: Model) => Option.some(model.calendar),
+  write: (model: Model, nextCalendar: Calendar.Model) =>
+    modifyFields(model, { calendar: () => nextCalendar }),
+  toParentMessage: toCalendarMessage,
+})
+
+const foldCalendarCancelOccasionEdit = Update.foldChild({
+  update: (calendar: Calendar.Model, inputs: Calendar.Inputs) =>
+    Calendar.cancelOccasionEdit(calendar, inputs),
+  read: (model: Model) => Option.some(model.calendar),
+  write: (model: Model, nextCalendar: Calendar.Model) =>
+    modifyFields(model, { calendar: () => nextCalendar }),
+  toParentMessage: toCalendarMessage,
+})
+
+const openedCreateForm = (model: Model, kind: Create.Kind): UpdateReturn =>
+  Match.value(kind).pipe(
+    Match.when('task', () => foldTasksResetQuickAdd(model)),
+    Match.when('habit', () => foldHabitsCancelEdit(model)),
+    Match.when('event', () =>
+      foldCalendarResetQuickEvent(model, createEventDate(model)),
+    ),
+    Match.when('occasion', () =>
+      foldCalendarCancelOccasionEdit(model, calendarInputs(model)),
+    ),
+    Match.orElse(() => ({ model })),
+  )
+
+const foldCreateOutMessage = Create.OutMessage.match<
+  Update.Step<Model, Message, Sync.LocalStoreService>
+>({
+  OpenedForm:
+    ({ kind }) =>
+    stepModel =>
+      openedCreateForm(stepModel, kind),
+
+  Closed: () => stepModel => ({ model: stepModel }),
+
+  CreatedNote:
+    ({ noteId }) =>
+    stepModel => {
+      const closed = closeCreateAfter({ model: stepModel })
+      const refreshed = foldSyncRefresh(closed.model)
+
+      return {
+        model: refreshed.model,
+        commands: [
+          ...(closed.commands ?? []),
+          ...(refreshed.commands ?? []),
+          NavigateInternal({ url: notePath(noteId) }),
+        ],
+      }
+    },
+
+  WroteLocalData: () => stepModel => foldSyncRefresh(stepModel),
+})
+
+const foldCreate = Update.foldChild({
+  update: Create.update,
+  read: (model: Model) => Option.some(model.create),
+  write: (model: Model, nextCreate: Create.Model) =>
+    modifyFields(model, { create: () => nextCreate }),
+  toParentMessage: (message: Create.Message) =>
+    Message.GotCreateMessage({ message }),
+  foldOutMessage: foldCreateOutMessage,
+})
+
+const foldCreateClose = Update.foldChildStep({
+  update: Create.close,
+  read: (model: Model) => Option.some(model.create),
+  write: (model: Model, nextCreate: Create.Model) =>
+    modifyFields(model, { create: () => nextCreate }),
+  toParentMessage: (message: Create.Message) =>
+    Message.GotCreateMessage({ message }),
+  foldOutMessage: Create.OutMessage.match<
+    Update.Step<Model, Message, Sync.LocalStoreService>
+  >({
+    OpenedForm: () => stepModel => ({ model: stepModel }),
+    Closed: () => stepModel => ({ model: stepModel }),
+    CreatedNote: () => stepModel => ({ model: stepModel }),
+    WroteLocalData: () => stepModel => ({ model: stepModel }),
+  }),
+})
+
+/** Close the create dialog, if one is showing. */
+const closeCreate = (model: Model): UpdateReturn =>
+  Create.isOpen(model.create) ? foldCreateClose(model) : { model }
+
+/** Close the create dialog after the mounted form finishes its write. */
+const closeCreateAfter = (folded: UpdateReturn): UpdateReturn => {
+  const closed = closeCreate(folded.model)
+
+  return {
+    model: closed.model,
+    commands: [...(folded.commands ?? []), ...(closed.commands ?? [])],
+  }
+}
+
+const isTaskCreateCompleted = (message: Tasks.Message): boolean =>
+  Match.value(message).pipe(
+    Match.tag('CompletedCreateTask', () => true),
+    Match.orElse(() => false),
+  )
+
+const isHabitCreateCompleted = (message: Habits.Message): boolean =>
+  Match.value(message).pipe(
+    Match.tag('CompletedCreateHabit', () => true),
+    Match.orElse(() => false),
+  )
+
+const isCalendarCreateCompleted = (message: Calendar.Message): boolean =>
+  Match.value(message).pipe(
+    Match.tag('CompletedCreateCalendarEvent', () => true),
+    Match.tag('CompletedSaveOccasion', ({ isEdit }) => !isEdit),
+    Match.orElse(() => false),
+  )
 
 const foldAuthOutMessage = Auth.OutMessage.match<
   Update.Step<Model, Message, Sync.LocalStoreService>
@@ -1473,8 +1645,10 @@ export const update = (model: Model, message: Message) =>
           ? foldSettingsReset(guarded.model)
           : { model: guarded.model }
 
+      const closedCreate = closeCreate(left.model)
+
       const entered = enterRoute(
-        left.model,
+        closedCreate.model,
         Transition.make(model.route, guarded.model.route),
       )
 
@@ -1483,6 +1657,7 @@ export const update = (model: Model, message: Message) =>
         commands: [
           ...(guarded.commands ?? []),
           ...(left.commands ?? []),
+          ...(closedCreate.commands ?? []),
           ...(entered.commands ?? []),
         ],
       }
@@ -1511,6 +1686,13 @@ export const update = (model: Model, message: Message) =>
     CompletedReplaceUrl: () => ({ model }),
     CompletedLoadExternal: () => ({ model }),
 
+    ToggledSidebar: () => ({
+      model: modifyFields(model, {
+        isSidebarCollapsed: () => !model.isSidebarCollapsed,
+      }),
+    }),
+
+    GotCreateMessage: ({ message }) => foldCreate(model, message),
     GotThemeMessage: ({ message }) => foldTheme(model, message),
     GotAuthMessage: ({ message }) => foldAuth(model, message),
     GotLoginMessage: ({ message }) => foldLogin(model, message),
@@ -1522,10 +1704,23 @@ export const update = (model: Model, message: Message) =>
     GotTodayMessage: ({ message }) => pages.today.foldMessage(model, message),
     GotListsMessage: ({ message }) => foldListsMessage(model, message),
     GotNotesMessage: ({ message }) => foldNotesMessage(model, message),
-    GotTasksMessage: ({ message }) => pages.tasks.foldMessage(model, message),
-    GotHabitsMessage: ({ message }) => pages.habits.foldMessage(model, message),
-    GotCalendarMessage: ({ message }) =>
-      pages.calendar.foldMessage(model, message),
+    GotTasksMessage: ({ message }) => {
+      const folded = pages.tasks.foldMessage(model, message)
+
+      return isTaskCreateCompleted(message) ? closeCreateAfter(folded) : folded
+    },
+    GotHabitsMessage: ({ message }) => {
+      const folded = pages.habits.foldMessage(model, message)
+
+      return isHabitCreateCompleted(message) ? closeCreateAfter(folded) : folded
+    },
+    GotCalendarMessage: ({ message }) => {
+      const folded = pages.calendar.foldMessage(model, message)
+
+      return isCalendarCreateCompleted(message)
+        ? closeCreateAfter(folded)
+        : folded
+    },
     GotRemindersMessage: ({ message }) => foldReminders(model, message),
     GotCaptureMessage: ({ message }) =>
       pages.capture.foldMessage(model, message),
@@ -1874,6 +2069,189 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): Html =>
     () => placeholderPageView(pageCopy(model.route).heading, h),
   )
 
+const createFormBody = (
+  model: Model,
+  kind: Create.Kind,
+  h: HtmlBuilder<Message>,
+): Html =>
+  Match.value(kind).pipe(
+    Match.when('task', () =>
+      h.div(
+        [h.Class('grid gap-4')],
+        [
+          h.submodel({
+            slotId: 'create-task-form',
+            model: model.tasks,
+            view: TaskCreateFormView,
+            viewInputs: {
+              inputs: tasksInputs(model),
+              bounds: boundsFor(
+                Preferences.currentDisplayFields(model.preferences).timeZone,
+                model.tasks.now,
+              ),
+            },
+            toParentMessage: toTasksMessage,
+          }),
+          h.submodel({
+            slotId: 'create-task-picker-dialog',
+            model: model.tasks,
+            view: TaskPickerDialogView,
+            viewInputs: tasksInputs(model),
+            toParentMessage: toTasksMessage,
+          }),
+        ],
+      ),
+    ),
+    Match.when('habit', () =>
+      h.div(
+        [h.Class('grid gap-4')],
+        [
+          h.submodel({
+            slotId: 'create-habit-form',
+            model: model.habits,
+            view: HabitCreateFormView,
+            viewInputs: { inputs: habitsInputs(model), showHeading: false },
+            toParentMessage: toHabitsMessage,
+          }),
+          h.submodel({
+            slotId: 'create-habit-picker-dialog',
+            model: model.habits,
+            view: HabitPickerDialogView,
+            viewInputs: habitsInputs(model),
+            toParentMessage: toHabitsMessage,
+          }),
+        ],
+      ),
+    ),
+    Match.when('event', () =>
+      h.div(
+        [h.Class('grid gap-4')],
+        [
+          h.submodel({
+            slotId: 'create-event-form',
+            model: model.calendar,
+            view: EventCreateFormView,
+            viewInputs: {
+              inputs: calendarInputs(model),
+              date: createEventDate(model),
+              label: 'امروز',
+            },
+            toParentMessage: toCalendarMessage,
+          }),
+          h.submodel({
+            slotId: 'create-event-picker-dialog',
+            model: model.calendar,
+            view: CalendarPickerDialogView,
+            viewInputs: calendarInputs(model),
+            toParentMessage: toCalendarMessage,
+          }),
+        ],
+      ),
+    ),
+    Match.when('occasion', () => {
+      const display = Preferences.currentDisplayFields(model.preferences)
+
+      return h.div(
+        [h.Class('grid gap-4')],
+        [
+          h.submodel({
+            slotId: 'create-occasion-form',
+            model: model.calendar,
+            view: OccasionCreateFormView,
+            viewInputs: {
+              inputs: calendarInputs(model),
+              form: {
+                isEditing: Option.isSome(model.calendar.occasionEditingId),
+                today: createEventDate(model),
+                preview: occasionsPreview(
+                  model.calendar.occasionOriginDate,
+                  display.digits,
+                ),
+                canShare: false,
+                busy: Option.isSome(model.calendar.maybeOccasionBusy),
+                editingVisibility: 'private',
+                slotId: 'create-occasion-advance-listbox',
+              },
+            },
+            toParentMessage: toCalendarMessage,
+          }),
+          h.submodel({
+            slotId: 'create-occasion-picker-dialog',
+            model: model.calendar,
+            view: CalendarPickerDialogView,
+            viewInputs: calendarInputs(model),
+            toParentMessage: toCalendarMessage,
+          }),
+        ],
+      )
+    }),
+    Match.orElse(() =>
+      h.submodel({
+        slotId: 'create-note-form',
+        model: model.create.noteForm,
+        view: NoteCreateFormView,
+        viewInputs: { isStoreReady: Sync.isStoreReady(model.sync) },
+        toParentMessage: message =>
+          Message.GotCreateMessage({
+            message: Create.gotNoteFormMessage(message),
+          }),
+      }),
+    ),
+  )
+
+const createOverlay = (model: Model, h: HtmlBuilder<Message>): Html => {
+  const maybeKind = model.create.maybeKind
+
+  const menu = h.submodel({
+    slotId: model.create.menu.id,
+    model: model.create.menu,
+    view: Popover.view,
+    viewInputs: {
+      anchor: { placement: 'top-end', gap: 8, padding: 8 },
+      ariaLabel: 'ساختن چیز تازه',
+      focusSelector: '[data-create-action]',
+      toView: render =>
+        CreateView.menuView(
+          {
+            render,
+            toSelect: kind =>
+              Message.GotCreateMessage({
+                message: Create.selectKind(kind),
+              }),
+          },
+          h,
+        ),
+    },
+    toParentMessage: message =>
+      Message.GotCreateMessage({
+        message: Create.gotMenuMessage(message),
+      }),
+  })
+
+  const kind = Option.getOrElse(maybeKind, () => 'task' as const)
+
+  const body = Option.match(maybeKind, {
+    onNone: () => h.empty,
+    onSome: openKind => createFormBody(model, openKind, h),
+  })
+
+  const dialog = h.submodel({
+    slotId: model.create.dialog.id,
+    model: model.create.dialog,
+    view: Dialog.view,
+    viewInputs: {
+      hasDescription: true,
+      toView: render => CreateView.dialogView({ render, kind, body }, h),
+    },
+    toParentMessage: message =>
+      Message.GotCreateMessage({
+        message: Create.gotDialogMessage(message),
+      }),
+  })
+
+  return h.div([h.Class('contents')], [menu, dialog])
+}
+
 export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
   const copy = pageCopy(model.route)
   const maybeActiveSection = Shell.sectionForRoute(model.route)
@@ -1959,18 +2337,21 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
     }),
   })
 
+  const shellConfig: Shell.ShellConfig<Message> = {
+    actions,
+    content: guard.content,
+    isSidebarCollapsed: model.isSidebarCollapsed,
+    maybeActiveSection,
+    maybeDisplayName,
+    moreMenu,
+    onToggleSidebar: Message.ToggledSidebar(),
+  }
+
   const body =
     guard.isAllowed && usesAppShell(model.route)
-      ? Shell.view(
-          {
-            actions,
-            content: guard.content,
-            maybeActiveSection,
-            maybeDisplayName,
-            moreMenu,
-          },
-          h,
-        )
+      ? AppRoute.isAnyOf(['Today'])(model.route)
+        ? Shell.view({ ...shellConfig, floating: createOverlay(model, h) }, h)
+        : Shell.view(shellConfig, h)
       : Shell.standaloneView({ actions, content: guard.content }, h)
 
   return {
@@ -2008,10 +2389,10 @@ const moreMenuView = (
       ),
       config.render.isVisible
         ? h.div(
-            [...config.render.panel],
+            [...config.render.panel, h.Class('float-card z-[55] w-44 p-1.5')],
             [
               h.nav(
-                [h.AriaLabel('بخش‌های بیشتر'), h.Class('float-card w-44 p-1.5')],
+                [h.AriaLabel('بخش‌های بیشتر')],
                 Array.map(MORE_SECTIONS, section =>
                   Shell.morePanelLinkView(
                     section,
