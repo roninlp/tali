@@ -65,7 +65,7 @@ import {
   OccasionPreparation,
   OccasionServiceError,
   OccasionUpdateInput,
-  PlanningListItem,
+  ListItem,
   Project,
   ProjectCreateInput,
   Reminder,
@@ -139,43 +139,43 @@ class ListLists extends Rpc.make('ListLists', {
 
 class CreateListItem extends Rpc.make('CreateListItem', {
   payload: ListItemCreateInput,
-  success: PlanningListItem,
+  success: ListItem,
   error: ListRpcError,
 }) {}
 
 class AppendListItems extends Rpc.make('AppendListItems', {
   payload: ListItemsAppendInput,
-  success: Schema.Array(PlanningListItem),
+  success: Schema.Array(ListItem),
   error: ListRpcError,
 }) {}
 
 class ListListItems extends Rpc.make('ListListItems', {
   payload: ListItemsQuery,
-  success: Schema.Array(PlanningListItem),
+  success: Schema.Array(ListItem),
   error: ListRpcError,
 }) {}
 
 class UpdateListItem extends Rpc.make('UpdateListItem', {
   payload: ListItemUpdateInput,
-  success: PlanningListItem,
+  success: ListItem,
   error: ListRpcError,
 }) {}
 
 class SetListItemChecked extends Rpc.make('SetListItemChecked', {
   payload: ListItemCheckInput,
-  success: PlanningListItem,
+  success: ListItem,
   error: ListRpcError,
 }) {}
 
 class DeleteListItem extends Rpc.make('DeleteListItem', {
   payload: ListItemMutationInput,
-  success: PlanningListItem,
+  success: ListItem,
   error: ListRpcError,
 }) {}
 
 class ReorderListItems extends Rpc.make('ReorderListItems', {
   payload: ListReorderInput,
-  success: Schema.Array(PlanningListItem),
+  success: Schema.Array(ListItem),
   error: ListRpcError,
 }) {}
 

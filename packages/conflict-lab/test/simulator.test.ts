@@ -63,6 +63,13 @@ const makeSlots = (): ReadonlyArray<Slot> => [
 
 const title = (step: number): string => `عنوان-${step}`
 
+/** The create/revive patch one aggregate's row speaks on the wire. */
+const createPatch = (
+  entityType: EntityType,
+  step: number,
+): Record<string, unknown> =>
+  entityType === 'listItem' ? { name: title(step) } : { title: title(step) }
+
 /**
  * One write token. The op is interpreted against the device's current mirror:
  * a missing row becomes a create, a deleted row becomes a revive attempt
@@ -100,7 +107,7 @@ const writeToken = async (
         entityType: slot.entityType,
         entityId: slot.id,
         op: 'upsert',
-        patch: { title: title(step) },
+        patch: createPatch(slot.entityType, step),
       },
       `${run}-${device.label}-${step}-revive`,
     )
@@ -109,7 +116,7 @@ const writeToken = async (
 
   const patch = ((): Record<string, unknown> => {
     if (current === undefined || current.deletedAt !== null) {
-      return { title: title(step) }
+      return createPatch(slot.entityType, step)
     }
     const choice = step % 3
     switch (slot.entityType) {
@@ -121,10 +128,10 @@ const writeToken = async (
             : { priority: step % 2 === 0 ? 'high' : 'low' }
       case 'listItem':
         return choice === 0
-          ? { title: title(step) }
+          ? { name: title(step) }
           : choice === 1
-            ? { checked: step % 2 === 0 }
-            : { sortOrder: step }
+            ? { done: step % 2 === 0 }
+            : { order: step }
       case 'note':
         return choice === 0
           ? { title: title(step) }

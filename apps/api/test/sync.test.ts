@@ -151,7 +151,7 @@ const isolationChunk = (count: number, poisonAt: ReadonlyArray<number>) => {
           baseVersion: 0,
           patch: { title: `poison-${index}`, projectId: uuidV7() },
         })
-      : entry({ entityId, baseVersion: 0, patch: { title: `ok-${index}` } }),
+      : entry({ entityId, baseVersion: 0, patch: { name: `ok-${index}` } }),
   )
   return { ids, entries }
 }
@@ -268,29 +268,27 @@ describe('sync engine', () => {
         entry({
           entityId: id,
           baseVersion: 0,
-          patch: { title: 'خرید نان', checked: false, sortOrder: 0 },
+          patch: { name: 'خرید نان', done: false, order: 0 },
         }),
       ],
     })
     await syncDevice(h, a)
     await syncDevice(h, b)
-    expect(a.mirror.get(id)?.data.title).toBe('خرید نان')
-    expect(b.mirror.get(id)?.data.title).toBe('خرید نان')
+    expect(a.mirror.get(id)?.data.name).toBe('خرید نان')
+    expect(b.mirror.get(id)?.data.name).toBe('خرید نان')
 
     // A renames offline; B checks it off offline. Neither has seen the other.
     await push(h, {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
-        entry({ entityId: id, baseVersion: 1, patch: { title: 'نان تازه' } }),
+        entry({ entityId: id, baseVersion: 1, patch: { name: 'نان تازه' } }),
       ],
     })
     const bResult = await push(h, {
       userId: USER_B,
       householdId: HOUSEHOLD,
-      entries: [
-        entry({ entityId: id, baseVersion: 1, patch: { checked: true } }),
-      ],
+      entries: [entry({ entityId: id, baseVersion: 1, patch: { done: true } })],
     })
     const bConflict = nonRejected(bResult)
     expect(bConflict._tag).toBe('conflict')
@@ -304,7 +302,7 @@ describe('sync engine', () => {
     const fromA = a.mirror.get(id)
     const fromB = b.mirror.get(id)
     expect(fromA).toEqual(fromB)
-    expect(fromA?.data).toMatchObject({ title: 'نان تازه', checked: true })
+    expect(fromA?.data).toMatchObject({ name: 'نان تازه', done: true })
     expect(fromA?.version).toBe(3)
     expect(a.cursor).toBe(b.cursor)
   })
@@ -316,7 +314,7 @@ describe('sync engine', () => {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
-        entry({ entityId: id, baseVersion: 0, patch: { title: 'اول' } }),
+        entry({ entityId: id, baseVersion: 0, patch: { name: 'اول' } }),
       ],
     })
     const before = feedCount(h.db)
@@ -327,7 +325,7 @@ describe('sync engine', () => {
       h.fake.beforeBatch = undefined
       h.db
         .prepare(
-          'UPDATE list_items SET version = version + 1, title = ?, updated_at = ? WHERE id = ?',
+          'UPDATE list_items SET version = version + 1, name = ?, updated_at = ? WHERE id = ?',
         )
         .run('نوشته‌ی همسر', NOW(), id)
     }
@@ -335,7 +333,7 @@ describe('sync engine', () => {
     const mutation = entry({
       entityId: id,
       baseVersion: 1,
-      patch: { title: 'نوشته‌ی من' },
+      patch: { name: 'نوشته‌ی من' },
       at: FUTURE(),
     })
     await expect(
@@ -354,7 +352,7 @@ describe('sync engine', () => {
     })
     const retryConflict = nonRejected(retry)
     expect(retryConflict._tag).toBe('conflict')
-    expect(retryConflict.item?.data.title).toBe('نوشته‌ی من')
+    expect(retryConflict.item?.data.name).toBe('نوشته‌ی من')
     expect(feedCount(h.db)).toBe(before + 1)
   })
 
@@ -366,7 +364,7 @@ describe('sync engine', () => {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
-        entry({ entityId: id, baseVersion: 0, patch: { title: 'اول' } }),
+        entry({ entityId: id, baseVersion: 0, patch: { name: 'اول' } }),
       ],
     })
 
@@ -378,7 +376,7 @@ describe('sync engine', () => {
         entry({
           entityId: id,
           baseVersion: 1,
-          patch: { title: 'قدیمی' },
+          patch: { name: 'قدیمی' },
           at: PAST,
         }),
       ],
@@ -392,7 +390,7 @@ describe('sync engine', () => {
         entry({
           entityId: id,
           baseVersion: 1,
-          patch: { title: 'تازه' },
+          patch: { name: 'تازه' },
           at: FUTURE(),
         }),
       ],
@@ -408,7 +406,7 @@ describe('sync engine', () => {
         entry({
           entityId: id,
           baseVersion: 1,
-          patch: { title: 'خیلی قدیمی' },
+          patch: { name: 'خیلی قدیمی' },
           at: PAST,
         }),
       ],
@@ -423,7 +421,7 @@ describe('sync engine', () => {
       householdId: HOUSEHOLD,
       cursor: 0,
     })
-    expect(itemOf(page, id)?.data.title).toBe('تازه')
+    expect(itemOf(page, id)?.data.name).toBe('تازه')
   })
 
   it('makes delete win over a concurrent edit (tombstone + recoverable trash)', async () => {
@@ -434,7 +432,7 @@ describe('sync engine', () => {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
-        entry({ entityId: id, baseVersion: 0, patch: { title: 'حذف‌شدنی' } }),
+        entry({ entityId: id, baseVersion: 0, patch: { name: 'حذف‌شدنی' } }),
       ],
     })
 
@@ -446,7 +444,7 @@ describe('sync engine', () => {
         entry({
           entityId: id,
           baseVersion: 1,
-          patch: { title: 'ویرایش' },
+          patch: { name: 'ویرایش' },
           at: FUTURE(),
         }),
       ],
@@ -466,7 +464,7 @@ describe('sync engine', () => {
         entry({
           entityId: id,
           baseVersion: 2,
-          patch: { title: 'بازگشت' },
+          patch: { name: 'بازگشت' },
           at: FUTURE(),
         }),
       ],
@@ -487,7 +485,7 @@ describe('sync engine', () => {
     const mutation = entry({
       entityId: id,
       baseVersion: 0,
-      patch: { title: 'یک‌بار' },
+      patch: { name: 'یک‌بار' },
     })
 
     const first = await push(h, {
@@ -519,11 +517,11 @@ describe('sync engine', () => {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
-        entry({ entityId: shared, baseVersion: 0, patch: { title: 'مشترک' } }),
+        entry({ entityId: shared, baseVersion: 0, patch: { name: 'مشترک' } }),
         entry({
           entityId: priv,
           baseVersion: 0,
-          patch: { title: 'خصوصی', visibility: 'private' },
+          patch: { name: 'خصوصی', visibility: 'private' },
         }),
       ],
     })
@@ -558,7 +556,7 @@ describe('sync engine', () => {
         entry({
           entityId: other,
           baseVersion: 0,
-          patch: { title: 'خانه‌ی دیگر' },
+          patch: { name: 'خانه‌ی دیگر' },
         }),
       ],
     })
@@ -578,12 +576,12 @@ describe('sync engine', () => {
 
     h.db.exec(`
       INSERT INTO list_items
-        (id, title, checked, sort_order, version, created_at, updated_at, deleted_at,
+        (id, name, version, created_at, updated_at, deleted_at,
          owner_id, visibility, household_id)
       VALUES
-        ('${foreign}', 'خانه‌ی دیگر', 0, 0, 1, '${now}', '${now}', NULL,
+        ('${foreign}', 'خانه‌ی دیگر', 1, '${now}', '${now}', NULL,
          '${USER_C}', 'shared', '${HOUSEHOLD_B}'),
-        ('${legacy}', 'پیش از سینک', 0, 0, 1, '${now}', '${now}', NULL,
+        ('${legacy}', 'پیش از سینک', 1, '${now}', '${now}', NULL,
          '', 'shared', NULL)
     `)
     const before = feedCount(h.db)
@@ -595,7 +593,7 @@ describe('sync engine', () => {
             userId: USER_A,
             householdId: HOUSEHOLD,
             entries: [
-              entry({ entityId, baseVersion: 1, op, patch: { title: 'نفوذ' } }),
+              entry({ entityId, baseVersion: 1, op, patch: { name: 'نفوذ' } }),
             ],
           }),
         ).rejects.toMatchObject({ _tag: 'SyncEntityForbidden' })
@@ -612,7 +610,7 @@ describe('sync engine', () => {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: ids.map(entityId =>
-        entry({ entityId, baseVersion: 0, patch: { title: entityId } }),
+        entry({ entityId, baseVersion: 0, patch: { name: entityId } }),
       ),
     })
 
@@ -650,10 +648,10 @@ describe('sync engine', () => {
     // A row whose feed entry is already outside the retained window (seq 1).
     h.db.exec(`
       INSERT INTO list_items
-        (id, title, checked, sort_order, version, created_at, updated_at, deleted_at,
+        (id, name, version, created_at, updated_at, deleted_at,
          owner_id, visibility, household_id)
       VALUES
-        ('${old}', 'کهنه', 0, 0, 1, '${longAgo}', '${longAgo}', NULL,
+        ('${old}', 'کهنه', 1, '${longAgo}', '${longAgo}', NULL,
          '${USER_A}', 'shared', '${HOUSEHOLD}')
     `)
     h.db.exec(`
@@ -669,7 +667,7 @@ describe('sync engine', () => {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
-        entry({ entityId: recent, baseVersion: 0, patch: { title: 'تازه' } }),
+        entry({ entityId: recent, baseVersion: 0, patch: { name: 'تازه' } }),
       ],
     })
     await pruneFeed(h)
@@ -787,12 +785,12 @@ describe('sync engine', () => {
     // cursor's staleness would be undetectable and those rows silently missing.
     h.db.exec(`
       INSERT INTO list_items
-        (id, title, checked, sort_order, version, created_at, updated_at, deleted_at,
+        (id, name, version, created_at, updated_at, deleted_at,
          owner_id, visibility, household_id)
       VALUES
-        ('${first}', 'اول', 0, 0, 1, '${longAgo}', '${longAgo}', NULL,
+        ('${first}', 'اول', 1, '${longAgo}', '${longAgo}', NULL,
          '${USER_A}', 'shared', '${HOUSEHOLD}'),
-        ('${second}', 'دوم', 0, 0, 1, '${longAgo}', '${longAgo}', NULL,
+        ('${second}', 'دوم', 1, '${longAgo}', '${longAgo}', NULL,
          '${USER_A}', 'shared', '${HOUSEHOLD}')
     `)
     h.db.exec(`
@@ -849,10 +847,10 @@ describe('sync engine', () => {
     // delete on every request (two DELETEs per poll).
     h.db.exec(`
       INSERT INTO list_items
-        (id, title, checked, sort_order, version, created_at, updated_at, deleted_at,
+        (id, name, version, created_at, updated_at, deleted_at,
          owner_id, visibility, household_id)
       VALUES
-        ('${old}', 'کهنه', 0, 0, 1, '${longAgo}', '${longAgo}', NULL,
+        ('${old}', 'کهنه', 1, '${longAgo}', '${longAgo}', NULL,
          '${USER_A}', 'shared', '${HOUSEHOLD}')
     `)
     h.db.exec(`
@@ -874,7 +872,7 @@ describe('sync engine', () => {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: [
-        entry({ entityId: recent, baseVersion: 0, patch: { title: 'تازه' } }),
+        entry({ entityId: recent, baseVersion: 0, patch: { name: 'تازه' } }),
       ],
     })
 
@@ -910,7 +908,7 @@ describe('sync engine', () => {
     expect(appliedCount(h.db)).toBe(2)
   })
 
-  // ── #34: the registry, exercised through Task alongside the legacy listItem ──
+  // ── #34: the registry, exercised through Task alongside listItem ───────────
 
   it('converges a Task edited offline on both devices', async () => {
     const h = makeHarness()
@@ -1248,7 +1246,7 @@ describe('sync engine', () => {
       project: { title: 'خانه' },
       tag: { name: 'فوری' },
       list: { title: 'هفتگی' },
-      listItem: { title: 'شیر', checked: false, sortOrder: 0 },
+      listItem: { name: 'شیر', done: false, order: 0 },
       note: { title: 'ایده', body: { type: 'doc' }, plainText: 'ایده' },
       event: {
         title: 'قرار',
@@ -1315,7 +1313,7 @@ describe('sync engine', () => {
     )
   })
 
-  it('keeps the legacy listItem wire shape and dual-writes the real columns', async () => {
+  it('speaks the real ListItem wire shape and writes only the real columns', async () => {
     const h = makeHarness()
     const id = uuidV7()
     const listId = uuidV7()
@@ -1327,7 +1325,7 @@ describe('sync engine', () => {
         entry({
           entityId: id,
           baseVersion: 0,
-          patch: { title: 'نان', checked: true, sortOrder: 3 },
+          patch: { name: 'نان', done: true, order: 3 },
         }),
       ],
     })
@@ -1350,7 +1348,7 @@ describe('sync engine', () => {
         entry({
           entityId: id,
           baseVersion: 1,
-          patch: { checked: false, listId },
+          patch: { done: false, listId },
         }),
       ],
     })
@@ -1361,11 +1359,11 @@ describe('sync engine', () => {
       cursor: 0,
     })
     const item = page.items.find(row => row.entityId === id)
-    // No web change: the wire payload stays title/checked/sortOrder.
+    // The wire payload is the aggregate's own vocabulary: name/done/order.
     expect(item?.data).toMatchObject({
-      title: 'نان',
-      checked: false,
-      sortOrder: 3,
+      name: 'نان',
+      done: false,
+      order: 3,
       listId,
     })
 
@@ -1380,7 +1378,6 @@ describe('sync engine', () => {
       readonly checked_at: string | null
       readonly list_id: string | null
     }
-    // …and the real #33 columns move with it (retires the one-way dual-write).
     expect(row).toMatchObject({
       name: 'نان',
       done: 0,
@@ -1400,7 +1397,7 @@ describe('sync engine', () => {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: ids.map(entityId =>
-        entry({ entityId, baseVersion: 0, patch: { title: entityId } }),
+        entry({ entityId, baseVersion: 0, patch: { name: entityId } }),
       ),
     })
     expect(pushed.results).toHaveLength(ids.length)
@@ -1496,7 +1493,7 @@ describe('sync engine', () => {
           entityType: 'listItem',
           entityId: valid,
           baseVersion: 0,
-          patch: { title: 'سالم' },
+          patch: { name: 'سالم' },
         }),
       ],
     })
@@ -1506,7 +1503,7 @@ describe('sync engine', () => {
     })
     const validResult = nonRejected(rejected, 1)
     expect(validResult._tag).toBe('applied')
-    expect(validResult.item?.data.title).toBe('سالم')
+    expect(validResult.item?.data.name).toBe('سالم')
     expect(feedCount(h.db)).toBe(before + 1)
   })
 
@@ -1549,7 +1546,7 @@ describe('sync engine', () => {
           entityType: 'listItem',
           entityId: healthy,
           baseVersion: 0,
-          patch: { title: 'سالم' },
+          patch: { name: 'سالم' },
         }),
       ],
     })
@@ -1597,7 +1594,7 @@ describe('sync engine', () => {
           entityType: 'listItem',
           entityId: after,
           baseVersion: 0,
-          patch: { title: 'بعدی' },
+          patch: { name: 'بعدی' },
         }),
       ],
     })
@@ -1658,7 +1655,7 @@ describe('sync engine', () => {
           entityType: 'listItem',
           entityId: healthy,
           baseVersion: 0,
-          patch: { title: 'سالم' },
+          patch: { name: 'سالم' },
         }),
       ],
     })
@@ -1690,7 +1687,7 @@ describe('sync engine', () => {
       userId: USER_A,
       householdId: HOUSEHOLD,
       entries: healthy.map(entityId =>
-        entry({ entityId, baseVersion: 0, patch: { title: entityId } }),
+        entry({ entityId, baseVersion: 0, patch: { name: entityId } }),
       ),
     })
     expect(happy.results.every(result => result._tag === 'applied')).toBe(true)
@@ -1888,9 +1885,9 @@ describe('sync engine', () => {
       h.db
         .prepare(
           `INSERT INTO list_items
-             (id, title, checked, sort_order, version, created_at, updated_at, deleted_at,
-              household_id, owner_id, visibility, type, done, ordering, tag_ids)
-           VALUES (?, ?, 0, 0, 1, ?, ?, NULL, ?, ?, 'shared', 'listItem', 0, 0, '[]')`,
+             (id, name, done, ordering, version, created_at, updated_at, deleted_at,
+              household_id, owner_id, visibility, type, tag_ids)
+           VALUES (?, ?, 0, 0, 1, ?, ?, NULL, ?, ?, 'shared', 'listItem', '[]')`,
         )
         .run(id, 'همسر', NOW(), NOW(), HOUSEHOLD, USER_B)
     }
@@ -2257,7 +2254,7 @@ describe('visibility policy (ADR-0011)', () => {
           entityType: 'listItem',
           entityId: sharedItem,
           baseVersion: 0,
-          patch: { title: 'نمی‌شود', listId, visibility: 'shared' },
+          patch: { name: 'نمی‌شود', listId, visibility: 'shared' },
         }),
       ],
     })
@@ -2274,7 +2271,7 @@ describe('visibility policy (ADR-0011)', () => {
           entityType: 'listItem',
           entityId: privateItem,
           baseVersion: 0,
-          patch: { title: 'نان', listId },
+          patch: { name: 'نان', listId },
         }),
       ],
     })
@@ -2313,7 +2310,7 @@ describe('visibility policy (ADR-0011)', () => {
           entityId: narrowItem,
           baseVersion: 0,
           patch: {
-            title: 'خصوصی من',
+            name: 'خصوصی من',
             listId: sharedList,
             visibility: 'private',
           },
@@ -2590,7 +2587,7 @@ describe('inherited visibility is parent-gated (ADR-0011)', () => {
           entityType: 'listItem',
           entityId: itemId,
           baseVersion: 0,
-          patch: { title: 'نان', listId },
+          patch: { name: 'نان', listId },
         }),
       ],
     })
@@ -2735,7 +2732,7 @@ describe('inherited visibility is parent-gated (ADR-0011)', () => {
           entityType: 'listItem',
           entityId: itemId,
           baseVersion: 0,
-          patch: { title: 'مورد', listId },
+          patch: { name: 'مورد', listId },
         }),
       ],
     })
@@ -2769,7 +2766,7 @@ describe('inherited visibility is parent-gated (ADR-0011)', () => {
           entityType: 'listItem',
           entityId: itemId,
           baseVersion: 0,
-          patch: { title: 'یتیم', visibility: 'shared' },
+          patch: { name: 'یتیم', visibility: 'shared' },
         }),
       ],
     })
@@ -2827,7 +2824,7 @@ describe('inherited visibility is parent-gated (ADR-0011)', () => {
           entityType: 'listItem',
           entityId: itemId,
           baseVersion: 0,
-          patch: { title: 'مورد', listId: sharedList },
+          patch: { name: 'مورد', listId: sharedList },
         }),
       ],
     })
@@ -2878,7 +2875,7 @@ describe('inherited visibility is parent-gated (ADR-0011)', () => {
           entityType: 'listItem',
           entityId: itemId,
           baseVersion: 0,
-          patch: { title: 'مورد', listId },
+          patch: { name: 'مورد', listId },
         }),
       ],
     })
@@ -2918,7 +2915,7 @@ describe('inherited visibility is parent-gated (ADR-0011)', () => {
           entityType: 'listItem',
           entityId: itemId,
           baseVersion: 0,
-          patch: { title: 'یتیم', listId: uuidV7(), visibility: 'shared' },
+          patch: { name: 'یتیم', listId: uuidV7(), visibility: 'shared' },
         }),
       ],
     })
@@ -2957,7 +2954,7 @@ describe('inherited visibility is parent-gated (ADR-0011)', () => {
           entityType: 'listItem',
           entityId: itemId,
           baseVersion: 0,
-          patch: { title: 'مورد', listId: sharedList },
+          patch: { name: 'مورد', listId: sharedList },
         }),
       ],
     })

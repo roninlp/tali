@@ -61,10 +61,10 @@ const makeSource = (): DatabaseSync => {
 
   db.prepare(
     `INSERT INTO list_items
-      (id, title, checked, sort_order, version, created_at, updated_at, deleted_at,
-       owner_id, visibility, household_id, type, list_id, name, done, ordering, tag_ids)
+      (id, name, done, ordering, version, created_at, updated_at, deleted_at,
+       owner_id, visibility, household_id, type, list_id, tag_ids)
      VALUES ('item-1', 'شیر', 0, 0, 1, ?, ?, NULL, ?, 'shared', ?,
-       'listItem', 'list-1', 'شیر', 0, 0, '[]')`,
+       'listItem', 'list-1', '[]')`,
   ).run(NOW, NOW, USER, HOUSEHOLD)
 
   const feed = db.prepare(

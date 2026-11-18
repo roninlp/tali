@@ -131,14 +131,15 @@ The Worker also runs three cron triggers: the per-minute reminder sweep
 The last two are decided in ADR-0009; restoring a dump is documented in
 `docs/backup-restore.md`.
 
-## The scaffold round-trip (dummy aggregate: `ListItem`)
+## The list vertical (`ListItem`)
 
-1. **`packages/domain`** — `ListItem`, `ListItemInsert`, `ListItemNotFound`,
-   `Change`/`SyncPullResponse` (sync envelope).
-2. **`packages/sql`** — `migrations/0001_list_items.sql` + `ListItemRepo`
-   (`@effect/sql-d1` `SqlClient` + `SqlSchema`).
+1. **`packages/domain`** — `ListItem` (the FR-LIST-01/02 aggregate),
+   `ListItemCreate`, `ListItemNotFound`, `Change`/`SyncPullResponse`
+   (sync envelope).
+2. **`packages/sql`** — `migrations/` + `PlanningListItemRepo`
+   (`@effect/sql-d1` `SqlClient`) and the sync registry (`sync-registry.ts`).
 3. **`packages/rpc`** — `ApiRpcs` (`CreateListItem` / `ListListItems` /
-   `ToggleListItem`) + derived `ApiClient` type.
+   `SetListItemChecked`) + derived `ApiClient` type.
 4. **`apps/api`** — `ListService` layer → RPC handlers → `RpcServer.layerHttp`
    at `/rpc`; plain-HTTP `/sync/pull`; served as a Cloudflare Worker via
    `HttpRouter.toWebHandler` + `D1Client.layer`.

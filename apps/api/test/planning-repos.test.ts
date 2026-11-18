@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test'
 import { Effect, Layer } from 'effect'
 import {
-  PlanningListItem,
+  ListItem,
   Task,
   uuidV7,
   type HouseholdId,
@@ -39,6 +39,8 @@ const MIGRATIONS = [
   '0005_core_planning.sql',
   '0007_task_recurrence.sql',
   '0008_list_last_writer.sql',
+  // Retires the scaffold columns the ListItem repo no longer writes (#119).
+  '0015_retire_list_item_scaffold.sql',
 ]
 
 const NOW = '2026-10-20T09:30:00.000Z'
@@ -78,7 +80,7 @@ const listItem = (input: {
   readonly ownerId: UserId
   readonly visibility: 'private' | 'shared'
 }) =>
-  new PlanningListItem({
+  new ListItem({
     ...common,
     ownerId: input.ownerId,
     visibility: input.visibility,

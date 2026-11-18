@@ -9,7 +9,6 @@ export * from './ids'
 export * from './sync'
 export * from './error'
 export * from './auth'
-export * from './list-item'
 export * from './push'
 export * from './preferences'
 export * from './today'
@@ -28,6 +27,7 @@ export {
   ItemType,
   ListCheckedPlacement,
   ListId,
+  ListItemId,
   ListItemSort,
   LocalDate,
   NoteId,
@@ -60,6 +60,7 @@ export * from './planning/task-service'
 export * from './planning/project'
 export * from './planning/tag'
 export * from './planning/list'
+export * from './planning/list-item'
 export * from './planning/list-service'
 export * from './planning/note'
 export * from './planning/note-service'
@@ -76,9 +77,3 @@ export * from './planning/reminder-link'
 export * from './planning/reminder'
 export * from './planning/reminder-policy'
 export * from './planning/reminder-service'
-// The real `ListItem` aggregate collides with the pre-Slice-2 scaffold stub
-// (`./list-item`), which sync still speaks for the web mirror (#34). Re-export
-// it under an unambiguous alias plus the full `Planning` namespace.
-export { ListItem as PlanningListItem } from './planning/list-item'
-export { ListItemId as PlanningListItemId } from './planning/common'
-export * as Planning from './planning'

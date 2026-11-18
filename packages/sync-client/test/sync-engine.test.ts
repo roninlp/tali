@@ -82,7 +82,7 @@ describe('client sync engine', () => {
       entityType: 'listItem',
       entityId: id,
       op: 'upsert',
-      patch: { title: 'محلی' },
+      patch: { name: 'محلی' },
       now: '2026-10-19T08:00:00.000Z',
     })
 
@@ -108,9 +108,9 @@ describe('client sync engine', () => {
                 data: {
                   id,
                   type: 'listItem',
-                  title: 'سرور',
-                  checked: false,
-                  sortOrder: 0,
+                  name: 'سرور',
+                  done: false,
+                  order: 0,
                 },
               },
             })),
@@ -127,7 +127,7 @@ describe('client sync engine', () => {
     expect(await store.pending()).toHaveLength(0)
     expect(await store.get('listItem', id)).toMatchObject({
       version: 1,
-      data: { title: 'سرور' },
+      data: { name: 'سرور' },
     })
     // Only pulls advance the cursor; the push's seq (9) may not be contiguous
     // with what this device has pulled, so ack must not jump to it.
@@ -142,14 +142,14 @@ describe('client sync engine', () => {
       entityType: 'listItem',
       entityId: id,
       op: 'upsert',
-      patch: { title: 'اول' },
+      patch: { name: 'اول' },
       now: '2026-10-19T08:00:00.000Z',
     })
     await store.writeLocal({
       entityType: 'listItem',
       entityId: id,
       op: 'upsert',
-      patch: { checked: true },
+      patch: { done: true },
       now: '2026-10-19T08:00:01.000Z',
     })
 
@@ -180,7 +180,7 @@ describe('client sync engine', () => {
     expect(pushed[0]).toHaveLength(1)
     expect(pushed[0]![0]).toMatchObject({
       baseVersion: 0,
-      patch: { title: 'اول', checked: true },
+      patch: { name: 'اول', done: true },
     })
     expect(await store.pending()).toHaveLength(0)
     store.close()
@@ -193,7 +193,7 @@ describe('client sync engine', () => {
       entityType: 'listItem',
       entityId: id,
       op: 'upsert',
-      patch: { title: 'اول' },
+      patch: { name: 'اول' },
       now: '2026-10-19T08:00:00.000Z',
     })
 
@@ -213,7 +213,7 @@ describe('client sync engine', () => {
               entityType: 'listItem',
               entityId: id,
               op: 'upsert',
-              patch: { checked: true },
+              patch: { done: true },
               now: '2026-10-19T08:00:01.000Z',
             })
           }
@@ -236,9 +236,9 @@ describe('client sync engine', () => {
                   data: {
                     id,
                     type: 'listItem',
-                    title: 'اول',
-                    checked: true,
-                    sortOrder: 0,
+                    name: 'اول',
+                    done: true,
+                    order: 0,
                   },
                 },
               },
@@ -257,7 +257,7 @@ describe('client sync engine', () => {
     // The in-flight edit carries only its own patch, anchored to the reply.
     expect(pushed[1]![0]).toMatchObject({
       baseVersion: 1,
-      patch: { checked: true },
+      patch: { done: true },
     })
     expect(await store.pending()).toHaveLength(0)
     store.close()
@@ -270,7 +270,7 @@ describe('client sync engine', () => {
       entityType: 'listItem',
       entityId: id,
       op: 'upsert',
-      patch: { title: 'اول' },
+      patch: { name: 'اول' },
       now: '2026-10-19T08:00:00.000Z',
     })
 
@@ -288,7 +288,7 @@ describe('client sync engine', () => {
             entityType: 'listItem',
             entityId: id,
             op: 'upsert',
-            patch: { checked: true },
+            patch: { done: true },
             now: '2026-10-19T08:00:01.000Z',
           })
         }
@@ -319,7 +319,7 @@ describe('client sync engine', () => {
     await engine.sync(racing)
 
     expect(pushed).toHaveLength(1)
-    expect(pushed[0]![0]!.patch).toEqual({ title: 'اول', checked: true })
+    expect(pushed[0]![0]!.patch).toEqual({ name: 'اول', done: true })
     expect(await store.pendingCount()).toBe(0)
     store.close()
   })
@@ -391,7 +391,7 @@ describe('client sync engine', () => {
         entityType: 'listItem',
         entityId: id,
         op: 'upsert',
-        patch: { title: `آیتم ${id.slice(0, 8)}` },
+        patch: { name: `آیتم ${id.slice(0, 8)}` },
         now: '2026-10-19T08:00:00.000Z',
       })
     }
@@ -439,7 +439,7 @@ describe('client sync engine', () => {
         version: 1,
         updatedAt: '2026-10-19T08:00:00.000Z',
         deletedAt: null,
-        data: { title: 'دیدنی' },
+        data: { name: 'دیدنی' },
       },
       {
         entityType: 'listItem',
@@ -447,7 +447,7 @@ describe('client sync engine', () => {
         version: 1,
         updatedAt: '2026-10-19T08:00:00.000Z',
         deletedAt: null,
-        data: { title: 'خصوصی' },
+        data: { name: 'خصوصی' },
       },
     ])
 
@@ -474,7 +474,7 @@ describe('client sync engine', () => {
               version: 1,
               updatedAt: '2026-10-19T08:00:00.000Z',
               deletedAt: null,
-              data: { title: 'دیدنی' },
+              data: { name: 'دیدنی' },
             },
           ],
           removed: [{ entityType: 'listItem', entityId: hidden }],
@@ -502,7 +502,7 @@ describe('client sync engine', () => {
         version: 1,
         updatedAt: '2026-01-01T00:00:00.000Z',
         deletedAt: null,
-        data: { title: 'کهنه' },
+        data: { name: 'کهنه' },
       },
     ])
     await store.setCursor(3)
@@ -518,7 +518,7 @@ describe('client sync engine', () => {
               version: 2,
               updatedAt: '2026-10-19T08:00:00.000Z',
               deletedAt: null,
-              data: { title: 'تازه' },
+              data: { name: 'تازه' },
             },
           ],
           nextOffset: 1,
@@ -545,7 +545,7 @@ describe('client sync engine', () => {
       entityType: 'listItem',
       entityId: local,
       op: 'upsert',
-      patch: { title: 'محلی' },
+      patch: { name: 'محلی' },
     })
 
     // The spouse's change is committed at seq 15 after our pull but before our
@@ -576,7 +576,7 @@ describe('client sync engine', () => {
                 version: 1,
                 updatedAt: '2026-10-19T08:00:00.000Z',
                 deletedAt: null,
-                data: { title: 'از همسر' },
+                data: { name: 'از همسر' },
               },
             ],
             nextCursor: 15,
@@ -603,7 +603,7 @@ describe('client sync engine', () => {
     await engine.sync(store)
 
     expect(await store.get('listItem', remote)).toMatchObject({
-      data: { title: 'از همسر' },
+      data: { name: 'از همسر' },
     })
     store.close()
   })
@@ -616,13 +616,13 @@ describe('client sync engine', () => {
       entityType: 'listItem',
       entityId: poisoned,
       op: 'upsert',
-      patch: { title: 'خصوصی شد' },
+      patch: { name: 'خصوصی شد' },
     })
     await store.writeLocal({
       entityType: 'listItem',
       entityId: healthy,
       op: 'upsert',
-      patch: { title: 'سالم' },
+      patch: { name: 'سالم' },
     })
 
     let calls = 0
@@ -669,7 +669,7 @@ describe('client sync engine', () => {
       entityType: 'listItem',
       entityId: healthyId,
       op: 'upsert',
-      patch: { title: 'سالم' },
+      patch: { name: 'سالم' },
     })
 
     let calls = 0
@@ -705,9 +705,9 @@ describe('client sync engine', () => {
                       data: {
                         id: healthyId,
                         type: 'listItem',
-                        title: 'سرور',
-                        checked: false,
-                        sortOrder: 0,
+                        name: 'سرور',
+                        done: false,
+                        order: 0,
                       },
                     },
                   },
@@ -731,7 +731,7 @@ describe('client sync engine', () => {
     // …but its optimistic mirror row is not removed, and the healthy entry applied.
     expect(await store.get('tag', rejectedId)).toBeDefined()
     expect(await store.get('listItem', healthyId)).toMatchObject({
-      data: { title: 'سرور' },
+      data: { name: 'سرور' },
     })
     store.close()
   })
@@ -743,7 +743,7 @@ describe('client sync engine', () => {
       entityType: 'note',
       entityId: id,
       op: 'upsert',
-      patch: { title: 'محلی' },
+      patch: { name: 'محلی' },
       now: '2026-10-19T08:00:00.000Z',
     })
 
@@ -884,7 +884,7 @@ describe('client sync engine', () => {
             version: 1,
             updatedAt: '2026-10-19T08:00:00.000Z',
             deletedAt: null,
-            data: { title: 'اول' },
+            data: { name: 'اول' },
           },
         ],
         nextCursor: 4,
@@ -911,7 +911,7 @@ describe('client sync engine', () => {
             version: 1,
             updatedAt: '2026-10-19T08:00:01.000Z',
             deletedAt: null,
-            data: { title: 'دوم' },
+            data: { name: 'دوم' },
           },
         ],
         nextCursor: 7,
@@ -924,7 +924,7 @@ describe('client sync engine', () => {
 
     expect(await store.cursor()).toBe(7)
     expect(
-      (await store.list('listItem')).map(row => row.data.title).sort(),
+      (await store.list('listItem')).map(row => row.data.name).sort(),
     ).toEqual(['اول', 'دوم'].sort())
     store.close()
   })

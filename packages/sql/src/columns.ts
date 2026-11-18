@@ -23,13 +23,12 @@ import { type SqlClient, Statement } from 'effect/sql'
  *
  * ## Dual-write and union-flattening mirrors
  *
- * A field may write more than one physical column. `list_items` dual-writes
- * the scaffold (`title`/`checked`/`sort_order`) and real
- * (`name`/`done`/`ordering`) column sets from one wire field each, and the
- * event's `timing` / reminder's `link` unions flatten into three / two
- * columns. Mirrors keep those cases inside the descriptor instead of forking
- * its builders — each mirror carries its own SELECT alias and may override
- * the entry's codec.
+ * A field may write more than one physical column: the event's `timing` /
+ * reminder's `link` unions flatten into three / two columns. Mirrors keep
+ * those cases inside the descriptor instead of forking its builders — each
+ * mirror carries its own SELECT alias and may override the entry's codec.
+ * (`list_items` used to dual-write a scaffold column set here too; #119
+ * retired it with migration 0015.)
  *
  * ## Who writes what
  *
