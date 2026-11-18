@@ -44,6 +44,8 @@ import {
 import { reminderFireAt, reminderTierFor } from '@tali/domain/reminder-policy'
 import { insertStatement, selectList, updateStatement } from './columns.js'
 import { EVENT_TABLE } from './event-repo.js'
+import { HABIT_ENTRY_TABLE } from './habit-entry-repo.js'
+import { HABIT_TABLE } from './habit-repo.js'
 import { LIST_TABLE } from './list-repo.js'
 import { LIST_ITEM_TABLE } from './planning-list-item-repo.js'
 import { NOTE_TABLE } from './note-repo.js'
@@ -1542,11 +1544,6 @@ const eventDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
 
 // ── Habit + HabitEntry (ticket #63; FR-HAB-01/02) ─────────────────────────
 
-const HABIT_COLUMNS =
-  `${META_COLUMNS}, type, title, description, icon, color, started_on AS startedOn, ` +
-  `frequency, frequency_history AS frequencyHistory, reminder_time AS reminderTime, ` +
-  `time_zone AS timeZone, created_at AS createdAt`
-
 const habitCodec = withSchema<Habit>(Habit, row => {
   const history = parseJson(row.frequencyHistory)
   return {
@@ -1596,8 +1593,8 @@ const habitFrequencyOfPatch = (value: unknown): unknown =>
 
 const habitDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'habit',
-  table: 'habits',
-  select: HABIT_COLUMNS,
+  table: HABIT_TABLE.table,
+  select: selectList(HABIT_TABLE, { syncManaged: true }),
   writable: HABIT_WRITABLE,
   ...habitCodec,
   defaults: (patch, context) => {
@@ -1676,47 +1673,26 @@ const habitDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     }
     return next
   },
-  insert: state => sql`
-    INSERT INTO habits
-      (id, type, title, description, icon, owner_id, household_id, visibility,
-       color, started_on, frequency, frequency_history, reminder_time, time_zone,
-       created_at, updated_at, version, deleted_at)
-    VALUES
-      (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
-       ${encodeNullableText(state.data.description)},
-       ${encodeNullableText(state.data.icon)}, ${state.ownerId},
-       ${state.householdId}, ${state.visibility},
-       ${encodeNullableText(state.data.color)},
-       ${encodeText(state.data.startedOn)},
-       ${encodeJson(state.data.frequency)},
-       ${encodeJson(state.data.frequencyHistory)},
-       ${encodeNullableText(state.data.reminderTime)},
-       ${encodeText(state.data.timeZone) || 'UTC'},
-       ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-       ${state.updatedAt}, ${state.version}, ${state.deletedAt})
-    ON CONFLICT DO NOTHING
-  `,
-  update: (state, expectedVersion) => sql`
-    UPDATE habits SET
-      title = ${encodeText(state.data.title)},
-      description = ${encodeNullableText(state.data.description)},
-      icon = ${encodeNullableText(state.data.icon)},
-      visibility = ${state.visibility},
-      color = ${encodeNullableText(state.data.color)},
-      frequency = ${encodeJson(state.data.frequency)},
-      frequency_history = ${encodeJson(state.data.frequencyHistory)},
-      reminder_time = ${encodeNullableText(state.data.reminderTime)},
-      time_zone = ${encodeText(state.data.timeZone) || 'UTC'},
-      updated_at = ${state.updatedAt},
-      version = ${state.version},
-      deleted_at = ${state.deletedAt}
-    WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `,
+  // The habit's zone is authoritative: a garbage cell keeps the UTC default,
+  // exactly like the hand-written statements did.
+  insert: state =>
+    insertStatement(sql, HABIT_TABLE, {
+      values: {
+        ...syncValues(state),
+        timeZone: encodeText(state.data.timeZone) || 'UTC',
+      },
+      onConflict: true,
+    }),
+  update: (state, expectedVersion) =>
+    updateStatement(sql, HABIT_TABLE, {
+      id: state.entityId,
+      values: {
+        ...syncValues(state),
+        timeZone: encodeText(state.data.timeZone) || 'UTC',
+      },
+      expectedVersion,
+    }),
 })
-
-const HABIT_ENTRY_COLUMNS =
-  `${META_COLUMNS}, habit_id AS habitId, local_date AS localDate, ` +
-  `time_zone AS timeZone, status, created_at AS createdAt`
 
 const habitEntryCodec = withSchema<HabitEntry>(HabitEntry, row => ({
   id: String(row.id),
@@ -1743,8 +1719,8 @@ const habitEntryDefinition = (
   sql: SqlClient.SqlClient,
 ): SyncEntityDefinition => ({
   entityType: 'habitEntry',
-  table: 'habit_entries',
-  select: HABIT_ENTRY_COLUMNS,
+  table: HABIT_ENTRY_TABLE.table,
+  select: selectList(HABIT_ENTRY_TABLE, { syncManaged: true }),
   writable: HABIT_ENTRY_WRITABLE,
   parent: {
     entityType: 'habit',
@@ -1795,30 +1771,23 @@ const habitEntryDefinition = (
    * a tombstone here is recovered by that explicit mutation (the client sync
    * engine calls it on a `tombstone`/`UniqueViolation` result).
    */
-  insert: state => sql`
-    INSERT INTO habit_entries
-      (id, habit_id, owner_id, household_id, visibility, local_date,
-       time_zone, status, created_at, updated_at, version, deleted_at)
-    VALUES
-      (${state.entityId}, ${encodeText(state.data.habitId)}, ${state.ownerId},
-       ${state.householdId}, ${state.visibility},
-       ${encodeText(state.data.localDate)},
-       ${encodeText(state.data.timeZone) || 'UTC'},
-       ${encodeText(state.data.status)},
-       ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-       ${state.updatedAt}, ${state.version}, ${state.deletedAt})
-    ON CONFLICT DO NOTHING
-  `,
-  update: (state, expectedVersion) => sql`
-    UPDATE habit_entries SET
-      visibility = ${state.visibility},
-      time_zone = ${encodeText(state.data.timeZone) || 'UTC'},
-      status = ${encodeText(state.data.status)},
-      updated_at = ${state.updatedAt},
-      version = ${state.version},
-      deleted_at = ${state.deletedAt}
-    WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `,
+  insert: state =>
+    insertStatement(sql, HABIT_ENTRY_TABLE, {
+      values: {
+        ...syncValues(state),
+        timeZone: encodeText(state.data.timeZone) || 'UTC',
+      },
+      onConflict: true,
+    }),
+  update: (state, expectedVersion) =>
+    updateStatement(sql, HABIT_ENTRY_TABLE, {
+      id: state.entityId,
+      values: {
+        ...syncValues(state),
+        timeZone: encodeText(state.data.timeZone) || 'UTC',
+      },
+      expectedVersion,
+    }),
 })
 
 // ── Reminder ──────────────────────────────────────────────────────────────

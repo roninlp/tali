@@ -11,6 +11,15 @@ import {
   type Visibility,
   dailyHabitFrequency,
 } from '@tali/domain'
+import {
+  type ColumnValues,
+  column,
+  columnCodecs,
+  defineTable,
+  insertStatement,
+  selectList,
+  updateStatement,
+} from './columns'
 import { visibleScopeSql } from './scope'
 
 /**
@@ -33,12 +42,45 @@ import { visibleScopeSql } from './scope'
  * member's own private habits plus the household's shared ones. The habits
  * screen (#66) reads it; the sync path hydrates through the registry instead.
  */
-export const HABIT_SELECT =
-  `id, type, title, description, icon, ` +
-  `owner_id AS ownerId, household_id AS householdId, visibility, color, ` +
-  `started_on AS startedOn, frequency, frequency_history AS frequencyHistory, ` +
-  `reminder_time AS reminderTime, time_zone AS timeZone, ` +
-  `created_at AS createdAt, updated_at AS updatedAt, version, deleted_at AS deletedAt`
+
+/**
+ * The one place `habits`' columns are declared (#115): the repo's SELECT,
+ * INSERT and UPDATE lists below, and the sync registry's projection and
+ * statements, are all generated from this descriptor. `started_on` is
+ * insert-only — statistics never look before the day the habit began, and no
+ * writer may move it.
+ */
+export const HABIT_TABLE = defineTable('habits', [
+  column('id', { updatable: false }),
+  column('type', { updatable: false }),
+  column('title', { codec: columnCodecs.text }),
+  column('description', { codec: columnCodecs.nullableText }),
+  column('icon', { codec: columnCodecs.nullableText }),
+  column('owner_id', 'ownerId', { updatable: false }),
+  column('household_id', 'householdId', { updatable: false }),
+  column('visibility'),
+  column('color', { codec: columnCodecs.nullableText }),
+  column('started_on', 'startedOn', {
+    updatable: false,
+    codec: columnCodecs.text,
+  }),
+  column('frequency', { codec: columnCodecs.json }),
+  column('frequency_history', 'frequencyHistory', {
+    codec: columnCodecs.json,
+  }),
+  column('reminder_time', 'reminderTime', { codec: columnCodecs.nullableText }),
+  column('time_zone', 'timeZone', { codec: columnCodecs.text }),
+  column('created_at', 'createdAt', {
+    updatable: false,
+    codec: columnCodecs.text,
+  }),
+  column('updated_at', 'updatedAt', { codec: columnCodecs.text }),
+  column('version', { codec: columnCodecs.int }),
+  column('deleted_at', 'deletedAt', { codec: columnCodecs.nullableText }),
+])
+
+/** The trusted column projection, aliased to the camelCase wire names. */
+export const HABIT_SELECT = selectList(HABIT_TABLE)
 
 export interface HabitRow extends Record<string, unknown> {
   readonly id: string
@@ -106,11 +148,27 @@ export const habitPropsOf = (row: HabitRow) => ({
 
 export const toHabit = (row: HabitRow): Habit => new Habit(habitPropsOf(row))
 
-const encodeFrequency = (frequency: HabitFrequency): string =>
-  JSON.stringify(frequency)
-
-const encodeHistory = (history: ReadonlyArray<HabitFrequencyChange>): string =>
-  JSON.stringify(history)
+/** The model's column values; the descriptor's codecs do the encoding. */
+const habitValues = (habit: Habit): ColumnValues<typeof HABIT_TABLE> => ({
+  id: habit.id,
+  type: habit.type,
+  title: habit.title,
+  description: habit.description,
+  icon: habit.icon,
+  ownerId: habit.ownerId,
+  householdId: habit.householdId,
+  visibility: habit.visibility,
+  color: habit.color,
+  startedOn: habit.startedOn,
+  frequency: habit.frequency,
+  frequencyHistory: habit.frequencyHistory,
+  reminderTime: habit.reminderTime,
+  timeZone: habit.timeZone,
+  createdAt: habit.createdAt,
+  updatedAt: habit.updatedAt,
+  version: habit.version,
+  deletedAt: habit.deletedAt,
+})
 
 export class HabitRepo extends Context.Service<HabitRepo>()('HabitRepo', {
   make: Effect.gen(function* () {
@@ -148,20 +206,10 @@ export class HabitRepo extends Context.Service<HabitRepo>()('HabitRepo', {
 
     const insert = (habit: Habit) =>
       Effect.map(
-        sql<HabitRow>`
-          INSERT INTO habits
-            (id, type, title, description, icon, owner_id, household_id, visibility,
-             color, started_on, frequency, frequency_history, reminder_time, time_zone,
-             created_at, updated_at, version, deleted_at)
-          VALUES
-            (${habit.id}, ${habit.type}, ${habit.title}, ${habit.description},
-             ${habit.icon}, ${habit.ownerId}, ${habit.householdId}, ${habit.visibility},
-             ${habit.color}, ${habit.startedOn}, ${encodeFrequency(habit.frequency)},
-             ${encodeHistory(habit.frequencyHistory)}, ${habit.reminderTime},
-             ${habit.timeZone}, ${habit.createdAt}, ${habit.updatedAt},
-             ${habit.version}, ${habit.deletedAt})
-          RETURNING ${sql.literal(HABIT_SELECT)}
-        `,
+        insertStatement<HabitRow>(sql, HABIT_TABLE, {
+          values: habitValues(habit),
+          returning: HABIT_SELECT,
+        }),
         rows => toHabit(rows[0]!),
       )
 
@@ -172,48 +220,27 @@ export class HabitRepo extends Context.Service<HabitRepo>()('HabitRepo', {
      */
     const update = (habit: Habit) =>
       Effect.map(
-        sql<HabitRow>`
-          UPDATE habits SET
-            title = ${habit.title},
-            description = ${habit.description},
-            icon = ${habit.icon},
-            visibility = ${habit.visibility},
-            color = ${habit.color},
-            frequency = ${encodeFrequency(habit.frequency)},
-            frequency_history = ${encodeHistory(habit.frequencyHistory)},
-            reminder_time = ${habit.reminderTime},
-            time_zone = ${habit.timeZone},
-            updated_at = ${habit.updatedAt},
-            version = ${habit.version},
-            deleted_at = ${habit.deletedAt}
-          WHERE id = ${habit.id}
-          RETURNING ${sql.literal(HABIT_SELECT)}
-        `,
+        updateStatement<HabitRow>(sql, HABIT_TABLE, {
+          id: habit.id,
+          values: habitValues(habit),
+          returning: HABIT_SELECT,
+        }),
         rows => Option.map(Option.fromUndefinedOr(rows[0]), toHabit),
       )
 
     /** Statement form so the sync engine can put the write in one batch. */
-    const insertStatement = (habit: Habit) => sql`
-      INSERT INTO habits
-        (id, type, title, description, icon, owner_id, household_id, visibility,
-         color, started_on, frequency, frequency_history, reminder_time, time_zone,
-         created_at, updated_at, version, deleted_at)
-      VALUES
-        (${habit.id}, ${habit.type}, ${habit.title}, ${habit.description},
-         ${habit.icon}, ${habit.ownerId}, ${habit.householdId}, ${habit.visibility},
-         ${habit.color}, ${habit.startedOn}, ${encodeFrequency(habit.frequency)},
-         ${encodeHistory(habit.frequencyHistory)}, ${habit.reminderTime},
-         ${habit.timeZone}, ${habit.createdAt}, ${habit.updatedAt},
-         ${habit.version}, ${habit.deletedAt})
-      ON CONFLICT DO NOTHING
-    `
+    const insertStatementFor = (habit: Habit) =>
+      insertStatement(sql, HABIT_TABLE, {
+        values: habitValues(habit),
+        onConflict: true,
+      })
 
     return {
       findById,
       listVisible,
       insert,
       update,
-      insertStatement,
+      insertStatement: insertStatementFor,
     }
   }),
 }) {}

@@ -7,6 +7,15 @@ import {
   type LocalDate,
   type UserId,
 } from '@tali/domain'
+import {
+  type ColumnValues,
+  column,
+  columnCodecs,
+  defineTable,
+  insertStatement,
+  selectList,
+  updateStatement,
+} from './columns'
 import { visibleScopeSql } from './scope'
 
 /**
@@ -34,10 +43,39 @@ import { visibleScopeSql } from './scope'
  * is the same range for one habit (the detail/heatmap view). Both are indexed
  * on `(owner_id, local_date)` / `(habit_id, local_date)`.
  */
-export const HABIT_ENTRY_SELECT =
-  `id, habit_id AS habitId, owner_id AS ownerId, household_id AS householdId, ` +
-  `visibility, local_date AS localDate, time_zone AS timeZone, status, ` +
-  `created_at AS createdAt, updated_at AS updatedAt, version, deleted_at AS deletedAt`
+
+/**
+ * The one place `habit_entries`' columns are declared (#115): the repo's
+ * SELECT, INSERT and UPDATE lists below, and the sync registry's projection
+ * and statements, are all generated from this descriptor. The logged day
+ * (`habit_id`, `local_date`) is the row's identity and insert-only.
+ */
+export const HABIT_ENTRY_TABLE = defineTable('habit_entries', [
+  column('id', { updatable: false }),
+  column('habit_id', 'habitId', {
+    updatable: false,
+    codec: columnCodecs.text,
+  }),
+  column('owner_id', 'ownerId', { updatable: false }),
+  column('household_id', 'householdId', { updatable: false }),
+  column('visibility'),
+  column('local_date', 'localDate', {
+    updatable: false,
+    codec: columnCodecs.text,
+  }),
+  column('time_zone', 'timeZone', { codec: columnCodecs.text }),
+  column('status', { codec: columnCodecs.text }),
+  column('created_at', 'createdAt', {
+    updatable: false,
+    codec: columnCodecs.text,
+  }),
+  column('updated_at', 'updatedAt', { codec: columnCodecs.text }),
+  column('version', { codec: columnCodecs.int }),
+  column('deleted_at', 'deletedAt', { codec: columnCodecs.nullableText }),
+])
+
+/** The trusted column projection, aliased to the camelCase wire names. */
+export const HABIT_ENTRY_SELECT = selectList(HABIT_ENTRY_TABLE)
 
 export interface HabitEntryRow extends Record<string, unknown> {
   readonly id: string
@@ -72,6 +110,24 @@ export const habitEntryPropsOf = (row: HabitEntryRow) => ({
 
 export const toHabitEntry = (row: HabitEntryRow): HabitEntry =>
   new HabitEntry(habitEntryPropsOf(row))
+
+/** The model's column values; the descriptor's codecs do the encoding. */
+const habitEntryValues = (
+  entry: HabitEntry,
+): ColumnValues<typeof HABIT_ENTRY_TABLE> => ({
+  id: entry.id,
+  habitId: entry.habitId,
+  ownerId: entry.ownerId,
+  householdId: entry.householdId,
+  visibility: entry.visibility,
+  localDate: entry.localDate,
+  timeZone: entry.timeZone,
+  status: entry.status,
+  createdAt: entry.createdAt,
+  updatedAt: entry.updatedAt,
+  version: entry.version,
+  deletedAt: entry.deletedAt,
+})
 
 export interface HabitEntryQuery {
   readonly householdId: string
@@ -174,49 +230,30 @@ export class HabitEntryRepo extends Context.Service<HabitEntryRepo>()(
 
       const insert = (entry: HabitEntry) =>
         Effect.map(
-          sql<HabitEntryRow>`
-          INSERT INTO habit_entries
-            (id, habit_id, owner_id, household_id, visibility, local_date,
-             time_zone, status, created_at, updated_at, version, deleted_at)
-          VALUES
-            (${entry.id}, ${entry.habitId}, ${entry.ownerId}, ${entry.householdId},
-             ${entry.visibility}, ${entry.localDate}, ${entry.timeZone},
-             ${entry.status}, ${entry.createdAt}, ${entry.updatedAt},
-             ${entry.version}, ${entry.deletedAt})
-          RETURNING ${sql.literal(HABIT_ENTRY_SELECT)}
-        `,
+          insertStatement<HabitEntryRow>(sql, HABIT_ENTRY_TABLE, {
+            values: habitEntryValues(entry),
+            returning: HABIT_ENTRY_SELECT,
+          }),
           rows => toHabitEntry(rows[0]!),
         )
 
       /** Full-row update; the caller owns the version CAS (see `findForDate`). */
       const update = (entry: HabitEntry) =>
         Effect.map(
-          sql<HabitEntryRow>`
-          UPDATE habit_entries SET
-            visibility = ${entry.visibility},
-            time_zone = ${entry.timeZone},
-            status = ${entry.status},
-            updated_at = ${entry.updatedAt},
-            version = ${entry.version},
-            deleted_at = ${entry.deletedAt}
-          WHERE id = ${entry.id}
-          RETURNING ${sql.literal(HABIT_ENTRY_SELECT)}
-        `,
+          updateStatement<HabitEntryRow>(sql, HABIT_ENTRY_TABLE, {
+            id: entry.id,
+            values: habitEntryValues(entry),
+            returning: HABIT_ENTRY_SELECT,
+          }),
           rows => Option.map(Option.fromUndefinedOr(rows[0]), toHabitEntry),
         )
 
       /** Statement form so the sync engine can put the write in one batch. */
-      const insertStatement = (entry: HabitEntry) => sql`
-      INSERT INTO habit_entries
-        (id, habit_id, owner_id, household_id, visibility, local_date,
-         time_zone, status, created_at, updated_at, version, deleted_at)
-      VALUES
-        (${entry.id}, ${entry.habitId}, ${entry.ownerId}, ${entry.householdId},
-         ${entry.visibility}, ${entry.localDate}, ${entry.timeZone},
-         ${entry.status}, ${entry.createdAt}, ${entry.updatedAt},
-         ${entry.version}, ${entry.deletedAt})
-      ON CONFLICT DO NOTHING
-    `
+      const insertStatementFor = (entry: HabitEntry) =>
+        insertStatement(sql, HABIT_ENTRY_TABLE, {
+          values: habitEntryValues(entry),
+          onConflict: true,
+        })
 
       return {
         findById,
@@ -224,7 +261,7 @@ export class HabitEntryRepo extends Context.Service<HabitEntryRepo>()(
         listInRange,
         insert,
         update,
-        insertStatement,
+        insertStatement: insertStatementFor,
       }
     }),
   },
