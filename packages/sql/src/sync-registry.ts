@@ -43,6 +43,7 @@ import {
 } from '@tali/domain'
 import { reminderFireAt, reminderTierFor } from '@tali/domain/reminder-policy'
 import { insertStatement, selectList, updateStatement } from './columns.js'
+import { EVENT_TABLE } from './event-repo.js'
 import { LIST_TABLE } from './list-repo.js'
 import { LIST_ITEM_TABLE } from './planning-list-item-repo.js'
 import { NOTE_TABLE } from './note-repo.js'
@@ -1404,12 +1405,6 @@ const noteDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
 
 // ── Event ─────────────────────────────────────────────────────────────────
 
-const EVENT_COLUMNS =
-  `${META_COLUMNS}, type, title, description, location, category, people, color, ` +
-  `start_at AS startAt, end_at AS endAt, all_day_date AS allDayDate, ` +
-  `time_zone AS timeZone, recurrence, exceptions, occasion_id AS occasionId, ` +
-  `created_at AS createdAt`
-
 /**
  * The row's timing union.
  *
@@ -1489,28 +1484,14 @@ const EVENT_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
  * The event's timing columns.
  *
  * The union is one field on the wire, so it maps to either the two instants
- * or the local date — never to both.
+ * or the local date — never to both. The descriptor carries these as the
+ * `timing` field's mirrors (`event-repo.ts`), with a codec per column.
  */
-const eventTimingColumns = (
-  data: Record<string, unknown>,
-): {
-  readonly startAt: string | null
-  readonly endAt: string | null
-  readonly allDayDate: string | null
-} => {
-  const timing = Option.getOrNull(asEventTiming(data.timing))
-
-  if (timing === null) return { startAt: null, endAt: null, allDayDate: null }
-
-  return isAllDayEventTiming(timing)
-    ? { startAt: null, endAt: null, allDayDate: timing.date }
-    : { startAt: timing.start, endAt: timing.end, allDayDate: null }
-}
 
 const eventDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'event',
-  table: 'events',
-  select: EVENT_COLUMNS,
+  table: EVENT_TABLE.table,
+  select: selectList(EVENT_TABLE, { syncManaged: true }),
   writable: EVENT_WRITABLE,
   ...eventCodec,
   defaults: (patch, context) => ({
@@ -1546,56 +1527,17 @@ const eventDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
    * would let a stale offline device move an event to another day, which is
    * exactly the data loss the LWW rule exists to prevent.
    */
-  insert: state => {
-    const timing = eventTimingColumns(state.data)
-    return sql`
-      INSERT INTO events
-        (id, type, title, description, location, category, people,
-         owner_id, household_id, visibility, color, start_at, end_at,
-         all_day_date, time_zone, recurrence, exceptions, occasion_id,
-         created_at, updated_at, version, deleted_at)
-      VALUES
-        (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
-         ${encodeNullableText(state.data.description)},
-         ${encodeNullableText(state.data.location)},
-         ${encodeNullableText(state.data.category)},
-         ${encodeJson(state.data.people)},
-         ${state.ownerId}, ${state.householdId}, ${state.visibility},
-         ${encodeNullableText(state.data.color)},
-         ${timing.startAt}, ${timing.endAt}, ${timing.allDayDate},
-         ${encodeText(state.data.timeZone)},
-         ${encodeJsonOrNull(state.data.recurrence)},
-         ${encodeJson(state.data.exceptions)},
-         ${encodeNullableText(state.data.occasionId)},
-         ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-         ${state.updatedAt}, ${state.version}, ${state.deletedAt})
-      ON CONFLICT DO NOTHING
-    `
-  },
-  update: (state, expectedVersion) => {
-    const timing = eventTimingColumns(state.data)
-    return sql`
-      UPDATE events SET
-        title = ${encodeText(state.data.title)},
-        description = ${encodeNullableText(state.data.description)},
-        location = ${encodeNullableText(state.data.location)},
-        category = ${encodeNullableText(state.data.category)},
-        people = ${encodeJson(state.data.people)},
-        visibility = ${state.visibility},
-        color = ${encodeNullableText(state.data.color)},
-        start_at = ${timing.startAt},
-        end_at = ${timing.endAt},
-        all_day_date = ${timing.allDayDate},
-        time_zone = ${encodeText(state.data.timeZone)},
-        recurrence = ${encodeJsonOrNull(state.data.recurrence)},
-        exceptions = ${encodeJson(state.data.exceptions)},
-        occasion_id = ${encodeNullableText(state.data.occasionId)},
-        updated_at = ${state.updatedAt},
-        version = ${state.version},
-        deleted_at = ${state.deletedAt}
-      WHERE id = ${state.entityId} AND version = ${expectedVersion}
-    `
-  },
+  insert: state =>
+    insertStatement(sql, EVENT_TABLE, {
+      values: syncValues(state),
+      onConflict: true,
+    }),
+  update: (state, expectedVersion) =>
+    updateStatement(sql, EVENT_TABLE, {
+      id: state.entityId,
+      values: syncValues(state),
+      expectedVersion,
+    }),
 })
 
 // ── Habit + HabitEntry (ticket #63; FR-HAB-01/02) ─────────────────────────

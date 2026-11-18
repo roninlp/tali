@@ -15,6 +15,16 @@ import {
   allDayEventTiming,
   timedEventTiming,
 } from '@tali/domain'
+import {
+  type ColumnCodec,
+  type ColumnValues,
+  column,
+  columnCodecs,
+  defineTable,
+  insertStatement,
+  selectList,
+  updateStatement,
+} from './columns'
 import { visibleScopeSql } from './scope'
 
 /**
@@ -42,13 +52,70 @@ import { visibleScopeSql } from './scope'
  * range instead.
  */
 
+const asTiming = Schema.decodeUnknownOption(EventTiming)
+
+/** The timing union, decoded defensively; malformed input reads as absent. */
+const timingOf = (value: unknown): EventTiming | null =>
+  Option.getOrNull(asTiming(value))
+
+/**
+ * The timing union's three physical columns, as per-column codecs on the one
+ * `timing` field (#115): a timed row carries the two instants, an all-day
+ * row the local date — never both, exactly like the hand-written statements.
+ */
+const timingStartAt: ColumnCodec = value => {
+  const timing = timingOf(value)
+  return timing !== null && timing._tag === 'timed' ? timing.start : null
+}
+const timingEndAt: ColumnCodec = value => {
+  const timing = timingOf(value)
+  return timing !== null && timing._tag === 'timed' ? timing.end : null
+}
+const timingAllDayDate: ColumnCodec = value => {
+  const timing = timingOf(value)
+  return timing !== null && timing._tag === 'allDay' ? timing.date : null
+}
+
+/**
+ * The one place `events`' columns are declared (#115): the repo's SELECT,
+ * INSERT and UPDATE lists below, and the sync registry's projection and
+ * statements, are all generated from this descriptor.
+ */
+export const EVENT_TABLE = defineTable('events', [
+  column('id', { updatable: false }),
+  column('type', { updatable: false }),
+  column('title', { codec: columnCodecs.text }),
+  column('description', { codec: columnCodecs.nullableText }),
+  column('location', { codec: columnCodecs.nullableText }),
+  column('category', { codec: columnCodecs.nullableText }),
+  column('people', { codec: columnCodecs.json }),
+  column('owner_id', 'ownerId', { updatable: false }),
+  column('household_id', 'householdId', { updatable: false }),
+  column('visibility'),
+  column('color', { codec: columnCodecs.nullableText }),
+  column('start_at', 'timing', {
+    as: 'startAt',
+    codec: timingStartAt,
+    mirrors: [
+      { column: 'end_at', as: 'endAt', codec: timingEndAt },
+      { column: 'all_day_date', as: 'allDayDate', codec: timingAllDayDate },
+    ],
+  }),
+  column('time_zone', 'timeZone', { codec: columnCodecs.text }),
+  column('recurrence', { codec: columnCodecs.jsonOrNull }),
+  column('exceptions', { codec: columnCodecs.json }),
+  column('occasion_id', 'occasionId', { codec: columnCodecs.nullableText }),
+  column('created_at', 'createdAt', {
+    updatable: false,
+    codec: columnCodecs.text,
+  }),
+  column('updated_at', 'updatedAt', { codec: columnCodecs.text }),
+  column('version', { codec: columnCodecs.int }),
+  column('deleted_at', 'deletedAt', { codec: columnCodecs.nullableText }),
+])
+
 /** The trusted column projection, aliased to the camelCase wire names. */
-export const EVENT_SELECT =
-  `id, type, title, description, location, category, people, ` +
-  `owner_id AS ownerId, household_id AS householdId, visibility, color, ` +
-  `start_at AS startAt, end_at AS endAt, all_day_date AS allDayDate, ` +
-  `time_zone AS timeZone, recurrence, exceptions, occasion_id AS occasionId, ` +
-  `created_at AS createdAt, updated_at AS updatedAt, version, deleted_at AS deletedAt`
+export const EVENT_SELECT = selectList(EVENT_TABLE)
 
 export interface EventRow extends Record<string, unknown> {
   readonly id: string
@@ -142,14 +209,29 @@ export const eventPropsOf = (row: EventRow) => ({
 
 export const toEvent = (row: EventRow): Event => new Event(eventPropsOf(row))
 
-const encodePeople = (people: ReadonlyArray<string>): string =>
-  JSON.stringify(people)
-
-const encodeRecurrence = (rule: RecurrenceRule | null): string | null =>
-  rule === null ? null : JSON.stringify(rule)
-
-const encodeExceptions = (exceptions: ReadonlyArray<EventException>): string =>
-  JSON.stringify(exceptions)
+/** The model's column values; the descriptor's codecs do the encoding. */
+const eventValues = (event: Event): ColumnValues<typeof EVENT_TABLE> => ({
+  id: event.id,
+  type: event.type,
+  title: event.title,
+  description: event.description,
+  location: event.location,
+  category: event.category,
+  people: event.people,
+  ownerId: event.ownerId,
+  householdId: event.householdId,
+  visibility: event.visibility,
+  color: event.color,
+  timing: event.timing,
+  timeZone: event.timeZone,
+  recurrence: event.recurrence,
+  exceptions: event.exceptions,
+  occasionId: event.occasionId,
+  createdAt: event.createdAt,
+  updatedAt: event.updatedAt,
+  version: event.version,
+  deletedAt: event.deletedAt,
+})
 
 export interface EventQuery {
   readonly householdId: string
@@ -264,25 +346,10 @@ export class EventRepo extends Context.Service<EventRepo>()('EventRepo', {
 
     const insert = (event: Event) =>
       Effect.map(
-        sql<EventRow>`
-          INSERT INTO events
-            (id, type, title, description, location, category, people,
-             owner_id, household_id, visibility, color, start_at, end_at,
-             all_day_date, time_zone, recurrence, exceptions, occasion_id,
-             created_at, updated_at, version, deleted_at)
-          VALUES
-            (${event.id}, ${event.type}, ${event.title}, ${event.description},
-             ${event.location}, ${event.category}, ${encodePeople(event.people)},
-             ${event.ownerId}, ${event.householdId}, ${event.visibility},
-             ${event.color},
-             ${event.timing._tag === 'timed' ? event.timing.start : null},
-             ${event.timing._tag === 'timed' ? event.timing.end : null},
-             ${event.timing._tag === 'allDay' ? event.timing.date : null},
-             ${event.timeZone}, ${encodeRecurrence(event.recurrence)},
-             ${encodeExceptions(event.exceptions)}, ${event.occasionId},
-             ${event.createdAt}, ${event.updatedAt}, ${event.version}, ${event.deletedAt})
-          RETURNING ${sql.literal(EVENT_SELECT)}
-        `,
+        insertStatement<EventRow>(sql, EVENT_TABLE, {
+          values: eventValues(event),
+          returning: EVENT_SELECT,
+        }),
         rows => toEvent(rows[0]!),
       )
 
@@ -293,28 +360,11 @@ export class EventRepo extends Context.Service<EventRepo>()('EventRepo', {
      */
     const update = (event: Event) =>
       Effect.map(
-        sql<EventRow>`
-          UPDATE events SET
-            title = ${event.title},
-            description = ${event.description},
-            location = ${event.location},
-            category = ${event.category},
-            people = ${encodePeople(event.people)},
-            visibility = ${event.visibility},
-            color = ${event.color},
-            start_at = ${event.timing._tag === 'timed' ? event.timing.start : null},
-            end_at = ${event.timing._tag === 'timed' ? event.timing.end : null},
-            all_day_date = ${event.timing._tag === 'allDay' ? event.timing.date : null},
-            time_zone = ${event.timeZone},
-            recurrence = ${encodeRecurrence(event.recurrence)},
-            exceptions = ${encodeExceptions(event.exceptions)},
-            occasion_id = ${event.occasionId},
-            updated_at = ${event.updatedAt},
-            version = ${event.version},
-            deleted_at = ${event.deletedAt}
-          WHERE id = ${event.id}
-          RETURNING ${sql.literal(EVENT_SELECT)}
-        `,
+        updateStatement<EventRow>(sql, EVENT_TABLE, {
+          id: event.id,
+          values: eventValues(event),
+          returning: EVENT_SELECT,
+        }),
         rows => Option.map(Option.fromUndefinedOr(rows[0]), toEvent),
       )
 
@@ -330,41 +380,27 @@ export class EventRepo extends Context.Service<EventRepo>()('EventRepo', {
      * `notes_fts` index hook uses the same version+`updated_at` gate for the
      * same reason. `1 = 1` is the ungated form.
      */
-    const insertEvent = (event: Event, gate: Statement.Fragment) => sql`
-      INSERT INTO events
-        (id, type, title, description, location, category, people,
-         owner_id, household_id, visibility, color, start_at, end_at,
-         all_day_date, time_zone, recurrence, exceptions, occasion_id,
-         created_at, updated_at, version, deleted_at)
-      SELECT
-        ${event.id}, ${event.type}, ${event.title}, ${event.description},
-        ${event.location}, ${event.category}, ${encodePeople(event.people)},
-        ${event.ownerId}, ${event.householdId}, ${event.visibility},
-        ${event.color},
-        ${event.timing._tag === 'timed' ? event.timing.start : null},
-        ${event.timing._tag === 'timed' ? event.timing.end : null},
-        ${event.timing._tag === 'allDay' ? event.timing.date : null},
-        ${event.timeZone}, ${encodeRecurrence(event.recurrence)},
-        ${encodeExceptions(event.exceptions)}, ${event.occasionId},
-        ${event.createdAt}, ${event.updatedAt}, ${event.version}, ${event.deletedAt}
-      WHERE ${gate}
-      ON CONFLICT DO NOTHING
-    `
+    const insertGated = (event: Event, gate: Statement.Fragment) =>
+      insertStatement(sql, EVENT_TABLE, {
+        values: eventValues(event),
+        gate,
+        onConflict: true,
+      })
 
-    const insertStatement = (event: Event) => insertEvent(event, sql`1 = 1`)
+    const insertStatementFor = (event: Event) => insertGated(event, sql`1 = 1`)
 
     const insertStatementGated = (
       event: Event,
       gate: Pick<Event, 'id' | 'version' | 'updatedAt' | 'recurrence'>,
     ) =>
-      insertEvent(
+      insertGated(
         event,
         sql`EXISTS (
           SELECT 1 FROM events
           WHERE id = ${gate.id}
             AND version = ${gate.version}
             AND updated_at = ${gate.updatedAt}
-            AND recurrence IS ${encodeRecurrence(gate.recurrence)}
+            AND recurrence IS ${gate.recurrence === null ? null : JSON.stringify(gate.recurrence)}
             AND deleted_at IS NULL
         )`,
       )
@@ -376,7 +412,7 @@ export class EventRepo extends Context.Service<EventRepo>()('EventRepo', {
       listRecurringLive,
       insert,
       update,
-      insertStatement,
+      insertStatement: insertStatementFor,
       insertStatementGated,
     }
   }),
