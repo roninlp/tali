@@ -95,7 +95,9 @@ const parentDepth = (
   return depth
 }
 
-const ordered = (registry: SyncRegistry): ReadonlyArray<ResolvedSyncEntityDefinition> =>
+const ordered = (
+  registry: SyncRegistry,
+): ReadonlyArray<ResolvedSyncEntityDefinition> =>
   [...registry.all()].sort((a, b) => {
     const depth = parentDepth(registry, b) - parentDepth(registry, a)
     return depth !== 0 ? depth : a.entityType.localeCompare(b.entityType)

@@ -18,15 +18,12 @@ import {
   Project,
   Reminder,
   ReminderLink,
-  type ReminderLinkColumns,
   ReminderRepeat,
   type ReminderType,
   TimestampUtc,
   allDayEventTiming,
   dailyHabitFrequency,
   decodeReminderLink,
-  encodeReminderLink,
-  isAllDayEventTiming,
   noReminderLink,
   onceReminderRepeat,
   sameHabitFrequency,
@@ -347,9 +344,7 @@ export interface SyncRegistry {
  * fills in the fields every aggregate shares (#115).
  */
 export type ResolvedSyncEntityDefinition = SyncEntityDefinition &
-  Required<
-    Pick<SyncEntityDefinition, 'scope' | 'softDeleteColumn' | 'merge'>
-  >
+  Required<Pick<SyncEntityDefinition, 'scope' | 'softDeleteColumn' | 'merge'>>
 
 /** The tombstone column every aggregate shares. */
 const SOFT_DELETE_COLUMN = 'deleted_at'
@@ -367,18 +362,13 @@ const withRegistryDefaults = (
 })
 
 // ── Value codecs (D1 has no boolean/nullable types beyond SQLite's affinity) ─
+// The write-side codecs live with the descriptors (`columns.ts`); the ones
+// here are the read-side normalisers the hydration paths share.
 
-/** A JSON array/object column or a JSON scalar; stored as TEXT. */
-const encodeJson = (value: unknown): string => JSON.stringify(value ?? null)
 const encodeText = (value: unknown): string =>
   typeof value === 'string' ? value : ''
-const encodeNullableText = (value: unknown): string | null =>
-  typeof value === 'string' ? value : null
 const encodeInt = (value: unknown): number =>
   typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : 0
-const encodeBit = (value: unknown): number => (value === true ? 1 : 0)
-const encodeJsonOrNull = (value: unknown): string | null =>
-  value === null || value === undefined ? null : encodeJson(value)
 
 const asBit = (value: unknown): boolean => value === true || value === 1
 const asText = (value: unknown): string | null =>
@@ -437,11 +427,6 @@ const asStringArray = (value: unknown): ReadonlyArray<string> => {
 }
 const asNullableInt = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : null
-/** The occasion offset column: `null`, or 0…365 whole days. */
-const encodeAdvanceDays = (value: unknown): number | null => {
-  const days = asNullableInt(value)
-  return days !== null && days >= 0 && days <= 365 ? days : null
-}
 
 // ── Field guards (client patches) ─────────────────────────────────────────
 
@@ -704,12 +689,6 @@ const purgeProjectReferences =
       `,
     ]
   }
-
-// ── Shared column projection ──────────────────────────────────────────────
-
-const META_COLUMNS =
-  `id, owner_id AS ownerId, household_id AS householdId, visibility, version, ` +
-  `updated_at AS updatedAt, deleted_at AS deletedAt`
 
 // ── Task ──────────────────────────────────────────────────────────────────
 
@@ -977,11 +956,6 @@ const projectDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
 })
 
 // ── Tag ───────────────────────────────────────────────────────────────────
-
-const TAG_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
-  ['name', isString],
-  ['color', isNullableString],
-])
 
 const tagCodec = withSchema<Tag>(Tag, row => ({
   id: String(row.id),
@@ -1875,7 +1849,9 @@ const REMINDER_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
  * the hand-written statements carried — the tier is derived from the kind (a
  * patch can never forge it) and a garbage zone keeps the UTC default.
  */
-const reminderStateValues = (state: SyncEntityState): Record<string, unknown> => ({
+const reminderStateValues = (
+  state: SyncEntityState,
+): Record<string, unknown> => ({
   ...syncValues(state),
   tier:
     encodeText(state.data.tier) ||

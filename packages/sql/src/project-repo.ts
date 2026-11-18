@@ -41,7 +41,9 @@ export const PROJECT_TABLE = defineTable('projects', [
 const PROJECT_SELECT = selectList(PROJECT_TABLE)
 
 /** The model's column values; the descriptor's codecs do the encoding. */
-const projectValues = (project: Project): ColumnValues<typeof PROJECT_TABLE> => ({
+const projectValues = (
+  project: Project,
+): ColumnValues<typeof PROJECT_TABLE> => ({
   id: project.id,
   type: project.type,
   title: project.title,

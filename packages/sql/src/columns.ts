@@ -69,9 +69,7 @@ export const columnCodecs = {
   bit: (value: unknown): number => (value === true ? 1 : 0),
   /** NOT NULL INTEGER: a finite number binds truncated, anything else 0. */
   int: (value: unknown): number =>
-    typeof value === 'number' && Number.isFinite(value)
-      ? Math.trunc(value)
-      : 0,
+    typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : 0,
 } as const
 
 // ── Descriptor types ───────────────────────────────────────────────────────
@@ -136,8 +134,10 @@ export const defineTable = <Fields extends string>(
   columns: ReadonlyArray<ColumnEntry<Fields>>,
 ): TableDescriptor<Fields> => ({ table, columns })
 
-export interface ColumnOptions<Fields extends string = string>
-  extends Omit<ColumnEntry<Fields>, 'column' | 'field'> {}
+export interface ColumnOptions<Fields extends string = string> extends Omit<
+  ColumnEntry<Fields>,
+  'column' | 'field'
+> {}
 
 /**
  * Declare one column: `column('time_zone', 'timeZone', { … })`, or
@@ -178,9 +178,7 @@ interface PhysicalColumn {
   readonly codec: ColumnCodec
 }
 
-const physicalColumns = (
-  entry: ColumnEntry,
-): ReadonlyArray<PhysicalColumn> => [
+const physicalColumns = (entry: ColumnEntry): ReadonlyArray<PhysicalColumn> => [
   {
     column: entry.column,
     alias: entry.as ?? fieldOf(entry),
@@ -289,7 +287,10 @@ export const insertStatement = <
       extra => sql`${extra.value}` as Statement.Fragment,
     ),
   ]
-  const tail = sql.join(' ', false)([
+  const tail = sql.join(
+    ' ',
+    false,
+  )([
     ...(input.onConflict === true ? ['ON CONFLICT DO NOTHING'] : []),
     ...(input.returning !== undefined
       ? [sql`RETURNING ${sql.literal(input.returning)}`]
@@ -339,7 +340,10 @@ export const updateStatement = <
   table: TableDescriptor<Fields>,
   input: UpdateStatementInput<Fields>,
 ): Statement.Statement<A> => {
-  const set = sql.join(', ', false)(
+  const set = sql.join(
+    ', ',
+    false,
+  )(
     writtenEntries(table, input.values)
       .filter(entry => entry.updatable !== false)
       .flatMap(entry => {
