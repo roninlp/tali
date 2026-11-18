@@ -278,28 +278,34 @@ export const insertStatement = <
     ),
     ...(input.extra ?? []).map(extra => extra.column),
   ].join(', ')
-  const tuple = sql.join(', ', true)([
+  const tupleSegments: ReadonlyArray<string | Statement.Fragment> = [
     ...written.flatMap(entry => {
       const raw = input.values[fieldOf(entry)]
-      return physicalColumns(entry).map(physical => sql`${physical.codec(raw)}`)
+      return physicalColumns(entry).map(
+        physical => sql`${physical.codec(raw)}` as Statement.Fragment,
+      )
     }),
-    ...(input.extra ?? []).map(extra => sql`${extra.value}`),
-  ])
+    ...(input.extra ?? []).map(
+      extra => sql`${extra.value}` as Statement.Fragment,
+    ),
+  ]
   const tail = sql.join(' ', false)([
     ...(input.onConflict === true ? ['ON CONFLICT DO NOTHING'] : []),
     ...(input.returning !== undefined
       ? [sql`RETURNING ${sql.literal(input.returning)}`]
       : []),
   ])
+  // `VALUES` wants the tuple parenthesized; a gated `SELECT … WHERE` must be
+  // bare — SQLite reads `SELECT (a, b, …)` as a misused row value.
   return input.gate === undefined
     ? sql<A>`
         INSERT INTO ${sql.literal(table.table)} (${sql.literal(columnList)})
-        VALUES ${tuple}
+        VALUES ${sql.join(', ', true)(tupleSegments)}
         ${tail}
       `
     : sql<A>`
         INSERT INTO ${sql.literal(table.table)} (${sql.literal(columnList)})
-        SELECT ${tuple} WHERE ${input.gate}
+        SELECT ${sql.join(', ', false)(tupleSegments)} WHERE ${input.gate}
         ${tail}
       `
 }

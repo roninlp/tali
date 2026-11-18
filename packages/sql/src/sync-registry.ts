@@ -45,6 +45,7 @@ import { reminderFireAt, reminderTierFor } from '@tali/domain/reminder-policy'
 import { insertStatement, selectList, updateStatement } from './columns.js'
 import { PROJECT_TABLE } from './project-repo.js'
 import { TAG_TABLE } from './tag-repo.js'
+import { TASK_TABLE } from './task-repo.js'
 
 /**
  * The sync entity registry (ticket #34).
@@ -704,13 +705,6 @@ const META_COLUMNS =
 
 // ── Task ──────────────────────────────────────────────────────────────────
 
-const TASK_COLUMNS =
-  `${META_COLUMNS}, type, title, description, status, priority, ` +
-  `due_at AS dueAt, due_date AS dueDate, time_zone AS timeZone, ` +
-  `project_id AS projectId, tag_ids AS tagIds, color, ` +
-  `recurrence, recurrence_mode AS recurrenceMode, ` +
-  `started_at AS startedAt, completed_at AS completedAt, created_at AS createdAt`
-
 const taskCodec = withSchema<Task>(Task, row => ({
   id: String(row.id),
   type: 'task',
@@ -746,34 +740,20 @@ const insertSpawnedTask = (
   state: SyncEntityState,
   parentId: string,
   parentVersion: number,
-) => sql`
-  INSERT INTO tasks
-    (id, type, title, description, owner_id, household_id, visibility,
-     status, priority, due_at, due_date, time_zone, project_id, tag_ids,
-     color, recurrence, recurrence_mode, recurrence_parent_id,
-     started_at, completed_at, created_at, updated_at, version, deleted_at)
-  SELECT
-    ${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
-    ${encodeNullableText(state.data.description)}, ${state.ownerId},
-    ${state.householdId}, ${state.visibility}, ${encodeText(state.data.status)},
-    ${encodeText(state.data.priority)}, ${encodeNullableText(state.data.dueAt)},
-    ${encodeNullableText(state.data.dueDate)}, ${encodeText(state.data.timeZone)},
-    ${encodeNullableText(state.data.projectId)}, ${encodeJson(state.data.tagIds)},
-    ${encodeNullableText(state.data.color)},
-    ${encodeJsonOrNull(state.data.recurrence)},
-    ${encodeNullableText(state.data.recurrenceMode)}, ${parentId},
-    ${encodeNullableText(state.data.startedAt)},
-    ${encodeNullableText(state.data.completedAt)},
-    ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-    ${state.updatedAt}, ${state.version}, ${state.deletedAt}
-  WHERE EXISTS (
-    SELECT 1 FROM tasks
-    WHERE id = ${parentId}
-      AND version = ${parentVersion}
-      AND status = 'done'
-  )
-  ON CONFLICT DO NOTHING
-`
+) =>
+  insertStatement(sql, TASK_TABLE, {
+    values: syncValues(state),
+    extra: [{ column: 'recurrence_parent_id', value: parentId }],
+    gate: sql`
+      EXISTS (
+        SELECT 1 FROM tasks
+        WHERE id = ${parentId}
+          AND version = ${parentVersion}
+          AND status = 'done'
+      )
+    `,
+    onConflict: true,
+  })
 
 const TASK_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
   ['title', isString],
@@ -820,8 +800,8 @@ const TASK_COMPLETION = { field: 'status', value: 'done' }
 
 const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'task',
-  table: 'tasks',
-  select: TASK_COLUMNS,
+  table: TASK_TABLE.table,
+  select: selectList(TASK_TABLE, { syncManaged: true }),
   writable: TASK_WRITABLE,
   completion: TASK_COMPLETION,
   purge: purgeItemTagJoins(sql, 'task', 'tasks'),
@@ -927,50 +907,17 @@ const taskDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
       joins: childState => spawnedTaskTagJoins(sql, childState),
     }
   },
-  insert: state => sql`
-    INSERT INTO tasks
-      (id, type, title, description, owner_id, household_id, visibility,
-       status, priority, due_at, due_date, time_zone, project_id, tag_ids,
-       color, recurrence, recurrence_mode, started_at, completed_at,
-       created_at, updated_at, version, deleted_at)
-    VALUES
-      (${state.entityId}, ${state.entityType}, ${encodeText(state.data.title)},
-       ${encodeNullableText(state.data.description)}, ${state.ownerId},
-       ${state.householdId}, ${state.visibility}, ${encodeText(state.data.status)},
-       ${encodeText(state.data.priority)}, ${encodeNullableText(state.data.dueAt)},
-       ${encodeNullableText(state.data.dueDate)}, ${encodeText(state.data.timeZone)},
-       ${encodeNullableText(state.data.projectId)}, ${encodeJson(state.data.tagIds)},
-       ${encodeNullableText(state.data.color)},
-       ${encodeJsonOrNull(state.data.recurrence)},
-       ${encodeNullableText(state.data.recurrenceMode)},
-       ${encodeNullableText(state.data.startedAt)},
-       ${encodeNullableText(state.data.completedAt)},
-       ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-       ${state.updatedAt}, ${state.version}, ${state.deletedAt})
-    ON CONFLICT DO NOTHING
-  `,
-  update: (state, expectedVersion) => sql`
-    UPDATE tasks SET
-      title = ${encodeText(state.data.title)},
-      description = ${encodeNullableText(state.data.description)},
-      visibility = ${state.visibility},
-      status = ${encodeText(state.data.status)},
-      priority = ${encodeText(state.data.priority)},
-      due_at = ${encodeNullableText(state.data.dueAt)},
-      due_date = ${encodeNullableText(state.data.dueDate)},
-      time_zone = ${encodeText(state.data.timeZone)},
-      project_id = ${encodeNullableText(state.data.projectId)},
-      tag_ids = ${encodeJson(state.data.tagIds)},
-      color = ${encodeNullableText(state.data.color)},
-      recurrence = ${encodeJsonOrNull(state.data.recurrence)},
-      recurrence_mode = ${encodeNullableText(state.data.recurrenceMode)},
-      started_at = ${encodeNullableText(state.data.startedAt)},
-      completed_at = ${encodeNullableText(state.data.completedAt)},
-      updated_at = ${state.updatedAt},
-      version = ${state.version},
-      deleted_at = ${state.deletedAt}
-    WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `,
+  insert: state =>
+    insertStatement(sql, TASK_TABLE, {
+      values: syncValues(state),
+      onConflict: true,
+    }),
+  update: (state, expectedVersion) =>
+    updateStatement(sql, TASK_TABLE, {
+      id: state.entityId,
+      values: syncValues(state),
+      expectedVersion,
+    }),
 })
 
 // ── Project ───────────────────────────────────────────────────────────────
