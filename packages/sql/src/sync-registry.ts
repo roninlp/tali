@@ -2332,7 +2332,15 @@ const occasionDefinition = (
 
 // ── Registry ──────────────────────────────────────────────────────────────
 
-/** Aggregates that sync today. Other `ItemType`s still reject as unsupported. */
+/**
+ * Aggregates that sync today. Other `ItemType`s still reject as unsupported.
+ *
+ * `SyncEntityType`'s union is built from the domain's exported list (#117),
+ * so the `satisfies` below validates every member against that list at
+ * compile time. The registry's definitions must cover exactly these keys;
+ * `apps/api/test/sync-registry.test.ts` asserts that at run time, because a
+ * hand-written definitions array cannot be checked by the type checker alone.
+ */
 export const SYNC_ENTITY_TYPES = [
   'task',
   'project',

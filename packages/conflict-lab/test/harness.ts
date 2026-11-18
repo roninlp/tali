@@ -4,6 +4,7 @@ import { IDBFactory } from 'fake-indexeddb'
 import {
   decodeErrorEnvelope,
   entityKey,
+  SYNC_ENTITY_TYPES,
   SyncBootstrapResponse,
   SyncPullResponse,
   SyncPushResponse,
@@ -433,19 +434,9 @@ export const mirrorSnapshot = async (
   store: LocalStore,
 ): Promise<ReadonlyArray<MirrorRecord>> => {
   const rows: Array<MirrorRecord> = []
-  for (const entityType of [
-    'habit',
-    'habitEntry',
-    'event',
-    'occasion',
-    'task',
-    'reminder',
-    'note',
-    'tag',
-    'list',
-    'listItem',
-    'project',
-  ] as const) {
+  // The entity types come from the domain's list (#117), so a new aggregate is
+  // swept into the convergence assertions without hand-copying its name.
+  for (const entityType of SYNC_ENTITY_TYPES) {
     rows.push(...(await store.list(entityType)))
     rows.push(...(await store.listTrashed(entityType)))
   }

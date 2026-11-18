@@ -20,6 +20,14 @@ import { ItemType } from './planning/common.js'
 export const SyncEntityType = ItemType
 export type SyncEntityType = Schema.Schema.Type<typeof SyncEntityType>
 
+/**
+ * Every syncable entity type as data — the same array `ItemType`'s (and so
+ * this union's) literals are built from (#117). Re-exported under the sync
+ * vocabulary so consumers that address entities through this module iterate
+ * the domain's list instead of re-enumerating the members by hand.
+ */
+export { ITEM_TYPES as SYNC_ENTITY_TYPES } from './planning/common.js'
+
 /** `delete` is a soft-delete tombstone, not a physical row removal. */
 export const SyncOp = Schema.Literals(['upsert', 'delete'])
 export type SyncOp = Schema.Schema.Type<typeof SyncOp>

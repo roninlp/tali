@@ -4,6 +4,8 @@ import {
   DEFAULT_TIME_ZONE,
   defaultVisibilityFor,
   entityKey,
+  SYNC_ENTITY_TYPES,
+  type SyncEntityType,
 } from '@tali/domain'
 import type { LocalStore, MirrorRecord } from '@tali/sync-client'
 
@@ -275,54 +277,89 @@ export const habitEntryRowsFromMirror = (
   records: ReadonlyArray<MirrorRecord>,
 ): ReadonlyArray<HabitEntryRow> => Array.map(records, toHabitEntryRow)
 
+/** Which store reads one entity type contributes to the snapshot. */
+interface SnapshotReads {
+  readonly live: boolean
+  readonly trashed: boolean
+}
+
+/**
+ * The per-type read policy (#117), exhaustive over the domain's
+ * `SyncEntityType` union so a new aggregate fails to compile until its policy
+ * is chosen here, like `VISIBILITY_POLICY` in `@tali/domain`. Most types read
+ * only live rows; notes, events and occasions also feed a trash lane.
+ * Reminders are the one type with no snapshot field yet — the ledger inbox
+ * reads them through the RPC client — so neither read runs for them.
+ */
+type SnapshotReadPolicy = Readonly<Record<SyncEntityType, SnapshotReads>>
+
+const SNAPSHOT_READS: SnapshotReadPolicy = {
+  habit: { live: true, trashed: false },
+  habitEntry: { live: true, trashed: false },
+  event: { live: true, trashed: true },
+  occasion: { live: true, trashed: true },
+  task: { live: true, trashed: false },
+  reminder: { live: false, trashed: false },
+  note: { live: true, trashed: true },
+  tag: { live: true, trashed: false },
+  list: { live: true, trashed: false },
+  listItem: { live: true, trashed: false },
+  project: { live: true, trashed: false },
+}
+
+/** One entity type's mirror rows, live and trashed (`[]` when not read). */
+interface MirrorRows {
+  readonly live: ReadonlyArray<MirrorRecord>
+  readonly trashed: ReadonlyArray<MirrorRecord>
+}
+
+/** Each type's rows, keyed by the domain's entity-type list. */
+type MirrorRowsByType = { readonly [T in SyncEntityType]: MirrorRows }
+
+/**
+ * Read every entity type's rows in one parallel pass, driven by the domain's
+ * `SYNC_ENTITY_TYPES` list and the per-type policy above.
+ */
+const readMirrorRows = async (store: LocalStore): Promise<MirrorRowsByType> => {
+  const entries = await Promise.all(
+    SYNC_ENTITY_TYPES.map(async entityType => {
+      const { live, trashed } = SNAPSHOT_READS[entityType]
+
+      const [liveRows, trashedRows] = await Promise.all([
+        live ? store.list(entityType) : [],
+        trashed ? store.listTrashed(entityType) : [],
+      ])
+
+      return [entityType, { live: liveRows, trashed: trashedRows }] as const
+    }),
+  )
+
+  // SAFETY: `SNAPSHOT_READS` is exhaustive over `SYNC_ENTITY_TYPES`, which is
+  // the same list the loop iterates, so every `SyncEntityType` key is present;
+  // `Object.fromEntries` just cannot express the key set in its return type.
+  return Object.fromEntries(entries) as MirrorRowsByType
+}
+
 /** The same snapshot shape a server refresh produces, read from the mirror. */
 export const readMirrorSnapshot = async (
   store: LocalStore,
 ): Promise<MirrorSnapshot> => {
-  const [
-    tasks,
-    projects,
-    tags,
-    notes,
-    trashedNotes,
-    habits,
-    habitEntries,
-    lists,
-    listItems,
-    events,
-    trashedEvents,
-    occasions,
-    trashedOccasions,
-  ] = await Promise.all([
-    store.list('task'),
-    store.list('project'),
-    store.list('tag'),
-    store.list('note'),
-    store.listTrashed('note'),
-    store.list('habit'),
-    store.list('habitEntry'),
-    store.list('list'),
-    store.list('listItem'),
-    store.list('event'),
-    store.listTrashed('event'),
-    store.list('occasion'),
-    store.listTrashed('occasion'),
-  ])
+  const rows = await readMirrorRows(store)
 
   return MirrorSnapshot.make({
-    tasks: taskRowsFromMirror(tasks),
-    projects: projectRowsFromMirror(projects),
-    tags: tagRowsFromMirror(tags),
-    notes: noteRowsFromMirror(notes),
-    trashedNotes: trashedNoteRowsFromMirror(trashedNotes),
-    habits: habitRowsFromMirror(habits),
-    habitEntries: habitEntryRowsFromMirror(habitEntries),
-    lists: sortListRows(listRowsFromMirror(lists)),
-    listItems: listItemRowsFromMirror(listItems),
-    events: eventRowsFromMirror(events),
-    trashedEvents: eventRowsFromMirror(trashedEvents),
-    occasions: occasionRowsFromMirror(occasions),
-    trashedOccasions: occasionRowsFromMirror(trashedOccasions),
+    tasks: taskRowsFromMirror(rows.task.live),
+    projects: projectRowsFromMirror(rows.project.live),
+    tags: tagRowsFromMirror(rows.tag.live),
+    notes: noteRowsFromMirror(rows.note.live),
+    trashedNotes: trashedNoteRowsFromMirror(rows.note.trashed),
+    habits: habitRowsFromMirror(rows.habit.live),
+    habitEntries: habitEntryRowsFromMirror(rows.habitEntry.live),
+    lists: sortListRows(listRowsFromMirror(rows.list.live)),
+    listItems: listItemRowsFromMirror(rows.listItem.live),
+    events: eventRowsFromMirror(rows.event.live),
+    trashedEvents: eventRowsFromMirror(rows.event.trashed),
+    occasions: occasionRowsFromMirror(rows.occasion.live),
+    trashedOccasions: occasionRowsFromMirror(rows.occasion.trashed),
   })
 }
 
