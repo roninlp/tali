@@ -53,25 +53,29 @@ import { TAG_TABLE } from './tag-repo.js'
 import { TASK_TABLE } from './task-repo.js'
 
 /**
- * The sync entity registry (ticket #34).
+ * The sync entity registry (ticket #34; column descriptors #115).
  *
  * Before this module the sync engine hard-coded `list_items` for its table,
  * writable fields and hydration. The registry is the single place that maps a
  * `SyncEntityType` to:
  *
- * - the D1 **table** and its trusted column projection (never client input);
+ * - the D1 **table** and its trusted column projection — both generated from
+ *   the aggregate's **column descriptor** (`columns.ts`, #115), the one place
+ *   each synced table's physical columns are declared; a repo and its
+ *   registry entry can no longer drift apart;
  * - the **writable-field allowlist** a client patch may set, with a value
  *   guard per field;
  * - the **hydration codec** (the aggregate's real `Model.Class` from #33, so
  *   the wire payload is validated against the same contract as the repos);
- * - the **household/owner visibility** columns (`household_id`, `owner_id`,
- *   `visibility`) every aggregate shares;
- * - the **soft-delete** column (`deleted_at`);
- * - the `INSERT`/`UPDATE` statement builders the push batch uses.
+ * - the `INSERT`/`UPDATE` statements the push batch uses, also generated
+ *   from the descriptor, with every value bound as a parameter so a client
+ *   can never choose a column name.
  *
- * Units are pure metadata plus two statement builders per aggregate. The
- * builders take the row's trusted table/columns from this file and bind every
- * value as a parameter, so a client can never choose a column name.
+ * Units are pure metadata plus the per-aggregate write glue. The fields every
+ * aggregate shares — the scope columns (`household_id`, `owner_id`,
+ * `visibility`), the soft-delete column (`deleted_at`) and the no-op LWW
+ * merge — are registry defaults (#115), so a definition states only what
+ * actually varies.
  *
  * ## The `listItem` compatibility shim
  *
@@ -85,10 +89,11 @@ import { TASK_TABLE } from './task-repo.js'
  * The web mirror (#17/#18) and `/today` read `data.title` / `data.checked` /
  * `data.sortOrder`, and #34 must not change the web app. So the `listItem`
  * entry stays on the **scaffold wire shape** and every sync write **dual-writes
- * both column sets**. Reads use the scaffold columns, which every writer keeps
- * current. Ticket #39 additionally accepts and hydrates the real aggregate
- * names (`name`/`done`/`ordering`), so `/lists` can speak the #33 vocabulary
- * without breaking the legacy `listItem` wire shape.
+ * both column sets** — expressed in the descriptor as each scaffold column's
+ * mirror of the real one. Reads use the scaffold columns, which every writer
+ * keeps current. Ticket #39 additionally accepts and hydrates the real
+ * aggregate names (`name`/`done`/`ordering`), so `/lists` can speak the #33
+ * vocabulary without breaking the legacy `listItem` wire shape.
  */
 
 // ── Row state ─────────────────────────────────────────────────────────────
