@@ -423,15 +423,15 @@ importers:
       '@tali/domain':
         specifier: workspace:*
         version: link:../domain
+      '@tali/rpc':
+        specifier: workspace:*
+        version: link:../rpc
       '@tali/sync-client':
         specifier: workspace:*
         version: link:../sync-client
       '@tali/tsconfig':
         specifier: workspace:*
         version: link:../tsconfig
-      '@tali/web-foldkit':
-        specifier: workspace:*
-        version: link:../../apps/web-foldkit
       effect:
         specifier: 'catalog:'
         version: 4.1.0

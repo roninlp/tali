@@ -13,7 +13,6 @@ import {
   type Priority,
   uuidV7,
 } from '@tali/domain'
-import { createTaskInMirror } from '@tali/sync-client'
 
 import { AuthFailure as AuthFailureSchema } from '../lib/auth-api'
 import { fetchCalendarMonth, fetchCalendarWeek } from '../lib/calendar-api'
@@ -51,6 +50,7 @@ import { withRpcClient } from '../lib/rpc'
 import { TimestampMillis } from '../lib/schema-primitives'
 import {
   completeTaskInMirror,
+  createTaskInMirror,
   moveTaskInMirror,
   updateTaskInMirror,
 } from '../lib/task-writes'
