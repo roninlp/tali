@@ -58,10 +58,12 @@ subtree_prompted: true
   HabitEntry, List, ListItem, Event, and Occasion rows the feature screens
   read (plus the Event/Occasion trash tombstones the calendar overlays), with
   the id/text/zone/timestamp/visibility rules every row shares coming from
-  `src/lib/mirror-field.ts`;
+  `src/lib/mirror-field.ts`, the pending-id extraction and TaskRow defaults
+  beside the key builders, and the keyed server/mirror overlay the snapshot
+  screens fold through in `src/lib/overlay.ts`;
   `src/habits-model.ts` holds the streak/rate/copy projection plus the habit
   form presets and monthly heatmap; `src/lists-model.ts` the List/ListItem
-  ordering, summaries, and pending-key projection; `src/page/today-model.ts`
+  ordering and summaries; `src/page/today-model.ts`
   and `today-view.ts` hold the dashboard's pure aggregation and view;
   `src/page/lists.ts`, `lists-view.ts`, and `list-view.ts` hold the
   index/detail Submodel and its views; `src/page/tasks-model.ts`,
@@ -72,7 +74,7 @@ subtree_prompted: true
   `src/page/notes.ts`, `notes-view.ts`, `note-view.ts`, and
   `notes-trash-view.ts` hold the notes index/editor/trash Submodel and views,
   with `src/page/notes-model.ts` carrying the section ordering, tag filter,
-  trash order, and pending-note projection; `src/page/reminders.ts`,
+  and trash order; `src/page/reminders.ts`,
   `reminders-view.ts`, and `reminders-model.ts` hold the ledger inbox Submodel,
   its panel, and its copy/formatting; `src/page/calendar.ts`,
   `calendar-view.ts`, and `calendar-model.ts` hold the week/month Submodel, its

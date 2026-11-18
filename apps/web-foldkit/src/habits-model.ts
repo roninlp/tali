@@ -677,18 +677,6 @@ export const clampHabitTimes = (times: number): number =>
 
 // ── Pending and clock helpers ────────────────────────────────────────────
 
-const PENDING_HABIT_PREFIX = 'habit\u0000'
-
-/** Ids of the habits with an unsent outbox entry. */
-export const pendingHabitIds = (
-  keys: ReadonlyArray<string>,
-): ReadonlyArray<string> =>
-  Array.flatMap(keys, key =>
-    key.startsWith(PENDING_HABIT_PREFIX)
-      ? [key.slice(PENDING_HABIT_PREFIX.length)]
-      : [],
-  )
-
 /** The user's zone, or the house default when the preference is unusable. */
 export const habitTimeZone = (timeZone: string): string =>
   localDateInOption('1970-01-01T00:00:00.000Z', timeZone) === null

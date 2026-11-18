@@ -4,6 +4,7 @@ import {
   DEFAULT_TIME_ZONE,
   defaultVisibilityFor,
   entityKey,
+  resolveTimeZone,
   SYNC_ENTITY_TYPES,
   type SyncEntityType,
 } from '@tali/domain'
@@ -26,8 +27,6 @@ import {
   mirrorMeta,
   mirrorNullableString,
   mirrorText,
-  mirrorTimeZone,
-  mirrorVisibility,
 } from './lib/mirror-field'
 import {
   NoteData,
@@ -174,20 +173,60 @@ const asTagIds = Schema.decodeUnknownOption(
 
 const asNoteData = Schema.decodeUnknownOption(NoteData)
 
+/** The status, priority, zone and visibility a TaskRow decodes from. */
+interface TaskRowSourceFields {
+  readonly status: unknown
+  readonly priority: unknown
+  readonly timeZone: unknown
+  readonly visibility: unknown
+}
+
+/** The same four fields after the TaskRow fallback policy has applied. */
+interface DefaultedTaskFields {
+  readonly status: TaskRow['status']
+  readonly priority: TaskRow['priority']
+  readonly timeZone: string
+  readonly visibility: NonNullable<TaskRow['visibility']>
+}
+
+/**
+ * The TaskRow fallback policy, held once: whatever source a row decodes from
+ * — the mirror's untyped JSON or a server response — an unknown status reads
+ * as `todo`, an unknown priority as `medium`, an absent or unusable zone as
+ * the household default, and an unset visibility as the aggregate's policy
+ * default.
+ */
+const defaultedTaskFields = (
+  fields: TaskRowSourceFields,
+): DefaultedTaskFields => ({
+  status: Option.getOrElse(asStatus(fields.status), () => 'todo'),
+  priority: Option.getOrElse(asPriority(fields.priority), () => 'medium'),
+  timeZone: resolveTimeZone(
+    Option.getOrElse(
+      asNonEmptyStringOption(fields.timeZone),
+      () => DEFAULT_TIME_ZONE,
+    ),
+  ),
+  visibility:
+    fields.visibility === 'private' || fields.visibility === 'shared'
+      ? fields.visibility
+      : defaultVisibilityFor('task'),
+})
+
 /** Project a mirrored task row into the shape the screens understand. */
 export const toTaskRow = (record: MirrorRecord): TaskRow =>
   TaskRow.make({
     id: mirrorId(record),
     title: mirrorText(record, 'title'),
     description: mirrorNullableString(record, 'description'),
-    status: Option.getOrElse(asStatus(record.data.status), () => 'todo'),
-    priority: Option.getOrElse(
-      asPriority(record.data.priority),
-      () => 'medium',
-    ),
+    ...defaultedTaskFields({
+      status: record.data.status,
+      priority: record.data.priority,
+      timeZone: record.data.timeZone,
+      visibility: record.data.visibility,
+    }),
     dueDate: mirrorNullableString(record, 'dueDate'),
     dueAt: mirrorNullableString(record, 'dueAt'),
-    timeZone: mirrorTimeZone(record),
     projectId: mirrorNullableString(record, 'projectId'),
     tagIds: Option.getOrElse(asTagIds(record.data.tagIds), () => []),
     startedAt: mirrorNullableString(record, 'startedAt'),
@@ -199,7 +238,6 @@ export const toTaskRow = (record: MirrorRecord): TaskRow =>
     createdAt: mirrorCreatedAt(record),
     ...mirrorMeta(record),
     ownerId: mirrorNullableString(record, 'ownerId'),
-    visibility: mirrorVisibility(record, 'task'),
   })
 
 /** Project a mirrored note row into the pinned-note lane's shape. */
@@ -382,6 +420,28 @@ export const pendingKeysOf = (
 ): ReadonlyArray<string> =>
   Array.map(entries, entry => entityKey(entry.entityType, entry.entityId))
 
+/**
+ * Ids of one entity type among the sync Model's pending `type\0id` keys, the
+ * one step past the key builders: a screen holding the keys asks for the ids
+ * it can actually compare with its rows.
+ */
+export const pendingIdsOf = (
+  entityType: string,
+  keys: ReadonlyArray<string>,
+): ReadonlyArray<string> => {
+  const prefix = entityKey(entityType, '')
+
+  return Array.flatMap(keys, key =>
+    key.startsWith(prefix) ? [key.slice(prefix.length)] : [],
+  )
+}
+
+/** The set form of `pendingIdsOf`, for per-row membership checks. */
+export const pendingIdSetOf = (
+  entityType: string,
+  keys: ReadonlyArray<string>,
+): ReadonlySet<string> => new Set(pendingIdsOf(entityType, keys))
+
 /** A note is visible on Today while it is pinned and not archived. */
 export const isPinnedNote = (note: NoteRow): boolean =>
   note.isPinned && !note.isArchived && note.deletedAt === null
@@ -392,20 +452,20 @@ export const liveNotes = (
 
 export const isLiveTask = (task: TaskRow): boolean => task.status !== 'done'
 
-/** Server-returned rows reuse the local projectors' defaults. */
+/** Server-returned rows decode through the same defaults as the mirror's. */
 export const taskRowFromServer = (task: ServerTask): TaskRow =>
   TaskRow.make({
     id: task.id,
     title: task.title,
     description: task.description ?? null,
-    status: Option.getOrElse(asStatus(task.status), () => 'todo'),
-    priority: Option.getOrElse(asPriority(task.priority), () => 'medium'),
+    ...defaultedTaskFields({
+      status: task.status,
+      priority: task.priority,
+      timeZone: task.timeZone,
+      visibility: task.visibility,
+    }),
     dueDate: task.dueDate ?? null,
     dueAt: task.dueAt ?? null,
-    timeZone: Option.getOrElse(
-      asNonEmptyStringOption(task.timeZone),
-      () => DEFAULT_TIME_ZONE,
-    ),
     projectId: task.projectId ?? null,
     tagIds: task.tagIds ?? [],
     startedAt: task.startedAt ?? null,
@@ -415,7 +475,6 @@ export const taskRowFromServer = (task: ServerTask): TaskRow =>
     version: task.version ?? 0,
     hasSyncError: false,
     ownerId: task.ownerId ?? null,
-    visibility: task.visibility ?? defaultVisibilityFor('task'),
   })
 
 export const noteRowFromServer = (note: ServerNote): NoteRow => {

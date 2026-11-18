@@ -354,20 +354,6 @@ export const listSummaries = (
 
 // ── Pending / writer labels ───────────────────────────────────────────────
 
-const entityPrefix = (entityType: string): string => `${entityType}\u0000`
-
-/** Ids of one entity type among the sync Model's pending `type\0id` keys. */
-export const pendingIdsOf = (
-  keys: ReadonlyArray<string>,
-  entityType: string,
-): ReadonlyArray<string> => {
-  const prefix = entityPrefix(entityType)
-
-  return Array.flatMap(keys, key =>
-    key.startsWith(prefix) ? [key.slice(prefix.length)] : [],
-  )
-}
-
 /**
  * True when the last writer is the *other* household member. Version 1 rows are
  * still untouched creations (the creator's name is already implied), so the

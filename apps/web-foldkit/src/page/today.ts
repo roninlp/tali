@@ -20,7 +20,7 @@ import { type DisplayFields, Preferences } from '../preferences-model'
 import { LocalStoreResource } from '../sync/local-store'
 import type { LocalStoreService } from '../sync/local-store'
 import { clockEvents, eventStream, onlineEvents } from '../ui/dom-stream'
-import { localWrite, storeFailureMessage } from './local-write'
+import { localCreate, localWrite, storeFailureMessage } from './local-write'
 import {
   DashboardSection,
   DashboardSectionMove,
@@ -243,39 +243,27 @@ export const CreateTask = Command.define('CreateTask', {
   args: { title: Schema.String, timeZone: Schema.String },
   messages: [Message.CompletedCreateTask, Message.FailedCreateTask],
   execute: ({ title, timeZone }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* Clock.currentTimeMillis
-      const instant = new Date(now).toISOString()
-      const zone = validTimeZone(timeZone)
-      const taskId = uuidV7(now)
+    localCreate({
+      run: (store, { now, instant, id }) => {
+        const zone = validTimeZone(timeZone)
 
-      yield* Effect.tryPromise({
-        try: () =>
-          createTaskInMirror(
-            store,
-            {
-              title,
-              dueDate: todayInZone(new Date(now), zone),
-              priority: 'medium',
-              projectId: null,
-              tagIds: [],
-              timeZone: zone,
-            },
-            taskId,
-            instant,
-          ),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedCreateTask({ taskId, title })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedCreateTask({ message: storeFailureMessage(error) }),
-        ),
-      ),
-    ),
+        return createTaskInMirror(
+          store,
+          {
+            title,
+            dueDate: todayInZone(new Date(now), zone),
+            priority: 'medium',
+            projectId: null,
+            tagIds: [],
+            timeZone: zone,
+          },
+          id,
+          instant,
+        )
+      },
+      onSuccess: taskId => Message.CompletedCreateTask({ taskId, title }),
+      onFailure: message => Message.FailedCreateTask({ message }),
+    }),
 })
 
 export const CompleteTask = Command.define('CompleteTask', {

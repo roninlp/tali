@@ -1,10 +1,9 @@
-import { Array, Clock, Effect, Option, Schema } from 'effect'
+import { Array, Option, Schema } from 'effect'
 import { Command, Submodel, Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
 
 import { Dialog, Listbox } from '@foldkit/ui'
-import { uuidV7 } from '@tali/domain'
 import { ListId } from '@tali/domain'
 
 import {
@@ -35,7 +34,6 @@ import {
 } from '../lists-model'
 import type { MirrorSnapshot } from '../mirror'
 import type { CheckedItemPlacement, DisplayFields } from '../preferences-model'
-import { LocalStoreResource } from '../sync/local-store'
 import type { LocalStoreService } from '../sync/local-store'
 import type { ConfirmSpec } from '../ui/confirm'
 import { confirmDialogFolds } from '../ui/confirm'
@@ -43,7 +41,7 @@ import { optionalListboxOutMessageFold } from '../ui/fold'
 import { Toast, ToastUndo, toastFolds } from '../ui/toast'
 import { listDetailView } from './list-view'
 import { listsIndexView } from './lists-view'
-import { localWrite, storeFailureMessage } from './local-write'
+import { localCreate, localWrite } from './local-write'
 
 /**
  * The `/lists` index and `/lists/[id]` detail Submodel, ported from
@@ -314,25 +312,13 @@ export const CreateList = Command.define('CreateList', {
   },
   messages: [Message.CompletedCreateList, Message.FailedCreateList],
   execute: draft =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* Clock.currentTimeMillis
-      const listId = uuidV7(now)
-      const instant = new Date(now).toISOString()
-
-      yield* Effect.tryPromise({
-        try: () => createListInMirror(store, draft, listId, instant),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedCreateList({ listId, title: draft.title })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedCreateList({ message: storeFailureMessage(error) }),
-        ),
-      ),
-    ),
+    localCreate({
+      run: (store, { instant, id }) =>
+        createListInMirror(store, draft, id, instant),
+      onSuccess: listId =>
+        Message.CompletedCreateList({ listId, title: draft.title }),
+      onFailure: message => Message.FailedCreateList({ message }),
+    }),
 })
 
 export const RenameList = Command.define('RenameList', {
@@ -425,34 +411,13 @@ export const CreateListItem = Command.define('CreateListItem', {
   },
   messages: [Message.CompletedCreateListItem, Message.FailedCreateListItem],
   execute: ({ listId, name, order }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* Clock.currentTimeMillis
-      const itemId = uuidV7(now)
-      const instant = new Date(now).toISOString()
-
-      yield* Effect.tryPromise({
-        try: () =>
-          createListItemInMirror(
-            store,
-            listId,
-            { name, order },
-            itemId,
-            instant,
-          ),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedCreateListItem({ listId, itemId, name })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedCreateListItem({
-            message: storeFailureMessage(error),
-          }),
-        ),
-      ),
-    ),
+    localCreate({
+      run: (store, { instant, id }) =>
+        createListItemInMirror(store, listId, { name, order }, id, instant),
+      onSuccess: itemId =>
+        Message.CompletedCreateListItem({ listId, itemId, name }),
+      onFailure: message => Message.FailedCreateListItem({ message }),
+    }),
 })
 
 export const SetListItemChecked = Command.define('SetListItemChecked', {

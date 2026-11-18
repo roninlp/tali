@@ -5,7 +5,6 @@ import { NoteRow } from '../mirror'
 import {
   filterNoteRowsByTags,
   noteSections,
-  pendingNoteIds,
   sortNoteRows,
   sortTrashedNoteRows,
 } from './notes-model'
@@ -88,11 +87,5 @@ describe('note row ordering', () => {
       'new',
       'old',
     ])
-  })
-
-  test('reads note keys out of the pending overlay', () => {
-    expect(
-      pendingNoteIds(['note\u0000n-1', 'task\u0000t-1', 'note\u0000n-2']),
-    ).toEqual(['n-1', 'n-2'])
   })
 })

@@ -26,7 +26,6 @@ import {
   habitStatsFor,
   habitStatusIcon,
   habitStatusLabel,
-  pendingHabitIds,
   toHabitRow,
 } from './habits-model'
 import { tapHabitEntry } from './lib/habit-log'
@@ -523,16 +522,6 @@ describe('habit read model', () => {
     ])
     expect(sunday.weekdayLabels[0]).toBe('یکشنبه')
     expect(saturday.label).toBe('۱ آبان ۱۴۰۵')
-  })
-
-  it('reads pending habit ids out of the sync keys', () => {
-    expect(
-      pendingHabitIds([
-        'habit\u0000habit-1',
-        'task\u0000task-1',
-        'habit\u0000habit-2',
-      ]),
-    ).toEqual(['habit-1', 'habit-2'])
   })
 
   it('labels statuses for the tap button and the heatmap', () => {

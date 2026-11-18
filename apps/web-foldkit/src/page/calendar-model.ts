@@ -46,7 +46,8 @@ import {
   monthOccasionsFromSources,
   occasionSourcesOf,
 } from '../lib/occasion-writes'
-import { entityKey } from '../mirror'
+import { overlayRowsById } from '../lib/overlay'
+import { pendingIdsOf, pendingIdSetOf } from '../mirror'
 import type { MirrorSnapshot, TaskRow } from '../mirror'
 import type { DisplayFields } from '../preferences-model'
 
@@ -254,26 +255,16 @@ export const overlayCalendarSources = (input: {
   readonly base: ReadonlyArray<CalendarTaskSource>
   readonly mirror: ReadonlyArray<TaskRow>
   readonly overlayIds: ReadonlySet<string>
-}): ReadonlyArray<CalendarTaskSource> => {
-  const byId = new Map(input.base.map(task => [task.id, task]))
-  const mirrorById = new Map(input.mirror.map(row => [row.id, row]))
-
-  for (const id of input.overlayIds) {
-    const row = mirrorById.get(id)
-
-    if (row === undefined) {
-      continue
-    }
-
-    const base = byId.get(id)
-    byId.set(
-      id,
-      base === undefined ? taskSourceOf(row) : mergeTaskSource(base, row),
-    )
-  }
-
-  return [...byId.values()]
-}
+}): ReadonlyArray<CalendarTaskSource> =>
+  overlayRowsById({
+    base: input.base,
+    mirror: input.mirror,
+    overlayIds: input.overlayIds,
+    merge: (maybeBase, row) =>
+      maybeBase === undefined
+        ? taskSourceOf(row)
+        : mergeTaskSource(maybeBase, row),
+  })
 
 /**
  * Overlay local occasion writes the server snapshot has not seen yet, exactly
@@ -285,60 +276,21 @@ export const overlayOccasionSources = (input: {
   readonly mirror: ReadonlyArray<CalendarOccasionSource>
   readonly overlayIds: ReadonlySet<string>
   readonly deletedIds?: ReadonlySet<string>
-}): ReadonlyArray<CalendarOccasionSource> => {
-  const byId = new Map(input.base.map(occasion => [occasion.id, occasion]))
-
-  const mirrorById = new Map(
-    input.mirror.map(occasion => [occasion.id, occasion]),
-  )
-
-  for (const id of input.overlayIds) {
-    if (input.deletedIds?.has(id) === true) {
-      byId.delete(id)
-      continue
-    }
-
-    const local = mirrorById.get(id)
-
-    if (local === undefined) {
-      continue
-    }
-
-    byId.set(id, local)
-  }
-
-  return [...byId.values()]
-}
-
-const idsWithPrefix = (
-  keys: ReadonlyArray<string>,
-  entityType: string,
-): ReadonlySet<string> => {
-  const prefix = entityKey(entityType, '')
-  const ids = new Set<string>()
-
-  for (const key of keys) {
-    if (key.startsWith(prefix)) {
-      ids.add(key.slice(prefix.length))
-    }
-  }
-
-  return ids
-}
+}): ReadonlyArray<CalendarOccasionSource> =>
+  overlayRowsById({
+    base: input.base,
+    mirror: input.mirror,
+    overlayIds: input.overlayIds,
+    deletedIds: input.deletedIds,
+    merge: (_maybeBase, row) => row,
+  })
 
 const unionIds = (
   pendingKeys: ReadonlyArray<string>,
   entityType: string,
   dirtyIds: ReadonlyArray<string>,
-): ReadonlySet<string> => {
-  const ids = new Set(idsWithPrefix(pendingKeys, entityType))
-
-  for (const id of dirtyIds) {
-    ids.add(id)
-  }
-
-  return ids
-}
+): ReadonlySet<string> =>
+  new Set([...pendingIdsOf(entityType, pendingKeys), ...dirtyIds])
 
 /**
  * Pick the server snapshot only while it still describes the visible window.
@@ -394,7 +346,10 @@ export const calendarViewOf = (input: {
     input.dirtyEventIds,
   )
 
-  const occasionOverlayIds = idsWithPrefix(input.inputs.pendingKeys, 'occasion')
+  const occasionOverlayIds = pendingIdSetOf(
+    'occasion',
+    input.inputs.pendingKeys,
+  )
 
   const deletedEventIds = new Set(
     Array.map(mirror.trashedEvents, row => row.id),

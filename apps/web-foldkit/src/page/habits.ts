@@ -48,7 +48,7 @@ import { clockEvents } from '../ui/dom-stream'
 import * as Picker from '../ui/picker'
 import { Toast, ToastUndo, toastFolds } from '../ui/toast'
 import { habitsPageView } from './habits-view'
-import { localWrite, storeFailureMessage } from './local-write'
+import { localCreate, localWrite, storeFailureMessage } from './local-write'
 
 /**
  * The `/habits` screen Submodel, ported from
@@ -241,39 +241,25 @@ export const CreateHabit = Command.define('CreateHabit', {
     color,
     timeZone,
   }) =>
-    Effect.gen(function* () {
-      const store = yield* LocalStoreResource.get
-      const now = yield* Clock.currentTimeMillis
-      const habitId = uuidV7(now)
-      const instant = new Date(now).toISOString()
-
-      yield* Effect.tryPromise({
-        try: () =>
-          createHabitInMirror(
-            store,
-            {
-              title,
-              description: Option.getOrNull(description),
-              reminderTime: Option.getOrNull(reminderTime),
-              frequency,
-              icon,
-              color,
-              timeZone: habitTimeZone(timeZone),
-            },
-            habitId,
-            instant,
-          ),
-        catch: storeFailureMessage,
-      })
-
-      return Message.CompletedCreateHabit({ habitId, title })
-    }).pipe(
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedCreateHabit({ message: storeFailureMessage(error) }),
+    localCreate({
+      run: (store, { instant, id }) =>
+        createHabitInMirror(
+          store,
+          {
+            title,
+            description: Option.getOrNull(description),
+            reminderTime: Option.getOrNull(reminderTime),
+            frequency,
+            icon,
+            color,
+            timeZone: habitTimeZone(timeZone),
+          },
+          id,
+          instant,
         ),
-      ),
-    ),
+      onSuccess: habitId => Message.CompletedCreateHabit({ habitId, title }),
+      onFailure: message => Message.FailedCreateHabit({ message }),
+    }),
 })
 
 export const UpdateHabit = Command.define('UpdateHabit', {

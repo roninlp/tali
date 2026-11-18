@@ -20,9 +20,9 @@ import {
   habitStatusIcon,
   habitStatusLabel,
   habitToday,
-  pendingHabitIds,
 } from '../habits-model'
 import { shareActionOf } from '../lib/visibility-writes'
+import { pendingIdsOf } from '../mirror'
 import { confirmDialogView } from '../ui/confirm'
 import { inputControlView, textAreaControlView } from '../ui/field'
 import { pickerDialogView, pickerTriggerView } from '../ui/picker'
@@ -498,7 +498,7 @@ const habitCardView = (
   const status = entry?.status ?? null
 
   const isPending = Array.contains(
-    pendingHabitIds(inputs.pendingKeys),
+    pendingIdsOf('habit', inputs.pendingKeys),
     habit.id,
   )
 

@@ -20,14 +20,14 @@ import {
 } from '@tali/domain'
 import type { Digits, TaskBucketBounds, WeekStart } from '@tali/domain'
 
+import { overlayRowsById } from '../lib/overlay'
 import type { TodayReadModel } from '../lib/today-api'
 import type { NoteRow, TaskRow } from '../mirror'
 import {
-  noteKey,
   noteRowFromServer,
+  pendingIdSetOf,
   sortNotes,
   sortTasks,
-  taskKey,
   taskRowFromServer,
 } from '../mirror'
 
@@ -204,8 +204,8 @@ export const fromMirrorToday = (
  * A local completion/move/quick-add is visible in the mirror immediately but
  * has not reached the server, so the read model would otherwise still show the
  * old row (and blanking the whole model would hide tasks the mirror has never
- * seen). Merging the pending mirror row over its server row keeps the rest of
- * the picture intact until the outbox drains and the ETag refreshes.
+ * seen). Merging the pending mirror rows over their server rows keeps the rest
+ * of the picture intact until the outbox drains and the ETag refreshes.
  */
 export const overlayPendingToday = (
   base: TodayView,
@@ -218,53 +218,26 @@ export const overlayPendingToday = (
   now: number,
 ): TodayView => {
   const bounds = boundsFor(base.timeZone, now)
-  const pendingSet = new Set([...pending, ...dirty])
-  const serverTaskIds = new Set<string>()
-  const mirrorTasks = new Map<string, TaskRow>()
-  const serverNoteIds = new Set<string>()
-  const mirrorNotes = new Map<string, NoteRow>()
-
-  base.tasks.forEach(task => {
-    serverTaskIds.add(task.id)
-  })
-  mirror.tasks.forEach(task => {
-    mirrorTasks.set(task.id, task)
-  })
-  base.notes.forEach(note => {
-    serverNoteIds.add(note.id)
-  })
-  mirror.notes.forEach(note => {
-    mirrorNotes.set(note.id, note)
-  })
+  const keys = [...pending, ...dirty]
+  const taskOverlayIds = pendingIdSetOf('task', keys)
+  const noteOverlayIds = pendingIdSetOf('note', keys)
 
   const tasks = Array.filter(
-    [
-      ...Array.map(base.tasks, task =>
-        pendingSet.has(taskKey(task.id))
-          ? (mirrorTasks.get(task.id) ?? task)
-          : task,
-      ),
-      ...Array.flatMap(mirror.tasks, task =>
-        serverTaskIds.has(task.id) || !pendingSet.has(taskKey(task.id))
-          ? []
-          : [task],
-      ),
-    ],
+    overlayRowsById({
+      base: base.tasks,
+      mirror: mirror.tasks,
+      overlayIds: taskOverlayIds,
+      merge: (_maybeBase, row) => row,
+    }),
     task => task.status !== 'done' && isTodayTask(task, bounds),
   )
 
-  const notes = [
-    ...Array.map(base.notes, note =>
-      pendingSet.has(noteKey(note.id))
-        ? (mirrorNotes.get(note.id) ?? note)
-        : note,
-    ),
-    ...Array.flatMap(mirror.notes, note =>
-      serverNoteIds.has(note.id) || !pendingSet.has(noteKey(note.id))
-        ? []
-        : [note],
-    ),
-  ]
+  const notes = overlayRowsById({
+    base: base.notes,
+    mirror: mirror.notes,
+    overlayIds: noteOverlayIds,
+    merge: (_maybeBase, row) => row,
+  })
 
   const pinnedNotes = Array.filter(
     notes,
