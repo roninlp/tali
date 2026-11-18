@@ -44,6 +44,7 @@ import {
 import { reminderFireAt, reminderTierFor } from '@tali/domain/reminder-policy'
 import { insertStatement, selectList, updateStatement } from './columns.js'
 import { PROJECT_TABLE } from './project-repo.js'
+import { TAG_TABLE } from './tag-repo.js'
 
 /**
  * The sync entity registry (ticket #34).
@@ -1022,7 +1023,10 @@ const projectDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
 
 // ── Tag ───────────────────────────────────────────────────────────────────
 
-const TAG_COLUMNS = `${META_COLUMNS}, type, name, color, created_at AS createdAt`
+const TAG_WRITABLE: ReadonlyMap<string, SyncFieldGuard> = new Map([
+  ['name', isString],
+  ['color', isNullableString],
+])
 
 const tagCodec = withSchema<Tag>(Tag, row => ({
   id: String(row.id),
@@ -1037,8 +1041,8 @@ const tagCodec = withSchema<Tag>(Tag, row => ({
 
 const tagDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
   entityType: 'tag',
-  table: 'tags',
-  select: TAG_COLUMNS,
+  table: TAG_TABLE.table,
+  select: selectList(TAG_TABLE, { syncManaged: true }),
   writable: new Map([
     ['name', isString],
     ['color', isNullableString],
@@ -1065,28 +1069,17 @@ const tagDefinition = (sql: SqlClient.SqlClient): SyncEntityDefinition => ({
     color: asText(patch.color),
     createdAt: asText(patch.createdAt) ?? context.clientUpdatedAt,
   }),
-  insert: state => sql`
-    INSERT INTO tags
-      (id, type, name, owner_id, household_id, visibility, color,
-       created_at, updated_at, version, deleted_at)
-    VALUES
-      (${state.entityId}, ${state.entityType}, ${encodeText(state.data.name)},
-       ${state.ownerId}, ${state.householdId}, ${state.visibility},
-       ${encodeNullableText(state.data.color)},
-       ${encodeNullableText(state.data.createdAt) ?? state.updatedAt},
-       ${state.updatedAt}, ${state.version}, ${state.deletedAt})
-    ON CONFLICT DO NOTHING
-  `,
-  update: (state, expectedVersion) => sql`
-    UPDATE tags SET
-      name = ${encodeText(state.data.name)},
-      visibility = ${state.visibility},
-      color = ${encodeNullableText(state.data.color)},
-      updated_at = ${state.updatedAt},
-      version = ${state.version},
-      deleted_at = ${state.deletedAt}
-    WHERE id = ${state.entityId} AND version = ${expectedVersion}
-  `,
+  insert: state =>
+    insertStatement(sql, TAG_TABLE, {
+      values: syncValues(state),
+      onConflict: true,
+    }),
+  update: (state, expectedVersion) =>
+    updateStatement(sql, TAG_TABLE, {
+      id: state.entityId,
+      values: syncValues(state),
+      expectedVersion,
+    }),
 })
 
 // ── List ──────────────────────────────────────────────────────────────────

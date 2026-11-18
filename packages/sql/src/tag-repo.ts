@@ -1,6 +1,15 @@
 import { Context, Effect, Layer, Option } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { type ItemType, Tag, type TagId, type UserId } from '@tali/domain'
+import {
+  type ColumnValues,
+  column,
+  columnCodecs,
+  defineTable,
+  insertStatement,
+  selectList,
+  updateStatement,
+} from './columns'
 import { visibleScopeSql } from './scope'
 
 /**
@@ -13,13 +22,45 @@ import { visibleScopeSql } from './scope'
  * a D1 batch with the entity write + feed append.
  */
 
-const TAG_COLUMNS =
-  `id, type, name, owner_id AS ownerId, household_id AS householdId, visibility, ` +
-  `color, created_at AS createdAt, updated_at AS updatedAt, version, deleted_at AS deletedAt`
+/**
+ * The one place `tags`' columns are declared (#115): the repo's SELECT, INSERT
+ * and UPDATE lists below, and the sync registry's projection and statements,
+ * are all generated from this descriptor.
+ */
+export const TAG_TABLE = defineTable('tags', [
+  column('id', { updatable: false }),
+  column('type', { updatable: false }),
+  column('name', { codec: columnCodecs.text }),
+  column('owner_id', 'ownerId', { updatable: false }),
+  column('household_id', 'householdId', { updatable: false }),
+  column('visibility'),
+  column('color', { codec: columnCodecs.nullableText }),
+  column('created_at', 'createdAt', {
+    updatable: false,
+    codec: columnCodecs.text,
+  }),
+  column('updated_at', 'updatedAt', { codec: columnCodecs.text }),
+  column('version', { codec: columnCodecs.int }),
+  column('deleted_at', 'deletedAt', { codec: columnCodecs.nullableText }),
+])
 
-const TAG_COLUMNS_QUALIFIED =
-  `t.id, t.type, t.name, t.owner_id AS ownerId, t.household_id AS householdId, t.visibility, ` +
-  `t.color, t.created_at AS createdAt, t.updated_at AS updatedAt, t.version, t.deleted_at AS deletedAt`
+const TAG_SELECT = selectList(TAG_TABLE)
+const TAG_SELECT_QUALIFIED = selectList(TAG_TABLE, { prefix: 't.' })
+
+/** The model's column values; the descriptor's codecs do the encoding. */
+const tagValues = (tag: Tag): ColumnValues<typeof TAG_TABLE> => ({
+  id: tag.id,
+  type: tag.type,
+  name: tag.name,
+  ownerId: tag.ownerId,
+  householdId: tag.householdId,
+  visibility: tag.visibility,
+  color: tag.color,
+  createdAt: tag.createdAt,
+  updatedAt: tag.updatedAt,
+  version: tag.version,
+  deletedAt: tag.deletedAt,
+})
 
 export class TagRepo extends Context.Service<TagRepo>()('TagRepo', {
   make: Effect.gen(function* () {
@@ -27,7 +68,7 @@ export class TagRepo extends Context.Service<TagRepo>()('TagRepo', {
 
     const findById = (id: TagId) =>
       Effect.map(
-        sql<Tag>`SELECT ${sql.literal(TAG_COLUMNS)} FROM tags WHERE id = ${id}`,
+        sql<Tag>`SELECT ${sql.literal(TAG_SELECT)} FROM tags WHERE id = ${id}`,
         rows => Option.fromUndefinedOr(rows[0]),
       )
 
@@ -37,7 +78,7 @@ export class TagRepo extends Context.Service<TagRepo>()('TagRepo', {
     }) =>
       Effect.map(
         sql<Tag>`
-          SELECT ${sql.literal(TAG_COLUMNS)} FROM tags
+          SELECT ${sql.literal(TAG_SELECT)} FROM tags
           WHERE ${visibleScopeSql(sql, input)}
           ORDER BY name ASC, id ASC
         `,
@@ -55,7 +96,7 @@ export class TagRepo extends Context.Service<TagRepo>()('TagRepo', {
     }) =>
       Effect.map(
         sql<Tag>`
-          SELECT ${sql.literal(TAG_COLUMNS)} FROM tags
+          SELECT ${sql.literal(TAG_SELECT)} FROM tags
           WHERE household_id = ${input.householdId}
             AND name = ${input.name}
             AND deleted_at IS NULL
@@ -66,32 +107,20 @@ export class TagRepo extends Context.Service<TagRepo>()('TagRepo', {
 
     const insert = (tag: Tag) =>
       Effect.map(
-        sql<Tag>`
-          INSERT INTO tags
-            (id, type, name, owner_id, household_id, visibility, color,
-             created_at, updated_at, version, deleted_at)
-          VALUES
-            (${tag.id}, ${tag.type}, ${tag.name}, ${tag.ownerId}, ${tag.householdId},
-             ${tag.visibility}, ${tag.color}, ${tag.createdAt}, ${tag.updatedAt},
-             ${tag.version}, ${tag.deletedAt})
-          RETURNING ${sql.literal(TAG_COLUMNS)}
-        `,
+        insertStatement<Tag>(sql, TAG_TABLE, {
+          values: tagValues(tag),
+          returning: TAG_SELECT,
+        }),
         rows => rows[0]!,
       )
 
     const update = (tag: Tag) =>
       Effect.map(
-        sql<Tag>`
-          UPDATE tags SET
-            name = ${tag.name},
-            visibility = ${tag.visibility},
-            color = ${tag.color},
-            updated_at = ${tag.updatedAt},
-            version = ${tag.version},
-            deleted_at = ${tag.deletedAt}
-          WHERE id = ${tag.id}
-          RETURNING ${sql.literal(TAG_COLUMNS)}
-        `,
+        updateStatement<Tag>(sql, TAG_TABLE, {
+          id: tag.id,
+          values: tagValues(tag),
+          returning: TAG_SELECT,
+        }),
         rows => Option.fromUndefinedOr(rows[0]),
       )
 
@@ -102,7 +131,7 @@ export class TagRepo extends Context.Service<TagRepo>()('TagRepo', {
     }) =>
       Effect.map(
         sql<Tag>`
-          SELECT ${sql.literal(TAG_COLUMNS_QUALIFIED)}
+          SELECT ${sql.literal(TAG_SELECT_QUALIFIED)}
           FROM tags t
           INNER JOIN item_tags it ON it.tag_id = t.id
           WHERE it.item_type = ${input.itemType} AND it.item_id = ${input.itemId}

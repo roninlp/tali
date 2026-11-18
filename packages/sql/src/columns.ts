@@ -199,22 +199,27 @@ const physicalColumns = (
  *
  * `syncManaged: true` is the registry's form: it adds the columns only the
  * sync engine writes and hydrates. The repos use the default form, so their
- * rows never grow a field the aggregate's model does not have.
+ * rows never grow a field the aggregate's model does not have. `prefix`
+ * qualifies every column (a joined table's alias).
  */
 export const selectList = (
   table: TableDescriptor,
-  options?: { readonly syncManaged?: boolean },
-): string =>
-  table.columns
+  options?: { readonly syncManaged?: boolean; readonly prefix?: string },
+): string => {
+  const prefix = options?.prefix ?? ''
+  return table.columns
     .flatMap(entry =>
       entry.syncManaged === true && options?.syncManaged !== true
         ? []
         : physicalColumns(entry),
     )
     .map(({ column, alias }) =>
-      column === alias ? column : `${column} AS ${alias}`,
+      column === alias
+        ? `${prefix}${column}`
+        : `${prefix}${column} AS ${alias}`,
     )
     .join(', ')
+}
 
 // ── Write builders ────────────────────────────────────────────────────────
 
