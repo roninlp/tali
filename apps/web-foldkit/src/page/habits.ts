@@ -518,7 +518,11 @@ const shownDeletedToastStep = (
   toast.shownStep(
     {
       text: `«${title}» حذف شد.`,
-      maybeUndo: { kind: 'restoreHabit', id: habitId, title },
+      maybeUndo: {
+        id: habitId,
+        title,
+        maybeStartedAt: Option.none(),
+      },
     },
     'Info',
   )

@@ -15,13 +15,13 @@ import { chevronDownIcon } from '../ui/icons'
 import { listboxViewInputs } from '../ui/listbox'
 import { offlineNoticeView, pageHeaderView, pendingCountView } from '../ui/page'
 import { pickerDialogView, pickerTriggerView } from '../ui/picker'
+import { toastStackView } from '../ui/toast'
 import { Message } from './tasks'
 import type {
   Model,
   QuickAddDraft,
   TaskEditor,
   TaskStatusEditorOption,
-  TaskToast,
   ViewInputs,
 } from './tasks'
 import { quickAddDue } from './tasks'
@@ -1673,41 +1673,16 @@ const historyView = (
 
 // PAGE
 
-const toastView = (
-  maybeToast: Option.Option<TaskToast>,
-  h: HtmlBuilder<Message>,
-): Html =>
-  Option.match(maybeToast, {
-    onNone: () => h.empty,
-    onSome: toast =>
-      h.div(
-        [
-          h.Class(
-            'fixed inset-x-3 bottom-[5.5rem] z-40 mx-auto flex max-w-[420px] items-center justify-between gap-3 rounded-2xl border border-base-300 bg-base-100 py-2.5 ps-4 pe-3 text-base-content shadow-float sm:bottom-4',
-          ),
-          h.Role('status'),
-          h.AriaLive('polite'),
-        ],
-        [
-          h.p(
-            [h.Class('m-0 text-[0.85rem] leading-7 wrap-anywhere')],
-            [`انجام شد: ${toast.title}`],
-          ),
-          h.button(
-            [
-              h.Type('button'),
-              h.Class(
-                'min-h-10 flex-none rounded-full border border-base-300 px-3.5 text-[0.8rem] text-base-content/75 transition-colors hover:bg-base-content/5 hover:text-base-content sm:min-h-9',
-              ),
-              h.OnClick(
-                Message.ClickedUndoToast({ generation: toast.generation }),
-              ),
-            ],
-            ['بازگرداندن'],
-          ),
-        ],
-      ),
-  })
+const toastView = (model: Model, h: HtmlBuilder<Message>): Html =>
+  toastStackView(
+    {
+      model: model.toast,
+      toParentMessage: message => Message.GotToastMessage({ message }),
+      toUndoMessage: (entryId, undo) =>
+        Message.ClickedUndoCompletion({ entryId, undo }),
+    },
+    h,
+  )
 
 const headerView = (inputs: ViewInputs, h: HtmlBuilder<Message>): Html =>
   pageHeaderView(
@@ -1832,7 +1807,7 @@ export const tasksPageView = (
         },
         h,
       ),
-      toastView(model.maybeToast, h),
+      toastView(model, h),
     ],
   )
 }

@@ -17,7 +17,7 @@ import {
 import { modifyFields } from 'foldkit/struct'
 import { describe, test } from 'vite-plus/test'
 
-import { Listbox } from '@foldkit/ui'
+import { Animation, Listbox, Toast as UiToast } from '@foldkit/ui'
 
 import { emptyMirrorSnapshot, taskKey } from '../mirror'
 import { TODAY_NOW, USER_ID } from '../test-fixtures'
@@ -485,10 +485,29 @@ describe('Tasks screen', () => {
       ),
       expect(text(`انجام شد: ${todayTask.title}`)).toExist(),
       Command.resolve(
-        Tasks.DismissTaskToast,
-        Tasks.Message.CompletedDismissTaskToast({ generation: 0 }),
+        Animation.WaitForPaint,
+        Animation.Message.CompletedWaitForPaint({ generation: 1 }),
       ),
-      click(role('button', { name: 'بازگرداندن' })),
+      Command.resolve(
+        Animation.WaitForAnimationSettled,
+        Animation.Message.EndedAnimation({ generation: 1 }),
+      ),
+      Command.resolve(
+        UiToast.WaitBeforeDismissal,
+        UiToast.Message.CompletedWaitBeforeDismissal({
+          entryId: 'tasks-toast-entry-0',
+          version: 1,
+        }),
+      ),
+      click(role('button', { name: 'بازگردانی' })),
+      Command.resolve(
+        Animation.WaitForPaint,
+        Animation.Message.CompletedWaitForPaint({ generation: 2 }),
+      ),
+      Command.resolve(
+        Animation.WaitForAnimationSettled,
+        Animation.Message.EndedAnimation({ generation: 2 }),
+      ),
       Command.resolve(
         Tasks.UndoTask,
         Tasks.Message.CompletedUndoTask({

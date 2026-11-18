@@ -421,9 +421,9 @@ describe('habit delete and undo', () => {
         expect(next.toast.entries).toHaveLength(1)
         expect(next.toast.entries[0]?.payload.text).toBe('«ورزش» حذف شد.')
         expect(next.toast.entries[0]?.payload.maybeUndo).toStrictEqual({
-          kind: 'restoreHabit',
           id: SECOND_HABIT_ID,
           title: 'ورزش',
+          maybeStartedAt: Option.none(),
         })
         expect(next.announcement).toBe('حذف شد: ورزش')
       }),
@@ -476,7 +476,11 @@ describe('habit delete and undo', () => {
       message(
         Habits.Message.ClickedUndoDelete({
           entryId: 'habits-toast-entry-0',
-          undo: { kind: 'restoreHabit', id: SECOND_HABIT_ID, title: 'ورزش' },
+          undo: {
+            id: SECOND_HABIT_ID,
+            title: 'ورزش',
+            maybeStartedAt: Option.none(),
+          },
         }),
       ),
       Command.resolve(
@@ -546,7 +550,11 @@ describe('habit delete and undo', () => {
       message(
         Habits.Message.ClickedUndoDelete({
           entryId: 'habits-toast-entry-0',
-          undo: { kind: 'restoreHabit', id: SECOND_HABIT_ID, title: 'ورزش' },
+          undo: {
+            id: SECOND_HABIT_ID,
+            title: 'ورزش',
+            maybeStartedAt: Option.none(),
+          },
         }),
       ),
       Command.resolve(

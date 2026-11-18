@@ -14,14 +14,19 @@ import { type ChildField, foldFieldChild, foldFieldChildStep } from './fold'
  * folds the child `Message`s through `Update.foldChild`; this module owns the
  * payload shape, the entry markup, and the stack view so screens stay small.
  *
- * An entry may carry an undo action in `maybeUndo`; the screen maps it to a
- * parent `Message` through `toUndoMessage` and the entry renders the button.
+ * An entry may carry an undo action in `maybeUndo`: the context the screen's
+ * own undo `Message` needs — the affected row's `id` and `title`, plus the
+ * extra context only some screens read (`maybeStartedAt`). The screen maps the
+ * payload to a parent `Message` through `toUndoMessage`, the single
+ * translation point, and the entry renders the button. The payload carries no
+ * per-screen kind: what the undo does is the screen's business, not the
+ * toast's.
  */
 
 export const ToastUndo = Schema.Struct({
-  kind: Schema.Literals(['uncheckItem', 'restoreHabit']),
   id: Schema.String,
   title: Schema.String,
+  maybeStartedAt: Schema.Option(Schema.String),
 })
 
 export type ToastUndo = typeof ToastUndo.Type
@@ -65,6 +70,7 @@ export type ToastFolds<ParentModel, ParentMessage> = Readonly<{
     variant: ToastVariant,
   ) => Update.Step<ParentModel, ParentMessage>
   dismissedStep: (entryId: string) => Update.Step<ParentModel, ParentMessage>
+  dismissedAllStep: Update.Step<ParentModel, ParentMessage>
 }>
 
 /** The update half of a screen's toast stack: the `Toast.update` fold plus the
@@ -103,6 +109,7 @@ export const toastFolds = <ParentModel, ParentMessage>(
     shownStep: (payload, variant) =>
       step(toast => Toast.show(toast, { payload, variant })),
     dismissedStep: entryId => step(toast => Toast.dismiss(toast, entryId)),
+    dismissedAllStep: step(toast => Toast.dismissAll(toast)),
   }
 }
 

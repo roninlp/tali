@@ -24,6 +24,7 @@ import type { LocalStoreService } from '../sync/local-store'
 import { clockEvents } from '../ui/dom-stream'
 import { listboxOutMessageFold } from '../ui/fold'
 import * as Picker from '../ui/picker'
+import { Toast, ToastUndo, toastFolds } from '../ui/toast'
 import {
   currentIso,
   localCreate,
@@ -113,15 +114,6 @@ export const TaskEditor = Schema.Struct({
 
 export type TaskEditor = typeof TaskEditor.Type
 
-export const TaskToast = Schema.Struct({
-  generation: Schema.Int,
-  taskId: Schema.String,
-  title: Schema.String,
-  maybeStartedAt: Schema.Option(Schema.String),
-})
-
-export type TaskToast = typeof TaskToast.Type
-
 export type PriorityFilterOption = Readonly<{
   value: TaskPriorityFilter
   label: string
@@ -207,8 +199,7 @@ export const Model = Schema.Struct({
   editors: Schema.Array(TaskEditor),
   maybeDraggingId: Schema.Option(Schema.String),
   maybeDragOverBoard: Schema.Option(TaskBoardKey),
-  toastGeneration: Schema.Int,
-  maybeToast: Schema.Option(TaskToast),
+  toast: Toast.Model,
   maybeError: Schema.Option(Schema.String),
   announcement: Schema.String,
   priorityListbox: Listbox.Model,
@@ -243,6 +234,16 @@ export const initialQuickAdd = (): QuickAddDraft =>
     maybeError: Option.none(),
   })
 
+/** Auto-dismiss window for the completion toast, kept from the screen's
+ *  private toast era. */
+const COMPLETION_TOAST_DURATION_MILLIS = 6000
+
+const initialToast = () =>
+  Toast.init({
+    id: 'tasks-toast',
+    defaultDuration: COMPLETION_TOAST_DURATION_MILLIS,
+  })
+
 export const initialModel = (options: InitOptions): Model =>
   Model.make({
     now: options.now,
@@ -256,8 +257,7 @@ export const initialModel = (options: InitOptions): Model =>
     editors: [],
     maybeDraggingId: Option.none(),
     maybeDragOverBoard: Option.none(),
-    toastGeneration: 0,
-    maybeToast: Option.none(),
+    toast: initialToast(),
     maybeError: Option.none(),
     announcement: '',
     priorityListbox: Listbox.init({ id: 'tasks-priority-listbox' }),
@@ -398,7 +398,7 @@ export const Message = defineMessageUnion({
   },
   CompletedCompleteTask: { taskId: Schema.String, title: Schema.String },
   FailedCompleteTask: { message: Schema.String },
-  ClickedUndoToast: { generation: Schema.Int },
+  ClickedUndoCompletion: { entryId: Schema.String, undo: ToastUndo },
   ClickedRestoreCompletion: {
     taskId: Schema.String,
     title: Schema.String,
@@ -406,7 +406,7 @@ export const Message = defineMessageUnion({
   },
   CompletedUndoTask: { taskId: Schema.String, title: Schema.String },
   FailedUndoTask: { message: Schema.String },
-  CompletedDismissTaskToast: { generation: Schema.Int },
+  GotToastMessage: { message: Toast.Message },
 
   ClickedMoveTask: {
     taskId: Schema.String,
@@ -658,15 +658,6 @@ export const ClearQuickAddSaved = Command.define('ClearQuickAddSaved', {
   ),
 })
 
-export const DismissTaskToast = Command.define('DismissTaskToast', {
-  args: { generation: Schema.Int },
-  messages: [Message.CompletedDismissTaskToast],
-  execute: ({ generation }) =>
-    Effect.sleep(Duration.millis(6000)).pipe(
-      Effect.as(Message.CompletedDismissTaskToast({ generation })),
-    ),
-})
-
 export const ReadCachedTaskView = Command.define('ReadCachedTaskView', {
   args: { userId: Schema.String },
   messages: [Message.CompletedReadCachedTaskView],
@@ -819,37 +810,28 @@ const completeTask = (
   taskId: string,
   title: string,
   maybeStartedAt: Option.Option<string>,
-): UpdateReturn => {
-  const generation = model.toastGeneration + 1
-
-  return {
-    model: modifyFields(removeEditor(withoutError(model), taskId), {
-      toastGeneration: () => generation,
-      maybeToast: () =>
-        Option.some(
-          TaskToast.make({
-            generation,
-            taskId,
-            title,
-            maybeStartedAt,
-          }),
-        ),
+): UpdateReturn =>
+  Update.combine(removeEditor(withoutError(model), taskId), [
+    shownCompletedToastStep(taskId, title, maybeStartedAt),
+    stepModel => ({
+      model: stepModel,
+      commands: [CompleteTask({ taskId, title })],
     }),
-    commands: [CompleteTask({ taskId, title })],
-  }
-}
+  ])
 
 const undoTask = (
   model: Model,
   taskId: string,
   title: string,
   maybeStartedAt: Option.Option<string>,
-): UpdateReturn => ({
-  model: modifyFields(withoutError(model), {
-    maybeToast: () => Option.none(),
-  }),
-  commands: [UndoTask({ taskId, title, maybeStartedAt })],
-})
+): UpdateReturn =>
+  Update.combine(withoutError(model), [
+    dismissedAllToastStep,
+    stepModel => ({
+      model: stepModel,
+      commands: [UndoTask({ taskId, title, maybeStartedAt })],
+    }),
+  ])
 
 const moveTask = (
   model: Model,
@@ -1083,6 +1065,30 @@ const foldPicker = Picker.pickerFieldFold<Model, Message>({
   toParentMessage: message => Message.GotPickerMessage({ message }),
   applyValue: applyPickerValue,
 })
+
+const toast = toastFolds<Model, Message>({
+  field: model => model.toast,
+  setField: (model, nextToast) =>
+    modifyFields(model, { toast: () => nextToast }),
+  toParentMessage: message => Message.GotToastMessage({ message }),
+})
+
+const foldToast = toast.fold
+const dismissedToastStep = toast.dismissedStep
+const dismissedAllToastStep = toast.dismissedAllStep
+
+const shownCompletedToastStep = (
+  taskId: string,
+  title: string,
+  maybeStartedAt: Option.Option<string>,
+): Update.Step<Model, Message> =>
+  toast.shownStep(
+    {
+      text: `انجام شد: ${title}`,
+      maybeUndo: { id: taskId, title, maybeStartedAt },
+    },
+    'Success',
+  )
 
 export const update = (
   model: Model,
@@ -1775,34 +1781,33 @@ export const update = (
         maybeError: () => Option.none(),
         announcement: () => `انجام شد: ${title}`,
       }),
-      commands: [DismissTaskToast({ generation: model.toastGeneration })],
       outMessage: OutMessage.WroteLocalData(),
     }),
 
-    FailedCompleteTask: ({ message }) => ({
-      model: modifyFields(model, {
-        maybeToast: () => Option.none(),
-        maybeError: () => Option.some(message),
-      }),
-    }),
+    FailedCompleteTask: ({ message }) =>
+      Update.combine(model, [
+        dismissedAllToastStep,
+        stepModel => ({
+          model: modifyFields(stepModel, {
+            maybeError: () => Option.some(message),
+          }),
+        }),
+      ]),
 
-    ClickedUndoToast: ({ generation }) =>
-      Option.match(model.maybeToast, {
-        onNone: () => ({ model }),
-        onSome: toast =>
-          toast.generation === generation
-            ? {
-                model: modifyFields(model, { maybeToast: () => Option.none() }),
-                commands: [
-                  UndoTask({
-                    taskId: toast.taskId,
-                    title: toast.title,
-                    maybeStartedAt: toast.maybeStartedAt,
-                  }),
-                ],
-              }
-            : { model },
-      }),
+    ClickedUndoCompletion: ({ entryId, undo }) =>
+      Update.combine(model, [
+        dismissedToastStep(entryId),
+        stepModel => ({
+          model: stepModel,
+          commands: [
+            UndoTask({
+              taskId: undo.id,
+              title: undo.title,
+              maybeStartedAt: undo.maybeStartedAt,
+            }),
+          ],
+        }),
+      ]),
 
     ClickedRestoreCompletion: ({ taskId, title, maybeStartedAt }) =>
       undoTask(model, taskId, title, maybeStartedAt),
@@ -1810,7 +1815,6 @@ export const update = (
     CompletedUndoTask: ({ title }) => ({
       model: modifyFields(model, {
         maybeError: () => Option.none(),
-        maybeToast: () => Option.none(),
         announcement: () => `بازگردانده شد: ${title}`,
       }),
       outMessage: OutMessage.WroteLocalData(),
@@ -1819,11 +1823,6 @@ export const update = (
     FailedUndoTask: ({ message }) => ({
       model: modifyFields(model, { maybeError: () => Option.some(message) }),
     }),
-
-    CompletedDismissTaskToast: ({ generation }) =>
-      Option.exists(model.maybeToast, toast => toast.generation === generation)
-        ? { model: modifyFields(model, { maybeToast: () => Option.none() }) }
-        : { model },
 
     ClickedMoveTask: ({ taskId, title, maybeDueDate }) =>
       moveTask(model, inputs, taskId, title, maybeDueDate),
@@ -1897,6 +1896,8 @@ export const update = (
 
     GotTaskProjectListboxMessage: ({ taskId, message }) =>
       foldTaskProjectListbox(model, taskId, message),
+
+    GotToastMessage: ({ message }) => foldToast(model, message),
   })
 }
 
@@ -1910,7 +1911,7 @@ export const entered = (model: Model): CommandReturn => ({
     editors: () => [],
     maybeDraggingId: () => Option.none(),
     maybeDragOverBoard: () => Option.none(),
-    maybeToast: () => Option.none(),
+    toast: () => initialToast(),
     maybeError: () => Option.none(),
     priorityListbox: () => Listbox.init({ id: 'tasks-priority-listbox' }),
     statusListbox: () => Listbox.init({ id: 'tasks-status-listbox' }),
@@ -1944,7 +1945,7 @@ export const applySession = (
         maybeUserId: () => Option.some(userId),
         settings: () => DEFAULT_TASK_VIEW,
         editors: () => [],
-        maybeToast: () => Option.none(),
+        toast: () => initialToast(),
       }),
       commands: [ReadCachedTaskView({ userId })],
     }),

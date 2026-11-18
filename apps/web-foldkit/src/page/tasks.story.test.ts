@@ -11,6 +11,9 @@ import {
 import { modifyFields } from 'foldkit/struct'
 import { describe, expect, test } from 'vite-plus/test'
 
+import { Animation, Toast as UiToast } from '@foldkit/ui'
+import { test as toastTest } from '@foldkit/ui/toast'
+
 import { taskKey } from '../mirror'
 import { TODAY_NOW, USER_ID } from '../test-fixtures'
 import * as Tasks from './tasks'
@@ -33,20 +36,6 @@ const inputWith = (overrides: Partial<Inputs> = {}) => defaultInputs(overrides)
 
 const update = (today: Tasks.Model, message: Tasks.Message) =>
   Tasks.update(today, message, inputWith())
-
-const withToast = (model: Tasks.Model, task = laterTask): Tasks.Model =>
-  modifyFields(model, {
-    toastGeneration: () => 1,
-    maybeToast: () =>
-      Option.some(
-        Tasks.TaskToast.make({
-          generation: 1,
-          taskId: task.id,
-          title: task.title,
-          maybeStartedAt: Option.fromNullishOr(task.startedAt),
-        }),
-      ),
-  })
 
 describe('Tasks quick add', () => {
   test('an empty draft never creates a task', () => {
@@ -733,9 +722,17 @@ describe('Tasks completion', () => {
         }),
       ),
       model(next => {
-        expect(next.maybeToast._tag).toBe('Some')
+        expect(next.toast.entries).toHaveLength(1)
+        expect(next.toast.entries[0]?.payload.text).toBe(
+          `انجام شد: ${todayTask.title}`,
+        )
+        expect(next.toast.entries[0]?.payload.maybeUndo).toStrictEqual({
+          id: todayTask.id,
+          title: todayTask.title,
+          maybeStartedAt: Option.none(),
+        })
       }),
-      Command.expectExact(
+      Command.expectHas(
         Tasks.CompleteTask({ taskId: todayTask.id, title: todayTask.title }),
       ),
       Command.resolve(
@@ -749,12 +746,9 @@ describe('Tasks completion', () => {
         expect(next.announcement).toBe(`انجام شد: ${todayTask.title}`)
       }),
       expectOutMessage(Tasks.OutMessage.WroteLocalData()),
-      Command.resolve(
-        Tasks.DismissTaskToast,
-        Tasks.Message.CompletedDismissTaskToast({ generation: 1 }),
-      ),
+      toastTest.drainEntry({ entryId: 'tasks-toast-entry-0' }),
       model(next => {
-        expect(next.maybeToast).toStrictEqual(Option.none())
+        expect(next.toast.entries).toHaveLength(0)
       }),
     )
   })
@@ -762,8 +756,55 @@ describe('Tasks completion', () => {
   test('undo from the toast restores the prior status', () => {
     story(
       update,
-      given(withToast(baseModel())),
-      message(Tasks.Message.ClickedUndoToast({ generation: 1 })),
+      given(baseModel()),
+      message(
+        Tasks.Message.ClickedCompleteTask({
+          taskId: laterTask.id,
+          title: laterTask.title,
+          maybeStartedAt: Option.some(laterTask.startedAt ?? ''),
+        }),
+      ),
+      Command.resolve(
+        Tasks.CompleteTask,
+        Tasks.Message.CompletedCompleteTask({
+          taskId: laterTask.id,
+          title: laterTask.title,
+        }),
+      ),
+      expectOutMessage(Tasks.OutMessage.WroteLocalData()),
+      Command.resolve(
+        Animation.WaitForPaint,
+        Animation.Message.CompletedWaitForPaint({ generation: 1 }),
+      ),
+      Command.resolve(
+        Animation.WaitForAnimationSettled,
+        Animation.Message.EndedAnimation({ generation: 1 }),
+      ),
+      Command.resolve(
+        UiToast.WaitBeforeDismissal,
+        UiToast.Message.CompletedWaitBeforeDismissal({
+          entryId: 'tasks-toast-entry-0',
+          version: 1,
+        }),
+      ),
+      message(
+        Tasks.Message.ClickedUndoCompletion({
+          entryId: 'tasks-toast-entry-0',
+          undo: {
+            id: laterTask.id,
+            title: laterTask.title,
+            maybeStartedAt: Option.some(laterTask.startedAt ?? ''),
+          },
+        }),
+      ),
+      Command.resolve(
+        Animation.WaitForPaint,
+        Animation.Message.CompletedWaitForPaint({ generation: 2 }),
+      ),
+      Command.resolve(
+        Animation.WaitForAnimationSettled,
+        Animation.Message.EndedAnimation({ generation: 2 }),
+      ),
       Command.expectExact(
         Tasks.UndoTask({
           taskId: laterTask.id,
@@ -779,7 +820,7 @@ describe('Tasks completion', () => {
         }),
       ),
       model(next => {
-        expect(next.maybeToast).toStrictEqual(Option.none())
+        expect(next.toast.entries).toHaveLength(0)
         expect(next.announcement).toBe(`بازگردانده شد: ${laterTask.title}`)
       }),
       expectOutMessage(Tasks.OutMessage.WroteLocalData()),
@@ -815,13 +856,41 @@ describe('Tasks completion', () => {
     )
   })
 
-  test('a stale dismiss timer leaves a newer toast alone', () => {
+  test('a stale dismiss timer leaves the toast alone', () => {
     story(
       update,
-      given(withToast(baseModel(), todayTask)),
-      message(Tasks.Message.CompletedDismissTaskToast({ generation: 99 })),
+      given(baseModel()),
+      message(
+        Tasks.Message.ClickedCompleteTask({
+          taskId: todayTask.id,
+          title: todayTask.title,
+          maybeStartedAt: Option.none(),
+        }),
+      ),
+      Command.resolve(
+        Tasks.CompleteTask,
+        Tasks.Message.CompletedCompleteTask({
+          taskId: todayTask.id,
+          title: todayTask.title,
+        }),
+      ),
+      Command.resolve(
+        Animation.WaitForPaint,
+        Animation.Message.CompletedWaitForPaint({ generation: 1 }),
+      ),
+      Command.resolve(
+        Animation.WaitForAnimationSettled,
+        Animation.Message.EndedAnimation({ generation: 1 }),
+      ),
+      Command.resolve(
+        UiToast.WaitBeforeDismissal,
+        UiToast.Message.CompletedWaitBeforeDismissal({
+          entryId: 'tasks-toast-entry-0',
+          version: 99,
+        }),
+      ),
       model(next => {
-        expect(next.maybeToast._tag).toBe('Some')
+        expect(next.toast.entries).toHaveLength(1)
       }),
     )
   })
