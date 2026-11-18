@@ -42,6 +42,10 @@ import {
   Task,
   type TaskId,
   type UserId,
+  resolveCreateVisibility,
+  uuidV7,
+} from '@tali/domain'
+import {
   allDayReminderInstant,
   isOnTime,
   reminderDeliverAt,
@@ -50,9 +54,7 @@ import {
   reminderNextFireAfterNow,
   reminderTierFor,
   snoozeInstant,
-  resolveCreateVisibility,
-  uuidV7,
-} from '@tali/domain'
+} from '@tali/domain/reminder-policy'
 import { readScoped } from './row-scope.js'
 import { casUpdate } from './cas.js'
 import { makeSyncKit, type CommitEntry } from './sync-write.js'

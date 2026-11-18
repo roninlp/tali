@@ -5,7 +5,7 @@ import {
   BACKUP_RETENTION_DAYS,
   makeBackupManifest,
   planBackupRetention,
-} from '@tali/domain'
+} from '@tali/domain/backup'
 import { dumpDatabase } from './d1-dump.js'
 
 /**

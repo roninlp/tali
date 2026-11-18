@@ -20,9 +20,7 @@ import {
   ReminderLink,
   type ReminderLinkColumns,
   ReminderRepeat,
-  reminderFireAt,
   type ReminderType,
-  reminderTierFor,
   TimestampUtc,
   allDayEventTiming,
   dailyHabitFrequency,
@@ -43,6 +41,7 @@ import {
   type VisibilityAggregate,
   visibilityPolicyOf,
 } from '@tali/domain'
+import { reminderFireAt, reminderTierFor } from '@tali/domain/reminder-policy'
 
 /**
  * The sync entity registry (ticket #34).
