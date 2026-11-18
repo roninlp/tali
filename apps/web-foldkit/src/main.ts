@@ -33,7 +33,7 @@ import * as Reminders from './page/reminders'
 import * as Tasks from './page/tasks'
 import { TaskViewSettings } from './page/tasks-model'
 import * as Today from './page/today'
-import { pageFoldWithOutMessage } from './page-slice'
+import { pageFold, pageFoldWithOutMessage } from './page-slice'
 import * as Preferences from './preferences'
 import { Preferences as PreferencesRow } from './preferences-model'
 import * as Push from './push'
@@ -291,9 +291,6 @@ const toNotesMessage = (message: Notes.Message): Message =>
 
 const toRemindersMessage = (message: Reminders.Message): Message =>
   Message.GotRemindersMessage({ message })
-
-const toCaptureMessage = (message: Capture.Message): Message =>
-  Message.GotCaptureMessage({ message })
 
 const toSettingsMessage = (message: Settings.Message): Message =>
   Message.GotSettingsMessage({ message })
@@ -1175,6 +1172,19 @@ const pages = {
       when: (model: Model) => AppRoute.isAnyOf(['Calendar'])(model.route),
     },
   }),
+
+  capture: pageFold({
+    field: {
+      field: (model: Model) => model.capture,
+      setField: (model: Model, nextCapture: Capture.Model) =>
+        modifyFields(model, { capture: () => nextCapture }),
+    },
+    toParentMessage: (message: Capture.Message) =>
+      Message.GotCaptureMessage({ message }),
+    update: Capture.update,
+    inputs: captureInputs,
+    entered: Capture.entered,
+  }),
 }
 
 /** A completed sync drain is the moment the calendar re-reads the server
@@ -1211,33 +1221,6 @@ const foldRemindersEntered = Update.foldChildStep({
     modifyFields(model, { reminders: () => nextReminders }),
   toParentMessage: toRemindersMessage,
   foldOutMessage: foldRemindersOutMessage,
-})
-
-type CaptureFoldInput = Readonly<{
-  message: Capture.Message
-  inputs: Capture.Inputs
-}>
-
-const foldCapture = Update.foldChild({
-  update: (capture: Capture.Model, input: CaptureFoldInput) =>
-    Capture.update(capture, input.message, input.inputs),
-  read: (model: Model) => Option.some(model.capture),
-  write: (model: Model, nextCapture: Capture.Model) =>
-    modifyFields(model, { capture: () => nextCapture }),
-  toParentMessage: toCaptureMessage,
-})
-
-const foldCaptureMessage = (
-  model: Model,
-  message: Capture.Message,
-): UpdateReturn => foldCapture(model, { message, inputs: captureInputs(model) })
-
-const foldCaptureEntered = Update.foldChildStep({
-  update: Capture.entered,
-  read: (model: Model) => Option.some(model.capture),
-  write: (model: Model, nextCapture: Capture.Model) =>
-    modifyFields(model, { capture: () => nextCapture }),
-  toParentMessage: toCaptureMessage,
 })
 
 type SettingsFoldInput = Readonly<{
@@ -1340,7 +1323,7 @@ const enterRoute = (
     AppRoute.isAnyOf(['Capture'])(model.route) &&
     Option.isSome(Transition.entered(transition, 'Capture'))
   ) {
-    return foldCaptureEntered(model)
+    return pages.capture.foldEntered(model)
   }
 
   if (AppRoute.isAnyOf(['List'])(model.route)) {
@@ -1544,7 +1527,8 @@ export const update = (model: Model, message: Message) =>
     GotCalendarMessage: ({ message }) =>
       pages.calendar.foldMessage(model, message),
     GotRemindersMessage: ({ message }) => foldReminders(model, message),
-    GotCaptureMessage: ({ message }) => foldCaptureMessage(model, message),
+    GotCaptureMessage: ({ message }) =>
+      pages.capture.foldMessage(model, message),
     GotSettingsMessage: ({ message }) => foldSettingsMessage(model, message),
     GotMorePopoverMessage: ({ message }) => foldMorePopover(model, message),
   })
@@ -1880,7 +1864,8 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): Html =>
           model: model.capture,
           view: Capture.view,
           viewInputs: captureInputs(model),
-          toParentMessage: toCaptureMessage,
+          toParentMessage: (message: Capture.Message) =>
+            Message.GotCaptureMessage({ message }),
         }),
       Settings: () => settingsPageView(model, h),
       PushHealth: () => pushHealthPageView(model, h),
@@ -2098,7 +2083,7 @@ const remindersSubscriptions = Subscription.lift(Reminders.subscriptions)<
 /** The subscription records the page table carries, when a page owns any. */
 const pageSubscriptionRecords = Array.getSomes(
   Array.map(
-    [pages.today, pages.tasks, pages.habits, pages.calendar],
+    [pages.today, pages.tasks, pages.habits, pages.calendar, pages.capture],
     page => Option.fromNullishOr(page.subscriptions),
   ),
 )
