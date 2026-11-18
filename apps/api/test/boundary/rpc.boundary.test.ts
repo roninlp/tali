@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test'
 import { uuidV7 } from '@tali/domain'
-import { sessionWithHousehold, workerFetch } from './support.js'
+import { register, sessionWithHousehold, workerFetch } from './support.js'
 
 /**
  * `POST /rpc` through the Worker.
@@ -104,6 +104,27 @@ describe('POST /rpc', () => {
     const cause = (exit.exit as { readonly cause: ReadonlyArray<RpcFailure> })
       .cause
     expect(cause.map(failure => failure.error._tag)).toContain('Unauthorized')
+  })
+
+  it('translates the one NoHousehold verdict into the aggregate forbidden tag', async () => {
+    // A registered account without a household: the edge mints the shared
+    // verdict once, and this handler surfaces it as TaskForbidden.
+    const { cookie } = await register()
+    const { messages } = await rpc(
+      'CreateTask',
+      {
+        id: uuidV7(),
+        clientMutationId: 'boundary-rpc-no-household',
+        title: 'بی‌خانواده',
+      },
+      cookie,
+    )
+
+    const exit = exitOf(messages)
+    expect(exit.exit._tag).toBe('Failure')
+    const cause = (exit.exit as { readonly cause: ReadonlyArray<RpcFailure> })
+      .cause
+    expect(cause.map(failure => failure.error._tag)).toContain('TaskForbidden')
   })
 
   it("lists only the viewer's tasks", async () => {

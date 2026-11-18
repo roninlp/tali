@@ -2,8 +2,14 @@ import { Effect } from 'effect'
 import { HttpRouter, HttpServerRequest } from 'effect/http'
 import { SyncPushRequest } from '@tali/domain'
 import { AuthService } from './auth-service.js'
-import { fail, json, requestUrl, unexpectedFailure } from './http-envelope.js'
-import { sessionResolver } from './principal.js'
+import {
+  fail,
+  json,
+  noHouseholdFailure,
+  requestUrl,
+  unexpectedFailure,
+} from './http-envelope.js'
+import { requireHousehold, sessionResolver } from './principal.js'
 import {
   SyncContended,
   SyncEntityForbidden,
@@ -48,13 +54,7 @@ export const SyncRoutes = HttpRouter.use(router =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
         const context = yield* session(request)
-        if (context.householdId === null) {
-          return yield* fail(
-            409,
-            'NoHousehold',
-            'Join or create a household first',
-          )
-        }
+        const householdId = yield* requireHousehold(context)
         const url = requestUrl(request)
         const cursor = queryInt(url, 'cursor', 0, 0)
         const limit = queryInt(url, 'limit', 500, 1)
@@ -67,7 +67,7 @@ export const SyncRoutes = HttpRouter.use(router =>
         }
         const page = yield* sync.pull({
           userId: context.user.id,
-          householdId: context.householdId,
+          householdId,
           cursor,
           limit,
         })
@@ -76,6 +76,7 @@ export const SyncRoutes = HttpRouter.use(router =>
         Effect.catchTags(
           {
             Unauthorized: () => fail(401, 'Unauthorized', 'No active session'),
+            NoHousehold: noHouseholdFailure,
           },
           unexpectedFailure(),
         ),
@@ -88,13 +89,7 @@ export const SyncRoutes = HttpRouter.use(router =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
         const context = yield* session(request)
-        if (context.householdId === null) {
-          return yield* fail(
-            409,
-            'NoHousehold',
-            'Join or create a household first',
-          )
-        }
+        const householdId = yield* requireHousehold(context)
         const url = requestUrl(request)
         const offset = queryInt(url, 'offset', 0, 0)
         const limit = queryInt(url, 'limit', 500, 1)
@@ -107,7 +102,7 @@ export const SyncRoutes = HttpRouter.use(router =>
         }
         const page = yield* sync.bootstrap({
           userId: context.user.id,
-          householdId: context.householdId,
+          householdId,
           offset,
           limit,
         })
@@ -116,6 +111,7 @@ export const SyncRoutes = HttpRouter.use(router =>
         Effect.catchTags(
           {
             Unauthorized: () => fail(401, 'Unauthorized', 'No active session'),
+            NoHousehold: noHouseholdFailure,
           },
           unexpectedFailure(),
         ),
@@ -128,17 +124,11 @@ export const SyncRoutes = HttpRouter.use(router =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
         const context = yield* session(request)
-        if (context.householdId === null) {
-          return yield* fail(
-            409,
-            'NoHousehold',
-            'Join or create a household first',
-          )
-        }
+        const householdId = yield* requireHousehold(context)
         const body = yield* HttpServerRequest.schemaBodyJson(SyncPushRequest)
         const response = yield* sync.push({
           userId: context.user.id,
-          householdId: context.householdId,
+          householdId,
           entries: body.entries,
         })
         return yield* json(200, response)
@@ -146,6 +136,7 @@ export const SyncRoutes = HttpRouter.use(router =>
         Effect.catchTags(
           {
             Unauthorized: () => fail(401, 'Unauthorized', 'No active session'),
+            NoHousehold: noHouseholdFailure,
             UnsupportedSyncEntity: (error: UnsupportedSyncEntity) =>
               fail(
                 422,

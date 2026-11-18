@@ -8,9 +8,14 @@ import {
 } from '@tali/domain'
 import { AuthService } from './auth-service.js'
 import { CalendarService, type CalendarViewer } from './calendar-service.js'
-import { conditionalJson, fail, requestUrl } from './http-envelope.js'
+import {
+  conditionalJson,
+  fail,
+  noHouseholdFailure,
+  requestUrl,
+} from './http-envelope.js'
 import { PreferencesService } from './preferences-service.js'
-import { principalResolver } from './principal.js'
+import { principalResolver, requireHousehold } from './principal.js'
 
 /**
  * `GET /week` and `GET /month` — the calendar read models (ticket #43;
@@ -62,13 +67,7 @@ export const CalendarRoutes = HttpRouter.use(router =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
         const resolved = yield* principal(request)
-        if (resolved.context.householdId === null) {
-          return yield* fail(
-            403,
-            'Forbidden',
-            'Join a household to see the week',
-          )
-        }
+        const householdId = yield* requireHousehold(resolved.context)
         const anchor = dateParam(requestUrl(request), 'anchor')
         if (anchor === 'invalid') {
           return yield* fail(
@@ -79,7 +78,7 @@ export const CalendarRoutes = HttpRouter.use(router =>
         }
         const viewer: CalendarViewer = {
           userId: resolved.context.user.id,
-          householdId: resolved.context.householdId,
+          householdId,
           timeZone: resolved.preferences.timeZone,
           weekStart: resolved.preferences.weekStart,
         }
@@ -91,6 +90,7 @@ export const CalendarRoutes = HttpRouter.use(router =>
         Effect.catchTags(
           {
             Unauthorized: () => fail(401, 'Unauthorized', 'No active session'),
+            NoHousehold: noHouseholdFailure,
           },
           () => fail(500, 'InternalError', 'Unexpected server error', true),
         ),
@@ -103,13 +103,7 @@ export const CalendarRoutes = HttpRouter.use(router =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
         const resolved = yield* principal(request)
-        if (resolved.context.householdId === null) {
-          return yield* fail(
-            403,
-            'Forbidden',
-            'Join a household to see the month',
-          )
-        }
+        const householdId = yield* requireHousehold(resolved.context)
         const url = requestUrl(request)
         const anchor = dateParam(url, 'anchor')
         const day = dateParam(url, 'day')
@@ -122,7 +116,7 @@ export const CalendarRoutes = HttpRouter.use(router =>
         }
         const viewer: CalendarViewer = {
           userId: resolved.context.user.id,
-          householdId: resolved.context.householdId,
+          householdId,
           timeZone: resolved.preferences.timeZone,
           weekStart: resolved.preferences.weekStart,
         }
@@ -137,6 +131,7 @@ export const CalendarRoutes = HttpRouter.use(router =>
         Effect.catchTags(
           {
             Unauthorized: () => fail(401, 'Unauthorized', 'No active session'),
+            NoHousehold: noHouseholdFailure,
           },
           () => fail(500, 'InternalError', 'Unexpected server error', true),
         ),

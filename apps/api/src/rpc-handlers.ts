@@ -4,6 +4,7 @@ import { ApiRpcs } from '@tali/rpc'
 import {
   CaptureForbidden,
   EventForbidden,
+  type ForbiddenReason,
   HabitForbidden,
   ListForbidden,
   ReminderForbidden,
@@ -14,16 +15,20 @@ import {
   type WeekStart,
 } from '@tali/domain'
 import type { AuthService } from './auth-service.js'
-import { CaptureService, type CaptureViewer } from './capture-service.js'
-import { EventService, type EventViewer } from './event-service.js'
-import { HabitService, type HabitViewer } from './habit-service.js'
+import { CaptureService } from './capture-service.js'
+import { EventService } from './event-service.js'
+import { HabitService } from './habit-service.js'
 import { SESSION_COOKIE } from './http-envelope.js'
-import { ListService, type ListViewer } from './list-service.js'
+import { ListService } from './list-service.js'
 import { NoteService } from './note-service.js'
-import { OccasionService, type OccasionViewer } from './occasion-service.js'
+import { OccasionService } from './occasion-service.js'
 import type { PreferencesService } from './preferences-service.js'
-import { principalFromToken } from './principal.js'
-import { ReminderService, type ReminderViewer } from './reminder-service.js'
+import {
+  type NoHousehold,
+  principalFromToken,
+  requireHousehold,
+} from './principal.js'
+import { ReminderService } from './reminder-service.js'
 import { TaskService, type TaskViewer } from './task-service.js'
 
 /**
@@ -56,7 +61,7 @@ export const viewerFromHeaders = (
   headers: Headers,
 ): Effect.Effect<
   RpcViewer,
-  Unauthorized | TaskForbidden,
+  Unauthorized | NoHousehold,
   AuthService | PreferencesService
 > =>
   Effect.gen(function* () {
@@ -65,12 +70,10 @@ export const viewerFromHeaders = (
       return yield* new Unauthorized()
     }
     const { context, preferences } = yield* principalFromToken(token)
-    if (context.householdId === null) {
-      return yield* new TaskForbidden({ id: null, reason: 'noHousehold' })
-    }
+    const householdId = yield* requireHousehold(context)
     return {
       userId: context.user.id,
-      householdId: context.householdId,
+      householdId,
       timeZone: preferences.timeZone,
       weekStart: preferences.weekStart,
       defaultCheckedPlacement: preferences.checkedItemPlacement,
@@ -78,15 +81,17 @@ export const viewerFromHeaders = (
   })
 
 /**
- * Resolve the viewer, then run the handler. Notes, lists, events, habits,
- * reminders, occasions and capture each keep their own typed forbidden error,
- * so the edge's "no household" failure is translated into that aggregate's
- * error instead of leaking a task-named tag into another contract. A forbidden
- * error raised by the handler itself passes through untouched.
+ * Resolve the viewer, then run the handler.
+ *
+ * The guard is minted once (`requireHousehold` inside `viewerFromHeaders`),
+ * and this is the single place its `NoHousehold` verdict becomes an RPC
+ * failure: translated into the aggregate's own forbidden tag, so a task-named
+ * error never leaks into another contract. A forbidden error raised by the
+ * handler itself — a real scope denial — passes through untouched.
  */
-const withServiceViewer = <A, E, F, R>(
+const withViewer = <A, E, R, F>(
   headers: Headers,
-  forbidden: (reason: 'private' | 'household' | 'noHousehold') => F,
+  forbidden: (reason: ForbiddenReason) => F,
   run: (viewer: RpcViewer) => Effect.Effect<A, E, R>,
 ): Effect.Effect<
   A,
@@ -94,331 +99,233 @@ const withServiceViewer = <A, E, F, R>(
   AuthService | PreferencesService | R
 > =>
   viewerFromHeaders(headers).pipe(
-    Effect.mapError(error =>
-      error._tag === 'TaskForbidden' ? forbidden(error.reason) : error,
-    ),
+    Effect.catchTag('NoHousehold', () => Effect.fail(forbidden('noHousehold'))),
     Effect.flatMap(run),
   )
 
-const withViewer = <A, E, R>(
-  headers: Headers,
-  run: (viewer: TaskViewer) => Effect.Effect<A, E, R>,
-): Effect.Effect<
-  A,
-  E | Unauthorized | TaskForbidden,
-  AuthService | PreferencesService | R
-> =>
-  withServiceViewer(
-    headers,
-    reason => new TaskForbidden({ id: null, reason }),
-    run,
-  )
-
-const withNoteViewer = <A, E, R>(
-  headers: Headers,
-  run: (viewer: TaskViewer) => Effect.Effect<A, E, R>,
-): Effect.Effect<
-  A,
-  E | Unauthorized | NoteForbidden,
-  AuthService | PreferencesService | R
-> =>
-  withServiceViewer(
-    headers,
-    reason => new NoteForbidden({ id: null, reason }),
-    run,
-  )
-
-const withListViewer = <A, E, R>(
-  headers: Headers,
-  run: (viewer: ListViewer) => Effect.Effect<A, E, R>,
-): Effect.Effect<
-  A,
-  E | Unauthorized | ListForbidden,
-  AuthService | PreferencesService | R
-> =>
-  withServiceViewer(
-    headers,
-    reason => new ListForbidden({ id: null, reason }),
-    run,
-  )
-
-const withEventViewer = <A, E, R>(
-  headers: Headers,
-  run: (viewer: EventViewer) => Effect.Effect<A, E, R>,
-): Effect.Effect<
-  A,
-  E | Unauthorized | EventForbidden,
-  AuthService | PreferencesService | R
-> =>
-  withServiceViewer(
-    headers,
-    reason => new EventForbidden({ id: null, reason }),
-    run,
-  )
-
-const withHabitViewer = <A, E, R>(
-  headers: Headers,
-  run: (viewer: HabitViewer) => Effect.Effect<A, E, R>,
-): Effect.Effect<
-  A,
-  E | Unauthorized | HabitForbidden,
-  AuthService | PreferencesService | R
-> =>
-  withServiceViewer(
-    headers,
-    reason => new HabitForbidden({ id: null, reason }),
-    run,
-  )
-
-const withReminderViewer = <A, E, R>(
-  headers: Headers,
-  run: (viewer: ReminderViewer) => Effect.Effect<A, E, R>,
-): Effect.Effect<
-  A,
-  E | Unauthorized | ReminderForbidden,
-  AuthService | PreferencesService | R
-> =>
-  withServiceViewer(
-    headers,
-    reason => new ReminderForbidden({ id: null, reason }),
-    run,
-  )
-
-const withOccasionViewer = <A, E, R>(
-  headers: Headers,
-  run: (viewer: OccasionViewer) => Effect.Effect<A, E, R>,
-): Effect.Effect<
-  A,
-  E | Unauthorized | OccasionForbidden,
-  AuthService | PreferencesService | R
-> =>
-  withServiceViewer(
-    headers,
-    reason => new OccasionForbidden({ id: null, reason }),
-    run,
-  )
-
-const withCaptureViewer = <A, E, R>(
-  headers: Headers,
-  run: (viewer: CaptureViewer) => Effect.Effect<A, E, R>,
-): Effect.Effect<
-  A,
-  E | Unauthorized | CaptureForbidden,
-  AuthService | PreferencesService | R
-> =>
-  withServiceViewer(
-    headers,
-    reason => new CaptureForbidden({ reason }),
-    viewer =>
-      run({
-        userId: viewer.userId,
-        householdId: viewer.householdId,
-        timeZone: viewer.timeZone,
-        weekStart: viewer.weekStart,
-      }),
-  )
+/**
+ * The per-aggregate forbidden constructors the edge translates the one
+ * `NoHousehold` verdict into. Capture's refusal addresses no row, so it is
+ * the one forbidden error that carries no `id`.
+ */
+const taskForbidden = (reason: ForbiddenReason) =>
+  new TaskForbidden({ id: null, reason })
+const noteForbidden = (reason: ForbiddenReason) =>
+  new NoteForbidden({ id: null, reason })
+const listForbidden = (reason: ForbiddenReason) =>
+  new ListForbidden({ id: null, reason })
+const eventForbidden = (reason: ForbiddenReason) =>
+  new EventForbidden({ id: null, reason })
+const habitForbidden = (reason: ForbiddenReason) =>
+  new HabitForbidden({ id: null, reason })
+const reminderForbidden = (reason: ForbiddenReason) =>
+  new ReminderForbidden({ id: null, reason })
+const occasionForbidden = (reason: ForbiddenReason) =>
+  new OccasionForbidden({ id: null, reason })
+const captureForbidden = (reason: ForbiddenReason) =>
+  new CaptureForbidden({ reason })
 
 export const RpcHandlers = ApiRpcs.toLayer({
   CreateList: (input, { headers }) =>
-    withListViewer(headers, viewer =>
+    withViewer(headers, listForbidden, viewer =>
       ListService.pipe(Effect.flatMap(svc => svc.create(viewer, input))),
     ),
   GetList: ({ id }, { headers }) =>
-    withListViewer(headers, viewer =>
+    withViewer(headers, listForbidden, viewer =>
       ListService.pipe(Effect.flatMap(svc => svc.get(viewer, id))),
     ),
   UpdateList: (input, { headers }) =>
-    withListViewer(headers, viewer =>
+    withViewer(headers, listForbidden, viewer =>
       ListService.pipe(Effect.flatMap(svc => svc.update(viewer, input))),
     ),
   DeleteList: (input, { headers }) =>
-    withListViewer(headers, viewer =>
+    withViewer(headers, listForbidden, viewer =>
       ListService.pipe(Effect.flatMap(svc => svc.remove(viewer, input))),
     ),
   ListLists: (_input, { headers }) =>
-    withListViewer(headers, viewer =>
+    withViewer(headers, listForbidden, viewer =>
       ListService.pipe(Effect.flatMap(svc => svc.list(viewer))),
     ),
 
   CreateListItem: (input, { headers }) =>
-    withListViewer(headers, viewer =>
+    withViewer(headers, listForbidden, viewer =>
       ListService.pipe(Effect.flatMap(svc => svc.createItem(viewer, input))),
     ),
   AppendListItems: (input, { headers }) =>
-    withListViewer(headers, viewer =>
+    withViewer(headers, listForbidden, viewer =>
       ListService.pipe(Effect.flatMap(svc => svc.appendItems(viewer, input))),
     ),
   ListListItems: (input, { headers }) =>
-    withListViewer(headers, viewer =>
+    withViewer(headers, listForbidden, viewer =>
       ListService.pipe(Effect.flatMap(svc => svc.listItems(viewer, input))),
     ),
   UpdateListItem: (input, { headers }) =>
-    withListViewer(headers, viewer =>
+    withViewer(headers, listForbidden, viewer =>
       ListService.pipe(Effect.flatMap(svc => svc.updateItem(viewer, input))),
     ),
   SetListItemChecked: (input, { headers }) =>
-    withListViewer(headers, viewer =>
+    withViewer(headers, listForbidden, viewer =>
       ListService.pipe(
         Effect.flatMap(svc => svc.setItemChecked(viewer, input)),
       ),
     ),
   DeleteListItem: (input, { headers }) =>
-    withListViewer(headers, viewer =>
+    withViewer(headers, listForbidden, viewer =>
       ListService.pipe(Effect.flatMap(svc => svc.deleteItem(viewer, input))),
     ),
   ReorderListItems: (input, { headers }) =>
-    withListViewer(headers, viewer =>
+    withViewer(headers, listForbidden, viewer =>
       ListService.pipe(Effect.flatMap(svc => svc.reorder(viewer, input))),
     ),
 
   CreateTask: (input, { headers }) =>
-    withViewer(headers, viewer =>
+    withViewer(headers, taskForbidden, viewer =>
       TaskService.pipe(Effect.flatMap(svc => svc.create(viewer, input))),
     ),
   GetTask: ({ id }, { headers }) =>
-    withViewer(headers, viewer =>
+    withViewer(headers, taskForbidden, viewer =>
       TaskService.pipe(Effect.flatMap(svc => svc.get(viewer, id))),
     ),
   UpdateTask: (input, { headers }) =>
-    withViewer(headers, viewer =>
+    withViewer(headers, taskForbidden, viewer =>
       TaskService.pipe(Effect.flatMap(svc => svc.update(viewer, input))),
     ),
   MoveTask: (input, { headers }) =>
-    withViewer(headers, viewer =>
+    withViewer(headers, taskForbidden, viewer =>
       TaskService.pipe(Effect.flatMap(svc => svc.move(viewer, input))),
     ),
   StartTask: (input, { headers }) =>
-    withViewer(headers, viewer =>
+    withViewer(headers, taskForbidden, viewer =>
       TaskService.pipe(Effect.flatMap(svc => svc.start(viewer, input))),
     ),
   CompleteTask: (input, { headers }) =>
-    withViewer(headers, viewer =>
+    withViewer(headers, taskForbidden, viewer =>
       TaskService.pipe(Effect.flatMap(svc => svc.complete(viewer, input))),
     ),
   UndoTask: (input, { headers }) =>
-    withViewer(headers, viewer =>
+    withViewer(headers, taskForbidden, viewer =>
       TaskService.pipe(Effect.flatMap(svc => svc.undo(viewer, input))),
     ),
   ListTasks: (input, { headers }) =>
-    withViewer(headers, viewer =>
+    withViewer(headers, taskForbidden, viewer =>
       TaskService.pipe(Effect.flatMap(svc => svc.list(viewer, input))),
     ),
   GetTaskBuckets: (_input, { headers }) =>
-    withViewer(headers, viewer =>
+    withViewer(headers, taskForbidden, viewer =>
       TaskService.pipe(Effect.flatMap(svc => svc.buckets(viewer))),
     ),
 
   CreateProject: (input, { headers }) =>
-    withViewer(headers, viewer =>
+    withViewer(headers, taskForbidden, viewer =>
       TaskService.pipe(Effect.flatMap(svc => svc.createProject(viewer, input))),
     ),
   RenameProject: (input, { headers }) =>
-    withViewer(headers, viewer =>
+    withViewer(headers, taskForbidden, viewer =>
       TaskService.pipe(Effect.flatMap(svc => svc.renameProject(viewer, input))),
     ),
   ListProjects: (_input, { headers }) =>
-    withViewer(headers, viewer =>
+    withViewer(headers, taskForbidden, viewer =>
       TaskService.pipe(Effect.flatMap(svc => svc.listProjects(viewer))),
     ),
 
   CreateTag: (input, { headers }) =>
-    withViewer(headers, viewer =>
+    withViewer(headers, taskForbidden, viewer =>
       TaskService.pipe(Effect.flatMap(svc => svc.createTag(viewer, input))),
     ),
   RenameTag: (input, { headers }) =>
-    withViewer(headers, viewer =>
+    withViewer(headers, taskForbidden, viewer =>
       TaskService.pipe(Effect.flatMap(svc => svc.renameTag(viewer, input))),
     ),
   ListTags: (_input, { headers }) =>
-    withViewer(headers, viewer =>
+    withViewer(headers, taskForbidden, viewer =>
       TaskService.pipe(Effect.flatMap(svc => svc.listTags(viewer))),
     ),
 
   // ── Notes ─────────────────────────────────────────────────────────────
 
   CreateNote: (input, { headers }) =>
-    withNoteViewer(headers, viewer =>
+    withViewer(headers, noteForbidden, viewer =>
       NoteService.pipe(Effect.flatMap(svc => svc.create(viewer, input))),
     ),
   GetNote: ({ id }, { headers }) =>
-    withNoteViewer(headers, viewer =>
+    withViewer(headers, noteForbidden, viewer =>
       NoteService.pipe(Effect.flatMap(svc => svc.get(viewer, id))),
     ),
   SaveNote: (input, { headers }) =>
-    withNoteViewer(headers, viewer =>
+    withViewer(headers, noteForbidden, viewer =>
       NoteService.pipe(Effect.flatMap(svc => svc.save(viewer, input))),
     ),
   UpdateNote: (input, { headers }) =>
-    withNoteViewer(headers, viewer =>
+    withViewer(headers, noteForbidden, viewer =>
       NoteService.pipe(Effect.flatMap(svc => svc.update(viewer, input))),
     ),
   SetNotePinned: (input, { headers }) =>
-    withNoteViewer(headers, viewer =>
+    withViewer(headers, noteForbidden, viewer =>
       NoteService.pipe(Effect.flatMap(svc => svc.setPinned(viewer, input))),
     ),
   SetNoteArchived: (input, { headers }) =>
-    withNoteViewer(headers, viewer =>
+    withViewer(headers, noteForbidden, viewer =>
       NoteService.pipe(Effect.flatMap(svc => svc.setArchived(viewer, input))),
     ),
   SetNoteTags: (input, { headers }) =>
-    withNoteViewer(headers, viewer =>
+    withViewer(headers, noteForbidden, viewer =>
       NoteService.pipe(Effect.flatMap(svc => svc.setTags(viewer, input))),
     ),
   TrashNote: (input, { headers }) =>
-    withNoteViewer(headers, viewer =>
+    withViewer(headers, noteForbidden, viewer =>
       NoteService.pipe(Effect.flatMap(svc => svc.trash(viewer, input))),
     ),
   RestoreNote: (input, { headers }) =>
-    withNoteViewer(headers, viewer =>
+    withViewer(headers, noteForbidden, viewer =>
       NoteService.pipe(Effect.flatMap(svc => svc.restore(viewer, input))),
     ),
   ListNotes: (input, { headers }) =>
-    withNoteViewer(headers, viewer =>
+    withViewer(headers, noteForbidden, viewer =>
       NoteService.pipe(Effect.flatMap(svc => svc.list(viewer, input))),
     ),
   ListPinnedNotes: (_input, { headers }) =>
-    withNoteViewer(headers, viewer =>
+    withViewer(headers, noteForbidden, viewer =>
       NoteService.pipe(Effect.flatMap(svc => svc.listPinned(viewer))),
     ),
   ListTrashNotes: (_input, { headers }) =>
-    withNoteViewer(headers, viewer =>
+    withViewer(headers, noteForbidden, viewer =>
       NoteService.pipe(Effect.flatMap(svc => svc.listTrash(viewer))),
     ),
 
   // ── Events ────────────────────────────────────────────────────────────
 
   CreateEvent: (input, { headers }) =>
-    withEventViewer(headers, viewer =>
+    withViewer(headers, eventForbidden, viewer =>
       EventService.pipe(Effect.flatMap(svc => svc.create(viewer, input))),
     ),
   GetEvent: ({ id }, { headers }) =>
-    withEventViewer(headers, viewer =>
+    withViewer(headers, eventForbidden, viewer =>
       EventService.pipe(Effect.flatMap(svc => svc.get(viewer, id))),
     ),
   UpdateEvent: (input, { headers }) =>
-    withEventViewer(headers, viewer =>
+    withViewer(headers, eventForbidden, viewer =>
       EventService.pipe(Effect.flatMap(svc => svc.update(viewer, input))),
     ),
   DeleteEvent: (input, { headers }) =>
-    withEventViewer(headers, viewer =>
+    withViewer(headers, eventForbidden, viewer =>
       EventService.pipe(Effect.flatMap(svc => svc.delete(viewer, input))),
     ),
   ListEvents: (input, { headers }) =>
-    withEventViewer(headers, viewer =>
+    withViewer(headers, eventForbidden, viewer =>
       EventService.pipe(Effect.flatMap(svc => svc.list(viewer, input))),
     ),
   ListEventOccurrences: (input, { headers }) =>
-    withEventViewer(headers, viewer =>
+    withViewer(headers, eventForbidden, viewer =>
       EventService.pipe(Effect.flatMap(svc => svc.occurrences(viewer, input))),
     ),
   EditEventOccurrence: (input, { headers }) =>
-    withEventViewer(headers, viewer =>
+    withViewer(headers, eventForbidden, viewer =>
       EventService.pipe(
         Effect.flatMap(svc => svc.editOccurrence(viewer, input)),
       ),
     ),
   DeleteEventOccurrence: (input, { headers }) =>
-    withEventViewer(headers, viewer =>
+    withViewer(headers, eventForbidden, viewer =>
       EventService.pipe(
         Effect.flatMap(svc => svc.deleteOccurrence(viewer, input)),
       ),
@@ -427,102 +334,102 @@ export const RpcHandlers = ApiRpcs.toLayer({
   // ── Habits ────────────────────────────────────────────────────────────
 
   CreateHabit: (input, { headers }) =>
-    withHabitViewer(headers, viewer =>
+    withViewer(headers, habitForbidden, viewer =>
       HabitService.pipe(Effect.flatMap(svc => svc.create(viewer, input))),
     ),
   GetHabit: ({ id }, { headers }) =>
-    withHabitViewer(headers, viewer =>
+    withViewer(headers, habitForbidden, viewer =>
       HabitService.pipe(Effect.flatMap(svc => svc.get(viewer, id))),
     ),
   UpdateHabit: (input, { headers }) =>
-    withHabitViewer(headers, viewer =>
+    withViewer(headers, habitForbidden, viewer =>
       HabitService.pipe(Effect.flatMap(svc => svc.update(viewer, input))),
     ),
   DeleteHabit: (input, { headers }) =>
-    withHabitViewer(headers, viewer =>
+    withViewer(headers, habitForbidden, viewer =>
       HabitService.pipe(Effect.flatMap(svc => svc.delete(viewer, input))),
     ),
   RestoreHabit: (input, { headers }) =>
-    withHabitViewer(headers, viewer =>
+    withViewer(headers, habitForbidden, viewer =>
       HabitService.pipe(Effect.flatMap(svc => svc.restore(viewer, input))),
     ),
   ListHabits: (_input, { headers }) =>
-    withHabitViewer(headers, viewer =>
+    withViewer(headers, habitForbidden, viewer =>
       HabitService.pipe(Effect.flatMap(svc => svc.list(viewer))),
     ),
   LogHabitEntry: (input, { headers }) =>
-    withHabitViewer(headers, viewer =>
+    withViewer(headers, habitForbidden, viewer =>
       HabitService.pipe(Effect.flatMap(svc => svc.logEntry(viewer, input))),
     ),
   ListHabitEntries: (input, { headers }) =>
-    withHabitViewer(headers, viewer =>
+    withViewer(headers, habitForbidden, viewer =>
       HabitService.pipe(Effect.flatMap(svc => svc.entries(viewer, input))),
     ),
 
   // ── Reminders ──────────────────────────────────────────────────────────
   CreateReminder: (input, { headers }) =>
-    withReminderViewer(headers, viewer =>
+    withViewer(headers, reminderForbidden, viewer =>
       ReminderService.pipe(Effect.flatMap(svc => svc.create(viewer, input))),
     ),
   GetReminder: ({ id }, { headers }) =>
-    withReminderViewer(headers, viewer =>
+    withViewer(headers, reminderForbidden, viewer =>
       ReminderService.pipe(Effect.flatMap(svc => svc.get(viewer, id))),
     ),
   UpdateReminder: (input, { headers }) =>
-    withReminderViewer(headers, viewer =>
+    withViewer(headers, reminderForbidden, viewer =>
       ReminderService.pipe(Effect.flatMap(svc => svc.update(viewer, input))),
     ),
   DeleteReminder: (input, { headers }) =>
-    withReminderViewer(headers, viewer =>
+    withViewer(headers, reminderForbidden, viewer =>
       ReminderService.pipe(Effect.flatMap(svc => svc.delete(viewer, input))),
     ),
   ListReminders: (input, { headers }) =>
-    withReminderViewer(headers, viewer =>
+    withViewer(headers, reminderForbidden, viewer =>
       ReminderService.pipe(Effect.flatMap(svc => svc.list(viewer, input))),
     ),
 
   // ── Occasions ─────────────────────────────────────────────────────────
 
   CreateOccasion: (input, { headers }) =>
-    withOccasionViewer(headers, viewer =>
+    withViewer(headers, occasionForbidden, viewer =>
       OccasionService.pipe(Effect.flatMap(svc => svc.create(viewer, input))),
     ),
   GetOccasion: ({ id }, { headers }) =>
-    withOccasionViewer(headers, viewer =>
+    withViewer(headers, occasionForbidden, viewer =>
       OccasionService.pipe(Effect.flatMap(svc => svc.get(viewer, id))),
     ),
   UpdateOccasion: (input, { headers }) =>
-    withOccasionViewer(headers, viewer =>
+    withViewer(headers, occasionForbidden, viewer =>
       OccasionService.pipe(Effect.flatMap(svc => svc.update(viewer, input))),
     ),
   DeleteOccasion: (input, { headers }) =>
-    withOccasionViewer(headers, viewer =>
+    withViewer(headers, occasionForbidden, viewer =>
       OccasionService.pipe(Effect.flatMap(svc => svc.delete(viewer, input))),
     ),
   ListOccasions: (_input, { headers }) =>
-    withOccasionViewer(headers, viewer =>
+    withViewer(headers, occasionForbidden, viewer =>
       OccasionService.pipe(Effect.flatMap(svc => svc.list(viewer))),
     ),
   ListOccasionOccurrences: (input, { headers }) =>
-    withOccasionViewer(headers, viewer =>
+    withViewer(headers, occasionForbidden, viewer =>
       OccasionService.pipe(
         Effect.flatMap(svc => svc.occurrences(viewer, input)),
       ),
     ),
   ListOccasionReminders: (input, { headers }) =>
-    withOccasionViewer(headers, viewer =>
+    withViewer(headers, occasionForbidden, viewer =>
       OccasionService.pipe(
         Effect.flatMap(svc => svc.advanceReminders(viewer, input)),
       ),
     ),
   MaterialiseOccasionReminders: (input, { headers }) =>
-    withOccasionViewer(headers, viewer =>
+    withViewer(headers, occasionForbidden, viewer =>
       OccasionService.pipe(
         Effect.flatMap(svc => svc.materialiseReminders(viewer, input)),
       ),
     ),
   PrepareOccasionTask: (input, { headers }) =>
-    withOccasionViewer(headers, viewer =>
+    withViewer(headers, occasionForbidden, viewer =>
       OccasionService.pipe(
         Effect.flatMap(svc => svc.prepareTask(viewer, input)),
       ),
@@ -531,19 +438,19 @@ export const RpcHandlers = ApiRpcs.toLayer({
   // ── Capture ───────────────────────────────────────────────────────────
 
   DissectCapture: (input, { headers }) =>
-    withCaptureViewer(headers, viewer =>
+    withViewer(headers, captureForbidden, viewer =>
       CaptureService.pipe(Effect.flatMap(svc => svc.dissect(viewer, input))),
     ),
   CommitCapture: (input, { headers }) =>
-    withCaptureViewer(headers, viewer =>
+    withViewer(headers, captureForbidden, viewer =>
       CaptureService.pipe(Effect.flatMap(svc => svc.commit(viewer, input))),
     ),
   ListCaptures: (input, { headers }) =>
-    withCaptureViewer(headers, viewer =>
+    withViewer(headers, captureForbidden, viewer =>
       CaptureService.pipe(Effect.flatMap(svc => svc.list(viewer, input))),
     ),
   DeleteCapture: (input, { headers }) =>
-    withCaptureViewer(headers, viewer =>
+    withViewer(headers, captureForbidden, viewer =>
       CaptureService.pipe(Effect.flatMap(svc => svc.remove(viewer, input))),
     ),
 })

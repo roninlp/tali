@@ -6,9 +6,19 @@ import {
   Unauthorized,
 } from '@tali/domain'
 import { AuthService } from './auth-service.js'
-import { fail, json, requestUrl, unexpectedFailure } from './http-envelope.js'
+import {
+  fail,
+  json,
+  noHouseholdFailure,
+  requestUrl,
+  unexpectedFailure,
+} from './http-envelope.js'
 import { PreferencesService } from './preferences-service.js'
-import { principalResolver } from './principal.js'
+import {
+  NoHousehold,
+  principalResolver,
+  requireHousehold,
+} from './principal.js'
 import { ReminderService, type ReminderViewer } from './reminder-service.js'
 
 /**
@@ -45,18 +55,20 @@ export const ReminderRoutes = HttpRouter.use(router =>
     const reminders = yield* ReminderService
     const resolvePrincipal = principalResolver(auth, preferences)
 
-    /** The reminder viewer still 401s on a missing household (unchanged here). */
+    /**
+     * The reminder viewer needs a household; the one typed verdict maps to the
+     * shared `409 NoHousehold` answer instead of the old `401` (the session is
+     * valid — the account just has no household to read a ledger from).
+     */
     const principal = (
       request: HttpServerRequest.HttpServerRequest,
-    ): Effect.Effect<ReminderViewer, Unauthorized> =>
+    ): Effect.Effect<ReminderViewer, Unauthorized | NoHousehold> =>
       Effect.gen(function* () {
         const resolved = yield* resolvePrincipal(request)
-        if (resolved.context.householdId === null) {
-          return yield* new Unauthorized()
-        }
+        const householdId = yield* requireHousehold(resolved.context)
         return {
           userId: resolved.context.user.id,
-          householdId: resolved.context.householdId,
+          householdId,
           timeZone: resolved.preferences.timeZone,
         }
       })
@@ -76,6 +88,7 @@ export const ReminderRoutes = HttpRouter.use(router =>
       ReminderConflict: () =>
         fail(409, 'Conflict', 'Reminder changed concurrently', true),
       Unauthorized: () => fail(401, 'Unauthorized', 'No active session'),
+      NoHousehold: noHouseholdFailure,
     }
 
     yield* router.add(

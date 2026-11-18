@@ -519,8 +519,8 @@ describe('GET /today', () => {
     expect(anonymous.body).toMatchObject({ error: { code: 'Unauthorized' } })
 
     const noHousehold = await getToday(h, TOKEN_NO_HOUSEHOLD)
-    expect(noHousehold.status).toBe(403)
-    expect(noHousehold.body).toMatchObject({ error: { code: 'Forbidden' } })
+    expect(noHousehold.status).toBe(409)
+    expect(noHousehold.body).toMatchObject({ error: { code: 'NoHousehold' } })
   })
 
   /**
