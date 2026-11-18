@@ -431,6 +431,40 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
             : new TaskForbidden({ id, reason: violation }),
       })
 
+    /** Read one project under the standard scope rules (ADR-0011). */
+    const loadProject = (
+      viewer: TaskViewer,
+      id: ProjectId,
+    ): Effect.Effect<Project, TaskServiceError> =>
+      readScoped({
+        viewer,
+        id,
+        find: projects.findById,
+        // Same ordering as `loadTask`: a tombstoned project or tag reads as
+        // missing before the household/owner checks.
+        trash: 'first',
+        onViolation: violation =>
+          violation === 'notFound' || violation === 'trashed'
+            ? new ProjectNotFound({ id })
+            : new TaskForbidden({ id, reason: violation }),
+      })
+
+    /** Read one tag under the standard scope rules (ADR-0011). */
+    const loadTag = (
+      viewer: TaskViewer,
+      id: TagId,
+    ): Effect.Effect<Tag, TaskServiceError> =>
+      readScoped({
+        viewer,
+        id,
+        find: tags.findById,
+        trash: 'first',
+        onViolation: violation =>
+          violation === 'notFound' || violation === 'trashed'
+            ? new TagNotFound({ id })
+            : new TaskForbidden({ id, reason: violation }),
+      })
+
     /**
      * Replay guard for project/tag mutations — same rules as `replayOf`: the
      * key must belong to the same aggregate and row, and the row must still be
@@ -447,24 +481,10 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
         entityType: 'project',
         expectedId,
         read: entityId =>
-          Effect.gen(function* () {
-            const id = entityId as Project['id']
-            const found = yield* projects.findById(id).pipe(Effect.orDie)
-            if (Option.isNone(found) || found.value.deletedAt !== null) {
-              return yield* new ProjectNotFound({ id })
-            }
-            const project = found.value
-            if (project.householdId !== viewer.householdId) {
-              return yield* new TaskForbidden({ id, reason: 'household' })
-            }
-            if (
-              project.visibility === 'private' &&
-              project.ownerId !== viewer.userId
-            ) {
-              return yield* new TaskForbidden({ id, reason: 'private' })
-            }
-            return Option.some(project)
-          }),
+          Effect.map(
+            loadProject(viewer, entityId as Project['id']),
+            Option.some,
+          ),
       })
 
     const replayTag = (
@@ -478,43 +498,34 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
         entityType: 'tag',
         expectedId,
         read: entityId =>
-          Effect.gen(function* () {
-            const id = entityId as Tag['id']
-            const found = yield* tags.findById(id).pipe(Effect.orDie)
-            if (Option.isNone(found) || found.value.deletedAt !== null) {
-              return yield* new TagNotFound({ id })
-            }
-            const tag = found.value
-            if (tag.householdId !== viewer.householdId) {
-              return yield* new TaskForbidden({ id, reason: 'household' })
-            }
-            if (tag.visibility === 'private' && tag.ownerId !== viewer.userId) {
-              return yield* new TaskForbidden({ id, reason: 'private' })
-            }
-            return Option.some(tag)
-          }),
+          Effect.map(loadTag(viewer, entityId as Tag['id']), Option.some),
       })
 
     const requireProject = (
       viewer: TaskViewer,
       projectId: ProjectId,
     ): Effect.Effect<Project, TaskValidationError> =>
-      Effect.gen(function* () {
-        const found = yield* projects.findById(projectId).pipe(Effect.orDie)
-        if (Option.isNone(found) || found.value.deletedAt !== null) {
-          return yield* invalid('projectId', 'project does not exist')
-        }
-        const project = found.value
-        if (project.householdId !== viewer.householdId) {
-          return yield* invalid('projectId', 'project is not in this household')
-        }
-        if (
-          project.visibility === 'private' &&
-          project.ownerId !== viewer.userId
-        ) {
-          return yield* invalid('projectId', 'project is private')
-        }
-        return project
+      readScoped({
+        viewer,
+        id: projectId,
+        find: projects.findById,
+        // A tombstone reads as missing before the household/owner checks,
+        // like every other project read in this service.
+        trash: 'first',
+        onViolation: violation =>
+          new TaskValidationError({
+            issues: [
+              {
+                field: 'projectId',
+                message:
+                  violation === 'household'
+                    ? 'project is not in this household'
+                    : violation === 'private'
+                      ? 'project is private'
+                      : 'project does not exist',
+              },
+            ],
+          }),
       })
 
     const requireTags = (
@@ -1235,29 +1246,7 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
         return yield* casUpdate<Project, TaskServiceError>({
           // Scope is part of the read: a row this viewer may not rename never
           // becomes a CAS candidate.
-          read: Effect.gen(function* () {
-            const found = yield* projects.findById(input.id).pipe(Effect.orDie)
-            if (Option.isNone(found) || found.value.deletedAt !== null) {
-              return yield* new ProjectNotFound({ id: input.id })
-            }
-            const current = found.value
-            if (current.householdId !== viewer.householdId) {
-              return yield* new TaskForbidden({
-                id: input.id,
-                reason: 'household',
-              })
-            }
-            if (
-              current.visibility === 'private' &&
-              current.ownerId !== viewer.userId
-            ) {
-              return yield* new TaskForbidden({
-                id: input.id,
-                reason: 'private',
-              })
-            }
-            return current
-          }),
+          read: loadProject(viewer, input.id),
           plan: current =>
             Effect.succeed(
               current.title === input.title
@@ -1370,29 +1359,7 @@ export class TaskService extends Context.Service<TaskService>()('TaskService', {
         return yield* casUpdate<Tag, TaskServiceError>({
           // Scope is part of the read: a row this viewer may not rename never
           // becomes a CAS candidate.
-          read: Effect.gen(function* () {
-            const found = yield* tags.findById(input.id).pipe(Effect.orDie)
-            if (Option.isNone(found) || found.value.deletedAt !== null) {
-              return yield* new TagNotFound({ id: input.id })
-            }
-            const current = found.value
-            if (current.householdId !== viewer.householdId) {
-              return yield* new TaskForbidden({
-                id: input.id,
-                reason: 'household',
-              })
-            }
-            if (
-              current.visibility === 'private' &&
-              current.ownerId !== viewer.userId
-            ) {
-              return yield* new TaskForbidden({
-                id: input.id,
-                reason: 'private',
-              })
-            }
-            return current
-          }),
+          read: loadTag(viewer, input.id),
           plan: current =>
             Effect.gen(function* () {
               if (current.name === input.name) return null

@@ -1,14 +1,16 @@
 import { Effect, Option } from 'effect'
 import type { HouseholdId, Tag, TagId, UserId } from '@tali/domain'
+import { readScoped, type ScopeViolation } from './row-scope.js'
 
 /**
  * Tag assignment guard shared by the note and task services (#36/#40).
  *
- * Both aggregates accept a denormalized `tagIds` array, and both must enforce
- * the same rules: the tag exists, is live, belongs to the viewer's household
- * and is not another member's private tag. Keeping the lookup here means the
- * note service reuses the tag primitives instead of growing a second copy of
- * the rules; each caller maps the issue into its own typed validation error.
+ * Both aggregates accept a denormalized `tagIds` array, and both enforce the
+ * same rules: the tag exists, is live, belongs to the viewer's household and
+ * is not another member's private tag. Those are the standard ADR-0011 read
+ * rules, so the guard delegates them to the shared scope predicate and keeps
+ * only its error mapping — the issue message each caller folds into its own
+ * typed validation error.
  *
  * The caller passes the already-yielded `TagRepo` instance, so this helper has
  * no service requirement of its own.
@@ -29,6 +31,17 @@ export interface TagLookup<E> {
   readonly findById: (id: TagId) => Effect.Effect<Option.Option<Tag>, E>
 }
 
+/** Which read rule the tag failed, as the guard's field-level issue. */
+const tagIssue = (tagId: TagId, violation: ScopeViolation): TagIssue => ({
+  field: 'tagIds',
+  message:
+    violation === 'household'
+      ? `tag is not in this household: ${tagId}`
+      : violation === 'private'
+        ? `tag is private: ${tagId}`
+        : `tag does not exist: ${tagId}`,
+})
+
 export const loadAssignableTags = <E>(
   tags: TagLookup<E>,
   scope: TagScope,
@@ -37,26 +50,15 @@ export const loadAssignableTags = <E>(
   Effect.gen(function* () {
     const result: Array<Tag> = []
     for (const tagId of tagIds) {
-      const found = yield* tags.findById(tagId).pipe(Effect.orDie)
-      if (Option.isNone(found) || found.value.deletedAt !== null) {
-        return yield* Effect.fail<TagIssue>({
-          field: 'tagIds',
-          message: `tag does not exist: ${tagId}`,
-        })
-      }
-      const tag = found.value
-      if (tag.householdId !== scope.householdId) {
-        return yield* Effect.fail<TagIssue>({
-          field: 'tagIds',
-          message: `tag is not in this household: ${tagId}`,
-        })
-      }
-      if (tag.visibility === 'private' && tag.ownerId !== scope.userId) {
-        return yield* Effect.fail<TagIssue>({
-          field: 'tagIds',
-          message: `tag is private: ${tagId}`,
-        })
-      }
+      const tag = yield* readScoped({
+        viewer: scope,
+        id: tagId,
+        find: tags.findById,
+        // A trashed tag reads as missing before the household/owner checks,
+        // like the hand-written guard this replaces.
+        trash: 'first',
+        onViolation: violation => tagIssue(tagId, violation),
+      })
       result.push(tag)
     }
     return result

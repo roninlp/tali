@@ -42,6 +42,7 @@ import {
   Task,
   type TaskId,
   type UserId,
+  type VisibilityRow,
   resolveCreateVisibility,
   uuidV7,
 } from '@tali/domain'
@@ -55,7 +56,7 @@ import {
   reminderTierFor,
   snoozeInstant,
 } from '@tali/domain/reminder-policy'
-import { readScoped } from './row-scope.js'
+import { readScoped, scopeViolation } from './row-scope.js'
 import { casUpdate } from './cas.js'
 import { makeSyncKit, type CommitEntry } from './sync-write.js'
 import { unchangedExcept } from './patch-compare.js'
@@ -265,6 +266,41 @@ export class ReminderService extends Context.Service<ReminderService>()(
         })
 
       /**
+       * Read a link target under the shared scope rules (ADR-0011): a missing
+       * or trashed target is a link validation failure, and a household or
+       * private denial is a forbidden link. The predicate lives in
+       * `row-scope.ts`; this is only the reminder service's error mapping.
+       */
+      const readLinkTarget = <
+        Id extends string,
+        A extends VisibilityRow & { readonly deletedAt: string | null },
+      >(
+        viewer: ReminderViewer,
+        kind: 'task' | 'event' | 'occasion',
+        id: Id,
+        find: (id: Id) => Effect.Effect<Option.Option<A>, unknown>,
+      ): Effect.Effect<A, ReminderServiceError> =>
+        readScoped({
+          viewer,
+          id,
+          find,
+          // A trashed target reads as missing before the household/owner
+          // checks, like the hand-written guard it replaces.
+          trash: 'first',
+          onViolation: violation =>
+            violation === 'household' || violation === 'private'
+              ? new ReminderForbidden({ id, reason: violation })
+              : new ReminderValidationError({
+                  issues: [
+                    {
+                      field: 'link',
+                      message: `the linked ${kind} no longer exists`,
+                    },
+                  ],
+                }),
+        })
+
+      /**
        * Resolve a reminder's link target and scheduling instant.
        *
        * The link is checked for household/private visibility, so a reminder can
@@ -279,89 +315,32 @@ export class ReminderService extends Context.Service<ReminderService>()(
         Effect.gen(function* () {
           switch (link._tag) {
             case 'task': {
-              const found = yield* tasks
-                .findById(link.taskId as TaskId)
-                .pipe(Effect.orDie)
-              if (Option.isNone(found) || found.value.deletedAt !== null) {
-                return yield* invalid(
-                  'link',
-                  'the linked task no longer exists',
-                )
-              }
-              const task = found.value
-              if (task.householdId !== viewer.householdId) {
-                return yield* new ReminderForbidden({
-                  id: task.id,
-                  reason: 'household',
-                })
-              }
-              if (
-                task.visibility === 'private' &&
-                task.ownerId !== viewer.userId
-              ) {
-                return yield* new ReminderForbidden({
-                  id: task.id,
-                  reason: 'private',
-                })
-              }
+              const task = yield* readLinkTarget(
+                viewer,
+                'task',
+                link.taskId as TaskId,
+                tasks.findById,
+              )
               return linkedInstantOf(task)
             }
             case 'event': {
-              const found = yield* events
-                .findById(link.eventId as EventId)
-                .pipe(Effect.orDie)
-              if (Option.isNone(found) || found.value.deletedAt !== null) {
-                return yield* invalid(
-                  'link',
-                  'the linked event no longer exists',
-                )
-              }
-              const event = found.value
-              if (event.householdId !== viewer.householdId) {
-                return yield* new ReminderForbidden({
-                  id: event.id,
-                  reason: 'household',
-                })
-              }
-              if (
-                event.visibility === 'private' &&
-                event.ownerId !== viewer.userId
-              ) {
-                return yield* new ReminderForbidden({
-                  id: event.id,
-                  reason: 'private',
-                })
-              }
+              const event = yield* readLinkTarget(
+                viewer,
+                'event',
+                link.eventId as EventId,
+                events.findById,
+              )
               return linkedInstantOf(event)
             }
             case 'habit':
               return null
             case 'occasion': {
-              const found = yield* occasions
-                .findById(link.occasionId)
-                .pipe(Effect.orDie)
-              if (Option.isNone(found) || found.value.deletedAt !== null) {
-                return yield* invalid(
-                  'link',
-                  'the linked occasion no longer exists',
-                )
-              }
-              const occasion = found.value
-              if (occasion.householdId !== viewer.householdId) {
-                return yield* new ReminderForbidden({
-                  id: occasion.id,
-                  reason: 'household',
-                })
-              }
-              if (
-                occasion.visibility === 'private' &&
-                occasion.ownerId !== viewer.userId
-              ) {
-                return yield* new ReminderForbidden({
-                  id: occasion.id,
-                  reason: 'private',
-                })
-              }
+              yield* readLinkTarget(
+                viewer,
+                'occasion',
+                link.occasionId,
+                occasions.findById,
+              )
               // An occasion's advance instant is a projection of the occurrence,
               // not one stored instant, so there is no link-derived default: the
               // materialiser supplies an explicit `fireAt`, and a hand-created
@@ -729,11 +708,11 @@ export class ReminderService extends Context.Service<ReminderService>()(
         Effect.gen(function* () {
           const found = yield* tasks.findById(taskId).pipe(Effect.orDie)
           if (Option.isNone(found)) return []
+          // The household/private/tombstone questions come from the shared
+          // ADR-0011 predicate; any denial simply completes nothing here.
+          if (Option.isSome(scopeViolation(viewer, found))) return []
           const task = found.value
-          if (task.householdId !== viewer.householdId) return []
-          if (task.visibility === 'private' && task.ownerId !== viewer.userId)
-            return []
-          if (task.deletedAt !== null || task.status === 'done') return []
+          if (task.status === 'done') return []
 
           const next = new Task({
             ...task,
