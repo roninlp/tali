@@ -5,9 +5,9 @@ import { Effect, Layer, Option } from 'effect'
 import * as HttpHeaders from 'effect/http/Headers'
 import { HttpServerRequest } from 'effect/http'
 import * as HttpServerResponse from 'effect/http/HttpServerResponse'
-import { isOnTime } from '@tali/domain/reminder-policy'
 import {
   AnswerDone,
+  answerReplyOf,
   DeleteReminder,
   DeleteReminderRequest,
   Dismiss,
@@ -17,7 +17,6 @@ import {
   SilenceRequest,
   Snooze,
   SweepRequest,
-  type AnswerReply,
 } from '@tali/reminder-domain'
 import { Reminders, RemindersHandlers } from '@tali/reminder-domain'
 import {
@@ -26,6 +25,7 @@ import {
   PushSubscriptionStoreLive,
   ReminderScheduleStoreLive,
 } from './adapters.js'
+import { remindersEnvOf } from './env.js'
 import { runTick } from './tick.js'
 
 /**
@@ -42,15 +42,6 @@ import { runTick } from './tick.js'
  * workerd, so the whole stack boots exactly as it deploys.
  */
 
-interface Env {
-  readonly DB: D1Database
-  /** The api's shared internal secret; no request without it is served. */
-  readonly INTERNAL_TOKEN?: string
-  readonly VAPID_PRIVATE_KEY?: string
-  readonly VAPID_PUBLIC_KEY?: string
-  readonly VAPID_SUBJECT?: string
-}
-
 /** One Layer: the hosted model, its D1 adapters, and the push transport. */
 const RemindersLive = Reminders.layer(RemindersHandlers).pipe(
   Layer.provideMerge(
@@ -65,31 +56,12 @@ const RemindersLive = Reminders.layer(RemindersHandlers).pipe(
   ),
 )
 
-/** The stored answer, for the respond route's double-tap contract. */
-const storedAnswerOf =
-  (owners: typeof ReminderOwner.Service) =>
-  (dispatchId: string): Effect.Effect<AnswerReply> =>
-    Effect.gen(function* () {
-      const state = yield* owners.get(dispatchId as never)
-      const dispatch = state.dispatches[dispatchId]
-      if (dispatch === undefined)
-        return { dispatch: null, child: null, onTime: false } as never
-      const childId = state.snoozeChildren[dispatchId]
-      return {
-        dispatch,
-        child:
-          childId === undefined ? null : (state.dispatches[childId] ?? null),
-        onTime: isOnTime(dispatch),
-      }
-    })
-
 export default class TaliRemindersWorker extends Cloudflare.Worker<TaliRemindersWorker>()(
   'TaliReminders',
   { main: (import.meta as unknown as { readonly url: string }).url },
   Effect.gen(function* () {
     const owners = yield* ReminderOwner
-    const env = (yield* WorkerEnvironment) as unknown as Env
-    const storedAnswer = storedAnswerOf(owners)
+    const env = remindersEnvOf(yield* WorkerEnvironment)
 
     /** The shared-secret guard: the binding is private, this is the bolt. */
     const authorized = (presented: string | undefined): boolean =>
@@ -109,13 +81,16 @@ export default class TaliRemindersWorker extends Cloudflare.Worker<TaliReminders
                   dispatchId: body.dispatchId,
                   minutes: body.snoozeMinutes ?? 0,
                 })
-        const receipt = yield* owners.send(body.ownerId as never, command)
+        const receipt = yield* owners.send(body.ownerId, command)
         return yield* Effect.orDie(HttpServerResponse.json(receipt.reply))
       }).pipe(
         // A double tap returns the stored answer, not an error.
         Effect.catchTag('AlreadyAnswered', () =>
-          Effect.flatMap(storedAnswer(body.dispatchId), answer =>
-            Effect.orDie(HttpServerResponse.json(answer)),
+          Effect.flatMap(
+            Effect.map(owners.get(body.ownerId), state =>
+              answerReplyOf(state, body.dispatchId),
+            ),
+            answer => Effect.orDie(HttpServerResponse.json(answer)),
           ),
         ),
         Effect.catchTag('DispatchNotFound', rejection =>
@@ -131,7 +106,7 @@ export default class TaliRemindersWorker extends Cloudflare.Worker<TaliReminders
     const silence = (body: SilenceRequest) =>
       Effect.flatMap(
         owners.send(
-          body.ownerId as never,
+          body.ownerId,
           new SilenceReminder({
             reminderId: body.reminderId,
             until: body.until,
@@ -144,7 +119,7 @@ export default class TaliRemindersWorker extends Cloudflare.Worker<TaliReminders
     const removeReminder = (body: DeleteReminderRequest) =>
       Effect.flatMap(
         owners.send(
-          body.ownerId as never,
+          body.ownerId,
           new DeleteReminder({ reminderId: body.reminderId }),
           { commandId: `delete:${body.reminderId}:v${body.version}` },
         ),

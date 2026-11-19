@@ -58,15 +58,11 @@ export const claimFire = (over: Partial<InstanceType<typeof ClaimFire>> = {}) =>
     now: T('09:00'),
     reminderId: REMINDER_ID,
     scheduledFor: T('09:00'),
-    timeZone: 'Asia/Tehran',
+    reminderTimeZone: 'Asia/Tehran',
     ownerTimeZone: 'Asia/Tehran',
     tier: 'normal',
-    version: 1,
     repeat: { _tag: 'once' },
     silencedUntil: null,
-    title: 'یادآوری',
-    note: null,
-    kind: 'general',
     ...over,
   })
 

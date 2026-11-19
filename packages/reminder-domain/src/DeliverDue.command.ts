@@ -30,7 +30,11 @@ import { ReminderOwnerId } from './ReminderOwner.id.js'
  * event and its outcome still leaves a bounded, retryable row.
  */
 
-/** The mechanical per-tick push bound (ADR-0005 §9: ten fetches, not a cap on policy). */
+/**
+ * The mechanical delivery bound: at most ten due dispatches per `DeliverDue`;
+ * every dispatch still reaches all of its owner's devices (ADR-0014's bounds
+ * note re-interprets ADR-0005's per-tick fetch budget).
+ */
 export const SWEEP_MAX_PUSHES = 10
 /** Transient failures are retried this many times before the dispatch expires. */
 export const SWEEP_MAX_ATTEMPTS = 3

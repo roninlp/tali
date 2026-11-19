@@ -8,7 +8,7 @@ import {
   FireClaimed,
   FireSuppressed,
 } from './ClaimFire.command.js'
-import { DispatchExpired } from './DeliverDue.command.js'
+import { DispatchDueForPush, DispatchExpired } from './DeliverDue.command.js'
 import { DispatchResponseValue, DispatchSnapshot } from './Dispatch.js'
 import {
   DispatchPushed,
@@ -41,6 +41,11 @@ export const DispatchLedgerChange = Schema.Union([
     response: DispatchResponseValue,
     respondedAt: TimestampUtc,
     snoozedUntil: Schema.NullOr(TimestampUtc),
+  }),
+  Schema.TaggedStruct('DueForPush', {
+    dispatchId: ReminderDispatchId,
+    attempts: Schema.Int,
+    lastAttemptAt: TimestampUtc,
   }),
   Schema.TaggedStruct('Pushed', {
     dispatchId: ReminderDispatchId,
@@ -80,6 +85,9 @@ export class DispatchLedger extends Domain.Projection(
       // DispatchOpened is declared by two commands (claim and snooze); the
       // projection reads the event itself, so one entry covers both origins.
       DispatchOpened,
+      // The attempt-taking, so `attempts` lands in D1 as ADR-0005 §3's
+      // outcome shape expects.
+      DispatchDueForPush,
       DispatchAnswered,
       DispatchPushed,
       DispatchPushFailed,
@@ -127,6 +135,13 @@ export const DispatchLedgerLive = DispatchLedger.toLayer(
                 response: event.response,
                 respondedAt: event.respondedAt,
                 snoozedUntil: event.snoozedUntil,
+              }
+            case 'DispatchDueForPush':
+              return {
+                _tag: 'DueForPush',
+                dispatchId: event.dispatchId,
+                attempts: event.attempts,
+                lastAttemptAt: event.dueAt,
               }
             case 'DispatchPushed':
               return {

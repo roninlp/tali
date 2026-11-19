@@ -474,6 +474,7 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
             })),
         )
 
+      // TODO(cutover): near-duplicates `listOwed` below — the pilot's fresh-facts seam; goes with the old D1 sweep path.
       /**
        * The tick's owed-facts read (ADR-0005 §2): every unanswered,
        * still-retryable dispatch with the reminder words its push shows and

@@ -19,7 +19,7 @@ describe('the internal wire between the api and this Worker', () => {
           now: '2026-10-21T05:30:00.000Z',
           reminderId: '0197f100-7000-7000-8000-700000000101',
           scheduledFor: '2026-10-21T05:30:00.000Z',
-          timeZone: 'Asia/Tehran',
+          reminderTimeZone: 'Asia/Tehran',
           ownerTimeZone: 'Asia/Tehran',
           tier: 'critical',
           version: 1,

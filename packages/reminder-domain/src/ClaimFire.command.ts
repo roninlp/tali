@@ -4,7 +4,6 @@ import {
   ReminderId,
   ReminderRepeat,
   ReminderTier,
-  ReminderType,
   TimestampUtc,
 } from '@tali/domain'
 import { DispatchSnapshot } from './Dispatch.js'
@@ -73,18 +72,12 @@ export class ClaimFire extends Domain.Command(
       /** The claimed fire instant (`reminders.fire_at` at the tick's read). */
       scheduledFor: TimestampUtc,
       /** The reminder's own zone: the series advance is computed in it. */
-      timeZone: Schema.String,
+      reminderTimeZone: Schema.String,
       /** The owner's IANA zone (preferences, falling back to the profile). */
       ownerTimeZone: Schema.String,
       tier: ReminderTier,
-      /** The synced row's version, so a re-armed edit claims again. */
-      version: Schema.Int,
       repeat: ReminderRepeat,
       silencedUntil: Schema.NullOr(TimestampUtc),
-      /** The words the eventual push shows; not ledger state. */
-      title: Schema.String,
-      note: Schema.NullOr(Schema.String),
-      kind: ReminderType,
     },
     events: [FireClaimed, FireSuppressed, DispatchOpened],
   },

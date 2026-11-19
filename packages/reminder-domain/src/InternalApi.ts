@@ -31,7 +31,9 @@ export const DueFireWire = Schema.Struct({
   now: TimestampUtc,
   reminderId: ReminderId,
   scheduledFor: TimestampUtc,
-  timeZone: Schema.String,
+  /** The reminder's own zone: the series advance is computed in it. */
+  reminderTimeZone: Schema.String,
+  /** The owner's IANA zone: quiet hours follow the owner (ADR-0002). */
   ownerTimeZone: Schema.String,
   tier: ReminderTier,
   version: Schema.Int,
@@ -86,7 +88,7 @@ export type RespondRequest = Schema.Schema.Type<typeof RespondRequest>
 export const RespondResponse = AnswerReply
 export type RespondResponse = Schema.Schema.Type<typeof RespondResponse>
 
-/** The write path's silence notification. */
+/** The write path's silence request. */
 export const SilenceRequest = Schema.Struct({
   ownerId: UserId,
   reminderId: ReminderId,
@@ -95,7 +97,7 @@ export const SilenceRequest = Schema.Struct({
 })
 export type SilenceRequest = Schema.Schema.Type<typeof SilenceRequest>
 
-/** The write path's delete notification. */
+/** The write path's delete request. */
 export const DeleteReminderRequest = Schema.Struct({
   ownerId: UserId,
   reminderId: ReminderId,

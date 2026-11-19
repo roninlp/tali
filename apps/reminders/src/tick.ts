@@ -38,13 +38,13 @@ export const runTick = (
     }
 
     // Group the tick's work by owner: every command goes to one instance.
-    const firesByOwner = new Map<string, DueFireWire[]>()
+    const firesByOwner = new Map<UserId, DueFireWire[]>()
     for (const fire of request.fires) {
       const list = firesByOwner.get(fire.ownerId) ?? []
       list.push(fire)
       firesByOwner.set(fire.ownerId, list)
     }
-    const factsByOwner = new Map<string, OwnedFactsWire[]>()
+    const factsByOwner = new Map<UserId, OwnedFactsWire[]>()
     for (const fact of request.facts) {
       const list = factsByOwner.get(fact.ownerId) ?? []
       list.push(fact)
@@ -57,20 +57,16 @@ export const runTick = (
       const fresh: OwnedFactsWire[] = []
       for (const fire of fires) {
         const receipt = yield* owners.send(
-          ownerId as never,
+          ownerId,
           new ClaimFire({
             now: fire.now,
             reminderId: fire.reminderId,
             scheduledFor: fire.scheduledFor,
-            timeZone: fire.timeZone,
+            reminderTimeZone: fire.reminderTimeZone,
             ownerTimeZone: fire.ownerTimeZone,
             tier: fire.tier,
-            version: fire.version,
             repeat: fire.repeat,
             silencedUntil: fire.silencedUntil,
-            title: fire.title,
-            note: fire.note,
-            kind: fire.kind,
           }),
           {
             commandId: `claim:${fire.reminderId}:${fire.scheduledFor}:v${fire.version}`,
@@ -108,7 +104,7 @@ export const runTick = (
     for (const [ownerId, facts] of factsByOwner) {
       if (facts.length === 0) continue
       const receipt = yield* owners.send(
-        ownerId as never,
+        ownerId,
         new DeliverDue({
           now: request.now,
           facts: facts.map(factsOf),

@@ -16,6 +16,7 @@ import {
   SnoozeMinutesNotPreset,
 } from '../src/dispatch.rejection.js'
 import type { AnswerReply } from '../src/Dispatch.js'
+import { answerReplyOf } from '../src/ReminderOwner.aggregate.js'
 import { resetStores } from './memory-stores.js'
 import {
   T,
@@ -316,6 +317,89 @@ describe('AnswerDone / Snooze / Dismiss (ADR-0005 §6)', () => {
             onTime: true,
           }),
         ),
+      ),
+    )
+  })
+
+  it('reads the stored answer of a snoozed dispatch: the parent, its child, on-time from the root', async () => {
+    resetStores()
+    const fireAt = T('20:00')
+    const claim = claimFire({ scheduledFor: fireAt, now: fireAt })
+    const id = dispatchId('0197f100-7000-7000-8000-700000000101', fireAt)
+    const snoozedAt = T('20:10')
+    const target = T('20:20')
+    const childId = dispatchId(
+      '0197f100-7000-7000-8000-700000000101',
+      target,
+      `snooze:${id}`,
+      snoozedAt,
+    )
+    // Five minutes after the child, twenty-five after the root fire: on time
+    // only because the grace stays rooted at the original fire.
+    const doneAt = T('20:25')
+
+    await run(
+      story(
+        Story.when(owner, claim),
+        thenClaim(claim),
+        Story.clock(snoozedAt),
+        Story.when(owner, new Snooze({ dispatchId: id, minutes: 10 })),
+        Story.then(
+          owner,
+          new DispatchAnswered({
+            dispatchId: id,
+            response: 'snooze',
+            respondedAt: snoozedAt,
+            snoozedUntil: target,
+            onTime: false,
+          }),
+          new DispatchOpened({
+            id: childId,
+            reminderId: claim.reminderId,
+            scheduledFor: target,
+            deliverAt: target,
+            rootScheduledFor: fireAt,
+            origin: `snooze:${id}`,
+            pushOutcome: 'pending',
+            attempts: 0,
+            lastAttemptAt: null,
+            parentDispatchId: id,
+            response: null,
+            respondedAt: null,
+            snoozedUntil: null,
+            createdAt: snoozedAt,
+          }),
+        ),
+        // The respond route's reply is read from the committed state by the
+        // exported builder: a double tap of the snooze finds the parent's
+        // answer and the one child it opened.
+        Story.state(owner, state => {
+          const reply = answerReplyOf(state, id)
+          expect(reply.dispatch.response).toBe('snooze')
+          expect(reply.dispatch.snoozedUntil).toBe(target)
+          expect(reply.child?.id).toBe(childId)
+          expect(reply.child?.parentDispatchId).toBe(id)
+          // A snooze is never on time; only `done` inside the root grace is.
+          expect(reply.onTime).toBe(false)
+        }),
+        Story.clock(doneAt),
+        Story.when(owner, new AnswerDone({ dispatchId: childId })),
+        Story.then(
+          owner,
+          new DispatchAnswered({
+            dispatchId: childId,
+            response: 'done',
+            respondedAt: doneAt,
+            snoozedUntil: null,
+            onTime: true,
+          }),
+        ),
+        Story.state(owner, state => {
+          const reply = answerReplyOf(state, childId)
+          expect(reply.dispatch.response).toBe('done')
+          expect(reply.child).toBeNull()
+          expect(reply.onTime).toBe(true)
+        }),
       ),
     )
   })

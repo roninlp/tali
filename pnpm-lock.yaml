@@ -272,9 +272,6 @@ importers:
       '@tali/push':
         specifier: workspace:*
         version: link:../../packages/push
-      '@tali/reminder-domain':
-        specifier: workspace:*
-        version: link:../../packages/reminder-domain
       '@tali/rpc':
         specifier: workspace:*
         version: link:../../packages/rpc

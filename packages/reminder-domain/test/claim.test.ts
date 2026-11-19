@@ -161,7 +161,6 @@ describe('ClaimFire — the claim and its policy (ADR-0005 §3/§5)', () => {
             scheduledFor: fireAt,
             now: fireAt,
             tier: 'critical',
-            kind: 'medication',
           }),
         ),
         Story.then(

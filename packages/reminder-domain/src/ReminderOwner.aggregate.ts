@@ -130,9 +130,16 @@ const owedOf = (
         : a.createdAt.localeCompare(b.createdAt),
     )
 
-/** The answer route's reply, read from the committed state. */
-const answerReplyOf = (
-  state: State,
+/**
+ * The answer route's reply, read from the committed state. Takes the two maps
+ * it reads structurally, so a caller outside this module can build the reply
+ * without the aggregate's state type (the ledger's shape stays private).
+ */
+export const answerReplyOf = (
+  state: {
+    readonly dispatches: { readonly [id: string]: DispatchSnapshot }
+    readonly snoozeChildren: { readonly [id: string]: string }
+  },
   dispatchId: ReminderDispatchId,
 ): AnswerReply => {
   const dispatch = state.dispatches[dispatchId]!
@@ -201,7 +208,7 @@ export class ReminderOwner extends Domain.Aggregate(
           const next = advancePastSilence(
             cmd.repeat,
             cmd.scheduledFor,
-            cmd.timeZone,
+            cmd.reminderTimeZone,
             cmd.silencedUntil ?? cmd.scheduledFor,
           )
           return [
@@ -217,7 +224,7 @@ export class ReminderOwner extends Domain.Aggregate(
         // after an outage jumps past every occurrence it already covered.
         const nextFireAt = reminderNextFireAfterNow(
           cmd.repeat,
-          cmd.timeZone,
+          cmd.reminderTimeZone,
           cmd.scheduledFor,
           cmd.now,
         )

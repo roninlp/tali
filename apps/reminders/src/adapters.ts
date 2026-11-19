@@ -1,5 +1,4 @@
 import { Effect, Layer } from 'effect'
-import { Schema } from 'effect'
 import { WorkerEnvironment } from '@alchemy.run/cloudflare'
 import {
   DispatchLedgerStore,
@@ -9,12 +8,12 @@ import {
 } from '@tali/reminder-domain'
 import {
   PushService,
-  type PushEndpoint,
   PushSubscriptionStore,
   type SubscriptionRow,
 } from '@tali/reminder-domain'
-import type { PushSubscription, UserId } from '@tali/domain'
+import type { PushSubscriptionId, UserId } from '@tali/domain'
 import { makePushGateway, vapidConfigOf } from '@tali/push'
+import { remindersEnvOf, type RemindersEnv } from './env.js'
 
 /**
  * The model's D1 adapters, built once per Worker from the runtime
@@ -24,14 +23,8 @@ import { makePushGateway, vapidConfigOf } from '@tali/push'
  * projection key's input log and retries it.
  */
 
-interface Env {
-  readonly DB: D1Database
-  readonly VAPID_PRIVATE_KEY?: string
-  readonly VAPID_PUBLIC_KEY?: string
-  readonly VAPID_SUBJECT?: string
-}
-
-const d1 = (env: Env): Effect.Effect<D1Database> => Effect.sync(() => env.DB)
+const d1 = (env: RemindersEnv): Effect.Effect<D1Database> =>
+  Effect.sync(() => env.DB)
 
 const run = (
   statement: D1PreparedStatement,
@@ -63,7 +56,7 @@ const bindAll = (
 export const DispatchLedgerStoreLive = Layer.effect(
   DispatchLedgerStore,
   Effect.gen(function* () {
-    const env = (yield* WorkerEnvironment) as unknown as Env
+    const env = remindersEnvOf(yield* WorkerEnvironment)
 
     const apply = (changes: ReadonlyArray<DispatchLedgerChange>) =>
       Effect.gen(function* () {
@@ -81,7 +74,7 @@ export const DispatchLedgerStoreLive = Layer.effect(
                         last_attempt_at, parent_dispatch_id, response,
                         responded_at, snoozed_until, created_at)
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                     ON CONFLICT (id) DO NOTHING`,
+                     ON CONFLICT DO NOTHING`,
                   )
                   .bind(
                     change.dispatch.id,
@@ -114,6 +107,20 @@ export const DispatchLedgerStoreLive = Layer.effect(
                     change.response,
                     change.respondedAt,
                     change.snoozedUntil,
+                    change.dispatchId,
+                  ),
+              )
+              break
+            case 'DueForPush':
+              statements.push(
+                db
+                  .prepare(
+                    `UPDATE reminder_dispatches SET attempts = ?, last_attempt_at = ?
+                      WHERE id = ? AND response IS NULL AND push_outcome IN ('pending', 'failed')`,
+                  )
+                  .bind(
+                    change.attempts,
+                    change.lastAttemptAt,
                     change.dispatchId,
                   ),
               )
@@ -157,7 +164,7 @@ export const DispatchLedgerStoreLive = Layer.effect(
 export const ReminderScheduleStoreLive = Layer.effect(
   ReminderScheduleStore,
   Effect.gen(function* () {
-    const env = (yield* WorkerEnvironment) as unknown as Env
+    const env = remindersEnvOf(yield* WorkerEnvironment)
 
     const apply = (advances: ReadonlyArray<ScheduleAdvance>) =>
       Effect.gen(function* () {
@@ -183,7 +190,7 @@ export const ReminderScheduleStoreLive = Layer.effect(
 export const PushSubscriptionStoreLive = Layer.effect(
   PushSubscriptionStore,
   Effect.gen(function* () {
-    const env = (yield* WorkerEnvironment) as unknown as Env
+    const env = remindersEnvOf(yield* WorkerEnvironment)
 
     const listByUser = (userId: UserId) =>
       Effect.gen(function* () {
@@ -219,39 +226,34 @@ export const PushSubscriptionStoreLive = Layer.effect(
   }),
 )
 
+/** What the model's PushService.send hands this adapter, not restated. */
+type SendArgs = Parameters<(typeof PushService.Service)['send']>[0]
+
 /**
  * The Web Push transport behind the model's external system: the unchanged
  * @tali/push gateway over this environment's VAPID identity. With no keys
  * (local dev without secrets) every send answers `unconfigured` and the
  * dispatch lands in the inbox instead of being dropped.
  */
-/** What the model's PushService.send hands this adapter. */
-type SendArgs = {
-  readonly subscription: Schema.Schema.Type<typeof PushEndpoint>
-  readonly payload: string
-  readonly now: string
-  readonly ttlSeconds: number
-  readonly urgency: 'high' | 'normal'
-  readonly topic: string
-}
-
 export const PushServiceLive = Layer.effect(
   PushService,
   Effect.gen(function* () {
-    const env = (yield* WorkerEnvironment) as unknown as Env
+    const env = remindersEnvOf(yield* WorkerEnvironment)
     const gateway = makePushGateway(vapidConfigOf(env))
     return {
       send: (input: SendArgs) =>
         gateway.send({
           subscription: {
             ...input.subscription,
-            // The gateway only reads endpoint/p256dh/auth; the registration
-            // row's remaining columns are not part of the model's port.
+            // The row type brands the id the model's port carries unbranded,
+            // and the row's remaining columns are not part of the model's
+            // port.
+            id: input.subscription.id as PushSubscriptionId,
             expirationTime: null,
             userAgent: null,
             createdAt: input.now,
             updatedAt: input.now,
-          } as unknown as PushSubscription,
+          },
           payload: input.payload,
           now: input.now,
           ttlSeconds: input.ttlSeconds,

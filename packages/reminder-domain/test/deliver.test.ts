@@ -162,7 +162,6 @@ describe('DeliverDue — the delivery pass (ADR-0005 §2/§4)', () => {
     const first = claimFire()
     const second = claimFire({
       reminderId: '0197f100-7000-7000-8000-700000000102' as never,
-      version: 2,
     })
     const silenced = dispatchId(REMINDER_ID, fireAt)
     const deleted = dispatchId('0197f100-7000-7000-8000-700000000102', fireAt)

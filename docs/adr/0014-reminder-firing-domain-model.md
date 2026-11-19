@@ -71,6 +71,31 @@ imports the pure policy in. The worker (`apps/reminders`) hosts the model via
 path — because the api is a plain-module worker by design (#44) and the
 domain platform declares its Durable Object classes at worker init.
 
+## Bounds and deviations (against ADR-0005)
+
+**The delivery bound.** ADR-0005 §9 bounds a tick by *fetches* (ten, fan-out
+included) and has any dispatch that cannot reach all its devices rolled to the
+next tick, so a fan-out is partial. The model bounds *due dispatches* per
+`DeliverDue` instead (ten), and every planned dispatch always reaches every
+device its owner has — there are no partial fan-outs. A tick's fetch total
+therefore scales with owners × devices; it is isolated per owner by that
+owner's Durable Object instance, and `DeliverDue`'s bound holds the per-owner
+statement count, not the fetch count. Revisit per ADR-0005's own "revisit if"
+clause once a third household makes the number measurable.
+
+**The answer's link effect (#13 §2.5).** `AnswerDone` models the ledger's
+answer and nothing else. The link effect — completing a task, logging the habit
+entry, appending the event log — stays in the api's respond route, which applies
+it in its own D1 batch and forwards the answer. The cutover slice must settle
+ADR-0005 Consequences' "same batch" question: an idempotent forward plus the
+`AlreadyAnswered` no-op is the candidate, and today's route is the behaviour to
+preserve until it is decided.
+
+**VAPID.** ADR-0005 §11 wants `Config.Redacted("VAPID_PRIVATE_KEY")` as a
+secret binding. The reminders Worker reads plain env vars for now, matching the
+current api practice; the alchemy declaration slice moves it to a secret
+binding.
+
 ## Landed in this pilot
 
 - `@tali/reminder-domain` (new): the aggregate, its commands/events/rejections,
@@ -78,22 +103,24 @@ domain platform declares its Durable Object classes at worker init.
 - `@tali/push` (new): the transport moved verbatim from `apps/api/src`.
 - `apps/reminders` (new): the model's Worker — Durable Object hosting, the
   D1 adapters for the store ports, the tick driver, the internal routes.
-- 31 Story tests (in memory, given/when/then) covering ADR-0005's edge cases
+- 31 story tests (in memory, given/when/then) covering ADR-0005's edge cases
   — double claim, quiet-hours hold and 07:00 flush, medication bypass,
   snooze-of-snooze, silence expiring owed rows, on-time from the root fire,
-  the horizon, the attempt budget, the answer-beats-the-push race — plus a
-  `Domain.verify` declaration test and a wire test.
+  the horizon, the attempt budget, the snoozed dispatch's stored reply, the
+  answer-beats-the-push race — plus a `Domain.verify` declaration test and a
+  wire test.
 
 ## Deliberately not moved (this PR)
 
 - The seven CRUD aggregates, the sync engine and the client: untouched.
 - The api's D1-based sweep stays the live clock until the reminders Worker is
   declared in `infra/alchemy.run.ts` (the `REMINDERS` binding, the internal
-  token, `DomainCloudflare.providers()`); the sweep/respond forwarding seam
-  (`RemindersModel`, `listOwedFacts`, the wire schemas) is in place on both
-  sides and is the next slice. The pilot proves the model end to end in
-  memory; flipping the api's tick to `sweep`/`respond` forwarding is a
-  mechanical follow-up once the Worker is on the stack.
+  token, `DomainCloudflare.providers()`); the sweep/respond forwarding seam —
+  the wire schemas, `listOwedFacts`, the model-client shape — is in place on
+  the model's side; the api-side forwarder is the next slice. The pilot proves
+  the model end to end in memory; flipping the api's tick to
+  `sweep`/`respond` forwarding is a mechanical follow-up once the Worker is
+  on the stack.
 
 ## Revisit if
 

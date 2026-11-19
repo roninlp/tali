@@ -19,8 +19,7 @@
     "@tali/sql": "workspace:*",
     "@tali/telemetry": "workspace:*",
     "effect": "catalog:",
-    "@tali/push": "workspace:*",
-    "@tali/reminder-domain": "workspace:*"
+    "@tali/push": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "catalog:",
