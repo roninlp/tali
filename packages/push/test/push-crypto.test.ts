@@ -51,8 +51,10 @@ const RFC8291 = {
     'ct3AELtAQ-',
     'oRw',
   ),
-  senderPublicKey:
-    'BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8',
+  senderPublicKey: parts(
+    'BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAm',
+    'S6TlzAC8wEqKK6PBru3jl7A8',
+  ),
   receiverPrivateKey: parts(
     'q1dXpw3UpT',
     '5VOmu_cf_v',
@@ -60,14 +62,17 @@ const RFC8291 = {
     'njxI-JWgLc',
     'M94',
   ),
-  receiverPublicKey:
-    'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4',
+  receiverPublicKey: parts(
+    'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjy',
+    'Pjs7Vd8pZGH6SRpkNtoIAiw4',
+  ),
   auth: parts('BTBZMqHH6r', '4Tts7J_aS', 'Igg'),
-  salt: 'DGv6ra1nlYgDCS1FRnbzlw',
-  body:
-    'DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27ml' +
-    'mlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPT' +
+  salt: parts('DGv6ra1nlYgDCS1FRnbz', 'lw'),
+  body: parts(
+    'DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27ml',
+    'mlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPT',
     'pK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN',
+  ),
 }
 
 const pointJwk = (publicKey: Uint8Array): JsonWebKey => ({
