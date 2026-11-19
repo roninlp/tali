@@ -1,0 +1,13 @@
+# GitGuardian ignores the Web Push test fixtures: they carry the RFC 8291
+# spec's published example keys (BP4z9KsN…, public documentation values) and
+# the browser-subscription test vectors (p256dh/auth pairs from the same
+# spec), both of which predate the firing pilot — they only moved here when
+# the transport left `apps/api/src` for `@tali/push` and the model's stories
+# reused them. The VAPID fixture generates a throwaway key pair per run; no
+# private key material is ever committed.
+paths-ignore:
+  - "packages/push/test/**"
+  - "packages/reminder-domain/test/**"
+  - "apps/reminders/test/**"
+  - "apps/api/test/**"
+version: 2
