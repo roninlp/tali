@@ -38,11 +38,7 @@ import { OccasionServiceLive } from './occasion-service.js'
 import { PreferencesRoutes } from './preferences-routes.js'
 import { PreferencesServiceLive } from './preferences-service.js'
 import { DevReminderRoutes } from './dev-reminder-routes.js'
-import {
-  PushConfig,
-  PushGatewayLive,
-  type VapidConfig,
-} from './push-gateway.js'
+import { PushConfig, PushGatewayLive, type VapidConfig } from '@tali/push'
 import { PushRoutes } from './push-routes.js'
 import { ReminderRoutes } from './reminder-routes.js'
 import { ReminderServiceLive } from './reminder-service.js'

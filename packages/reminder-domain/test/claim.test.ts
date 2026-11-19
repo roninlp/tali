@@ -1,12 +1,10 @@
 import { describe, expect, it } from 'vite-plus/test'
 import { Story } from '@alchemy.run/domain/Story'
 import {
-  ClaimFire,
   FireClaimed,
   FireSuppressed,
   DispatchOpened,
 } from '../src/ClaimFire.command.js'
-import { ReminderOwner } from '../src/ReminderOwner.aggregate.js'
 import { resetStores } from './memory-stores.js'
 import { scheduleAdvances } from './memory-stores.js'
 import {

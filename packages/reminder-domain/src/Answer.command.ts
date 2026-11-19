@@ -1,6 +1,6 @@
 import * as Domain from '@alchemy.run/domain'
 import { Schema } from 'effect'
-import { ReminderDispatchId, ReminderId, TimestampUtc } from '@tali/domain'
+import { ReminderDispatchId, TimestampUtc } from '@tali/domain'
 import { AnswerReply, DispatchResponseValue } from './Dispatch.js'
 import {
   AlreadyAnswered,
