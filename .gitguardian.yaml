@@ -1,13 +1,23 @@
-# GitGuardian ignores the Web Push test fixtures: they carry the RFC 8291
+# GitGuardian's scan configuration — note the real scope of this file.
+#
+# The checked-in .gitguardian.yaml governs the ggshield CLI (local runs,
+# `ggshield secret scan`, pre-commit hooks). The "GitGuardian Security
+# Checks" status on pull requests is the GitGuardian GitHub App, a
+# server-side scan configured only in the GitGuardian dashboard — this
+# file does not change what the App reports.
+#
+# The ignores below cover the Web Push test fixtures: they carry the RFC 8291
 # spec's published example keys (BP4z9KsN…, public documentation values) and
-# the browser-subscription test vectors (p256dh/auth pairs from the same
-# spec), both of which predate the firing pilot — they only moved here when
-# the transport left `apps/api/src` for `@tali/push` and the model's stories
-# reused them. The VAPID fixture generates a throwaway key pair per run; no
-# private key material is ever committed.
-paths-ignore:
-  - 'packages/push/test/**'
-  - 'packages/reminder-domain/test/**'
-  - 'apps/reminders/test/**'
-  - 'apps/api/test/**'
+# the browser-subscription test vectors (p256dh/auth pairs), both of which
+# predate the firing pilot — they only moved to `@tali/push` and the
+# model's stories when the transport left `apps/api/src`. The VAPID fixture
+# generates a throwaway key pair per run; no private key material is ever
+# committed. Mirror these paths in the dashboard if the App flags them.
 version: 2
+
+secret:
+  ignored_paths:
+    - 'packages/push/test/**'
+    - 'packages/reminder-domain/test/**'
+    - 'apps/reminders/test/**'
+    - 'apps/api/test/**'
