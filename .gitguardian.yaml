@@ -6,8 +6,8 @@
 # reused them. The VAPID fixture generates a throwaway key pair per run; no
 # private key material is ever committed.
 paths-ignore:
-  - "packages/push/test/**"
-  - "packages/reminder-domain/test/**"
-  - "apps/reminders/test/**"
-  - "apps/api/test/**"
+  - 'packages/push/test/**'
+  - 'packages/reminder-domain/test/**'
+  - 'apps/reminders/test/**'
+  - 'apps/api/test/**'
 version: 2
