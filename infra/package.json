@@ -4,8 +4,10 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@alchemy.run/cloudflare": "2.0.0-beta.87",
+    "@alchemy.run/github": "2.0.0-beta.87",
     "@tali/config": "workspace:*",
-    "alchemy": "2.0.0-beta.83",
+    "alchemy": "2.0.0-beta.87",
     "effect": "catalog:"
   },
   "devDependencies": {

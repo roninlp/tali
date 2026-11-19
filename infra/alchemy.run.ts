@@ -15,7 +15,7 @@
 // behaves the same whether it starts from the package (`infra/`) or from the repo
 // root with `--config infra/alchemy.run.ts`.
 import * as Alchemy from 'alchemy'
-import * as Cloudflare from 'alchemy/Cloudflare'
+import * as Cloudflare from '@alchemy.run/cloudflare'
 import {
   CRON,
   CRON_EXPRESSIONS,

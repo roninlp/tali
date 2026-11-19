@@ -10,14 +10,14 @@ catalog:
   # Foldkit 0.170 declares `effect: ~4.1.0` (and its packages follow suit).
   # Keep the whole Effect suite on the same minor: a caret here would let a
   # future install pick 4.2.x and fork the runtime Foldkit was built against.
-  '@effect/platform-browser': ~4.1.0
-  '@effect/platform-node': ~4.1.0
+  '@effect/platform-browser': ~4.1.4
+  '@effect/platform-node': ~4.1.4
   # Effect LSP / Effect diagnostics (`effect-tsgo`). Pinned exactly: each
   # release is built against one TypeScript and one Oxlint build. Vite+ 1.6
   # bundles Oxlint 1.93.0, so 0.68.1 is the matching release (TypeScript
   # 7.0.2); bump it together with either tool.
   '@effect/tsgo': 0.68.1
-  '@effect/sql-d1': ~4.1.0
+  '@effect/sql-d1': ~4.1.4
   '@tailwindcss/vite': ^4.3.3
   # TanStack AI: the Dissect run (ADR-0012 §7). `ai-openai` supplies the
   # OpenAI-compatible adapter (`openaiCompatible`) the OpenCode Go gateway
@@ -27,7 +27,7 @@ catalog:
   '@tanstack/ai-effect': ^0.1.0
   '@tanstack/ai-openai': ^1.1.1
   '@types/node': ^26.6.5
-  effect: ~4.1.0
+  effect: ~4.1.4
   fake-indexeddb: ^6.2.6
   tailwindcss: ^4.3.3
   # TypeScript 7 is the native compiler. A transitive peer (`capnp-es` via
@@ -62,12 +62,6 @@ minimumReleaseAgeExclude:
   - '@foldkit/vite-plugin@0.29.0'
   - foldkit@0.170.0
 
-# alchemy 2.0.0-beta.83 predates Effect 4.1 and imports the removed
-# `effect/Crypto` module. This backports upstream's 4.1 support
-# (alchemy-run/alchemy#2754). Drop it once a release contains that fix; see
-# infra/README.md.
-patchedDependencies:
-  alchemy@2.0.0-beta.83: patches/alchemy@2.0.0-beta.83.patch
 overrides:
   vite@*: 'catalog:'
   vitest@*: 'catalog:'
