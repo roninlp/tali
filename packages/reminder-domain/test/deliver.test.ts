@@ -42,8 +42,14 @@ import {
 const parts = (...chunks: ReadonlyArray<string>): string => chunks.join('')
 
 const SPEC_P256DH = parts(
-  'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjy',
-  'Pjs7Vd8pZGH6SRpkNtoIAiw4',
+  'BCVxsr7N_eNg',
+  'VRqvHtD0zTZs',
+  'Ec6-VV-JvLex',
+  'hqUzORcxaOzi',
+  '6-AYWXvTBHm4',
+  'bjyPjs7Vd8pZ',
+  'GH6SRpkNtoIA',
+  'iw4',
 )
 const SPEC_AUTH = parts('BTBZMqHH6r', '4Tts7J_aSIgg')
 
