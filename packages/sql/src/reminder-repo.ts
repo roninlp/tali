@@ -474,6 +474,42 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
             })),
         )
 
+      // TODO(cutover): near-duplicates `listOwed` below — the pilot's fresh-facts seam; goes with the old D1 sweep path.
+      /**
+       * The tick's owed-facts read (ADR-0005 §2): every unanswered,
+       * still-retryable dispatch with the reminder words its push shows and
+       * the two facts that close a row without pushing — a live silence or a
+       * deletion. The model vouches per dispatch id, so a projection row not
+       * yet visible simply holds until the next tick.
+       */
+      const listOwedFacts = (input: {
+        readonly now: string
+        readonly limit: number
+      }) =>
+        Effect.map(
+          sql<{
+            readonly dispatchId: ReminderDispatchId
+            readonly ownerId: string
+            readonly title: string
+            readonly note: string | null
+            readonly kind: ReminderType
+            readonly tier: ReminderTier
+            readonly silencedUntil: string | null
+            readonly deletedAt: string | null
+          }>`
+            SELECT d.id AS dispatchId, d.user_id AS ownerId,
+                   r.title, r.note AS note, r.kind AS kind, r.tier AS tier,
+                   r.silenced_until AS silencedUntil, r.deleted_at AS deletedAt
+            FROM reminder_dispatches d
+            JOIN reminders r ON r.id = d.reminder_id
+            WHERE d.response IS NULL
+              AND d.push_outcome IN ('pending', 'failed')
+            ORDER BY d.deliver_at ASC
+            LIMIT ${input.limit}
+          `,
+          rows => rows,
+        )
+
       /**
        * The sweep's owed read (ADR-0005 §2): claimed but unanswered rows whose
        * deliver-at has arrived and that are still retryable. Joined to the
@@ -806,6 +842,7 @@ export class ReminderDispatchRepo extends Context.Service<ReminderDispatchRepo>(
         listInbox,
         listDueFires,
         listOwed,
+        listOwedFacts,
         outcomeStatement,
         takeAttempts,
         insert,

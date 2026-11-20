@@ -153,6 +153,25 @@ export const reminderDeliverAt = (
   return { _tag: 'claim', deliverAt: flush ?? scheduledFor }
 }
 
+/**
+ * The fire instant a silenced series resumes at (ADR-0005 §5's "the series
+ * advances past it" half, shared by the write path and the firing model).
+ *
+ * A fire already after the silence keeps its instant; a one-off inside the
+ * silence fires at the silence's end rather than vanishing; a pattern resumes
+ * at its first occurrence after the silence.
+ */
+export const advancePastSilence = (
+  repeat: ReminderRepeat,
+  fireAt: string,
+  timeZone: string,
+  silencedUntil: string,
+): string => {
+  if (Date.parse(fireAt) > Date.parse(silencedUntil)) return fireAt
+  if (repeat._tag === 'once') return silencedUntil
+  return reminderNextFireAfter(repeat, timeZone, silencedUntil) ?? fireAt
+}
+
 /** Is a preset snooze length legal? */
 export const isSnoozeMinutes = (minutes: number): minutes is SnoozeMinutes =>
   (SNOOZE_PRESETS_MINUTES as ReadonlyArray<number>).includes(minutes)

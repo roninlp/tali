@@ -9,7 +9,7 @@ import { PushSubscriptionRepo } from '@tali/sql'
 import { AuthService } from './auth-service.js'
 import { fail, json, unexpectedFailure } from './http-envelope.js'
 import { sessionResolver } from './principal.js'
-import { PushConfig } from './push-gateway.js'
+import { PushConfig } from '@tali/push'
 
 /**
  * Web Push registration and identity (tickets #20, #61).

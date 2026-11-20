@@ -6,7 +6,7 @@ import { makeAppLayer } from './http-layer.js'
 import { makeCloudflareTracer } from './cloudflare-tracer.js'
 import { captureConfigOf } from './capture-extractor.js'
 import { runD1Backup } from './d1-backup.js'
-import { vapidConfigOf } from './push-gateway.js'
+import { vapidConfigOf } from '@tali/push'
 import { runReminderSweep } from './reminder-sweep-runner.js'
 import { runTrashPurge } from './trash-purge-runner.js'
 

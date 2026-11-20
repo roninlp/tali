@@ -13,8 +13,8 @@ import {
 import { DELIVERY_HORIZON_MINUTES } from '@tali/domain/reminder-policy'
 import type { PushSubscription } from '@tali/domain'
 import { PushSubscriptionRepo, ReminderDispatchRepo, SyncRepo } from '@tali/sql'
-import { pushTopic, pushTtlSeconds } from './push-crypto.js'
-import { PushGateway } from './push-gateway.js'
+import { pushTopic, pushTtlSeconds } from '@tali/push'
+import { PushGateway } from '@tali/push'
 import { OccasionService } from './occasion-service.js'
 import { ReminderService, type ReminderServiceApi } from './reminder-service.js'
 

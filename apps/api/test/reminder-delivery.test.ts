@@ -13,7 +13,7 @@ import {
   type PushGatewayApi,
   type PushSendInput,
   type PushSendResult,
-} from '../src/push-gateway.js'
+} from '@tali/push'
 import { OccasionServiceLive } from '../src/occasion-service.js'
 import {
   ReminderService,

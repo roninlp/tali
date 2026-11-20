@@ -10,7 +10,7 @@ import {
   PushConfig,
   PushGatewayLive,
   vapidConfigOf,
-} from './push-gateway.js'
+} from '@tali/push'
 import { OccasionServiceLive } from './occasion-service.js'
 import { ReminderServiceLive } from './reminder-service.js'
 import { ReminderSweep, ReminderSweepLive } from './reminder-sweep.js'
